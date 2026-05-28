@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s http://localhost:5173/src/core/auth/LoginPage.jsx)",
+      "Read(//Users/VictorGuyon/Desktop/**)",
+      "Read(//Users/VictorGuyon/Downloads/**)",
+      "Read(//Users/VictorGuyon/**)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5173/Logo_JGA_Archi.jpg)",
+      "Bash(curl -s http://localhost:5173/src/dashboard/AffaireFormModal.jsx)",
+      "Bash(curl -s http://localhost:5173/src/dashboard/DashboardPage.jsx)",
+      "Bash(curl -s http://localhost:5173/src/core/layout/AppShell.jsx)",
+      "Bash(mkdir -p /Users/VictorGuyon/Desktop/PERSO/jga-architectures/src/affaire)",
+      "Bash(curl -s http://localhost:5173/src/affaire/AffairePage.jsx)",
+      "Bash(curl -s http://localhost:5173/src/core/router/AppRouter.jsx)",
+      "Bash(npx vite *)"
+    ],
+    "additionalDirectories": [
+      "/Users/VictorGuyon/Desktop/PERSO/jga-architectures/src"
+    ]
+  }
+}

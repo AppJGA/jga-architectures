@@ -7,12 +7,12 @@ import { supabase } from '../../../core/supabase/client'
 import { FtmFormModal } from './FtmFormModal'
 import { generateFtmPdf } from './generateFtmPdf'
 
-const ORIGINE_COLOR = { moe: '#E05A1E', mo: '#2563EB', aleas: '#639922' }
+const ORIGINE_COLOR = { moe: '#E8602C', mo: '#1B3A5C', aleas: '#2A8A4E' }
 const ORIGINE_LABEL = { moe: 'MOE', mo: 'MO', aleas: 'Aléas' }
 
 const DECISION_BADGE = {
   en_attente: { bg: '#FEF3C7', color: '#92400E', label: 'En attente' },
-  accepte: { bg: '#EAF3DE', color: '#3a6011', label: 'Accepté' },
+  accepte: { bg: 'rgba(42,138,78,0.12)', color: '#3a6011', label: 'Accepté' },
   renonce: { bg: '#F1EFE8', color: '#6b5f5a', label: 'Renoncé' },
 }
 
@@ -29,7 +29,7 @@ function fmtMontant(v) {
 
 function FtmCard({ ftm, lots, affaire, onEdit, onDelete }) {
   const [confirmDelete, setConfirmDelete] = useState(false)
-  const origineColor = ORIGINE_COLOR[ftm.origine] ?? '#9B8F85'
+  const origineColor = ORIGINE_COLOR[ftm.origine] ?? '#9C9591'
   const badge = DECISION_BADGE[ftm.decision ?? 'en_attente']
   const ref = `FTM-${String(ftm.numero).padStart(3, '0')}`
   const lotNom = lots.find(l => l.id === ftm.lot_id)?.nom ?? null
@@ -48,7 +48,7 @@ function FtmCard({ ftm, lots, affaire, onEdit, onDelete }) {
       <div style={{ flex: 1, minWidth: 0 }}>
         {/* Row 1: ref + badge origine + decision badge */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-          <span style={{ fontSize: 12, fontWeight: 600, color: '#1a1a1a' }}>{ref}</span>
+          <span style={{ fontSize: 12, fontWeight: 600, color: '#1F1B17' }}>{ref}</span>
           <span style={{
             fontSize: 10, fontWeight: 600,
             color: origineColor,
@@ -65,7 +65,7 @@ function FtmCard({ ftm, lots, affaire, onEdit, onDelete }) {
             {badge.label}
           </span>
           {ftm.date_emission && (
-            <span style={{ fontSize: 11, color: '#9B8F85' }}>{fmtDate(ftm.date_emission)}</span>
+            <span style={{ fontSize: 11, color: '#9C9591' }}>{fmtDate(ftm.date_emission)}</span>
           )}
         </div>
 
@@ -75,21 +75,21 @@ function FtmCard({ ftm, lots, affaire, onEdit, onDelete }) {
           whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
           marginBottom: 3,
         }}>
-          {ftm.description || <em style={{ color: '#9B8F85' }}>Aucune description</em>}
+          {ftm.description || <em style={{ color: '#9C9591' }}>Aucune description</em>}
         </p>
 
         {/* Row 3: lot + montant */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           {lotNom && (
-            <span style={{ fontSize: 11, color: '#6b7280' }}>Lot : {lotNom}</span>
+            <span style={{ fontSize: 11, color: '#5E5854' }}>Lot : {lotNom}</span>
           )}
           {ftm.montant_travaux_ht != null && Number(ftm.montant_travaux_ht) !== 0 && (
-            <span style={{ fontSize: 11, color: Number(ftm.montant_travaux_ht) > 0 ? '#639922' : '#dc2626', fontWeight: 500 }}>
+            <span style={{ fontSize: 11, color: Number(ftm.montant_travaux_ht) > 0 ? '#2A8A4E' : '#B8412C', fontWeight: 500 }}>
               {Number(ftm.montant_travaux_ht) > 0 ? '+' : '−'}{fmtMontant(ftm.montant_travaux_ht)} HT
             </span>
           )}
           {ftm.type_demande && (
-            <span style={{ fontSize: 11, color: '#9B8F85', fontStyle: 'italic' }}>{ftm.type_demande}</span>
+            <span style={{ fontSize: 11, color: '#9C9591', fontStyle: 'italic' }}>{ftm.type_demande}</span>
           )}
         </div>
       </div>
@@ -121,7 +121,7 @@ function FtmCard({ ftm, lots, affaire, onEdit, onDelete }) {
           <>
             <button
               onClick={() => { onDelete(ftm.id); setConfirmDelete(false) }}
-              style={{ ...iconBtnStyle, color: '#dc2626', borderColor: '#fca5a5' }}
+              style={{ ...iconBtnStyle, color: '#B8412C', borderColor: '#fca5a5' }}
               title="Confirmer la suppression"
             >
               <Trash2 size={14} />
@@ -154,7 +154,7 @@ const iconBtnStyle = {
   borderRadius: 6,
   border: '0.5px solid rgba(0,0,0,0.12)',
   backgroundColor: 'white',
-  color: '#6b7280',
+  color: '#5E5854',
   cursor: 'pointer',
   fontSize: 12,
 }
@@ -224,14 +224,14 @@ export default function FtmModule() {
         marginBottom: 20,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <FilePen size={18} style={{ color: '#639922' }} />
-          <h2 style={{ fontSize: 15, fontWeight: 600, color: '#1a1a1a', margin: 0 }}>
+          <FilePen size={18} style={{ color: '#2A8A4E' }} />
+          <h2 style={{ fontSize: 15, fontWeight: 600, color: '#1F1B17', margin: 0 }}>
             Fiches de travaux modificatifs
           </h2>
           {ftms.length > 0 && (
             <span style={{
               fontSize: 11, fontWeight: 500,
-              color: '#639922', backgroundColor: '#EAF3DE',
+              color: '#2A8A4E', backgroundColor: 'rgba(42,138,78,0.12)',
               borderRadius: 20, padding: '2px 10px',
             }}>
               {ftms.length}
@@ -243,7 +243,7 @@ export default function FtmModule() {
           style={{
             display: 'inline-flex', alignItems: 'center', gap: 6,
             padding: '7px 16px', borderRadius: 20,
-            border: 'none', backgroundColor: '#639922',
+            border: 'none', backgroundColor: '#2A8A4E',
             color: 'white', fontSize: 12, fontWeight: 500,
             cursor: 'pointer',
           }}
@@ -264,25 +264,25 @@ export default function FtmModule() {
           marginBottom: 16,
         }}>
           <div>
-            <p style={{ fontSize: 10, color: '#9B8F85', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>Total</p>
-            <p style={{ fontSize: 16, fontWeight: 600, color: '#1a1a1a' }}>{ftms.length}</p>
+            <p style={{ fontSize: 10, color: '#9C9591', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>Total</p>
+            <p style={{ fontSize: 16, fontWeight: 600, color: '#1F1B17' }}>{ftms.length}</p>
           </div>
           <div style={{ width: '0.5px', backgroundColor: 'rgba(0,0,0,0.08)' }} />
           <div>
-            <p style={{ fontSize: 10, color: '#9B8F85', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>Acceptées</p>
+            <p style={{ fontSize: 10, color: '#9C9591', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>Acceptées</p>
             <p style={{ fontSize: 16, fontWeight: 600, color: '#3a6011' }}>{ftmsAcceptes.length}</p>
           </div>
           <div style={{ width: '0.5px', backgroundColor: 'rgba(0,0,0,0.08)' }} />
           <div>
-            <p style={{ fontSize: 10, color: '#9B8F85', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>En attente</p>
+            <p style={{ fontSize: 10, color: '#9C9591', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>En attente</p>
             <p style={{ fontSize: 16, fontWeight: 600, color: '#92400E' }}>{ftmsEnAttente.length}</p>
           </div>
           {totalAccepteHT !== 0 && (
             <>
               <div style={{ width: '0.5px', backgroundColor: 'rgba(0,0,0,0.08)' }} />
               <div>
-                <p style={{ fontSize: 10, color: '#9B8F85', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>Montant accepté HT</p>
-                <p style={{ fontSize: 16, fontWeight: 600, color: totalAccepteHT >= 0 ? '#3a6011' : '#dc2626' }}>
+                <p style={{ fontSize: 10, color: '#9C9591', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>Montant accepté HT</p>
+                <p style={{ fontSize: 16, fontWeight: 600, color: totalAccepteHT >= 0 ? '#3a6011' : '#B8412C' }}>
                   {totalAccepteHT > 0 ? '+' : '−'}{fmtMontant(totalAccepteHT)}
                 </p>
               </div>
@@ -297,8 +297,8 @@ export default function FtmModule() {
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 120 }}>
             <div style={{
               width: 20, height: 20, borderRadius: '50%',
-              border: '2px solid #EAF3DE',
-              borderTopColor: '#639922',
+              border: '2px solid rgba(42,138,78,0.12)',
+              borderTopColor: '#2A8A4E',
               animation: 'jga-spin 0.7s linear infinite',
             }} />
           </div>
@@ -312,11 +312,11 @@ export default function FtmModule() {
             gap: 10,
           }}>
             <FilePen size={28} style={{ color: '#d1d5db' }} />
-            <p style={{ fontSize: 13, color: '#9B8F85', margin: 0 }}>Aucune FTM pour ce chantier</p>
+            <p style={{ fontSize: 13, color: '#9C9591', margin: 0 }}>Aucune FTM pour ce chantier</p>
             <button
               onClick={handleNew}
               style={{
-                fontSize: 12, color: '#639922',
+                fontSize: 12, color: '#2A8A4E',
                 background: 'none', border: 'none',
                 cursor: 'pointer', textDecoration: 'underline',
               }}

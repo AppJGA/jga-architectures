@@ -11,7 +11,7 @@ export function Button({ children, variant = 'primary', size = 'md', className =
     primary: { backgroundColor: 'var(--jga-orange)', color: 'white' },
     secondary: { backgroundColor: 'var(--jga-orange-light)', color: 'var(--jga-orange)' },
     ghost: { backgroundColor: 'transparent', color: 'var(--jga-beige)' },
-    danger: { backgroundColor: '#FEE2E2', color: '#DC2626' },
+    danger: { backgroundColor: '#FEE2E2', color: '#B8412C' },
   }
 
   return (

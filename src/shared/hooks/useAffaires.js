@@ -15,6 +15,7 @@ const AFFAIRE_FIELDS = [
   'date_esq', 'date_avp', 'date_pro', 'date_dce',
   'date_depot_pc', 'date_obtention_pc', 'date_demarrage_travaux', 'date_livraison',
   'programme_imperatifs', 'programme_interdits', 'programme_prestations', 'notes',
+  'photo_url',
 ]
 
 function buildPayload(formData) {
@@ -29,35 +30,65 @@ export function useAffaires() {
   const [affaires, setAffaires] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [isFiltered, setIsFiltered] = useState(true)
 
   const refetch = useCallback(async () => {
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) return
 
-    const { data: collab, error: collabError } = await supabase
-      .from('affaire_collaborateurs')
-      .select('affaire_id')
-      .eq('user_id', user.id)
-
-    if (!collabError && collab && collab.length > 0) {
-      const ids = collab.map(c => c.affaire_id)
-      const { data, error: err } = await supabase
-        .from('affaires')
-        .select('*')
-        .in('id', ids)
-        .order('created_at', { ascending: false })
-      if (!err) { setAffaires(data ?? []); setIsFiltered(true); setError(null) }
-      return
-    }
-
-    // Fallback: silent degraded mode — no collaborateur rows yet
-    const { data, error: err } = await supabase
+    // 1. Toutes les affaires
+    const { data: allAffaires, error: affairesError } = await supabase
       .from('affaires')
       .select('*')
       .order('created_at', { ascending: false })
-    if (err) setError(err.message)
-    else { setAffaires(data ?? []); setIsFiltered(false); setError(null) }
+
+    if (affairesError) { setError(affairesError.message); return }
+
+    if (!allAffaires?.length) {
+      setAffaires([]); setError(null); return
+    }
+
+    const affaireIds = allAffaires.map(a => a.id)
+
+    // 2. Collaborateurs (sans jointure profiles pour éviter le 406)
+    const { data: collabData } = await supabase
+      .from('affaire_collaborateurs')
+      .select('affaire_id, user_id, role')
+      .in('affaire_id', affaireIds)
+
+    // 3. IDs des affaires où l'utilisateur est autorisé
+    const authorizedIds = new Set(
+      (collabData ?? [])
+        .filter(c => c.user_id === user.id)
+        .map(c => c.affaire_id)
+    )
+
+    // 4. Profils chargés séparément
+    const userIds = [...new Set((collabData ?? []).map(c => c.user_id))]
+    let profilesMap = {}
+    if (userIds.length > 0) {
+      const { data: profilesData } = await supabase
+        .from('profiles')
+        .select('id, prenom, nom')
+        .in('id', userIds)
+      profilesMap = Object.fromEntries(
+        (profilesData ?? []).map(p => [p.id, p])
+      )
+    }
+
+    // 5. Enrichissement + flag isAuthorized
+    const enriched = allAffaires.map(a => ({
+      ...a,
+      isAuthorized: authorizedIds.has(a.id),
+      affaire_collaborateurs: (collabData ?? [])
+        .filter(c => c.affaire_id === a.id)
+        .map(c => ({
+          ...c,
+          profiles: profilesMap[c.user_id] ?? { prenom: '?', nom: '?' },
+        })),
+    }))
+
+    setAffaires(enriched)
+    setError(null)
   }, [])
 
   useEffect(() => {
@@ -66,21 +97,25 @@ export function useAffaires() {
 
   const createAffaire = async (formData) => {
     const { data: { user } } = await supabase.auth.getUser()
+    if (!user) throw new Error('Non authentifié')
+
     const { data: newAffaire, error: affaireError } = await supabase
       .from('affaires')
       .insert([buildPayload(formData)])
       .select()
       .single()
     if (affaireError) throw affaireError
+
     const { error: collabError } = await supabase
       .from('affaire_collaborateurs')
       .upsert(
         [{ affaire_id: newAffaire.id, user_id: user.id, role: 'proprietaire' }],
-        { onConflict: 'affaire_id,user_id', ignoreDuplicates: true }
+        { onConflict: 'affaire_id,user_id' }
       )
     if (collabError) {
-      console.warn('Assignation propriétaire échouée:', collabError.message)
+      console.error('Assignation proprio échouée:', collabError.message)
     }
+
     await refetch()
     return newAffaire
   }
@@ -103,15 +138,28 @@ export function useAffaires() {
   }
 
   const deleteAffaire = async (id) => {
-    const { error } = await supabase
-      .from('affaires')
-      .delete()
-      .eq('id', id)
+    const affaire = affaires.find(a => a.id === id)
+    if (affaire?.photo_url) {
+      try {
+        const parts = affaire.photo_url.split('/affaires-photos/')
+        if (parts.length > 1) {
+          await supabase.storage.from('affaires-photos').remove([parts[1].split('?')[0]])
+        }
+      } catch (e) {
+        console.warn('Suppression photo storage:', e)
+      }
+    }
+    const { error } = await supabase.from('affaires').delete().eq('id', id)
     if (error) throw error
     await refetch()
   }
 
-  return { affaires, loading, error, isFiltered, refetch, createAffaire, updateAffaire, deleteAffaire }
+  return {
+    affaires: affaires.filter(a => a.isAuthorized),
+    affairesNonAutorisees: affaires.filter(a => !a.isAuthorized),
+    loading, error,
+    refetch, createAffaire, updateAffaire, deleteAffaire,
+  }
 }
 
 export function useAffaire(id) {

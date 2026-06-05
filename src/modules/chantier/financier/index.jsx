@@ -11,16 +11,16 @@ import { FtmFormModal } from '../ftm/FtmFormModal'
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
 const CAT = {
-  aleas:          { label: 'Aléa chantier',    color: '#E05A1E', bg: '#FAF0EB', emoji: '🔶' },
+  aleas:          { label: 'Aléa chantier',    color: '#E8602C', bg: 'rgba(232,96,44,0.10)', emoji: '🔶' },
   adaptation_moe: { label: 'Adapt./Err. MOE',  color: '#4B5563', bg: '#F3F4F6', emoji: '🔧' },
-  demande_mo:     { label: 'Demande MO',       color: '#2563EB', bg: '#EFF6FF', emoji: '👤' },
+  demande_mo:     { label: 'Demande MO',       color: '#1B3A5C', bg: 'rgba(27,58,92,0.10)', emoji: '👤' },
 }
 
 const STATUT = {
-  avenant_signe: { label: 'Avenant signé', bg: '#EAF3DE', color: '#3B6D11' },
-  devis_valide:  { label: 'Devis validé',  bg: '#FAF0EB', color: '#993C1D' },
+  avenant_signe: { label: 'Avenant signé', bg: 'rgba(42,138,78,0.12)', color: '#2A8A4E' },
+  devis_valide:  { label: 'Devis validé',  bg: 'rgba(232,96,44,0.10)', color: '#993C1D' },
   en_attente:    { label: 'En attente',    bg: '#FEF3C7', color: '#92400E' },
-  refuse:        { label: 'Refusé',        bg: '#F1EFE8', color: '#9B8F85' },
+  refuse:        { label: 'Refusé',        bg: '#F1EFE8', color: '#9C9591' },
 }
 
 const FILTERS = [
@@ -54,17 +54,17 @@ function pct(v) {
 }
 
 function colorDelta(v) {
-  if (v <= 0) return '#639922'
-  if (v <= 5) return '#E05A1E'
-  return '#DC2626'
+  if (v <= 0) return '#2A8A4E'
+  if (v <= 5) return '#E8602C'
+  return '#B8412C'
 }
 
 function montantColor(v, cat) {
   if (!v) return 'var(--jga-beige)'
-  if (v < 0) return '#639922'
-  if (cat === 'aleas') return '#E05A1E'
-  if (cat === 'demande_mo') return '#2563EB'
-  return '#DC2626'
+  if (v < 0) return '#2A8A4E'
+  if (cat === 'aleas') return '#E8602C'
+  if (cat === 'demande_mo') return '#1B3A5C'
+  return '#B8412C'
 }
 
 function formatTvaPct(tva) {
@@ -76,7 +76,7 @@ function formatTvaPct(tva) {
 // ─── Styles partagés ──────────────────────────────────────────────────────────
 
 const INPUT = {
-  height: 38, padding: '0 12px', fontSize: 13, color: '#1a1a1a',
+  height: 38, padding: '0 12px', fontSize: 13, color: '#1F1B17',
   border: '0.5px solid rgba(0,0,0,0.15)', borderRadius: 8,
   backgroundColor: '#FAFAF9', outline: 'none', boxSizing: 'border-box', width: '100%',
 }
@@ -109,7 +109,7 @@ function Cel({ flex, right, bold, color, muted, children, indent, clip }) {
       textAlign: right ? 'right' : 'left',
       fontWeight: bold ? 500 : 400,
       fontSize: 12,
-      color: color ?? (muted ? 'var(--jga-beige)' : '#1a1a1a'),
+      color: color ?? (muted ? 'var(--jga-beige)' : '#1F1B17'),
       paddingLeft: indent ? 18 : 0,
       overflow: clip ? 'hidden' : 'visible',
       textOverflow: clip ? 'ellipsis' : 'clip',
@@ -151,7 +151,7 @@ function LigneModal({ lots, editingLigne, defaultLotId, onSave, onClose, tva }) 
       <div style={{ backgroundColor: 'white', borderRadius: 16, padding: 28, width: '100%', maxWidth: 500, maxHeight: '90vh', overflowY: 'auto' }}>
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-          <h2 style={{ fontSize: 15, fontWeight: 500, color: '#1a1a1a' }}>
+          <h2 style={{ fontSize: 15, fontWeight: 500, color: '#1F1B17' }}>
             {editingLigne ? 'Modifier la ligne' : 'Nouvelle ligne'}
           </h2>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--jga-beige)' }}>
@@ -184,7 +184,7 @@ function LigneModal({ lots, editingLigne, defaultLotId, onSave, onClose, tva }) 
                     border: `1.5px solid ${categorie === key ? cfg.color : 'rgba(0,0,0,0.1)'}`,
                     backgroundColor: categorie === key ? cfg.bg : 'transparent',
                     fontSize: 11, fontWeight: 500,
-                    color: categorie === key ? cfg.color : '#6b7280',
+                    color: categorie === key ? cfg.color : '#5E5854',
                     textAlign: 'center',
                   }}
                 >
@@ -219,8 +219,8 @@ function LigneModal({ lots, editingLigne, defaultLotId, onSave, onClose, tva }) 
                     width: 38, height: 38, flexShrink: 0,
                     border: '0.5px solid rgba(0,0,0,0.15)', borderRadius: '8px 0 0 8px',
                     borderRight: 'none',
-                    backgroundColor: isNegative ? '#EAF3DE' : '#FAF0EB',
-                    color: isNegative ? '#639922' : '#DC2626',
+                    backgroundColor: isNegative ? 'rgba(42,138,78,0.12)' : 'rgba(232,96,44,0.10)',
+                    color: isNegative ? '#2A8A4E' : '#B8412C',
                     fontSize: 18, fontWeight: 500, cursor: 'pointer',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                   }}
@@ -271,13 +271,13 @@ function LigneModal({ lots, editingLigne, defaultLotId, onSave, onClose, tva }) 
         </div>
 
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 20 }}>
-          <button onClick={onClose} style={{ padding: '8px 14px', borderRadius: 8, border: '0.5px solid rgba(0,0,0,0.15)', background: 'none', fontSize: 12, cursor: 'pointer', color: '#6b7280' }}>
+          <button onClick={onClose} style={{ padding: '8px 14px', borderRadius: 8, border: '0.5px solid rgba(0,0,0,0.15)', background: 'none', fontSize: 12, cursor: 'pointer', color: '#5E5854' }}>
             Annuler
           </button>
           <button
             onClick={handleSubmit}
             disabled={!canSave || saving}
-            style={{ padding: '8px 16px', borderRadius: 8, border: 'none', backgroundColor: '#639922', color: 'white', fontSize: 12, fontWeight: 500, cursor: 'pointer', opacity: !canSave || saving ? 0.5 : 1 }}
+            style={{ padding: '8px 16px', borderRadius: 8, border: 'none', backgroundColor: '#2A8A4E', color: 'white', fontSize: 12, fontWeight: 500, cursor: 'pointer', opacity: !canSave || saving ? 0.5 : 1 }}
           >
             {saving ? 'Enregistrement…' : 'Enregistrer'}
           </button>
@@ -291,12 +291,12 @@ function LigneModal({ lots, editingLigne, defaultLotId, onSave, onClose, tva }) 
 
 function StatCard({ label, valueEl, sub, subColor, alertBg }) {
   return (
-    <div style={{ flex: 1, backgroundColor: alertBg ?? '#F5F2F0', borderRadius: 10, padding: '12px 14px', minWidth: 0 }}>
-      <p style={{ fontSize: 10, fontWeight: 500, color: '#9B8F85', letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 4 }}>
+    <div style={{ flex: 1, backgroundColor: alertBg ?? '#FAF7F2', borderRadius: 10, padding: '12px 14px', minWidth: 0 }}>
+      <p style={{ fontSize: 10, fontWeight: 500, color: '#9C9591', letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 4 }}>
         {label}
       </p>
       {valueEl}
-      {sub && <p style={{ fontSize: 11, color: subColor ?? '#9B8F85', marginTop: 2 }}>{sub}</p>}
+      {sub && <p style={{ fontSize: 11, color: subColor ?? '#9C9591', marginTop: 2 }}>{sub}</p>}
     </div>
   )
 }
@@ -311,12 +311,12 @@ function Bandeau({ totaux, affaire }) {
       <div style={{ display: 'flex', gap: 8 }}>
         <StatCard
           label="Marchés base"
-          valueEl={<p style={{ fontSize: 17, fontWeight: 500, color: '#1a1a1a' }}>{euro(marches_base_ht) ?? '—'} HT</p>}
+          valueEl={<p style={{ fontSize: 17, fontWeight: 500, color: '#1F1B17' }}>{euro(marches_base_ht) ?? '—'} HT</p>}
         />
         <StatCard
           label="Aléas chantier"
           alertBg={aleaAlert ? '#FEF3C7' : undefined}
-          valueEl={<p style={{ fontSize: 17, fontWeight: 500, color: aleaAlert ? '#92400E' : '#E05A1E' }}>{total_aleas_ht ? `+${euro(total_aleas_ht)} HT` : '—'}</p>}
+          valueEl={<p style={{ fontSize: 17, fontWeight: 500, color: aleaAlert ? '#92400E' : '#E8602C' }}>{total_aleas_ht ? `+${euro(total_aleas_ht)} HT` : '—'}</p>}
           sub={marches_base_ht > 0 ? `${alea_budget_pct.toFixed(1)} % / ${seuilPct} % contractuels` : null}
           subColor={aleaAlert ? '#92400E' : undefined}
         />
@@ -326,14 +326,14 @@ function Bandeau({ totaux, affaire }) {
         />
         <StatCard
           label="Demandes MO"
-          valueEl={<p style={{ fontSize: 17, fontWeight: 500, color: '#2563EB' }}>{total_mo_ht ? (total_mo_ht > 0 ? '+' : '') + euro(total_mo_ht) + ' HT' : '—'}</p>}
+          valueEl={<p style={{ fontSize: 17, fontWeight: 500, color: '#1B3A5C' }}>{total_mo_ht ? (total_mo_ht > 0 ? '+' : '') + euro(total_mo_ht) + ' HT' : '—'}</p>}
         />
         <StatCard
           label="Total chantier"
           valueEl={
             <>
               <p style={{ fontSize: 17, fontWeight: 500, color: colorDelta(delta_pct) }}>{euro(total_general_ht) ?? '—'} HT</p>
-              <p style={{ fontSize: 12, color: '#9B8F85', marginTop: 1 }}>{euro(total_general_ttc)} TTC</p>
+              <p style={{ fontSize: 12, color: '#9C9591', marginTop: 1 }}>{euro(total_general_ttc)} TTC</p>
             </>
           }
           sub={marches_base_ht > 0 ? pct(delta_pct) : null}
@@ -346,7 +346,7 @@ function Bandeau({ totaux, affaire }) {
 
 // ─── Table header ─────────────────────────────────────────────────────────────
 
-const TH = { fontSize: 10, fontWeight: 500, color: '#9B8F85', letterSpacing: '0.06em', textTransform: 'uppercase' }
+const TH = { fontSize: 10, fontWeight: 500, color: '#9C9591', letterSpacing: '0.06em', textTransform: 'uppercase' }
 
 function TableHeader({ tva }) {
   return (
@@ -408,28 +408,28 @@ function LigneRow({ ligne, filter, onEdit, onDelete, onOpenFtm }) {
               width: 20, height: 20,
               borderRadius: 5,
               border: '0.5px solid rgba(0,0,0,0.12)',
-              background: '#FAF0EB',
-              color: '#E05A1E',
+              background: 'rgba(232,96,44,0.10)',
+              color: '#E8602C',
               cursor: 'pointer',
               flexShrink: 0,
               padding: 0,
               transition: 'all 0.15s',
             }}
             onMouseEnter={e => {
-              e.currentTarget.style.background = '#E05A1E'
+              e.currentTarget.style.background = '#E8602C'
               e.currentTarget.style.color = '#fff'
-              e.currentTarget.style.borderColor = '#E05A1E'
+              e.currentTarget.style.borderColor = '#E8602C'
             }}
             onMouseLeave={e => {
-              e.currentTarget.style.background = '#FAF0EB'
-              e.currentTarget.style.color = '#E05A1E'
+              e.currentTarget.style.background = 'rgba(232,96,44,0.10)'
+              e.currentTarget.style.color = '#E8602C'
               e.currentTarget.style.borderColor = 'rgba(0,0,0,0.12)'
             }}
           >
             <FilePen size={11} />
           </button>
         )}
-        <span style={{ fontSize: 12, color: '#1a1a1a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <span style={{ fontSize: 12, color: '#1F1B17', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {ligne.intitule}
         </span>
         <span style={{ fontSize: 10, fontWeight: 500, backgroundColor: st.bg, color: st.color, borderRadius: 20, padding: '1px 7px', whiteSpace: 'nowrap', flexShrink: 0 }}>
@@ -447,7 +447,7 @@ function LigneRow({ ligne, filter, onEdit, onDelete, onOpenFtm }) {
         <button onClick={() => onEdit(ligne)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--jga-beige)', padding: 2, borderRadius: 4 }}>
           <Pencil size={12} />
         </button>
-        <button onClick={() => onDelete(ligne.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#DC2626', padding: 2, borderRadius: 4 }}>
+        <button onClick={() => onDelete(ligne.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#B8412C', padding: 2, borderRadius: 4 }}>
           <Trash2 size={12} />
         </button>
       </div>
@@ -463,12 +463,12 @@ function LotSection({ lot, filter, onAdd, onEdit, onDelete, onOpenFtm, affaireId
         padding: '10px 14px', backgroundColor: 'white',
         marginBottom: 6, borderRadius: 6, opacity: 0.7,
       }}>
-        <span style={{ flex: 1, fontSize: 12, color: '#9B8F85', fontStyle: 'italic' }}>
+        <span style={{ flex: 1, fontSize: 12, color: '#9C9591', fontStyle: 'italic' }}>
           Lot {lot.numero} — {lot.nom}
         </span>
         <button
           onClick={() => navigate(`/affaires/${affaireId}/lots-entreprises`)}
-          style={{ fontSize: 11, color: '#639922', background: 'none', border: 'none', cursor: 'pointer', whiteSpace: 'nowrap' }}
+          style={{ fontSize: 11, color: '#2A8A4E', background: 'none', border: 'none', cursor: 'pointer', whiteSpace: 'nowrap' }}
         >
           Marché non renseigné — configurer dans Entreprises &amp; Lots →
         </button>
@@ -495,7 +495,7 @@ function LotSection({ lot, filter, onAdd, onEdit, onDelete, onOpenFtm, affaireId
         <div style={{ flex: C.act, display: 'flex', justifyContent: 'flex-end' }}>
           <button
             onClick={() => onAdd(lot.id)}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#639922', padding: 2, borderRadius: 4 }}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#2A8A4E', padding: 2, borderRadius: 4 }}
             title="Ajouter une ligne"
           >
             <Plus size={14} />
@@ -510,19 +510,19 @@ function LotSection({ lot, filter, onAdd, onEdit, onDelete, onOpenFtm, affaireId
 
       {/* Sous-total */}
       {hasVisibleLines && (
-        <Row bg="#EAF3DE" border>
-          <Cel flex={C.des} indent color="#3B6D11" bold>Sous-total Lot {lot.numero}</Cel>
+        <Row bg="rgba(42,138,78,0.12)" border>
+          <Cel flex={C.des} indent color="#2A8A4E" bold>Sous-total Lot {lot.numero}</Cel>
           <Cel flex={C.ent} />
-          <Cel flex={C.ale} right bold color={lot.total_aleas_ht ? '#E05A1E' : 'var(--jga-beige)'}>
+          <Cel flex={C.ale} right bold color={lot.total_aleas_ht ? '#E8602C' : 'var(--jga-beige)'}>
             {lot.total_aleas_ht ? `+${euro(lot.total_aleas_ht)}` : '—'}
           </Cel>
           <Cel flex={C.ada} right bold color={montantColor(lot.total_adaptation_ht, 'adaptation_moe')}>
             {lot.total_adaptation_ht ? (lot.total_adaptation_ht > 0 ? '+' : '') + euro(lot.total_adaptation_ht) : '—'}
           </Cel>
-          <Cel flex={C.mo} right bold color="#2563EB">
+          <Cel flex={C.mo} right bold color="#1B3A5C">
             {lot.total_mo_ht ? (lot.total_mo_ht > 0 ? '+' : '') + euro(lot.total_mo_ht) : '—'}
           </Cel>
-          <Cel flex={C.ht} right bold color="#639922">{euro(lot.total_lot_ht)}</Cel>
+          <Cel flex={C.ht} right bold color="#2A8A4E">{euro(lot.total_lot_ht)}</Cel>
           <Cel flex={C.pct} right bold color={colorDelta(lot.delta_pct)}>
             {lot.delta_pct ? pct(lot.delta_pct) : '—'}
           </Cel>
@@ -544,15 +544,15 @@ function TotalsRow({ totaux }) {
       backgroundColor: 'white', borderTop: '1.5px solid rgba(0,0,0,0.1)',
       flexShrink: 0,
     }}>
-      <div style={{ flex: C.des, fontSize: 12, fontWeight: 500, color: '#1a1a1a' }}>TOTAL GÉNÉRAL</div>
+      <div style={{ flex: C.des, fontSize: 12, fontWeight: 500, color: '#1F1B17' }}>TOTAL GÉNÉRAL</div>
       <div style={{ flex: C.ent }} />
-      <div style={{ flex: C.ale, textAlign: 'right', fontSize: 13, fontWeight: 500, color: '#E05A1E' }}>
+      <div style={{ flex: C.ale, textAlign: 'right', fontSize: 13, fontWeight: 500, color: '#E8602C' }}>
         {total_aleas_ht ? `+${euro(total_aleas_ht)}` : '—'}
       </div>
       <div style={{ flex: C.ada, textAlign: 'right', fontSize: 13, fontWeight: 500, color: montantColor(total_adaptation_ht, 'adaptation_moe') }}>
         {total_adaptation_ht ? (total_adaptation_ht > 0 ? '+' : '') + euro(total_adaptation_ht) : '—'}
       </div>
-      <div style={{ flex: C.mo, textAlign: 'right', fontSize: 13, fontWeight: 500, color: '#2563EB' }}>
+      <div style={{ flex: C.mo, textAlign: 'right', fontSize: 13, fontWeight: 500, color: '#1B3A5C' }}>
         {total_mo_ht ? (total_mo_ht > 0 ? '+' : '') + euro(total_mo_ht) : '—'}
       </div>
       <div style={{ flex: C.ht, textAlign: 'right', fontSize: 14, fontWeight: 500, color: colorDelta(delta_pct) }}>
@@ -561,7 +561,7 @@ function TotalsRow({ totaux }) {
       <div style={{ flex: C.pct, textAlign: 'right', fontSize: 13, fontWeight: 500, color: colorDelta(delta_pct) }}>
         {marches_base_ht > 0 ? pct(delta_pct) : '—'}
       </div>
-      <div style={{ flex: C.ttc, textAlign: 'right', fontSize: 12, color: '#6b7280' }}>
+      <div style={{ flex: C.ttc, textAlign: 'right', fontSize: 12, color: '#5E5854' }}>
         {euro(total_general_ttc)}
       </div>
       <div style={{ flex: C.act }} />
@@ -653,13 +653,13 @@ export default function FinancierChantierModule() {
         .print-header { display: none; }
       `}</style>
 
-      <div className="financial-module" style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', backgroundColor: '#F5F2F0' }}>
+      <div className="financial-module" style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', backgroundColor: '#FAF7F2' }}>
 
         {/* Print header */}
         <div className="print-header" style={{ padding: '0 0 12px', borderBottom: '1px solid #e5e7eb', marginBottom: 12 }}>
-          <p style={{ fontSize: 11, color: '#9B8F85' }}>{affaire?.code_affaire}</p>
+          <p style={{ fontSize: 11, color: '#9C9591' }}>{affaire?.code_affaire}</p>
           <h1 style={{ fontSize: 16, fontWeight: 500 }}>Tableau des plus et moins-values — {affaire?.nom}</h1>
-          <p style={{ fontSize: 11, color: '#9B8F85' }}>MO : {affaire?.moa_nom} · Exporté le {new Date().toLocaleDateString('fr-FR')}</p>
+          <p style={{ fontSize: 11, color: '#9C9591' }}>MO : {affaire?.moa_nom} · Exporté le {new Date().toLocaleDateString('fr-FR')}</p>
         </div>
 
         {/* Bandeau totaux */}
@@ -670,12 +670,12 @@ export default function FinancierChantierModule() {
           backgroundColor: 'white', borderBottom: '0.5px solid rgba(0,0,0,0.08)',
           padding: '8px 20px', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0,
         }}>
-          <span style={{ fontSize: 11, color: '#9B8F85' }}>Paramètres de l'affaire :</span>
-          <span style={{ fontSize: 11, color: '#9B8F85' }}>TVA applicable :</span>
-          <span style={{ fontSize: 11, fontWeight: 500, color: '#1a1a1a' }}>{formatTvaPct(tva)}</span>
+          <span style={{ fontSize: 11, color: '#9C9591' }}>Paramètres de l'affaire :</span>
+          <span style={{ fontSize: 11, color: '#9C9591' }}>TVA applicable :</span>
+          <span style={{ fontSize: 11, fontWeight: 500, color: '#1F1B17' }}>{formatTvaPct(tva)}</span>
           <span style={{ fontSize: 11, color: 'rgba(0,0,0,0.2)', margin: '0 4px' }}>·</span>
-          <span style={{ fontSize: 11, color: '#9B8F85' }}>Seuil aléas contractuels :</span>
-          <span style={{ fontSize: 11, fontWeight: 500, color: '#1a1a1a' }}>{seuilPct} %</span>
+          <span style={{ fontSize: 11, color: '#9C9591' }}>Seuil aléas contractuels :</span>
+          <span style={{ fontSize: 11, fontWeight: 500, color: '#1F1B17' }}>{seuilPct} %</span>
           <div style={{ flex: 1 }} />
           <button
             onClick={() => setEditAffaireOpen(true)}
@@ -702,7 +702,7 @@ export default function FinancierChantierModule() {
         {/* Barre d'actions + filtres */}
         <div className="no-print" style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '10px 20px', backgroundColor: '#F5F2F0', flexShrink: 0, gap: 12,
+          padding: '10px 20px', backgroundColor: '#FAF7F2', flexShrink: 0, gap: 12,
         }}>
           {/* Filtres */}
           <div style={{ display: 'flex', gap: 4 }}>
@@ -712,9 +712,9 @@ export default function FinancierChantierModule() {
                 onClick={() => setFilter(f.id)}
                 style={{
                   padding: '5px 12px', borderRadius: 20, fontSize: 11, fontWeight: 500,
-                  border: filter === f.id ? '1.5px solid #639922' : '0.5px solid rgba(0,0,0,0.12)',
-                  backgroundColor: filter === f.id ? '#EAF3DE' : 'white',
-                  color: filter === f.id ? '#3B6D11' : '#6b7280',
+                  border: filter === f.id ? '1.5px solid #2A8A4E' : '0.5px solid rgba(0,0,0,0.12)',
+                  backgroundColor: filter === f.id ? 'rgba(42,138,78,0.12)' : 'white',
+                  color: filter === f.id ? '#2A8A4E' : '#5E5854',
                   cursor: 'pointer',
                 }}
               >
@@ -731,7 +731,7 @@ export default function FinancierChantierModule() {
                 display: 'flex', alignItems: 'center', gap: 5,
                 padding: '6px 12px', borderRadius: 7,
                 border: '0.5px solid rgba(0,0,0,0.12)', backgroundColor: 'white',
-                color: '#6b7280', fontSize: 12, cursor: 'pointer',
+                color: '#5E5854', fontSize: 12, cursor: 'pointer',
               }}
             >
               <Printer size={13} /> Exporter
@@ -741,7 +741,7 @@ export default function FinancierChantierModule() {
               style={{
                 display: 'flex', alignItems: 'center', gap: 5,
                 padding: '6px 14px', borderRadius: 7,
-                border: 'none', backgroundColor: '#639922',
+                border: 'none', backgroundColor: '#2A8A4E',
                 color: 'white', fontSize: 12, fontWeight: 500, cursor: 'pointer',
               }}
             >
@@ -755,7 +755,7 @@ export default function FinancierChantierModule() {
           <TableHeader tva={tva} />
           <div style={{ flex: 1, overflowY: 'auto', padding: '12px 6px' }}>
             {lots.length === 0 ? (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 200, color: '#9B8F85' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 200, color: '#9C9591' }}>
                 <TrendingUp size={36} style={{ marginBottom: 10, opacity: 0.3 }} />
                 <p style={{ fontSize: 13 }}>Aucun lot — configurez d'abord les lots dans Entreprises &amp; Lots</p>
               </div>

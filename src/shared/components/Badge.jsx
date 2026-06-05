@@ -1,11 +1,11 @@
 const PHASE_CONFIG = {
-  esq:      { label: 'Étude · ESQ', color: '#993C1D', bg: '#FAF0EB' },
-  avp:      { label: 'Étude · AVP', color: '#993C1D', bg: '#FAF0EB' },
-  pro:      { label: 'Étude · PRO', color: '#993C1D', bg: '#FAF0EB' },
-  dce:      { label: 'Étude · DCE', color: '#993C1D', bg: '#FAF0EB' },
-  pc:       { label: 'Étude · PC',  color: '#993C1D', bg: '#FAF0EB' },
-  chantier: { label: 'Chantier',    color: '#3B6D11', bg: '#EAF3DE' },
-  livree:   { label: 'Livrée',      color: '#5F5E5A', bg: '#F1EFE8' },
+  esq:      { label: 'Étude · ESQ', color: '#C44A1B', bg: 'rgba(248,184,154,0.18)' },
+  avp:      { label: 'Étude · AVP', color: '#C44A1B', bg: 'rgba(248,184,154,0.18)' },
+  pro:      { label: 'Étude · PRO', color: '#C44A1B', bg: 'rgba(248,184,154,0.18)' },
+  dce:      { label: 'Étude · DCE', color: '#C44A1B', bg: 'rgba(248,184,154,0.18)' },
+  pc:       { label: 'Étude · PC',  color: '#C44A1B', bg: 'rgba(248,184,154,0.18)' },
+  chantier: { label: 'Chantier',    color: '#2A8A4E', bg: 'rgba(42,138,78,0.12)' },
+  livree:   { label: 'Livrée',      color: '#5E5854', bg: '#E9E2D6' },
 }
 
 export function PhaseBadge({ phase }) {
@@ -30,10 +30,10 @@ export function PhaseBadge({ phase }) {
 
 export function StatusBadge({ statut }) {
   const config = {
-    ouverte:  { label: 'Ouverte',   color: '#DC2626', bg: '#FEE2E2' },
+    ouverte:  { label: 'Ouverte',   color: '#B8412C', bg: 'rgba(184,65,44,0.10)' },
     en_cours: { label: 'En cours',  color: '#D97706', bg: '#FEF3C7' },
-    levee:    { label: 'Levée',     color: '#059669', bg: '#D1FAE5' },
-  }[statut] ?? { label: statut, color: '#6B7280', bg: '#F3F4F6' }
+    levee:    { label: 'Levée',     color: '#2A8A4E', bg: 'rgba(42,138,78,0.12)' },
+  }[statut] ?? { label: statut, color: '#5E5854', bg: '#F3F4F6' }
 
   return (
     <span

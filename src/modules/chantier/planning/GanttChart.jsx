@@ -52,7 +52,7 @@ function propagateDependencies(allTasks, changedTaskId, newDebut, newDuree) {
 
 // ──────────────────────────────────────────────────────────────────────────────
 
-export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '' }) {
+export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', affaire = {} }) {
   const [tasks, setTasks] = useState([])
   const [lots, setLots] = useState([])
   const [dayWidth, setDayWidth] = useState(40)
@@ -110,7 +110,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '' })
     setLots((resLots ?? []).map((l) => ({
       ...l,
       num_lot: String(l.numero ?? '').padStart(2, '0'),
-      couleur: l.couleur ?? '#E05A1E',
+      couleur: l.couleur ?? '#E8602C',
     })))
 
     if (resTaches) {
@@ -255,57 +255,6 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '' })
     await fetchAllData()
   }
 
-  // ── Export PDF ────────────────────────────────────────────────────────────────
-  const handleRequestPrint = useCallback((config) => {
-    setShowExportModal(false)
-
-    const win = window.open('', '_blank')
-    if (!win) {
-      alert('Autorisez les pop-ups pour exporter en PDF.')
-      return
-    }
-
-    const styles = Array.from(document.styleSheets)
-      .map((ss) => {
-        try {
-          return Array.from(ss.cssRules).map((r) => r.cssText).join('\n')
-        } catch { return '' }
-      })
-      .join('\n')
-
-    const ganttEl = document.getElementById('gantt-print-root')
-    const ganttHtml = ganttEl ? ganttEl.outerHTML : '<p>Gantt non trouvé</p>'
-    const orientation = config.orientation === 'paysage' ? 'landscape' : 'portrait'
-
-    win.document.write(`<!DOCTYPE html>
-<html lang="fr">
-<head>
-  <meta charset="UTF-8"/>
-  <title>Planning – ${affaireTitre}</title>
-  <style>
-    @page { size: A3 ${orientation}; margin: 10mm 8mm; }
-    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; box-sizing: border-box; }
-    body { margin: 0; font-family: sans-serif; background: white; color: black; }
-    ${styles}
-    [data-print="hidden"], [data-handle], [data-editbtn], [data-connection-point] { display: none !important; }
-    .sticky { position: static !important; }
-    .overflow-auto, .overflow-hidden, .overflow-y-auto { overflow: visible !important; }
-    h2.print-title { font-size: 14pt; font-weight: 800; margin: 0 0 4mm; padding-bottom: 2mm; border-bottom: 2px solid #e4702a; }
-    p.print-subtitle { font-size: 9pt; color: #666; margin: 0 0 6mm; }
-  </style>
-</head>
-<body>
-  <h2 class="print-title">${affaireTitre}</h2>
-  <p class="print-subtitle">${affaireNumero} · Généré le ${new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })}</p>
-  ${ganttHtml}
-  <script>
-    window.onload = () => { window.print(); window.close(); }
-  </script>
-</body>
-</html>`)
-    win.document.close()
-  }, [affaireTitre, affaireNumero])
-
   // ── Zoom ──────────────────────────────────────────────────────────────────────
   const handleZoomIn = () => setDayWidth((w) => Math.min(100, w + 5))
   const handleZoomOut = () => setDayWidth((w) => Math.max(15, w - 5))
@@ -321,10 +270,10 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '' })
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
           <div style={{
             width: 32, height: 32, borderRadius: '50%',
-            border: '2px solid #E05A1E', borderTopColor: 'transparent',
+            border: '2px solid #E8602C', borderTopColor: 'transparent',
             animation: 'spin 0.7s linear infinite',
           }} />
-          <span style={{ fontSize: 13, color: '#9B8F85' }}>Chargement du planning…</span>
+          <span style={{ fontSize: 13, color: '#9C9591' }}>Chargement du planning…</span>
         </div>
       </div>
     )
@@ -337,9 +286,9 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '' })
         alignItems: 'center', justifyContent: 'center',
       }}>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, maxWidth: 360, textAlign: 'center' }}>
-          <p style={{ fontWeight: 500, color: '#DC2626' }}>Erreur de chargement</p>
-          <p style={{ fontSize: 13, color: '#9B8F85' }}>{error}</p>
-          <button onClick={fetchAllData} style={{ fontSize: 13, color: '#E05A1E', textDecoration: 'underline', background: 'none', border: 'none', cursor: 'pointer' }}>
+          <p style={{ fontWeight: 500, color: '#B8412C' }}>Erreur de chargement</p>
+          <p style={{ fontSize: 13, color: '#9C9591' }}>{error}</p>
+          <button onClick={fetchAllData} style={{ fontSize: 13, color: '#E8602C', textDecoration: 'underline', background: 'none', border: 'none', cursor: 'pointer' }}>
             Réessayer
           </button>
         </div>
@@ -443,9 +392,8 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '' })
         onClose={() => setShowExportModal(false)}
         lots={lots}
         tasks={tasks}
-        affaireNumero={affaireNumero}
-        affaireTitre={affaireTitre}
-        onPrint={handleRequestPrint}
+        jalons={jalons}
+        affaire={affaire}
       />
 
       <JalonModal

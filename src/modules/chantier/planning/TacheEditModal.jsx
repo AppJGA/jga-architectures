@@ -4,12 +4,12 @@ import { parseDate, formatDateISO, computeLag } from './types'
 
 const LABEL = {
   display: 'block', fontSize: 10, fontWeight: 700, textTransform: 'uppercase',
-  letterSpacing: '0.06em', color: '#9B8F85', marginBottom: 4,
+  letterSpacing: '0.06em', color: '#9C9591', marginBottom: 4,
 }
 const INPUT = {
   width: '100%', height: 36, padding: '0 10px', borderRadius: 8, fontSize: 13,
   border: '0.5px solid rgba(0,0,0,0.12)', backgroundColor: '#FAFAF9', outline: 'none',
-  boxSizing: 'border-box', color: '#1a1a1a',
+  boxSizing: 'border-box', color: '#1F1B17',
 }
 const BTN = {
   display: 'inline-flex', alignItems: 'center', gap: 6,
@@ -17,10 +17,10 @@ const BTN = {
   border: '0.5px solid rgba(0,0,0,0.15)', backgroundColor: 'white', color: '#374151',
 }
 const BTN_PRIMARY = {
-  ...BTN, backgroundColor: '#639922', color: 'white', border: 'none', fontWeight: 500,
+  ...BTN, backgroundColor: '#2A8A4E', color: 'white', border: 'none', fontWeight: 500,
 }
 const BTN_DANGER = {
-  ...BTN, color: '#DC2626', borderColor: 'rgba(220,38,38,0.3)',
+  ...BTN, color: '#B8412C', borderColor: 'rgba(220,38,38,0.3)',
 }
 
 function emptyForm(lots) {
@@ -119,14 +119,14 @@ export function TacheEditModal({ open, onClose, task, tasks, lots, onSave, onDel
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
           <div>
-            <h2 style={{ fontSize: 15, fontWeight: 500, color: '#1a1a1a' }}>
+            <h2 style={{ fontSize: 15, fontWeight: 500, color: '#1F1B17' }}>
               {mode === 'edit' ? 'Modifier la tâche' : 'Nouvelle tâche'}
             </h2>
-            <p style={{ fontSize: 11, color: '#9B8F85', marginTop: 2 }}>
+            <p style={{ fontSize: 11, color: '#9C9591', marginTop: 2 }}>
               Les durées sont calculées en jours ouvrés (lun.–ven.).
             </p>
           </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9B8F85' }}>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9C9591' }}>
             <X size={18} />
           </button>
         </div>
@@ -139,7 +139,7 @@ export function TacheEditModal({ open, onClose, task, tasks, lots, onSave, onDel
               <input
                 value={form.num_tache ?? ''} onChange={(e) => set('num_tache', e.target.value)}
                 placeholder="01" required style={INPUT}
-                onFocus={e => { e.target.style.borderColor = '#E05A1E'; e.target.style.boxShadow = '0 0 0 3px rgba(224,90,30,0.08)' }}
+                onFocus={e => { e.target.style.borderColor = '#E8602C'; e.target.style.boxShadow = '0 0 0 3px rgba(232,96,44,0.12)' }}
                 onBlur={e => { e.target.style.borderColor = 'rgba(0,0,0,0.12)'; e.target.style.boxShadow = 'none' }}
               />
             </div>
@@ -148,7 +148,7 @@ export function TacheEditModal({ open, onClose, task, tasks, lots, onSave, onDel
               <input
                 value={form.nom ?? ''} onChange={(e) => set('nom', e.target.value)}
                 placeholder="Terrassement général" required style={INPUT}
-                onFocus={e => { e.target.style.borderColor = '#E05A1E'; e.target.style.boxShadow = '0 0 0 3px rgba(224,90,30,0.08)' }}
+                onFocus={e => { e.target.style.borderColor = '#E8602C'; e.target.style.boxShadow = '0 0 0 3px rgba(232,96,44,0.12)' }}
                 onBlur={e => { e.target.style.borderColor = 'rgba(0,0,0,0.12)'; e.target.style.boxShadow = 'none' }}
               />
             </div>
@@ -160,7 +160,7 @@ export function TacheEditModal({ open, onClose, task, tasks, lots, onSave, onDel
               <label style={LABEL}>Date de début</label>
               <input type="date" value={form.debut ?? ''} onChange={(e) => set('debut', e.target.value)}
                 required style={INPUT}
-                onFocus={e => { e.target.style.borderColor = '#E05A1E'; e.target.style.boxShadow = '0 0 0 3px rgba(224,90,30,0.08)' }}
+                onFocus={e => { e.target.style.borderColor = '#E8602C'; e.target.style.boxShadow = '0 0 0 3px rgba(232,96,44,0.12)' }}
                 onBlur={e => { e.target.style.borderColor = 'rgba(0,0,0,0.12)'; e.target.style.boxShadow = 'none' }}
               />
             </div>
@@ -169,7 +169,7 @@ export function TacheEditModal({ open, onClose, task, tasks, lots, onSave, onDel
               <input type="number" min={1} value={form.duree ?? 1}
                 onChange={(e) => set('duree', Math.max(1, Number(e.target.value)))}
                 required style={INPUT}
-                onFocus={e => { e.target.style.borderColor = '#E05A1E'; e.target.style.boxShadow = '0 0 0 3px rgba(224,90,30,0.08)' }}
+                onFocus={e => { e.target.style.borderColor = '#E8602C'; e.target.style.boxShadow = '0 0 0 3px rgba(232,96,44,0.12)' }}
                 onBlur={e => { e.target.style.borderColor = 'rgba(0,0,0,0.12)'; e.target.style.boxShadow = 'none' }}
               />
             </div>
@@ -182,7 +182,7 @@ export function TacheEditModal({ open, onClose, task, tasks, lots, onSave, onDel
               value={form.lot_id != null ? String(form.lot_id) : 'none'}
               onChange={(e) => set('lot_id', e.target.value === 'none' ? null : e.target.value)}
               style={{ ...INPUT, cursor: 'pointer' }}
-              onFocus={e => { e.target.style.borderColor = '#E05A1E'; e.target.style.boxShadow = '0 0 0 3px rgba(224,90,30,0.08)' }}
+              onFocus={e => { e.target.style.borderColor = '#E8602C'; e.target.style.boxShadow = '0 0 0 3px rgba(232,96,44,0.12)' }}
               onBlur={e => { e.target.style.borderColor = 'rgba(0,0,0,0.12)'; e.target.style.boxShadow = 'none' }}
             >
               <option value="none">Sans lot</option>
@@ -201,7 +201,7 @@ export function TacheEditModal({ open, onClose, task, tasks, lots, onSave, onDel
               value={form.depends_on != null ? String(form.depends_on) : 'none'}
               onChange={(e) => handleDependencyChange(e.target.value)}
               style={{ ...INPUT, cursor: 'pointer' }}
-              onFocus={e => { e.target.style.borderColor = '#E05A1E'; e.target.style.boxShadow = '0 0 0 3px rgba(224,90,30,0.08)' }}
+              onFocus={e => { e.target.style.borderColor = '#E8602C'; e.target.style.boxShadow = '0 0 0 3px rgba(232,96,44,0.12)' }}
               onBlur={e => { e.target.style.borderColor = 'rgba(0,0,0,0.12)'; e.target.style.boxShadow = 'none' }}
             >
               <option value="none">Aucune dépendance</option>
@@ -222,10 +222,10 @@ export function TacheEditModal({ open, onClose, task, tasks, lots, onSave, onDel
                   type="number" min={-30} value={form.lag_days ?? 0}
                   onChange={(e) => set('lag_days', Number(e.target.value))}
                   style={{ ...INPUT, width: 96, fontVariantNumeric: 'tabular-nums' }}
-                  onFocus={e => { e.target.style.borderColor = '#E05A1E'; e.target.style.boxShadow = '0 0 0 3px rgba(224,90,30,0.08)' }}
+                  onFocus={e => { e.target.style.borderColor = '#E8602C'; e.target.style.boxShadow = '0 0 0 3px rgba(232,96,44,0.12)' }}
                   onBlur={e => { e.target.style.borderColor = 'rgba(0,0,0,0.12)'; e.target.style.boxShadow = 'none' }}
                 />
-                <span style={{ fontSize: 11, color: '#9B8F85' }}>
+                <span style={{ fontSize: 11, color: '#9C9591' }}>
                   {(form.lag_days ?? 0) === 0 && 'Collée (commence le jour même de la fin)'}
                   {(form.lag_days ?? 0) === 1 && 'Collée (commence le lendemain ouvré)'}
                   {(form.lag_days ?? 0) > 1 && `${(form.lag_days ?? 0) - 1} jour(s) de battement`}
@@ -242,13 +242,13 @@ export function TacheEditModal({ open, onClose, task, tasks, lots, onSave, onDel
               <input
                 type="range" min={0} max={100} step={5} value={form.avancement ?? 0}
                 onChange={(e) => set('avancement', Number(e.target.value))}
-                style={{ flex: 1, accentColor: '#639922' }}
+                style={{ flex: 1, accentColor: '#2A8A4E' }}
               />
               <input
                 type="number" min={0} max={100} value={form.avancement ?? 0}
                 onChange={(e) => set('avancement', Math.max(0, Math.min(100, Number(e.target.value))))}
                 style={{ ...INPUT, width: 64, textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}
-                onFocus={e => { e.target.style.borderColor = '#E05A1E'; e.target.style.boxShadow = '0 0 0 3px rgba(224,90,30,0.08)' }}
+                onFocus={e => { e.target.style.borderColor = '#E8602C'; e.target.style.boxShadow = '0 0 0 3px rgba(232,96,44,0.12)' }}
                 onBlur={e => { e.target.style.borderColor = 'rgba(0,0,0,0.12)'; e.target.style.boxShadow = 'none' }}
               />
             </div>
@@ -261,9 +261,9 @@ export function TacheEditModal({ open, onClose, task, tasks, lots, onSave, onDel
                 <input
                   type="checkbox" checked={!!form.appro_actif}
                   onChange={(e) => set('appro_actif', e.target.checked)}
-                  style={{ accentColor: '#E05A1E', width: 14, height: 14, cursor: 'pointer' }}
+                  style={{ accentColor: '#E8602C', width: 14, height: 14, cursor: 'pointer' }}
                 />
-                <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#9B8F85' }}>
+                <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#9C9591' }}>
                   Délai d'approvisionnement
                 </span>
               </label>
@@ -276,7 +276,7 @@ export function TacheEditModal({ open, onClose, task, tasks, lots, onSave, onDel
                     type="number" min={1} value={form.appro_duree ?? ''}
                     onChange={(e) => set('appro_duree', e.target.value === '' ? null : Math.max(1, Number(e.target.value)))}
                     placeholder="10" style={INPUT}
-                    onFocus={e => { e.target.style.borderColor = '#E05A1E'; e.target.style.boxShadow = '0 0 0 3px rgba(224,90,30,0.08)' }}
+                    onFocus={e => { e.target.style.borderColor = '#E8602C'; e.target.style.boxShadow = '0 0 0 3px rgba(232,96,44,0.12)' }}
                     onBlur={e => { e.target.style.borderColor = 'rgba(0,0,0,0.12)'; e.target.style.boxShadow = 'none' }}
                   />
                 </div>
@@ -286,7 +286,7 @@ export function TacheEditModal({ open, onClose, task, tasks, lots, onSave, onDel
                     value={form.appro_materiau ?? ''}
                     onChange={(e) => set('appro_materiau', e.target.value || null)}
                     placeholder="Charpente bois lamellé-collé" style={INPUT}
-                    onFocus={e => { e.target.style.borderColor = '#E05A1E'; e.target.style.boxShadow = '0 0 0 3px rgba(224,90,30,0.08)' }}
+                    onFocus={e => { e.target.style.borderColor = '#E8602C'; e.target.style.boxShadow = '0 0 0 3px rgba(232,96,44,0.12)' }}
                     onBlur={e => { e.target.style.borderColor = 'rgba(0,0,0,0.12)'; e.target.style.boxShadow = 'none' }}
                   />
                 </div>

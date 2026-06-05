@@ -1,4 +1,4 @@
-import { ZoomIn, ZoomOut, FileDown, Plus, Flag, GitBranch, CalendarDays } from 'lucide-react'
+import { ZoomIn, ZoomOut, FileDown, Plus, Flag, GitBranch, CalendarDays, RefreshCw } from 'lucide-react'
 
 const BTN = {
   display: 'inline-flex', alignItems: 'center', gap: 6,
@@ -11,12 +11,13 @@ const BTN_ICON = {
   border: '0.5px solid rgba(0,0,0,0.15)', backgroundColor: 'white', color: '#374151',
 }
 const BTN_PRIMARY = {
-  ...BTN, backgroundColor: '#E05A1E', color: 'white', border: 'none', fontWeight: 500,
+  ...BTN, backgroundColor: '#E8602C', color: 'white', border: 'none', fontWeight: 500,
 }
 
 export function GanttEtudeToolbar({
   onZoomIn, onZoomOut, onExportPdf, onAddTask,
   onOpenJalons, onToggleConnections, showConnections, semWidth,
+  notionEnabled, notionConnected, onToggleNotion,
 }) {
   const canZoomOut = semWidth > 16
   const canZoomIn = semWidth < 80
@@ -39,8 +40,8 @@ export function GanttEtudeToolbar({
           display: 'flex', alignItems: 'center', gap: 4, height: 32, padding: '0 8px',
           border: '0.5px solid rgba(0,0,0,0.12)', borderRadius: 8, backgroundColor: '#FAFAF9',
         }}>
-          <CalendarDays size={11} style={{ color: '#9B8F85' }} />
-          <span style={{ fontSize: 11, fontWeight: 500, color: '#9B8F85', minWidth: 36, textAlign: 'center' }}>
+          <CalendarDays size={11} style={{ color: '#9C9591' }} />
+          <span style={{ fontSize: 11, fontWeight: 500, color: '#9C9591', minWidth: 36, textAlign: 'center' }}>
             {semWidth} px/sem
           </span>
         </div>
@@ -54,17 +55,41 @@ export function GanttEtudeToolbar({
 
       {/* Actions */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        {/* Notion sync badge */}
+        {onToggleNotion && (
+          <button
+            onClick={onToggleNotion}
+            title={notionEnabled ? 'Désactiver la sync Notion' : 'Activer la sync Notion'}
+            style={{
+              ...BTN,
+              gap: 6,
+              backgroundColor: notionEnabled ? '#F3F0FF' : 'white',
+              borderColor: notionEnabled ? '#7C3AED' : 'rgba(0,0,0,0.15)',
+              color: notionEnabled ? '#7C3AED' : '#374151',
+            }}
+          >
+            <RefreshCw size={12} />
+            Notion
+            <span style={{
+              width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
+              backgroundColor: notionEnabled
+                ? (notionConnected ? '#22C55E' : '#EF4444')
+                : '#D1D5DB',
+            }} />
+          </button>
+        )}
         <button
-          style={{
-            ...BTN_ICON,
-            backgroundColor: showConnections ? 'rgba(224,90,30,0.08)' : 'white',
-            borderColor: showConnections ? '#E05A1E' : 'rgba(0,0,0,0.15)',
-            color: showConnections ? '#E05A1E' : '#374151',
-          }}
           onClick={onToggleConnections}
-          title={showConnections ? 'Masquer le chemin critique' : 'Afficher le chemin critique'}
+          style={{
+            ...BTN,
+            backgroundColor: showConnections ? 'var(--jga-orange-light)' : 'transparent',
+            borderColor: showConnections ? 'var(--jga-orange-mid)' : 'rgba(0,0,0,0.15)',
+            color: showConnections ? 'var(--jga-orange)' : '#5E5854',
+          }}
+          title={showConnections ? 'Masquer les dépendances' : 'Afficher les dépendances'}
         >
-          <GitBranch size={14} />
+          <GitBranch size={13} />
+          Dépendances
         </button>
         <button style={BTN} onClick={onOpenJalons}>
           <Flag size={13} /> Jalons

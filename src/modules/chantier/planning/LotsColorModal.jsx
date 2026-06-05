@@ -4,12 +4,12 @@ import { Save, X } from 'lucide-react'
 const PRESET_COLORS = [
   '#e47339', '#3b82f6', '#10b981', '#f59e0b',
   '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16',
-  '#f97316', '#639922',
+  '#f97316', '#2A8A4E',
 ]
 
 const LABEL = {
   display: 'block', fontSize: 10, fontWeight: 700, textTransform: 'uppercase',
-  letterSpacing: '0.06em', color: '#9B8F85', marginBottom: 4,
+  letterSpacing: '0.06em', color: '#9C9591', marginBottom: 4,
 }
 const BTN = {
   display: 'inline-flex', alignItems: 'center', gap: 6,
@@ -17,7 +17,7 @@ const BTN = {
   border: '0.5px solid rgba(0,0,0,0.15)', backgroundColor: 'white', color: '#374151',
 }
 const BTN_PRIMARY = {
-  ...BTN, backgroundColor: '#639922', color: 'white', border: 'none', fontWeight: 500,
+  ...BTN, backgroundColor: '#2A8A4E', color: 'white', border: 'none', fontWeight: 500,
 }
 
 export function LotsColorModal({ open, onClose, lots, onSave }) {
@@ -59,20 +59,20 @@ export function LotsColorModal({ open, onClose, lots, onSave }) {
 
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, flexShrink: 0 }}>
-          <h2 style={{ fontSize: 15, fontWeight: 500, color: '#1a1a1a' }}>
+          <h2 style={{ fontSize: 15, fontWeight: 500, color: '#1F1B17' }}>
             Couleurs des lots du planning
           </h2>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9B8F85' }}>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9C9591' }}>
             <X size={18} />
           </button>
         </div>
 
         {/* Info message */}
         <div style={{
-          backgroundColor: '#F5F2F0', borderRadius: 8, padding: '8px 12px',
+          backgroundColor: '#FAF7F2', borderRadius: 8, padding: '8px 12px',
           marginBottom: 16, flexShrink: 0,
         }}>
-          <p style={{ fontSize: 11, color: '#9B8F85' }}>
+          <p style={{ fontSize: 11, color: '#9C9591' }}>
             Les lots sont gérés dans le module <strong>Entreprises & Lots</strong>.
             Vous pouvez personnaliser ici leur couleur d'affichage.
           </p>
@@ -104,7 +104,7 @@ export function LotsColorModal({ open, onClose, lots, onSave }) {
 
                 {/* Lot info (read-only) */}
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{ fontSize: 13, fontWeight: 500, color: '#1a1a1a' }}>
+                  <p style={{ fontSize: 13, fontWeight: 500, color: '#1F1B17' }}>
                     <span style={{ color: couleur, fontWeight: 700 }}>{lot.num_lot}</span>
                     {' '}– {lot.nom}
                   </p>
@@ -116,7 +116,7 @@ export function LotsColorModal({ open, onClose, lots, onSave }) {
                         onClick={() => updateColor(lot.id, c)}
                         style={{
                           width: 16, height: 16, borderRadius: '50%',
-                          backgroundColor: c, border: couleur === c ? '2px solid #1a1a1a' : '2px solid transparent',
+                          backgroundColor: c, border: couleur === c ? '2px solid #1F1B17' : '2px solid transparent',
                           cursor: 'pointer', transition: 'transform 0.1s',
                           transform: couleur === c ? 'scale(1.2)' : 'scale(1)',
                           padding: 0,
@@ -130,7 +130,7 @@ export function LotsColorModal({ open, onClose, lots, onSave }) {
           })}
 
           {lots.length === 0 && (
-            <p style={{ fontSize: 12, color: '#9B8F85', textAlign: 'center', padding: '24px 0' }}>
+            <p style={{ fontSize: 12, color: '#9C9591', textAlign: 'center', padding: '24px 0' }}>
               Aucun lot — configurez d'abord les lots dans Entreprises & Lots
             </p>
           )}

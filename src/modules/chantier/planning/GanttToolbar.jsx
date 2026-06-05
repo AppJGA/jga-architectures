@@ -11,7 +11,7 @@ const BTN_ICON = {
   border: '0.5px solid rgba(0,0,0,0.15)', backgroundColor: 'white', color: '#374151',
 }
 const BTN_PRIMARY = {
-  ...BTN, backgroundColor: '#639922', color: 'white', border: 'none', fontWeight: 500,
+  ...BTN, backgroundColor: '#2A8A4E', color: 'white', border: 'none', fontWeight: 500,
 }
 
 export function GanttToolbar({
@@ -39,8 +39,8 @@ export function GanttToolbar({
           display: 'flex', alignItems: 'center', gap: 4, height: 32, padding: '0 8px',
           border: '0.5px solid rgba(0,0,0,0.12)', borderRadius: 8, backgroundColor: '#FAFAF9',
         }}>
-          <CalendarDays size={11} style={{ color: '#9B8F85' }} />
-          <span style={{ fontSize: 11, fontWeight: 500, color: '#9B8F85', minWidth: 30, textAlign: 'center' }}>
+          <CalendarDays size={11} style={{ color: '#9C9591' }} />
+          <span style={{ fontSize: 11, fontWeight: 500, color: '#9C9591', minWidth: 30, textAlign: 'center' }}>
             {dayWidth} px/j
           </span>
         </div>
@@ -56,15 +56,15 @@ export function GanttToolbar({
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <button
           style={{
-            ...BTN_ICON,
-            backgroundColor: showConnections ? 'rgba(224,90,30,0.08)' : 'white',
-            borderColor: showConnections ? '#E05A1E' : 'rgba(0,0,0,0.15)',
-            color: showConnections ? '#E05A1E' : '#374151',
+            ...BTN,
+            backgroundColor: showConnections ? 'rgba(232,96,44,0.12)' : 'white',
+            borderColor: showConnections ? '#E8602C' : 'rgba(0,0,0,0.15)',
+            color: showConnections ? '#E8602C' : '#5E5854',
           }}
           onClick={onToggleConnections}
-          title={showConnections ? 'Masquer le chemin critique' : 'Afficher le chemin critique'}
         >
           <GitBranch size={14} />
+          Dépendances
         </button>
         <button style={BTN} onClick={onOpenJalons}>
           <Flag size={13} /> Jalons

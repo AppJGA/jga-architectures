@@ -8,12 +8,12 @@ import {
 
 const LABEL = {
   display: 'block', fontSize: 10, fontWeight: 700, textTransform: 'uppercase',
-  letterSpacing: '0.06em', color: '#9B8F85', marginBottom: 4,
+  letterSpacing: '0.06em', color: '#9C9591', marginBottom: 4,
 }
 const INPUT = {
   width: '100%', height: 36, padding: '0 10px', borderRadius: 8, fontSize: 13,
   border: '0.5px solid rgba(0,0,0,0.12)', backgroundColor: '#FAFAF9', outline: 'none',
-  boxSizing: 'border-box', color: '#1a1a1a',
+  boxSizing: 'border-box', color: '#1F1B17',
 }
 
 const TYPES = ['etude', 'validation', 'administratif', 'chantier']
@@ -141,10 +141,10 @@ export function TacheEtudeModal({ open, onClose, tache, taches, onSave, onDelete
       >
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 22 }}>
-          <h2 style={{ fontSize: 15, fontWeight: 500, color: '#1a1a1a', margin: 0 }}>
+          <h2 style={{ fontSize: 15, fontWeight: 500, color: '#1F1B17', margin: 0 }}>
             {mode === 'create' ? 'Nouvelle tâche' : 'Modifier la tâche'}
           </h2>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9B8F85' }}>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9C9591' }}>
             <X size={18} />
           </button>
         </div>
@@ -189,7 +189,7 @@ export function TacheEtudeModal({ open, onClose, tache, taches, onSave, onDelete
                         border: `1.5px solid ${active ? color : 'rgba(0,0,0,0.1)'}`,
                         backgroundColor: active ? color + '18' : 'transparent',
                         fontSize: 11, fontWeight: 500,
-                        color: active ? color : '#6b7280',
+                        color: active ? color : '#5E5854',
                       }}
                     >
                       <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: active ? color : '#d1d5db', margin: '0 auto 4px' }} />
@@ -231,7 +231,7 @@ export function TacheEtudeModal({ open, onClose, tache, taches, onSave, onDelete
                   />
                 </div>
               </div>
-              <p style={{ fontSize: 11, color: '#9B8F85', marginTop: 5 }}>
+              <p style={{ fontSize: 11, color: '#9C9591', marginTop: 5 }}>
                 Début : S{form.semaine_debut} {form.annee_debut} — {debutLabel}
                 {' · '}Fin : S{finWeek.semaine} {finWeek.annee}
               </p>
@@ -253,7 +253,7 @@ export function TacheEtudeModal({ open, onClose, tache, taches, onSave, onDelete
                           padding: '4px 10px', borderRadius: 6, fontSize: 11,
                           border: `1px solid ${active ? color : 'rgba(0,0,0,0.12)'}`,
                           backgroundColor: active ? color + '18' : 'white',
-                          color: active ? color : '#6b7280',
+                          color: active ? color : '#5E5854',
                           cursor: 'pointer', fontWeight: active ? 600 : 400,
                         }}
                       >
@@ -320,7 +320,7 @@ export function TacheEtudeModal({ open, onClose, tache, taches, onSave, onDelete
                       onChange={e => set('lag_semaines', Number(e.target.value))}
                       style={{ ...INPUT, width: 80 }}
                     />
-                    <p style={{ fontSize: 11, color: '#9B8F85', marginTop: 3 }}>
+                    <p style={{ fontSize: 11, color: '#9C9591', marginTop: 3 }}>
                       Semaines de battement après la fin de la tâche parente (0 = collée)
                     </p>
                   </div>
@@ -338,8 +338,8 @@ export function TacheEtudeModal({ open, onClose, tache, taches, onSave, onDelete
                   display: 'inline-flex', alignItems: 'center', gap: 6,
                   padding: '8px 14px', borderRadius: 8, fontSize: 12, cursor: 'pointer',
                   border: `0.5px solid ${confirmDelete ? 'rgba(220,38,38,0.5)' : 'rgba(0,0,0,0.12)'}`,
-                  backgroundColor: confirmDelete ? '#FEF2F2' : 'white',
-                  color: confirmDelete ? '#DC2626' : '#9B8F85',
+                  backgroundColor: confirmDelete ? 'rgba(184,65,44,0.10)' : 'white',
+                  color: confirmDelete ? '#B8412C' : '#9C9591',
                   marginRight: 'auto',
                 }}
               >
@@ -361,7 +361,7 @@ export function TacheEtudeModal({ open, onClose, tache, taches, onSave, onDelete
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 6,
                 padding: '8px 16px', borderRadius: 8, fontSize: 12, fontWeight: 500,
-                border: 'none', backgroundColor: '#639922', color: 'white', cursor: 'pointer',
+                border: 'none', backgroundColor: '#2A8A4E', color: 'white', cursor: 'pointer',
                 opacity: saving || !form.nom.trim() ? 0.6 : 1,
               }}
             >

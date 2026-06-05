@@ -1,14 +1,16 @@
-import { Suspense, useEffect, useState } from 'react'
+import { Suspense, useEffect, useState, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, ClipboardList, ClipboardCheck, Calendar, CalendarRange,
   BarChart2, TrendingUp, CheckSquare, FilePen, Building2, Pencil, FileText, ChevronRight,
-  LayoutDashboard,
+  LayoutDashboard, Eye, ChevronDown,
 } from 'lucide-react'
 import { useAffaire } from '../shared/hooks/useAffaires'
+import { useAffaireCollaborateurs } from '../shared/hooks/useAffaireCollaborateurs'
+import { CollabModal } from './CollabModal'
 import { phases, getAllModules } from '../modules/manifest'
 import { PhaseBadge } from '../shared/components/Badge'
-import { ProgressBar } from '../shared/components/ProgressBar'
+
 import { AffaireFormModal } from '../dashboard/AffaireFormModal'
 import { supabase } from '../core/supabase/client'
 
@@ -25,11 +27,6 @@ const PHASE_BAR_COLORS = {
   chantier: 'var(--jga-green)', livree: 'var(--jga-beige)',
 }
 
-const COLLAB = [
-  { initials: 'MR', bg: 'var(--jga-orange)', color: 'white' },
-  { initials: 'JG', bg: '#C5BEB9', color: 'white' },
-  { initials: 'AL', bg: '#6B7280', color: 'white' },
-]
 
 function formatEuro(v) {
   if (!v) return null
@@ -50,12 +47,14 @@ function useAffaireStats(affaireId) {
     planningTaches: 0, planningAvancement: 0, planningDateFin: null, prochainJalon: null,
     ftmTotal: 0, ftmAccepte: 0, ftmEnAttente: 0, ftmRenonce: 0, ftmMontantAccepte: 0,
     etudeTotal: 0, prochainJalonEtude: null,
+    financierEtudeDernierePhase: null, financierEtudeEnvActuelle: null,
+    crTotal: 0, crEmis: 0, crDernierDate: null, crProchaineReunion: null, remarquesAFaire: 0,
   })
   useEffect(() => {
     if (!affaireId) return
     Promise.all([
-      supabase.from('comptes_rendus').select('id', { count: 'exact', head: true }).eq('affaire_id', affaireId),
-      supabase.from('reserves').select('id', { count: 'exact', head: true }).eq('affaire_id', affaireId).eq('statut', 'ouverte'),
+      supabase.from('comptes_rendus').select('id, statut, date_reunion, date_prochaine_reunion').eq('affaire_id', affaireId).order('numero', { ascending: false }),
+      supabase.from('cr_remarques').select('id').eq('affaire_id', affaireId).ilike('statut', '%faire%').eq('est_clos', false),
       supabase.from('todos').select('id, fait').eq('affaire_id', affaireId),
       supabase.from('lots').select('id', { count: 'exact', head: true }).eq('affaire_id', affaireId),
       supabase.from('lot_entreprises').select('montant_marche_ht').eq('affaire_id', affaireId),
@@ -65,7 +64,8 @@ function useAffaireStats(affaireId) {
       supabase.from('ftm').select('id, decision, montant_travaux_ht').eq('affaire_id', affaireId),
       supabase.from('planning_etude_phases').select('id').eq('affaire_id', affaireId),
       supabase.from('planning_etude_jalons').select('id, label, semaine, annee, couleur').eq('affaire_id', affaireId).order('annee').order('semaine'),
-    ]).then(([cr, res, t, lots, le, lf, pl, ja, fa, ea, ej]) => {
+      supabase.from('suivi_financier_etude').select('phase, enveloppe_ttc').eq('affaire_id', affaireId),
+    ]).then(([crData, remAFaire, t, lots, le, lf, pl, ja, fa, ea, ej, sfe]) => {
       const lotsTotalHt = le.data?.reduce((sum, x) => sum + (x.montant_marche_ht ?? 0), 0) ?? 0
       const activeLignes = lf.data?.filter(l => l.statut !== 'refuse') ?? []
       const financierSupplementsHt = activeLignes.reduce((s, l) => s + (l.montant_ht ?? 0), 0)
@@ -100,6 +100,10 @@ function useAffaireStats(affaireId) {
         .filter(f => f.decision === 'accepte')
         .reduce((sum, f) => sum + (Number(f.montant_travaux_ht) || 0), 0)
 
+      const SFE_ORD = { esq: 1, avp: 2, pro: 3, dce: 4, chantier: 5 }
+      const sortedSfe = (sfe.data ?? []).sort((a, b) => (SFE_ORD[a.phase] ?? 9) - (SFE_ORD[b.phase] ?? 9))
+      const derniereSfe = sortedSfe[sortedSfe.length - 1] ?? null
+
       const etudeTotal = (ea.data ?? []).length
       const { semaine: curSem, annee: curAnn } = (() => {
         const d = new Date(); d.setHours(0, 0, 0, 0)
@@ -112,9 +116,17 @@ function useAffaireStats(affaireId) {
         .filter(j => j.annee > curAnn || (j.annee === curAnn && j.semaine >= curSem))
         .sort((a, b) => a.annee !== b.annee ? a.annee - b.annee : a.semaine - b.semaine)[0] ?? null
 
+      const crRows = crData.data ?? []
+      const crEmis = crRows.filter(c => c.statut === 'emis').length
+
       setStats({
-        comptesRendus: cr.count ?? 0,
-        reserves: res.count ?? 0,
+        comptesRendus: crRows.length,
+        reserves: 0,
+        crTotal: crRows.length,
+        crEmis,
+        crDernierDate: crRows[0]?.date_reunion ?? null,
+        crProchaineReunion: crRows[0]?.date_prochaine_reunion ?? null,
+        remarquesAFaire: (remAFaire.data ?? []).length,
         todos: t.data?.length ?? 0,
         todosDone: t.data?.filter(x => x.fait).length ?? 0,
         lots: lots.count ?? 0,
@@ -135,6 +147,8 @@ function useAffaireStats(affaireId) {
         ftmMontantAccepte,
         etudeTotal,
         prochainJalonEtude,
+        financierEtudeDernierePhase: derniereSfe?.phase ?? null,
+        financierEtudeEnvActuelle: derniereSfe?.enveloppe_ttc ?? null,
       })
     })
   }, [affaireId])
@@ -162,7 +176,7 @@ function ModuleRenderer({ mod }) {
 }
 
 // ─── Header ───────────────────────────────────────────────────────────────────
-function AffaireHeader({ affaire, onEdit }) {
+function AffaireHeader({ affaire, onEdit, collaborateurs, canEdit, collabLoading, isProprietaire, onCollabClick, onSelfAssign }) {
   const navigate = useNavigate()
   const barColor = PHASE_BAR_COLORS[affaire.phase] ?? 'var(--jga-beige)'
 
@@ -187,18 +201,18 @@ function AffaireHeader({ affaire, onEdit }) {
           onMouseEnter={e => e.currentTarget.style.color = 'var(--jga-orange)'}
           onMouseLeave={e => e.currentTarget.style.color = 'var(--jga-beige)'}
         >
-          <ArrowLeft size={13} />
+          <ArrowLeft size={13} strokeWidth={1.25} />
           Tableau de bord
         </button>
 
         <div style={{ width: 1, height: 16, backgroundColor: 'rgba(0,0,0,0.1)', flexShrink: 0 }} />
         <div style={{ width: 3, height: 20, borderRadius: 2, backgroundColor: barColor, flexShrink: 0 }} />
 
-        <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--jga-beige)', letterSpacing: '0.06em', flexShrink: 0 }}>
+        <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--jga-beige)', fontFamily: "'JetBrains Mono', monospace", letterSpacing: '0.04em', flexShrink: 0 }}>
           {affaire.code_affaire}
         </span>
 
-        <span style={{ fontSize: 15, fontWeight: 500, color: '#1a1a1a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        <span style={{ fontSize: 15, fontWeight: 500, color: '#1F1B17', fontFamily: "'Archivo', sans-serif", whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {affaire.nom}
         </span>
 
@@ -212,43 +226,68 @@ function AffaireHeader({ affaire, onEdit }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
         <PhaseBadge phase={affaire.phase} />
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <div style={{ width: 120 }}>
-            <ProgressBar value={affaire.avancement} phase={affaire.phase} />
+        {!collabLoading && collaborateurs.length > 0 && (
+          <div
+            onClick={onCollabClick}
+            style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}
+            title="Gérer les collaborateurs"
+          >
+            {collaborateurs.slice(0, 5).map((c, i) => {
+              const initiales = ((c.profiles?.prenom?.[0] ?? '') + (c.profiles?.nom?.[0] ?? '')).toUpperCase() || '?'
+              return (
+                <div key={c.user_id} style={{
+                  width: 28, height: 28, borderRadius: '50%',
+                  background: c.role === 'proprietaire' ? 'var(--jga-orange)' : '#9C9591',
+                  color: 'white', fontSize: 10, fontWeight: 500,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  border: '2px solid white', marginLeft: i === 0 ? 0 : -8,
+                  zIndex: 10 - i, position: 'relative',
+                }}>
+                  {initiales}
+                </div>
+              )
+            })}
+            {collaborateurs.length > 5 && (
+              <div style={{
+                width: 28, height: 28, borderRadius: '50%',
+                background: '#FAF7F2', color: '#9C9591', fontSize: 10,
+                border: '2px solid white', marginLeft: -8,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                +{collaborateurs.length - 5}
+              </div>
+            )}
           </div>
-          <span style={{ fontSize: 11, color: 'var(--jga-beige)', fontWeight: 500 }}>
-            {affaire.avancement}%
-          </span>
-        </div>
+        )}
+        {!collabLoading && collaborateurs.length === 0 && !isProprietaire && (
+          <button
+            onClick={onSelfAssign}
+            style={{
+              fontSize: 11, color: 'var(--jga-orange)',
+              background: 'var(--jga-orange-light)',
+              border: '0.5px solid var(--jga-orange-mid)',
+              borderRadius: 6, padding: '4px 10px', cursor: 'pointer',
+            }}
+          >
+            + M'assigner comme responsable
+          </button>
+        )}
 
-        <div style={{ display: 'flex' }}>
-          {COLLAB.map((c, i) => (
-            <div key={i} style={{
-              width: 24, height: 24, borderRadius: '50%',
-              backgroundColor: c.bg, color: c.color,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 9, fontWeight: 500,
-              marginLeft: i > 0 ? -6 : 0,
-              border: '1.5px solid white',
-            }}>
-              {c.initials}
-            </div>
-          ))}
-        </div>
-
-        <button
-          onClick={onEdit}
-          style={{
-            display: 'inline-flex', alignItems: 'center', gap: 5,
-            padding: '4px 10px', borderRadius: 6,
-            border: '0.5px solid var(--jga-orange)',
-            backgroundColor: 'transparent', color: 'var(--jga-orange)',
-            fontSize: 11, cursor: 'pointer',
-          }}
-        >
-          <Pencil size={11} />
-          Modifier
-        </button>
+        {canEdit && (
+          <button
+            onClick={onEdit}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 5,
+              padding: '4px 10px', borderRadius: 6,
+              border: '0.5px solid var(--jga-orange)',
+              backgroundColor: 'transparent', color: 'var(--jga-orange)',
+              fontSize: 11, cursor: 'pointer',
+            }}
+          >
+            <Pencil size={11} strokeWidth={1.25} />
+            Modifier
+          </button>
+        )}
       </div>
     </div>
   )
@@ -279,7 +318,7 @@ function InfoBandeau({ affaire }) {
     }}>
       {pills.map((p, i) => (
         <span key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 11, color: '#6b7280' }}>{p}</span>
+          <span style={{ fontSize: 11, color: '#5E5854' }}>{p}</span>
           {i < pills.length - 1 && (
             <span style={{ fontSize: 11, color: 'rgba(0,0,0,0.2)', margin: '0 8px' }}>·</span>
           )}
@@ -297,9 +336,9 @@ function ModuleItem({ mod, phaseColor, affaireId, isActive }) {
   const disabled = !mod.enabled
   const show = (isActive || hovered) && !disabled
 
-  const hoverBg = phaseColor === '#639922' ? 'var(--jga-green-light)' : 'var(--jga-orange-light)'
-  const activeColor = phaseColor === '#639922' ? 'var(--jga-green)' : 'var(--jga-orange)'
-  const activeShadow = phaseColor === '#639922'
+  const hoverBg = phaseColor === '#2A8A4E' ? 'var(--jga-green-light)' : 'var(--jga-orange-light)'
+  const activeColor = phaseColor === '#2A8A4E' ? 'var(--jga-green)' : 'var(--jga-orange)'
+  const activeShadow = phaseColor === '#2A8A4E'
     ? 'inset 2px 0 0 var(--jga-green)'
     : 'inset 2px 0 0 var(--jga-orange)'
 
@@ -316,14 +355,14 @@ function ModuleItem({ mod, phaseColor, affaireId, isActive }) {
         fontSize: 12,
         backgroundColor: show ? hoverBg : 'transparent',
         boxShadow: isActive && !disabled ? activeShadow : 'none',
-        color: show ? activeColor : '#6b7280',
+        color: show ? activeColor : '#5E5854',
         border: 'none',
         cursor: disabled ? 'default' : 'pointer',
         transition: 'all 0.15s',
         opacity: disabled ? 0.45 : 1,
       }}
     >
-      {Icon && <Icon size={15} style={{ flexShrink: 0 }} />}
+      {Icon && <Icon size={15} strokeWidth={1.25} style={{ flexShrink: 0 }} />}
       <span style={{ flex: 1 }}>{mod.label}</span>
     </button>
   )
@@ -331,6 +370,21 @@ function ModuleItem({ mod, phaseColor, affaireId, isActive }) {
 
 function ModulesSidebar({ affaireId, moduleId }) {
   const navigate = useNavigate()
+
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      const saved = localStorage.getItem(`sidebar-collapsed-${affaireId}`)
+      return saved ? JSON.parse(saved) : { etude: false, chantier: false }
+    } catch { return { etude: false, chantier: false } }
+  })
+
+  const toggleSection = (id) => {
+    setCollapsed(c => {
+      const next = { ...c, [id]: !c[id] }
+      try { localStorage.setItem(`sidebar-collapsed-${affaireId}`, JSON.stringify(next)) } catch {}
+      return next
+    })
+  }
 
   return (
     <aside style={{
@@ -343,61 +397,78 @@ function ModulesSidebar({ affaireId, moduleId }) {
       display: 'flex',
       flexDirection: 'column',
     }}>
-      {/* Informations générales */}
+      {/* Tableau de bord */}
       <button
         onClick={() => navigate(`/affaires/${affaireId}`)}
         style={{
-          display: 'flex', alignItems: 'center', gap: 8,
-          width: '100%', padding: '8px 12px',
-          borderRadius: 8, fontSize: 12,
-          backgroundColor: !moduleId ? 'var(--jga-orange-light)' : 'transparent',
-          color: !moduleId ? 'var(--jga-orange)' : '#6b7280',
-          border: !moduleId ? '0.5px solid var(--jga-orange)' : '0.5px solid transparent',
-          fontWeight: !moduleId ? 500 : 400,
-          cursor: 'pointer', transition: 'all 0.15s',
+          display: 'flex', alignItems: 'center', gap: 6,
+          width: '100%', padding: '6px 12px',
+          background: 'none', border: 'none', cursor: 'pointer',
+          fontSize: 11, fontWeight: 500, textAlign: 'left',
+          textTransform: 'uppercase', letterSpacing: '0.06em',
+          color: !moduleId ? 'var(--jga-orange)' : '#9C9591',
+          transition: 'color 0.15s', marginBottom: 4,
         }}
+        onMouseEnter={e => { if (moduleId) e.currentTarget.style.color = 'var(--jga-orange)' }}
+        onMouseLeave={e => { if (moduleId) e.currentTarget.style.color = '#9C9591' }}
       >
-        <LayoutDashboard size={14} />
-        Informations générales
+        <LayoutDashboard size={12} strokeWidth={1.25} />
+        Tableau de bord
       </button>
 
-      <div style={{ height: '0.5px', backgroundColor: 'rgba(0,0,0,0.08)', margin: '8px 0 12px' }} />
+      <div style={{ height: '0.5px', backgroundColor: 'rgba(0,0,0,0.08)', margin: '4px 0 8px' }} />
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-        {phases.map((phase, pi) => (
-          <div key={phase.id}>
-            {/* Phase header */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4, paddingLeft: 4 }}>
-              <div style={{
-                width: 6, height: 6, borderRadius: '50%',
-                backgroundColor: phase.color, flexShrink: 0,
-              }} />
-              <span style={{
-                fontSize: 10, fontWeight: 500, color: 'var(--jga-beige)',
-                letterSpacing: '0.08em', textTransform: 'uppercase',
-              }}>
-                {phase.label}
-              </span>
-            </div>
-
-            {/* Module items */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-              {phase.modules.map(mod => (
-                <ModuleItem
-                  key={mod.id}
-                  mod={mod}
-                  phaseColor={phase.color}
-                  affaireId={affaireId}
-                  isActive={moduleId === mod.path}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        {phases.map((phase, pi) => {
+          const isCollapsed = collapsed[phase.id] ?? false
+          return (
+            <div key={phase.id}>
+              {/* Phase header — cliquable */}
+              <div
+                onClick={() => toggleSection(phase.id)}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '6px 12px', cursor: 'pointer', userSelect: 'none',
+                  borderRadius: 6,
+                }}
+                onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.03)'}
+                onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: phase.color, flexShrink: 0 }} />
+                  <span style={{ fontSize: 10, fontWeight: 500, color: 'var(--jga-beige)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                    {phase.label}
+                  </span>
+                </div>
+                <ChevronDown
+                  size={12}
+                  strokeWidth={1.25}
+                  color="#9C9591"
+                  style={{ transition: 'transform 0.2s', transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)', flexShrink: 0 }}
                 />
-              ))}
-            </div>
+              </div>
 
-            {pi < phases.length - 1 && (
-              <div style={{ height: '0.5px', backgroundColor: 'rgba(0,0,0,0.08)', margin: '12px 0 0' }} />
-            )}
-          </div>
-        ))}
+              {/* Module items */}
+              {!isCollapsed && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 1, marginBottom: 4 }}>
+                  {phase.modules.map(mod => (
+                    <ModuleItem
+                      key={mod.id}
+                      mod={mod}
+                      phaseColor={phase.color}
+                      affaireId={affaireId}
+                      isActive={moduleId === mod.path}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {pi < phases.length - 1 && (
+                <div style={{ height: '0.5px', backgroundColor: 'rgba(0,0,0,0.08)', margin: '4px 0' }} />
+              )}
+            </div>
+          )
+        })}
       </div>
 
       <div style={{ height: '0.5px', backgroundColor: 'rgba(0,0,0,0.08)', margin: '14px 0' }} />
@@ -412,10 +483,10 @@ function ModulesSidebar({ affaireId, moduleId }) {
       <div style={{
         display: 'flex', alignItems: 'center', gap: 10,
         padding: '7px 12px', borderRadius: 8,
-        fontSize: 12, color: '#6b7280',
+        fontSize: 12, color: '#5E5854',
         opacity: 0.4, cursor: 'default',
       }}>
-        <FileText size={15} style={{ flexShrink: 0 }} />
+        <FileText size={15} strokeWidth={1.25} style={{ flexShrink: 0 }} />
         <span>Documents · bientôt</span>
       </div>
     </aside>
@@ -426,10 +497,10 @@ function ModulesSidebar({ affaireId, moduleId }) {
 function ModuleTile({ icon: Icon, label, phaseColor, active, children, onClick }) {
   const [hovered, setHovered] = useState(false)
 
-  const hoverBorder = phaseColor === '#639922' ? 'var(--jga-green)' : 'var(--jga-orange-mid)'
+  const hoverBorder = phaseColor === '#2A8A4E' ? 'var(--jga-green)' : 'var(--jga-orange-mid)'
   const iconColor = active
-    ? (phaseColor === '#639922' ? 'var(--jga-green)' : 'var(--jga-orange)')
-    : '#9B8F85'
+    ? (phaseColor === '#2A8A4E' ? 'var(--jga-green)' : 'var(--jga-orange)')
+    : '#9C9591'
 
   return (
     <div
@@ -451,7 +522,7 @@ function ModuleTile({ icon: Icon, label, phaseColor, active, children, onClick }
         <span style={{
           position: 'absolute', top: 12, right: 12,
           fontSize: 10, fontWeight: 500,
-          backgroundColor: '#F1EFE8', color: '#9B8F85',
+          backgroundColor: '#F1EFE8', color: '#9C9591',
           borderRadius: 20, padding: '2px 7px',
         }}>
           Bientôt
@@ -460,12 +531,12 @@ function ModuleTile({ icon: Icon, label, phaseColor, active, children, onClick }
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Icon size={18} style={{ color: iconColor }} />
-          <span style={{ fontSize: 13, fontWeight: 500, color: active ? '#1a1a1a' : '#9B8F85' }}>
+          <Icon size={18} strokeWidth={1.25} style={{ color: iconColor }} />
+          <span style={{ fontSize: 13, fontWeight: 500, color: active ? '#1F1B17' : '#9C9591' }}>
             {label}
           </span>
         </div>
-        {active && <ChevronRight size={14} style={{ color: 'var(--jga-beige)' }} />}
+        {active && <ChevronRight size={14} strokeWidth={1.25} style={{ color: "var(--jga-beige)" }} />}
       </div>
 
       {children}
@@ -480,7 +551,7 @@ function InfoField({ label, value }) {
       <p style={{ fontSize: 10, fontWeight: 500, color: 'var(--jga-beige)', letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 3 }}>
         {label}
       </p>
-      <p style={{ fontSize: 13, fontWeight: 500, color: value ? '#1a1a1a' : 'var(--jga-beige)' }}>
+      <p style={{ fontSize: 13, fontWeight: 500, color: value ? '#1F1B17' : 'var(--jga-beige)' }}>
         {value ?? '—'}
       </p>
     </div>
@@ -496,7 +567,7 @@ function PhaseSection({ phase, affaire, stats, affaireId, navigate }) {
       {/* Phase label */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
         <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: phase.color }} />
-        <span style={{ fontSize: 12, fontWeight: 500, color: '#6b7280' }}>{phase.label}</span>
+        <span style={{ fontSize: 12, fontWeight: 500, color: '#5E5854', fontFamily: "'Archivo', sans-serif" }}>{phase.label}</span>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
@@ -518,7 +589,7 @@ function PhaseSection({ phase, affaire, stats, affaireId, navigate }) {
                   <p style={{ fontSize: 12, color: 'var(--jga-beige)' }}>Aucun lot — configurer les entreprises</p>
                 ) : (
                   <>
-                    <p style={{ fontSize: 22, fontWeight: 500, color: '#1a1a1a', marginBottom: 2 }}>
+                    <p style={{ fontSize: 22, fontWeight: 500, color: '#1F1B17', marginBottom: 2 }}>
                       {stats.lotsAttributed}/{stats.lots}
                     </p>
                     <p style={{ fontSize: 12, color: 'var(--jga-beige)' }}>
@@ -529,16 +600,29 @@ function PhaseSection({ phase, affaire, stats, affaireId, navigate }) {
               )}
 
               {isChantier && mod.id === 'comptes-rendus' && (
-                stats.comptesRendus === 0 ? (
+                stats.crTotal === 0 ? (
                   <p style={{ fontSize: 12, color: 'var(--jga-beige)' }}>Commencer le suivi de chantier</p>
                 ) : (
                   <>
-                    <p style={{ fontSize: 22, fontWeight: 500, color: '#1a1a1a', marginBottom: 2 }}>
-                      {stats.comptesRendus}
-                    </p>
-                    <p style={{ fontSize: 12, color: 'var(--jga-beige)' }}>
-                      compte{stats.comptesRendus > 1 ? 's' : ''} rendu · {stats.reserves} réserve{stats.reserves !== 1 ? 's' : ''} ouverte{stats.reserves !== 1 ? 's' : ''}
-                    </p>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 2 }}>
+                      <p style={{ fontSize: 22, fontWeight: 500, color: '#1F1B17' }}>{stats.crEmis}</p>
+                      <span style={{ fontSize: 12, color: '#5E5854' }}>/ {stats.crTotal} émis</span>
+                    </div>
+                    {stats.crDernierDate && (
+                      <p style={{ fontSize: 11, color: 'var(--jga-beige)', marginBottom: stats.crProchaineReunion ? 2 : 0 }}>
+                        Dernier : {fmtDate(stats.crDernierDate)}
+                      </p>
+                    )}
+                    {stats.crProchaineReunion && (
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, backgroundColor: 'rgba(42,138,78,0.12)', borderRadius: 5, padding: '2px 7px' }}>
+                        <span style={{ fontSize: 11, color: '#2A8A4E' }}>Prochain {fmtDate(stats.crProchaineReunion)}</span>
+                      </div>
+                    )}
+                    {stats.remarquesAFaire > 0 && (
+                      <p style={{ fontSize: 11, color: '#E8602C', marginTop: 4 }}>
+                        {stats.remarquesAFaire} remarque{stats.remarquesAFaire > 1 ? 's' : ''} à faire
+                      </p>
+                    )}
                   </>
                 )
               )}
@@ -549,10 +633,10 @@ function PhaseSection({ phase, affaire, stats, affaireId, navigate }) {
                 ) : (
                   <>
                     <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 2 }}>
-                      <p style={{ fontSize: 22, fontWeight: 500, color: '#1a1a1a' }}>
+                      <p style={{ fontSize: 22, fontWeight: 500, color: '#1F1B17' }}>
                         {formatEuro(stats.lotsTotalHt + stats.financierSupplementsHt)}
                       </p>
-                      <span style={{ fontSize: 12, color: '#6b7280' }}>HT</span>
+                      <span style={{ fontSize: 12, color: '#5E5854' }}>HT</span>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: stats.financierAleasPct > 5 ? 8 : 0 }}>
                       <p style={{ fontSize: 12, color: 'var(--jga-beige)' }}>
@@ -561,7 +645,7 @@ function PhaseSection({ phase, affaire, stats, affaireId, navigate }) {
                       {stats.financierSupplementsHt !== 0 && (
                         <span style={{
                           fontSize: 11, fontWeight: 500,
-                          color: stats.financierSupplementsHt >= 0 ? '#639922' : '#dc2626',
+                          color: stats.financierSupplementsHt >= 0 ? '#2A8A4E' : '#B8412C',
                         }}>
                           {stats.financierSupplementsHt > 0 ? '+' : ''}{formatEuro(stats.financierSupplementsHt)}
                         </span>
@@ -585,13 +669,13 @@ function PhaseSection({ phase, affaire, stats, affaireId, navigate }) {
                 ) : (
                   <>
                     <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: stats.prochainJalonEtude ? 6 : 0 }}>
-                      <p style={{ fontSize: 22, fontWeight: 500, color: '#1a1a1a' }}>{stats.etudeTotal}</p>
-                      <span style={{ fontSize: 12, color: '#6b7280' }}>phase{stats.etudeTotal > 1 ? 's' : ''}</span>
+                      <p style={{ fontSize: 22, fontWeight: 500, color: '#1F1B17' }}>{stats.etudeTotal}</p>
+                      <span style={{ fontSize: 12, color: '#5E5854' }}>phase{stats.etudeTotal > 1 ? 's' : ''}</span>
                     </div>
                     {stats.prochainJalonEtude && (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                         <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: stats.prochainJalonEtude.couleur, flexShrink: 0 }} />
-                        <span style={{ fontSize: 11, color: '#6b7280' }}>
+                        <span style={{ fontSize: 11, color: '#5E5854' }}>
                           {stats.prochainJalonEtude.label} · S{stats.prochainJalonEtude.semaine} {stats.prochainJalonEtude.annee}
                         </span>
                       </div>
@@ -600,9 +684,47 @@ function PhaseSection({ phase, affaire, stats, affaireId, navigate }) {
                 )
               )}
 
+              {isEtude && mod.id === 'financier-etude' && mod.enabled && (
+                affaire.enveloppe_ttc ? (
+                  <>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 4 }}>
+                      <p style={{ fontSize: 19, fontWeight: 500, color: '#1F1B17' }}>
+                        {formatEuro(affaire.enveloppe_ttc)}
+                      </p>
+                      <span style={{ fontSize: 12, color: '#5E5854' }}>TTC</span>
+                    </div>
+                    {stats.financierEtudeDernierePhase ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 11, color: '#9C9591' }}>Dernière phase :</span>
+                        <span style={{
+                          fontSize: 11, fontWeight: 500,
+                          color: ['esq','avp','pro','dce'].includes(stats.financierEtudeDernierePhase) ? '#E8602C' : '#2A8A4E',
+                          backgroundColor: ['esq','avp','pro','dce'].includes(stats.financierEtudeDernierePhase) ? 'rgba(232,96,44,0.10)' : 'rgba(42,138,78,0.12)',
+                          borderRadius: 20, padding: '2px 8px',
+                        }}>
+                          {stats.financierEtudeDernierePhase.toUpperCase()}
+                        </span>
+                        {stats.financierEtudeEnvActuelle && stats.financierEtudeEnvActuelle !== affaire.enveloppe_ttc && (
+                          <span style={{
+                            fontSize: 11, fontWeight: 500,
+                            color: stats.financierEtudeEnvActuelle > affaire.enveloppe_ttc ? '#B8412C' : '#2A8A4E',
+                          }}>
+                            → {formatEuro(stats.financierEtudeEnvActuelle)}
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      <p style={{ fontSize: 12, color: '#9C9591' }}>Aucune phase renseignée</p>
+                    )}
+                  </>
+                ) : (
+                  <p style={{ fontSize: 12, color: 'var(--jga-beige)' }}>Enveloppe non renseignée</p>
+                )
+              )}
+
               {isEtude && mod.id === 'financier-etude' && !mod.enabled && (
                 affaire.enveloppe_ttc ? (
-                  <p style={{ fontSize: 13, fontWeight: 500, color: '#9B8F85' }}>
+                  <p style={{ fontSize: 13, fontWeight: 500, color: '#9C9591' }}>
                     {formatEuro(affaire.enveloppe_ttc)}
                   </p>
                 ) : (
@@ -626,8 +748,8 @@ function PhaseSection({ phase, affaire, stats, affaireId, navigate }) {
                 ) : (
                   <>
                     <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 2 }}>
-                      <p style={{ fontSize: 22, fontWeight: 500, color: '#1a1a1a' }}>{stats.planningTaches}</p>
-                      <span style={{ fontSize: 12, color: '#6b7280' }}>tâche{stats.planningTaches > 1 ? 's' : ''}</span>
+                      <p style={{ fontSize: 22, fontWeight: 500, color: '#1F1B17' }}>{stats.planningTaches}</p>
+                      <span style={{ fontSize: 12, color: '#5E5854' }}>tâche{stats.planningTaches > 1 ? 's' : ''}</span>
                     </div>
                     <p style={{ fontSize: 12, color: 'var(--jga-beige)', marginBottom: stats.planningDateFin ? 6 : 0 }}>
                       Avancement moyen : {stats.planningAvancement} %
@@ -643,7 +765,7 @@ function PhaseSection({ phase, affaire, stats, affaireId, navigate }) {
                     {stats.prochainJalon && (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 }}>
                         <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: stats.prochainJalon.couleur, flexShrink: 0 }} />
-                        <span style={{ fontSize: 11, color: '#6b7280' }}>
+                        <span style={{ fontSize: 11, color: '#5E5854' }}>
                           {stats.prochainJalon.label} · {new Date(stats.prochainJalon.date + 'T00:00:00').toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })}
                         </span>
                       </div>
@@ -657,7 +779,7 @@ function PhaseSection({ phase, affaire, stats, affaireId, navigate }) {
                   <p style={{ fontSize: 12, color: 'var(--jga-beige)' }}>Aucune FTM enregistrée</p>
                 ) : (
                   <>
-                    <p style={{ fontSize: 22, fontWeight: 500, color: '#1a1a1a', marginBottom: 2 }}>
+                    <p style={{ fontSize: 22, fontWeight: 500, color: '#1F1B17', marginBottom: 2 }}>
                       {stats.ftmTotal}
                     </p>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: stats.ftmMontantAccepte !== 0 ? 6 : 0 }}>
@@ -668,7 +790,7 @@ function PhaseSection({ phase, affaire, stats, affaireId, navigate }) {
                     {stats.ftmMontantAccepte !== 0 && (
                       <span style={{
                         fontSize: 11, fontWeight: 500,
-                        color: stats.ftmMontantAccepte >= 0 ? '#639922' : '#dc2626',
+                        color: stats.ftmMontantAccepte >= 0 ? '#2A8A4E' : '#B8412C',
                       }}>
                         {stats.ftmMontantAccepte > 0 ? '+' : '−'}{new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(Math.abs(stats.ftmMontantAccepte))} HT accepté
                       </span>
@@ -688,7 +810,7 @@ function PhaseSection({ phase, affaire, stats, affaireId, navigate }) {
   )
 }
 
-function AffaireOverview({ affaire, stats, affaireId, onEdit }) {
+function AffaireOverview({ affaire, stats, affaireId, onEdit, canEdit }) {
   const navigate = useNavigate()
 
   return (
@@ -713,17 +835,19 @@ function AffaireOverview({ affaire, stats, affaireId, onEdit }) {
         padding: 20,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
-          <span style={{ fontSize: 13, fontWeight: 500, color: '#1a1a1a' }}>Informations de l'affaire</span>
-          <button
-            onClick={onEdit}
-            style={{
-              display: 'inline-flex', alignItems: 'center', gap: 4,
-              background: 'none', border: 'none', cursor: 'pointer',
-              fontSize: 11, color: 'var(--jga-orange)',
-            }}
-          >
-            Modifier <ChevronRight size={12} />
-          </button>
+          <span style={{ fontSize: 13, fontWeight: 500, color: '#1F1B17' }}>Informations de l'affaire</span>
+          {canEdit && (
+            <button
+              onClick={onEdit}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 4,
+                background: 'none', border: 'none', cursor: 'pointer',
+                fontSize: 11, color: 'var(--jga-orange)',
+              }}
+            >
+              Modifier <ChevronRight size={12} strokeWidth={1.25} />
+            </button>
+          )}
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px 20px' }}>
           <InfoField label="Maître d'ouvrage" value={affaire.moa_nom} />
@@ -750,7 +874,25 @@ export function AffairePage() {
   const { affaire: rawAffaire, loading, updateAffaire } = useAffaire(affaireId)
   const [affaire, setAffaire] = useState(null)
   const [editOpen, setEditOpen] = useState(false)
+  const [showCollabModal, setShowCollabModal] = useState(false)
   const stats = useAffaireStats(affaireId)
+
+  const {
+    collaborateurs, loading: collabLoading,
+    canEdit, isProprietaire,
+    addCollaborateur, removeCollaborateur,
+    refetch: refetchCollabs,
+  } = useAffaireCollaborateurs(affaireId)
+
+  const handleSelfAssign = useCallback(async () => {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+    await supabase.from('affaire_collaborateurs').upsert(
+      [{ affaire_id: affaireId, user_id: user.id, role: 'proprietaire' }],
+      { onConflict: 'affaire_id,user_id' }
+    )
+    refetchCollabs()
+  }, [affaireId, refetchCollabs])
 
   useEffect(() => {
     if (rawAffaire) setAffaire(rawAffaire)
@@ -775,7 +917,16 @@ export function AffairePage() {
     <>
       <style>{`@keyframes jga-spin { to { transform: rotate(360deg); } }`}</style>
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-        <AffaireHeader affaire={affaire} onEdit={() => setEditOpen(true)} />
+        <AffaireHeader
+          affaire={affaire}
+          onEdit={() => setEditOpen(true)}
+          collaborateurs={collaborateurs}
+          canEdit={canEdit}
+          collabLoading={collabLoading}
+          isProprietaire={isProprietaire}
+          onCollabClick={() => setShowCollabModal(true)}
+          onSelfAssign={handleSelfAssign}
+        />
         <InfoBandeau affaire={affaire} />
 
         <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
@@ -788,9 +939,19 @@ export function AffairePage() {
             display: 'flex',
             flexDirection: 'column',
           }}>
+            {!collabLoading && !canEdit && (
+              <div style={{
+                background: '#FEF3C7', border: '0.5px solid #D97706',
+                borderRadius: 8, padding: '8px 14px', fontSize: 12, color: '#92400E',
+                display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16,
+              }}>
+                <Eye size={14} strokeWidth={1.25} />
+                Vous consultez cette affaire en lecture seule. Contactez le responsable pour obtenir les droits de modification.
+              </div>
+            )}
             {activeModule
               ? <ModuleRenderer mod={activeModule} />
-              : <AffaireOverview affaire={affaire} stats={stats} affaireId={affaireId} onEdit={() => setEditOpen(true)} />
+              : <AffaireOverview affaire={affaire} stats={stats} affaireId={affaireId} onEdit={() => setEditOpen(true)} canEdit={canEdit} />
             }
           </main>
         </div>
@@ -801,6 +962,16 @@ export function AffairePage() {
           affaire={affaire}
           onSave={handleSave}
           onClose={() => setEditOpen(false)}
+        />
+      )}
+
+      {showCollabModal && (
+        <CollabModal
+          collaborateurs={collaborateurs}
+          isProprietaire={isProprietaire}
+          addCollaborateur={addCollaborateur}
+          removeCollaborateur={removeCollaborateur}
+          onClose={() => setShowCollabModal(false)}
         />
       )}
     </>

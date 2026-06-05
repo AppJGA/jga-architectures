@@ -4,14 +4,20 @@ import {
   TYPE_COLORS, getWeekStart, addWeeks, weeksBetween, getCurrentWeek, computeLagSemaines,
 } from './types'
 
-const TIMELINE_WEEKS = 156
 const HEADER_HEIGHT = 56
 const DOT_R = 6
 
 const dragState = { moved: false }
 
-function rowHeightOf(phase) { return phase.importance === 'moa' ? 32 : 44 }
-function barPadOf(phase) { return phase.importance === 'moa' ? 10 : 4 }
+function rowHeightOf() { return 44 }
+function barPadOf() { return 4 }
+
+function isFirstWeekOfMonth(semaine, annee) {
+  const date = getWeekStart(semaine, annee)
+  const prevWeek = new Date(date)
+  prevWeek.setDate(prevWeek.getDate() - 7)
+  return prevWeek.getMonth() !== date.getMonth()
+}
 
 function getPhaseX(phase, refSemaine, refAnnee, semWidth) {
   const left = weeksBetween(refSemaine, refAnnee, phase.semaine_debut, phase.annee_debut) * semWidth
@@ -24,28 +30,32 @@ export function GanttEtudeTimeline({
   jalons = [], onJalonClick,
   onPhaseClick, onPhaseUpdate,
   onDependencyCreate, onDependencyDelete,
+  criticalIds,
+  refSemaine, refAnnee,
 }) {
-  // ── Reference week ────────────────────────────────────────────────────────────
-  const refWeek = useMemo(() => {
-    if (phases.length === 0) {
-      const cw = getCurrentWeek()
-      return addWeeks(cw.semaine, cw.annee, -4)
-    }
-    let min = { semaine: phases[0].semaine_debut, annee: phases[0].annee_debut }
-    for (const p of phases) {
-      if (weeksBetween(p.semaine_debut, p.annee_debut, min.semaine, min.annee) < 0) {
-        min = { semaine: p.semaine_debut, annee: p.annee_debut }
-      }
-    }
-    return addWeeks(min.semaine, min.annee, -2)
-  }, [phases])
-
-  const weeks = useMemo(() =>
-    Array.from({ length: TIMELINE_WEEKS }, (_, i) => addWeeks(refWeek.semaine, refWeek.annee, i)),
-    [refWeek]
+  // ── Reference week — reçue depuis GanttEtude (dynamique, -4 sem de marge) ─────
+  const refWeek = useMemo(
+    () => ({ semaine: refSemaine, annee: refAnnee }),
+    [refSemaine, refAnnee]
   )
 
-  const totalWidth = TIMELINE_WEEKS * semWidth
+  // ── Largeur dynamique : couvre toutes les phases + 8 sem de marge à droite ────
+  const totalWeeks = useMemo(() => {
+    if (phases.length === 0) return 52
+    let maxEnd = 0
+    phases.forEach(p => {
+      const end = weeksBetween(refSemaine, refAnnee, p.semaine_debut, p.annee_debut) + p.duree_semaines
+      if (end > maxEnd) maxEnd = end
+    })
+    return Math.max(maxEnd + 8, 52)
+  }, [phases, refSemaine, refAnnee])
+
+  const weeks = useMemo(() =>
+    Array.from({ length: totalWeeks }, (_, i) => addWeeks(refWeek.semaine, refWeek.annee, i)),
+    [totalWeeks, refWeek]
+  )
+
+  const totalWidth = totalWeeks * semWidth
 
   const rowOffsets = useMemo(() => {
     const offsets = {}
@@ -199,6 +209,7 @@ export function GanttEtudeTimeline({
         }
       }
       barDragRef.current = null
+      dragState.moved = false   // reset pour que le crayon fonctionne après un drag
       setDraggingBar(null)
       document.body.style.cursor = ''
     }
@@ -260,7 +271,7 @@ export function GanttEtudeTimeline({
             }}>
               <span style={{
                 fontSize: 10, fontWeight: 900, textTransform: 'uppercase',
-                letterSpacing: '0.1em', color: '#E05A1E',
+                letterSpacing: '0.1em', color: '#E8602C',
               }}>
                 {label}
               </span>
@@ -279,18 +290,19 @@ export function GanttEtudeTimeline({
         <div style={{ display: 'flex', height: 28, alignItems: 'center' }}>
           {weeks.map((w, i) => {
             const isCurrent = w.semaine === currentWeek.semaine && w.annee === currentWeek.annee
+            const isMonthStart = isFirstWeekOfMonth(w.semaine, w.annee)
             return (
               <div key={i} style={{
                 width: semWidth, minWidth: semWidth, flexShrink: 0,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                borderRight: '0.5px solid rgba(0,0,0,0.06)',
-                backgroundColor: isCurrent ? 'rgba(224,90,30,0.08)' : 'transparent',
+                borderRight: isMonthStart ? '1px solid rgba(0,0,0,0.35)' : '1px solid rgba(0,0,0,0.15)',
+                backgroundColor: isCurrent ? 'rgba(232,96,44,0.12)' : 'transparent',
                 height: '100%',
               }}>
                 {semWidth >= 18 && (
                   <span style={{
                     fontSize: 9, fontWeight: isCurrent ? 700 : 500,
-                    color: isCurrent ? '#E05A1E' : '#9B8F85',
+                    color: isCurrent ? '#E8602C' : '#9C9591',
                     fontVariantNumeric: 'tabular-nums',
                   }}>
                     S{w.semaine}
@@ -314,20 +326,24 @@ export function GanttEtudeTimeline({
         )}
 
         {/* Week grid lines */}
-        {weeks.map((w, i) => (
-          <div key={i} style={{
-            position: 'absolute', top: 0, bottom: 0,
-            left: i * semWidth, width: 0.5,
-            backgroundColor: 'rgba(0,0,0,0.05)', pointerEvents: 'none',
-          }} />
-        ))}
+        {weeks.map((w, i) => {
+          const isMonthStart = isFirstWeekOfMonth(w.semaine, w.annee)
+          return (
+            <div key={i} style={{
+              position: 'absolute', top: 0, bottom: 0,
+              left: i * semWidth, width: 1,
+              backgroundColor: isMonthStart ? 'rgba(0,0,0,0.35)' : 'rgba(0,0,0,0.15)',
+              pointerEvents: 'none',
+            }} />
+          )
+        })}
 
         {/* Current week marker */}
         {currentWeekLeft >= 0 && currentWeekLeft < totalWidth && (
           <div style={{
             position: 'absolute', top: 0, bottom: 0, zIndex: 20,
             left: currentWeekLeft, width: 2,
-            backgroundColor: '#E05A1E', opacity: 0.5, pointerEvents: 'none',
+            backgroundColor: '#E8602C', opacity: 0.5, pointerEvents: 'none',
           }} />
         )}
 
@@ -380,6 +396,7 @@ export function GanttEtudeTimeline({
             onBarClick={onPhaseClick}
             onConnectionPointClick={handleConnectionPointClick}
             onConnectionPointHover={setHoveredPoint}
+            isCritical={criticalIds?.has(phase.id) ?? false}
           />
         ))}
 
@@ -397,7 +414,7 @@ export function GanttEtudeTimeline({
               <path d="M0,0 L0,8 L8,4 z" fill="currentColor" />
             </marker>
             <marker id="dep-arr-red" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-              <path d="M0,0 L0,8 L8,4 z" fill="#DC2626" />
+              <path d="M0,0 L0,8 L8,4 z" fill="#B8412C" />
             </marker>
             <marker id="dep-arr-live" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
               <path d="M0,0 L0,8 L8,4 z" fill="currentColor" />
@@ -420,7 +437,7 @@ export function GanttEtudeTimeline({
               >
                 <path d={d} fill="none" stroke="transparent" strokeWidth="16" />
                 <path d={d} fill="none"
-                  stroke={isHov ? '#DC2626' : 'currentColor'}
+                  stroke={isHov ? '#B8412C' : 'currentColor'}
                   strokeWidth={isHov ? 2.5 : 2}
                   strokeDasharray={isHov ? 'none' : '6 3'}
                   strokeOpacity={isHov ? 1 : 0.85}
@@ -429,7 +446,7 @@ export function GanttEtudeTimeline({
                 />
                 <circle cx={arrow.fromX} cy={arrow.fromY}
                   r={isHov ? 5 : 3.5}
-                  fill={isHov ? '#DC2626' : 'currentColor'}
+                  fill={isHov ? '#B8412C' : 'currentColor'}
                   opacity={isHov ? 1 : 0.85}
                   style={{ pointerEvents: 'none' }}
                 />
@@ -458,7 +475,7 @@ export function GanttEtudeTimeline({
       {connectingFrom && (
         <div style={{
           position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)',
-          zIndex: 50, backgroundColor: '#E05A1E', color: 'white',
+          zIndex: 50, backgroundColor: '#E8602C', color: 'white',
           fontSize: 12, fontWeight: 700, padding: '10px 20px', borderRadius: 999,
           boxShadow: '0 4px 20px rgba(0,0,0,0.25)',
           display: 'flex', alignItems: 'center', gap: 10,
@@ -479,12 +496,12 @@ export function GanttEtudeTimeline({
             maxWidth: 420, width: '100%', boxShadow: '0 8px 40px rgba(0,0,0,0.12)',
           }} onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-              <div style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: '#FEF2F2', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <GitBranch size={18} style={{ color: '#DC2626' }} />
+              <div style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: 'rgba(184,65,44,0.10)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <GitBranch size={18} style={{ color: '#B8412C' }} />
               </div>
               <span style={{ fontSize: 15, fontWeight: 500 }}>Supprimer la dépendance</span>
             </div>
-            <p style={{ fontSize: 13, color: '#6b7280', lineHeight: 1.6, marginBottom: 20 }}>
+            <p style={{ fontSize: 13, color: '#5E5854', lineHeight: 1.6, marginBottom: 20 }}>
               La liaison entre <strong>{deletingArrow.fromPhaseName}</strong> et <strong>{deletingArrow.toPhaseName}</strong> sera supprimée.
             </p>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
@@ -493,7 +510,7 @@ export function GanttEtudeTimeline({
               </button>
               <button
                 onClick={() => { onDependencyDelete(deletingArrow.fromPhaseId, deletingArrow.toPhaseId); setDeletingArrow(null) }}
-                style={{ padding: '8px 16px', borderRadius: 10, fontSize: 13, fontWeight: 500, border: 'none', backgroundColor: '#DC2626', color: 'white', cursor: 'pointer' }}
+                style={{ padding: '8px 16px', borderRadius: 10, fontSize: 13, fontWeight: 500, border: 'none', backgroundColor: '#B8412C', color: 'white', cursor: 'pointer' }}
               >
                 Supprimer
               </button>
@@ -511,13 +528,14 @@ function PhaseBarRow({
   phase, rowOffset, semWidth, refSemaine, refAnnee,
   isDragging, isConnecting, connectingFromId, hoveredPoint,
   onBarDragStart, onBarClick, onConnectionPointClick, onConnectionPointHover,
+  isCritical,
 }) {
   const [isHovered, setIsHovered] = useState(false)
 
-  const isMoe = phase.importance !== 'moa'
+  const isMoe = phase.type_tache === 'etude'
   const rh = rowHeightOf(phase)
   const barPad = barPadOf(phase)
-  const color = TYPE_COLORS[phase.type_tache] ?? '#9B8F85'
+  const color = TYPE_COLORS[phase.type_tache] ?? '#9C9591'
   const isAdmin = phase.type_tache === 'administratif'
 
   const { left, width } = getPhaseX(phase, refSemaine, refAnnee, semWidth)
@@ -532,14 +550,6 @@ function PhaseBarRow({
 
   const startPoint = { phaseId: phase.id, side: 'start', x: left, y: connectionY }
   const endPoint = { phaseId: phase.id, side: 'end', x: left + width, y: connectionY }
-
-  const barLabel = (isAdmin && phase.label_barre) ? phase.label_barre : phase.nom
-
-  const subSegments = isMoe ? [
-    { d: phase.duree_arch, opacity: 0.10 },
-    { d: phase.duree_bet,  opacity: 0.20 },
-    { d: phase.duree_econ, opacity: 0.30 },
-  ].filter(s => s.d > 0) : []
 
   return (
     <div
@@ -558,9 +568,13 @@ function PhaseBarRow({
           backgroundImage: isAdmin
             ? `repeating-linear-gradient(45deg, transparent, transparent 8px, rgba(255,255,255,0.18) 8px, rgba(255,255,255,0.18) 16px)`
             : 'none',
-          borderRadius: 4,
-          display: 'flex', alignItems: 'center', overflow: 'hidden',
-          boxShadow: isDragging ? '0 8px 24px rgba(0,0,0,0.2)' : '0 1px 3px rgba(0,0,0,0.15)',
+          borderRadius: 0,
+          display: 'flex', alignItems: 'center', overflow: 'visible',
+          boxShadow: isDragging
+            ? '0 8px 24px rgba(0,0,0,0.2)'
+            : isCritical
+              ? '0 0 0 2px #B8412C, 0 1px 3px rgba(0,0,0,0.15)'
+              : '0 1px 3px rgba(0,0,0,0.15)',
           zIndex: isDragging ? 30 : 10,
           opacity: isDragging ? 0.9 : 1,
           cursor: isConnecting && !isSource ? 'crosshair' : 'grab',
@@ -570,10 +584,11 @@ function PhaseBarRow({
           onBarDragStart(e, phase, 'move')
         }}
       >
+
         {/* Resize left */}
         <div
           data-handle="left"
-          style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: HANDLE_W, cursor: 'ew-resize', flexShrink: 0, borderRadius: '4px 0 0 4px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: HANDLE_W, cursor: 'ew-resize', flexShrink: 0, borderRadius: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
           onMouseDown={(e) => { e.stopPropagation(); onBarDragStart(e, phase, 'resize-left') }}
           onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.2)'}
           onMouseLeave={e => e.currentTarget.style.backgroundColor = ''}
@@ -581,31 +596,43 @@ function PhaseBarRow({
           <div style={{ height: 10, width: 1, backgroundColor: 'rgba(255,255,255,0.4)', pointerEvents: 'none' }} />
         </div>
 
-        {/* Sub-duration segments (MOE only) */}
-        {subSegments.length > 0 && (
-          <div style={{ position: 'absolute', inset: 0, display: 'flex', overflow: 'hidden', borderRadius: 4 }}>
-            {subSegments.map((seg, i) => (
-              <div key={i} style={{
-                width: `${(seg.d / phase.duree_semaines) * 100}%`,
-                backgroundColor: `rgba(0,0,0,${seg.opacity})`,
-                borderRight: i < subSegments.length - 1 ? '1.5px solid rgba(255,255,255,0.6)' : 'none',
-                flexShrink: 0,
-              }} />
-            ))}
+        {/* Segments intervenants MOE — largeurs en px, non-interactifs */}
+        {isMoe && (phase.duree_arch > 0 || phase.duree_bet > 0 || phase.duree_econ > 0) && (
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', overflow: 'hidden', pointerEvents: 'none' }}>
+            {phase.duree_arch > 0 && (
+              <div style={{
+                width: phase.duree_arch * semWidth, height: '100%', flexShrink: 0,
+                backgroundColor: 'rgba(0,0,0,0.15)',
+                borderRight: '1px solid rgba(255,255,255,0.6)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                pointerEvents: 'none',
+              }}>
+                <span style={{ fontSize: 10, fontWeight: 700, color: 'white', userSelect: 'none' }}>1</span>
+              </div>
+            )}
+            {phase.duree_bet > 0 && (
+              <div style={{
+                width: phase.duree_bet * semWidth, height: '100%', flexShrink: 0,
+                backgroundColor: 'rgba(0,0,0,0.25)',
+                borderRight: '1px solid rgba(255,255,255,0.6)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                pointerEvents: 'none',
+              }}>
+                <span style={{ fontSize: 10, fontWeight: 700, color: 'white', userSelect: 'none' }}>2</span>
+              </div>
+            )}
+            {phase.duree_econ > 0 && (
+              <div style={{
+                width: phase.duree_econ * semWidth, height: '100%', flexShrink: 0,
+                backgroundColor: 'rgba(0,0,0,0.35)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                pointerEvents: 'none',
+              }}>
+                <span style={{ fontSize: 10, fontWeight: 700, color: 'white', userSelect: 'none' }}>3</span>
+              </div>
+            )}
           </div>
         )}
-
-        {/* Label */}
-        <span style={{
-          position: 'relative', zIndex: 10,
-          fontSize: isMoe ? 11 : 10, fontWeight: isMoe ? 600 : 500, color: 'white',
-          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-          pointerEvents: 'none', flex: 1, minWidth: 0,
-          paddingLeft: HANDLE_W + 5, paddingRight: HANDLE_W + 22,
-          textShadow: '0 1px 2px rgba(0,0,0,0.3)',
-        }}>
-          {barLabel}
-        </span>
 
         {/* Edit pencil */}
         <button
@@ -622,7 +649,7 @@ function PhaseBarRow({
           onMouseDown={e => e.stopPropagation()}
           onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.5)'}
           onMouseLeave={e => e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.3)'}
-          onClick={(e) => { e.stopPropagation(); if (!dragState.moved) onBarClick(phase) }}
+          onClick={(e) => { e.stopPropagation(); onBarClick(phase) }}
           title="Modifier"
         >
           <Pencil size={11} strokeWidth={2.5} />
@@ -631,13 +658,32 @@ function PhaseBarRow({
         {/* Resize right */}
         <div
           data-handle="right"
-          style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: HANDLE_W, cursor: 'ew-resize', flexShrink: 0, borderRadius: '0 4px 4px 0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: HANDLE_W, cursor: 'ew-resize', flexShrink: 0, borderRadius: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
           onMouseDown={(e) => { e.stopPropagation(); onBarDragStart(e, phase, 'resize-right') }}
           onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.2)'}
           onMouseLeave={e => e.currentTarget.style.backgroundColor = ''}
         >
           <div style={{ height: 10, width: 1, backgroundColor: 'rgba(255,255,255,0.4)', pointerEvents: 'none' }} />
         </div>
+      </div>
+
+      {/* Label à droite de la barre */}
+      <div style={{
+        position: 'absolute',
+        left: left + width + 4,
+        top: barPad,
+        bottom: barPad,
+        display: 'flex',
+        alignItems: 'center',
+        whiteSpace: 'nowrap',
+        fontSize: 11,
+        fontWeight: isMoe ? 600 : 400,
+        color: '#1F1B17',
+        pointerEvents: 'none',
+        userSelect: 'none',
+        zIndex: 10,
+      }}>
+        {phase.nom}
       </div>
 
       {/* ── Connection dot START ───────────────────────────────────────── */}
@@ -647,7 +693,7 @@ function PhaseBarRow({
           left: left - DOT_R, top: rh - barPad - DOT_R,
           width: DOT_R * 2, height: DOT_R * 2,
           borderRadius: '50%', border: '2px solid white', cursor: 'crosshair',
-          backgroundColor: isStartHov ? '#E05A1E' : color,
+          backgroundColor: isStartHov ? '#E8602C' : color,
           transform: isStartHov ? 'scale(1.5)' : 'scale(1)',
           boxShadow: isStartHov ? '0 0 0 3px rgba(224,90,30,0.35)' : '0 1px 4px rgba(0,0,0,0.4)',
           opacity: showStartDot || isStartHov ? 1 : 0,
@@ -666,7 +712,7 @@ function PhaseBarRow({
           left: left + width - DOT_R, top: rh - barPad - DOT_R,
           width: DOT_R * 2, height: DOT_R * 2,
           borderRadius: '50%', border: '2px solid white', cursor: 'crosshair',
-          backgroundColor: isSource || isEndHov ? '#E05A1E' : color,
+          backgroundColor: isSource || isEndHov ? '#E8602C' : color,
           transform: isEndHov || isSource ? 'scale(1.5)' : 'scale(1)',
           boxShadow: (isEndHov || isSource) ? '0 0 0 3px rgba(224,90,30,0.35)' : '0 1px 4px rgba(0,0,0,0.4)',
           opacity: showEndDot || isSource || isEndHov ? 1 : 0,

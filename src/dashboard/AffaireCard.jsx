@@ -1,8 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ClipboardList, Calendar, BarChart2, CheckSquare, Trash2 } from 'lucide-react'
+import { ClipboardList, Calendar, BarChart2, CheckSquare, Trash2, Lock } from 'lucide-react'
 import { PhaseBadge } from '../shared/components/Badge'
-import { ProgressBar } from '../shared/components/ProgressBar'
 
 const TOP_COLORS = {
   esq:      'var(--jga-orange)',
@@ -28,12 +27,56 @@ function formatDate(dateStr) {
   return new Date(dateStr).toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' })
 }
 
-export function AffaireCard({ affaire, onDeleteRequest }) {
+function AvatarsStack({ collaborateurs }) {
+  if (!collaborateurs?.length) return null
+  const visible = collaborateurs.slice(0, 4)
+  const extra = collaborateurs.length - 4
+  return (
+    <div style={{ display: 'flex', alignItems: 'center' }}>
+      {visible.map((c, i) => {
+        const initiales = (
+          (c.profiles?.prenom?.[0] ?? '') +
+          (c.profiles?.nom?.[0] ?? '')
+        ).toUpperCase() || '?'
+        return (
+          <div
+            key={i}
+            title={`${c.profiles?.prenom ?? ''} ${c.profiles?.nom ?? ''}`.trim()}
+            style={{
+              width: 22, height: 22, borderRadius: '50%',
+              background: c.role === 'proprietaire' ? 'var(--jga-orange)' : '#9C9591',
+              color: 'white', fontSize: 9, fontWeight: 500,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              border: '1.5px solid white',
+              marginLeft: i === 0 ? 0 : -6,
+              zIndex: 10 - i, position: 'relative',
+            }}
+          >
+            {initiales}
+          </div>
+        )
+      })}
+      {extra > 0 && (
+        <div style={{
+          width: 22, height: 22, borderRadius: '50%',
+          background: '#FAF7F2', color: '#9C9591', fontSize: 9, fontWeight: 500,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          border: '1.5px solid white', marginLeft: -6,
+        }}>
+          +{extra}
+        </div>
+      )}
+    </div>
+  )
+}
+
+export function AffaireCard({ affaire, onDeleteRequest, isAuthorized = true }) {
   const navigate = useNavigate()
   const [hovered, setHovered] = useState(false)
   const topColor = TOP_COLORS[affaire.phase] ?? 'var(--jga-beige)'
   const isStudy = STUDY_PHASES.has(affaire.phase)
   const isChantier = affaire.phase === 'chantier'
+  const collaborateurs = affaire.affaire_collaborateurs ?? []
 
   const iconBg = isStudy
     ? 'var(--jga-orange-light)'
@@ -61,62 +104,89 @@ export function AffaireCard({ affaire, onDeleteRequest }) {
         backgroundColor: 'white',
         borderRadius: 14,
         overflow: 'hidden',
-        border: hovered ? '0.5px solid var(--jga-orange-mid)' : '0.5px solid rgba(0,0,0,0.08)',
+        border: isAuthorized && hovered
+          ? '0.5px solid var(--jga-orange-mid)'
+          : '0.5px solid rgba(0,0,0,0.08)',
         cursor: 'pointer',
         transition: 'border-color 0.15s',
+        filter: isAuthorized ? 'none' : 'grayscale(100%)',
+        opacity: isAuthorized ? 1 : 0.6,
       }}
     >
-      {/* Top color bar */}
-      <div style={{ height: 3, backgroundColor: topColor }} />
+      {/* Badge lecture seule */}
+      {!isAuthorized && (
+        <div style={{
+          position: 'absolute', top: 8, right: 8, zIndex: 20,
+          background: 'rgba(0,0,0,0.6)', color: 'white',
+          fontSize: 9, fontWeight: 500, padding: '2px 6px',
+          borderRadius: 4, display: 'flex', alignItems: 'center', gap: 3,
+          letterSpacing: '0.04em',
+        }}>
+          <Lock size={8} />
+          LECTURE SEULE
+        </div>
+      )}
 
-      {/* Delete button */}
-      {onDeleteRequest && (
+      {/* Haut : photo ou trait coloré */}
+      {affaire.photo_url ? (
+        <div style={{ height: 90, borderRadius: '14px 14px 0 0', overflow: 'hidden', position: 'relative' }}>
+          <img
+            src={affaire.photo_url}
+            alt={affaire.nom}
+            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+          />
+          <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 3, backgroundColor: topColor }} />
+        </div>
+      ) : (
+        <div style={{ height: 3, backgroundColor: topColor }} />
+      )}
+
+      {/* Bouton supprimer — autorisées seulement */}
+      {isAuthorized && onDeleteRequest && (
         <button
           onClick={e => { e.stopPropagation(); onDeleteRequest(affaire) }}
           title="Supprimer cette affaire"
           style={{
-            position: 'absolute', top: 10, right: 10,
+            position: 'absolute', top: affaire.photo_url ? 8 : 10, right: 10,
             width: 26, height: 26, borderRadius: 7,
             border: '0.5px solid rgba(220,38,38,0.3)',
-            backgroundColor: '#FEF2F2',
-            color: '#DC2626',
+            backgroundColor: 'rgba(184,65,44,0.10)', color: '#B8412C',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             cursor: 'pointer',
             opacity: hovered ? 1 : 0,
             transition: 'opacity 0.15s',
           }}
         >
-          <Trash2 size={12} />
+          <Trash2 size={12} strokeWidth={1.25} />
         </button>
       )}
 
       <div style={{ padding: 14 }}>
         <div style={{ marginBottom: 5 }}>
-          <span style={{ fontSize: 10, fontWeight: 500, color: 'var(--jga-beige)', letterSpacing: '0.06em' }}>
+          <span style={{ fontSize: 10, fontWeight: 500, color: 'var(--jga-beige)', fontFamily: "'JetBrains Mono', monospace", letterSpacing: '0.04em' }}>
             {affaire.code_affaire}
           </span>
         </div>
 
-        <h3 style={{ fontSize: 13, fontWeight: 500, color: '#1a1a1a', lineHeight: 1.3, marginBottom: 3 }}>
+        <h3 style={{ fontSize: 13, fontWeight: 500, color: '#1F1B17', lineHeight: 1.3, marginBottom: 3 }}>
           {affaire.nom}
         </h3>
-        <p style={{ fontSize: 11, color: '#6b7280', marginBottom: 10 }}>
+        <p style={{ fontSize: 11, color: '#5E5854', marginBottom: 10 }}>
           {affaire.moa_nom}
         </p>
 
-        <div style={{ marginBottom: 8 }}>
+        <div style={{ marginBottom: 12 }}>
           <PhaseBadge phase={affaire.phase} />
-        </div>
-
-        <div style={{ marginBottom: 10 }}>
-          <ProgressBar value={affaire.avancement} phase={affaire.phase} />
         </div>
 
         {/* Footer */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <span style={{ fontSize: 10, color: 'var(--jga-beige)' }}>
-            {date ? `Livr. ${date}` : '—'}
-          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <AvatarsStack collaborateurs={collaborateurs} />
+            <span style={{ fontSize: 10, color: 'var(--jga-beige)' }}>
+              {date ? `Livr. ${date}` : '—'}
+            </span>
+          </div>
           <div style={{ display: 'flex', gap: 4 }}>
             {MODULE_ICONS.map(({ id, Icon }) => (
               <div

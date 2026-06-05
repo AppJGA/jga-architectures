@@ -7,7 +7,7 @@ export default function OprModule() {
       label="OPR"
       description="Opérations Préalables à la Réception"
       icon={ClipboardCheck}
-      phaseColor="#639922"
+      phaseColor="#2A8A4E"
     />
   )
 }

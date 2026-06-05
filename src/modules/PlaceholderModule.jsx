@@ -5,7 +5,7 @@ export function PlaceholderModule({ label, description, icon: Icon, phaseColor }
   const navigate = useNavigate()
   const { affaireId } = useParams()
 
-  const lightBg = phaseColor === '#639922' ? '#EAF3DE' : '#FAF0EB'
+  const lightBg = phaseColor === '#2A8A4E' ? 'rgba(42,138,78,0.12)' : 'rgba(232,96,44,0.10)'
 
   return (
     <div style={{
@@ -30,7 +30,7 @@ export function PlaceholderModule({ label, description, icon: Icon, phaseColor }
         {Icon && <Icon size={28} style={{ color: phaseColor }} />}
       </div>
 
-      <h2 style={{ fontSize: 16, fontWeight: 500, color: '#1a1a1a', marginBottom: 8 }}>
+      <h2 style={{ fontSize: 16, fontWeight: 500, color: '#1F1B17', marginBottom: 8 }}>
         {label}
       </h2>
 

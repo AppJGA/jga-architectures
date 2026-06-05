@@ -15,18 +15,18 @@ const JALONS_SUGGERES = [
 ]
 
 const COLORS_PRESET = [
-  '#8B5CF6', '#E05A1E', '#639922', '#2563EB',
-  '#DC2626', '#D97706', '#0891B2', '#DB2777',
+  '#8B5CF6', '#E8602C', '#2A8A4E', '#1B3A5C',
+  '#B8412C', '#D97706', '#0891B2', '#DB2777',
 ]
 
 const LABEL_STYLE = {
   display: 'block', fontSize: 10, fontWeight: 700, textTransform: 'uppercase',
-  letterSpacing: '0.06em', color: '#9B8F85', marginBottom: 4,
+  letterSpacing: '0.06em', color: '#9C9591', marginBottom: 4,
 }
 const INPUT = {
   width: '100%', height: 34, padding: '0 10px', borderRadius: 8, fontSize: 13,
   border: '0.5px solid rgba(0,0,0,0.12)', backgroundColor: '#FAFAF9', outline: 'none',
-  boxSizing: 'border-box', color: '#1a1a1a',
+  boxSizing: 'border-box', color: '#1F1B17',
 }
 
 function formatDate(d) {
@@ -107,14 +107,14 @@ function JalonRow({ jalon, onUpdate, onDelete }) {
         <div style={{ display: 'flex', gap: 4 }}>
           <button type="button" onClick={handleSave} style={{
             width: 28, height: 28, borderRadius: 6, border: 'none', cursor: 'pointer',
-            backgroundColor: '#639922', color: 'white',
+            backgroundColor: '#2A8A4E', color: 'white',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
             <Check size={13} />
           </button>
           <button type="button" onClick={() => setEditing(false)} style={{
             width: 28, height: 28, borderRadius: 6, cursor: 'pointer',
-            border: '0.5px solid rgba(0,0,0,0.15)', backgroundColor: 'white', color: '#6b7280',
+            border: '0.5px solid rgba(0,0,0,0.15)', backgroundColor: 'white', color: '#5E5854',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
             <X size={13} />
@@ -130,14 +130,14 @@ function JalonRow({ jalon, onUpdate, onDelete }) {
       padding: '8px 0', borderBottom: '0.5px solid rgba(0,0,0,0.06)',
     }}>
       <div style={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: jalon.couleur, flexShrink: 0 }} />
-      <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: '#1a1a1a', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: '#1F1B17', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         {jalon.label}
       </span>
-      <span style={{ fontSize: 12, color: '#9B8F85', flexShrink: 0 }}>{formatDate(jalon.date)}</span>
+      <span style={{ fontSize: 12, color: '#9C9591', flexShrink: 0 }}>{formatDate(jalon.date)}</span>
       <button type="button" onClick={() => { setEditing(true); setConfirming(false) }}
-        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9B8F85', padding: 4, borderRadius: 4, display: 'flex' }}
-        onMouseEnter={e => e.currentTarget.style.color = '#E05A1E'}
-        onMouseLeave={e => e.currentTarget.style.color = '#9B8F85'}
+        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9C9591', padding: 4, borderRadius: 4, display: 'flex' }}
+        onMouseEnter={e => e.currentTarget.style.color = '#E8602C'}
+        onMouseLeave={e => e.currentTarget.style.color = '#9C9591'}
         title="Modifier"
       >
         <Pencil size={13} />
@@ -145,13 +145,13 @@ function JalonRow({ jalon, onUpdate, onDelete }) {
       <button type="button" onClick={handleDelete}
         style={{
           display: 'inline-flex', alignItems: 'center', gap: 3,
-          background: confirming ? '#FEF2F2' : 'none',
+          background: confirming ? 'rgba(184,65,44,0.10)' : 'none',
           border: confirming ? '0.5px solid rgba(220,38,38,0.3)' : 'none',
-          cursor: 'pointer', color: confirming ? '#DC2626' : '#9B8F85',
+          cursor: 'pointer', color: confirming ? '#B8412C' : '#9C9591',
           padding: '3px 6px', borderRadius: 4, fontSize: 11,
         }}
-        onMouseEnter={e => !confirming && (e.currentTarget.style.color = '#DC2626')}
-        onMouseLeave={e => !confirming && (e.currentTarget.style.color = '#9B8F85')}
+        onMouseEnter={e => !confirming && (e.currentTarget.style.color = '#B8412C')}
+        onMouseLeave={e => !confirming && (e.currentTarget.style.color = '#9C9591')}
         title={confirming ? 'Cliquer à nouveau pour confirmer' : 'Supprimer'}
       >
         <Trash2 size={12} />
@@ -225,11 +225,11 @@ export function JalonModal({ open, onClose, jalons, affaireId, onRefetch }) {
               <Flag size={16} style={{ color: '#8B5CF6' }} />
             </div>
             <div>
-              <h2 style={{ fontSize: 15, fontWeight: 500, color: '#1a1a1a' }}>Jalons du planning</h2>
-              <p style={{ fontSize: 11, color: '#9B8F85', marginTop: 1 }}>Dates clés visibles sur le diagramme</p>
+              <h2 style={{ fontSize: 15, fontWeight: 500, color: '#1F1B17' }}>Jalons du planning</h2>
+              <p style={{ fontSize: 11, color: '#9C9591', marginTop: 1 }}>Dates clés visibles sur le diagramme</p>
             </div>
           </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9B8F85' }}>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9C9591' }}>
             <X size={18} />
           </button>
         </div>
@@ -237,7 +237,7 @@ export function JalonModal({ open, onClose, jalons, affaireId, onRefetch }) {
         {/* List */}
         <div style={{ flex: 1, overflowY: 'auto', marginBottom: 16 }}>
           {jalons.length === 0 ? (
-            <p style={{ fontSize: 13, color: '#9B8F85', textAlign: 'center', padding: '24px 0' }}>
+            <p style={{ fontSize: 13, color: '#9C9591', textAlign: 'center', padding: '24px 0' }}>
               Aucun jalon — ajoutez des dates clés ci-dessous.
             </p>
           ) : (
@@ -285,7 +285,7 @@ export function JalonModal({ open, onClose, jalons, affaireId, onRefetch }) {
                   display: 'inline-flex', alignItems: 'center', gap: 6,
                   padding: '0 14px', height: 34, borderRadius: 8, fontSize: 12,
                   cursor: saving ? 'default' : 'pointer', border: 'none',
-                  backgroundColor: '#639922', color: 'white', fontWeight: 500,
+                  backgroundColor: '#2A8A4E', color: 'white', fontWeight: 500,
                   opacity: saving ? 0.7 : 1, flexShrink: 0,
                 }}
               >

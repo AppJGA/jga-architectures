@@ -7,7 +7,8 @@ export function AppShell() {
   const showSidebar =
     !location.pathname.startsWith('/dashboard') &&
     !location.pathname.startsWith('/affaires/') &&
-    !location.pathname.startsWith('/home')
+    !location.pathname.startsWith('/home') &&
+    !location.pathname.startsWith('/carnet-adresses')
 
   return (
     <div className="flex h-screen overflow-hidden" style={{ backgroundColor: 'var(--jga-beige-light)' }}>

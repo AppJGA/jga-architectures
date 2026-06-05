@@ -17,7 +17,7 @@ export function GanttSidebar({ tasks, lots, rowHeight, headerHeight, onEdit, onA
         backgroundColor: 'rgba(245,242,240,0.8)',
         borderBottom: '0.5px solid rgba(0,0,0,0.08)',
         fontSize: 10, fontWeight: 700, textTransform: 'uppercase',
-        letterSpacing: '0.08em', color: '#9B8F85',
+        letterSpacing: '0.08em', color: '#9C9591',
       }}>
         <span style={{ width: 48, flexShrink: 0 }}>N°</span>
         <span style={{ flex: 1, minWidth: 0 }}>Tâche</span>
@@ -62,7 +62,7 @@ export function GanttSidebar({ tasks, lots, rowHeight, headerHeight, onEdit, onA
             backgroundColor: 'rgba(155,143,133,0.08)',
             borderBottom: '0.5px solid rgba(0,0,0,0.08)',
           }}>
-            <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: '#9B8F85' }}>
+            <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: '#9C9591' }}>
               Sans lot
             </span>
           </div>
@@ -91,7 +91,7 @@ function TaskRow({ task, lotColor, rowHeight, onEdit, onAvancementChange }) {
       {/* Color bar + task number */}
       <div style={{ display: 'flex', width: 48, flexShrink: 0, alignItems: 'center', gap: 6 }}>
         <div style={{ width: 2, height: 16, borderRadius: 999, backgroundColor: lotColor }} />
-        <span style={{ fontSize: 11, fontWeight: 600, color: '#9B8F85', fontVariantNumeric: 'tabular-nums' }}>
+        <span style={{ fontSize: 11, fontWeight: 600, color: '#9C9591', fontVariantNumeric: 'tabular-nums' }}>
           {task.num_tache}
         </span>
       </div>
@@ -99,18 +99,18 @@ function TaskRow({ task, lotColor, rowHeight, onEdit, onAvancementChange }) {
       {/* Task name */}
       <button
         style={{
-          flex: 1, minWidth: 0, textAlign: 'left', fontSize: 12, color: '#1a1a1a',
+          flex: 1, minWidth: 0, textAlign: 'left', fontSize: 12, color: '#1F1B17',
           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
           background: 'none', border: 'none', cursor: 'pointer', padding: 0,
         }}
         onClick={() => onEdit(task)}
-        onMouseEnter={e => e.currentTarget.style.color = '#E05A1E'}
-        onMouseLeave={e => e.currentTarget.style.color = '#1a1a1a'}
+        onMouseEnter={e => e.currentTarget.style.color = '#E8602C'}
+        onMouseLeave={e => e.currentTarget.style.color = '#1F1B17'}
       >
         {task.nom}
         {task.appro_actif && task.appro_duree > 0 && (
           <span style={{
-            fontSize: 9, color: '#9B8F85', background: '#F5F2F0',
+            fontSize: 9, color: '#9C9591', background: '#FAF7F2',
             borderRadius: 4, padding: '1px 4px', marginLeft: 4, flexShrink: 0,
             fontVariantNumeric: 'tabular-nums',
           }}>
@@ -132,7 +132,7 @@ function TaskRow({ task, lotColor, rowHeight, onEdit, onAvancementChange }) {
             border: '0.5px solid rgba(0,0,0,0.15)', backgroundColor: '#FAFAF9',
             padding: '0 4px', fontVariantNumeric: 'tabular-nums', outline: 'none',
           }}
-          onFocus={e => { e.target.style.borderColor = '#E05A1E'; e.target.style.boxShadow = '0 0 0 2px rgba(224,90,30,0.1)' }}
+          onFocus={e => { e.target.style.borderColor = '#E8602C'; e.target.style.boxShadow = '0 0 0 2px rgba(224,90,30,0.1)' }}
           onBlur={e => { e.target.style.borderColor = 'rgba(0,0,0,0.15)'; e.target.style.boxShadow = 'none' }}
         />
       </div>
@@ -144,10 +144,10 @@ function TaskRow({ task, lotColor, rowHeight, onEdit, onAvancementChange }) {
         style={{
           width: 24, height: 24, flexShrink: 0, display: 'flex', alignItems: 'center',
           justifyContent: 'center', borderRadius: 6, background: 'none', border: 'none',
-          cursor: 'pointer', color: '#9B8F85', transition: 'opacity 0.15s',
+          cursor: 'pointer', color: '#9C9591', transition: 'opacity 0.15s',
         }}
-        onMouseEnter={e => e.currentTarget.style.color = '#E05A1E'}
-        onMouseLeave={e => e.currentTarget.style.color = '#9B8F85'}
+        onMouseEnter={e => e.currentTarget.style.color = '#E8602C'}
+        onMouseLeave={e => e.currentTarget.style.color = '#9C9591'}
       >
         <Pencil size={12} />
       </button>

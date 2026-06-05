@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { X } from 'lucide-react'
+import { X, ImagePlus } from 'lucide-react'
 import { CollaborateursSection } from '../shared/components/CollaborateursSection'
 import { supabase } from '../core/supabase/client'
 import { useAuth } from '../core/auth/useAuth'
@@ -102,7 +102,7 @@ const inputBase = {
   border: '0.5px solid rgba(0,0,0,0.12)',
   backgroundColor: '#FAFAF9',
   fontSize: 13,
-  color: '#1a1a1a',
+  color: '#1F1B17',
   outline: 'none',
   transition: 'border-color 0.15s, box-shadow 0.15s, background-color 0.15s',
 }
@@ -121,7 +121,7 @@ function TextInput({ value, onChange, placeholder, type = 'text', ...rest }) {
         ...inputBase,
         borderColor: focused ? 'var(--jga-orange)' : 'rgba(0,0,0,0.12)',
         backgroundColor: focused ? 'white' : '#FAFAF9',
-        boxShadow: focused ? '0 0 0 3px rgba(224,90,30,0.08)' : 'none',
+        boxShadow: focused ? '0 0 0 3px rgba(232,96,44,0.12)' : 'none',
       }}
       {...rest}
     />
@@ -141,7 +141,7 @@ function SelectInput({ value, onChange, options }) {
         cursor: 'pointer',
         borderColor: focused ? 'var(--jga-orange)' : 'rgba(0,0,0,0.12)',
         backgroundColor: focused ? 'white' : '#FAFAF9',
-        boxShadow: focused ? '0 0 0 3px rgba(224,90,30,0.08)' : 'none',
+        boxShadow: focused ? '0 0 0 3px rgba(232,96,44,0.12)' : 'none',
       }}
     >
       {options.map(o => (
@@ -168,9 +168,9 @@ function TextArea({ value, onChange, placeholder }) {
         border: '0.5px solid rgba(0,0,0,0.12)',
         backgroundColor: focused ? 'white' : '#FAFAF9',
         borderColor: focused ? 'var(--jga-orange)' : 'rgba(0,0,0,0.12)',
-        boxShadow: focused ? '0 0 0 3px rgba(224,90,30,0.08)' : 'none',
+        boxShadow: focused ? '0 0 0 3px rgba(232,96,44,0.12)' : 'none',
         fontSize: 13,
-        color: '#1a1a1a',
+        color: '#1F1B17',
         outline: 'none',
         resize: 'vertical',
         fontFamily: 'inherit',
@@ -248,14 +248,76 @@ function RadioRow({ label, value, current, onChange }) {
 const grid2 = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }
 
 // ─── Composant principal ───────────────────────────────────────────────────
-export function AffaireFormModal({ affaire = null, onSave, onClose, scrollToSection }) {
+function compressToWebP(file) {
+  return new Promise((resolve) => {
+    const img = new Image()
+    const url = URL.createObjectURL(file)
+
+    img.onload = () => {
+      URL.revokeObjectURL(url)
+      const MAX_WIDTH = 800
+      const MAX_HEIGHT = 600
+      let { width, height } = img
+
+      if (width > MAX_WIDTH) {
+        height = Math.round(height * MAX_WIDTH / width)
+        width = MAX_WIDTH
+      }
+      if (height > MAX_HEIGHT) {
+        width = Math.round(width * MAX_HEIGHT / height)
+        height = MAX_HEIGHT
+      }
+
+      const canvas = document.createElement('canvas')
+      canvas.width = width
+      canvas.height = height
+      const ctx = canvas.getContext('2d')
+      ctx.fillStyle = '#FFFFFF'
+      ctx.fillRect(0, 0, width, height)
+      ctx.drawImage(img, 0, 0, width, height)
+      canvas.toBlob((blob) => resolve(blob), 'image/webp', 0.72)
+    }
+
+    img.onerror = () => resolve(file)
+    img.src = url
+  })
+}
+
+async function uploadPhoto(file, affaireId, oldPhotoUrl) {
+  if (oldPhotoUrl) {
+    try {
+      const parts = oldPhotoUrl.split('/affaires-photos/')
+      if (parts.length > 1) {
+        await supabase.storage.from('affaires-photos').remove([parts[1].split('?')[0]])
+      }
+    } catch (e) {
+      console.warn('Suppression ancienne photo:', e)
+    }
+  }
+
+  const compressed = await compressToWebP(file)
+  const path = `${affaireId}/${Date.now()}.webp`
+  const { error } = await supabase.storage
+    .from('affaires-photos')
+    .upload(path, compressed, { contentType: 'image/webp', upsert: true })
+  if (error) throw error
+  const { data } = supabase.storage.from('affaires-photos').getPublicUrl(path)
+  return data.publicUrl
+}
+
+export function AffaireFormModal({ affaire = null, onSave, onClose, scrollToSection, open = true, mode: modeProp = undefined }) {
+  const mode = modeProp ?? (affaire ? 'edit' : 'create')
   const { user } = useAuth()
   const [form, setForm] = useState(() => initialForm(affaire))
   const [tvaPreset, setTvaPreset] = useState(() => detectTvaPreset(affaire?.taux_tva))
   const [saving, setSaving] = useState(false)
   const [codeError, setCodeError] = useState('')
+  const [formError, setFormError] = useState(null)
   const [isAssigned, setIsAssigned] = useState(true)
   const formRef = useRef(null)
+  const photoInputRef = useRef(null)
+  const [photoPreview, setPhotoPreview] = useState(affaire?.photo_url ?? null)
+  const [photoFile, setPhotoFile] = useState(null)
 
   useEffect(() => {
     if (!affaire?.id || !user?.id) return
@@ -269,10 +331,32 @@ export function AffaireFormModal({ affaire = null, onSave, onClose, scrollToSect
   }, [affaire?.id, user?.id])
 
   useEffect(() => {
-    setForm(initialForm(affaire))
-    setTvaPreset(detectTvaPreset(affaire?.taux_tva))
-    setCodeError('')
-  }, [affaire])
+    if (!open) return
+    if (mode === 'create' || !affaire) {
+      setForm({ ...DEFAULTS })
+      setTvaPreset('1.20')
+      setCodeError('')
+      setPhotoPreview(null)
+      setPhotoFile(null)
+    } else {
+      const f = { ...affaire }
+      DATE_FIELDS.forEach(k => { if (typeof f[k] === 'string') f[k] = f[k].slice(0, 10) })
+      setForm({
+        ...f,
+        terrain_statut: affaire.terrain_statut ?? null,
+        taux_tva: affaire.taux_tva ?? 1.20,
+        seuil_aleas_pct: affaire.seuil_aleas_pct ?? 5.00,
+      })
+      setTvaPreset(detectTvaPreset(affaire.taux_tva))
+      setCodeError('')
+      setPhotoPreview(affaire.photo_url ?? null)
+      setPhotoFile(null)
+    }
+  }, [open, mode, affaire])
+
+  useEffect(() => {
+    if (open) setFormError(null)
+  }, [open])
 
   useEffect(() => {
     if (!scrollToSection) return
@@ -295,6 +379,21 @@ export function AffaireFormModal({ affaire = null, onSave, onClose, scrollToSect
   const toggle = (key) => (e) => setForm(f => ({ ...f, [key]: e.target.checked }))
   const setInt = (key) => (e) => setForm(f => ({ ...f, [key]: Number(e.target.value) }))
 
+  const handlePhotoSelect = (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (photoPreview?.startsWith('blob:')) URL.revokeObjectURL(photoPreview)
+    setPhotoFile(file)
+    setPhotoPreview(URL.createObjectURL(file))
+    e.target.value = ''
+  }
+
+  const handlePhotoRemove = () => {
+    if (photoPreview?.startsWith('blob:')) URL.revokeObjectURL(photoPreview)
+    setPhotoFile(null)
+    setPhotoPreview(null)
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!/^\d{4}-[A-Z]{3}$/.test(form.code_affaire)) {
@@ -302,9 +401,26 @@ export function AffaireFormModal({ affaire = null, onSave, onClose, scrollToSect
       return
     }
     setCodeError('')
+    setFormError(null)
     setSaving(true)
-    await onSave(cleanData(form))
-    setSaving(false)
+    try {
+      let finalPhotoUrl = photoPreview
+      if (photoFile) {
+        const folderId = affaire?.id ?? crypto.randomUUID()
+        const oldPhotoUrl = affaire?.photo_url ?? null
+        finalPhotoUrl = await uploadPhoto(photoFile, folderId, oldPhotoUrl)
+      }
+      await onSave({ ...cleanData(form), photo_url: finalPhotoUrl ?? null })
+      onClose()
+    } catch (err) {
+      if (err.message?.includes('affaires_code_affaire_key')) {
+        setFormError('Ce code affaire existe déjà. Choisissez un code différent.')
+      } else {
+        setFormError("Erreur lors de l'enregistrement : " + err.message)
+      }
+    } finally {
+      setSaving(false)
+    }
   }
 
   const isEdit = Boolean(affaire?.id)
@@ -347,7 +463,7 @@ export function AffaireFormModal({ affaire = null, onSave, onClose, scrollToSect
           flexShrink: 0,
         }}>
           <div>
-            <h2 style={{ fontSize: 15, fontWeight: 500, color: '#1a1a1a' }}>
+            <h2 style={{ fontSize: 15, fontWeight: 500, color: '#1F1B17' }}>
               {isEdit ? "Modifier l'affaire" : 'Nouvelle affaire'}
             </h2>
             {isEdit && (
@@ -364,7 +480,7 @@ export function AffaireFormModal({ affaire = null, onSave, onClose, scrollToSect
               border: 'none', backgroundColor: 'transparent',
               cursor: 'pointer', color: 'var(--jga-beige)',
             }}
-            onMouseEnter={e => e.currentTarget.style.backgroundColor = '#F5F2F0'}
+            onMouseEnter={e => e.currentTarget.style.backgroundColor = '#FAF7F2'}
             onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
           >
             <X size={16} />
@@ -378,6 +494,82 @@ export function AffaireFormModal({ affaire = null, onSave, onClose, scrollToSect
           onSubmit={handleSubmit}
           style={{ flex: 1, overflowY: 'auto', padding: '28px 32px' }}
         >
+          {/* ── Photo de couverture ── */}
+          <div style={{ marginBottom: 28 }}>
+            <input
+              ref={photoInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              onChange={handlePhotoSelect}
+              style={{ display: 'none' }}
+            />
+            {photoPreview ? (
+              <div style={{ position: 'relative', height: 160, borderRadius: 10, overflow: 'hidden', cursor: 'pointer' }}
+                onClick={() => photoInputRef.current?.click()}
+              >
+                <img
+                  src={photoPreview}
+                  alt="Couverture"
+                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                />
+                <div style={{
+                  position: 'absolute', inset: 0,
+                  backgroundColor: 'rgba(0,0,0,0)', transition: 'background-color 0.15s',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+                }}
+                  onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.35)'}
+                  onMouseLeave={e => e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0)'}
+                  onClick={e => e.stopPropagation()}
+                >
+                  <button
+                    type="button"
+                    onClick={() => photoInputRef.current?.click()}
+                    style={{
+                      padding: '6px 14px', borderRadius: 6, fontSize: 12, fontWeight: 500,
+                      border: 'none', backgroundColor: 'white', color: '#1F1B17', cursor: 'pointer',
+                      opacity: 0, transition: 'opacity 0.15s',
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.opacity = '1'}
+                    onMouseLeave={e => e.currentTarget.style.opacity = '0'}
+                  >
+                    Changer
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handlePhotoRemove}
+                    style={{
+                      width: 30, height: 30, borderRadius: '50%', border: 'none',
+                      backgroundColor: 'rgba(255,255,255,0.9)', color: '#B8412C',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      cursor: 'pointer', opacity: 0, transition: 'opacity 0.15s',
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.opacity = '1'}
+                    onMouseLeave={e => e.currentTarget.style.opacity = '0'}
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => photoInputRef.current?.click()}
+                style={{
+                  width: '100%', height: 160, borderRadius: 10,
+                  border: '1.5px dashed rgba(0,0,0,0.15)', backgroundColor: '#FAFAF9',
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                  gap: 8, cursor: 'pointer', color: '#9C9591', transition: 'border-color 0.15s, background-color 0.15s',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--jga-orange)'; e.currentTarget.style.backgroundColor = 'rgba(232,96,44,0.10)' }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(0,0,0,0.15)'; e.currentTarget.style.backgroundColor = '#FAFAF9' }}
+              >
+                <ImagePlus size={24} style={{ opacity: 0.5 }} />
+                <span style={{ fontSize: 13, fontWeight: 500 }}>Ajouter une photo de couverture</span>
+                <span style={{ fontSize: 11 }}>JPG, PNG, WEBP — max 5 Mo</span>
+              </button>
+            )}
+          </div>
+
           {/* ── Section 1 : Identification ── */}
           <SectionHeader title="Identification" />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginBottom: 28 }}>
@@ -395,36 +587,28 @@ export function AffaireFormModal({ affaire = null, onSave, onClose, scrollToSect
                   ? <p style={{ fontSize: 12, color: '#E24B4A', marginTop: 4 }}>{codeError}</p>
                   : <p style={{ fontSize: 11, color: 'var(--jga-beige)', marginTop: 4 }}>4 chiffres, tiret, 3 lettres majuscules</p>
                 }
+                {formError && (
+                  <p style={{ fontSize: 11, color: '#B8412C', marginTop: 4 }}>{formError}</p>
+                )}
               </Field>
               <Field label="Nom de l'affaire *">
                 <TextInput value={form.nom} onChange={set('nom')} placeholder="Résidence Les Peupliers" required />
               </Field>
             </div>
-            <div style={grid2}>
-              <Field label="Phase">
-                <SelectInput
-                  value={form.phase}
-                  onChange={set('phase')}
-                  options={[
-                    { value: 'esq', label: 'ESQ — Esquisse' },
-                    { value: 'avp', label: 'AVP — Avant-Projet' },
-                    { value: 'pro', label: 'PRO — Projet' },
-                    { value: 'dce', label: 'DCE' },
-                    { value: 'chantier', label: 'Chantier' },
-                    { value: 'livree', label: 'Livrée' },
-                  ]}
-                />
-              </Field>
-              <Field label={`Avancement — ${form.avancement}%`}>
-                <input
-                  type="range"
-                  min="0" max="100"
-                  value={form.avancement}
-                  onChange={setInt('avancement')}
-                  style={{ width: '100%', marginTop: 10, accentColor: 'var(--jga-orange)' }}
-                />
-              </Field>
-            </div>
+            <Field label="Phase" style={{ maxWidth: 240 }}>
+              <SelectInput
+                value={form.phase}
+                onChange={set('phase')}
+                options={[
+                  { value: 'esq', label: 'ESQ — Esquisse' },
+                  { value: 'avp', label: 'AVP — Avant-Projet' },
+                  { value: 'pro', label: 'PRO — Projet' },
+                  { value: 'dce', label: 'DCE' },
+                  { value: 'chantier', label: 'Chantier' },
+                  { value: 'livree', label: 'Livrée' },
+                ]}
+              />
+            </Field>
           </div>
 
           {/* ── Section 2 : Maître d'ouvrage ── */}
@@ -567,16 +751,16 @@ export function AffaireFormModal({ affaire = null, onSave, onClose, scrollToSect
                       }}
                       style={{
                         flex: 1, padding: '8px 12px', borderRadius: 8, cursor: 'pointer',
-                        backgroundColor: sel ? '#FAF0EB' : '#FAFAF9',
-                        border: sel ? '1.5px solid #E05A1E' : '0.5px solid rgba(0,0,0,0.12)',
+                        backgroundColor: sel ? 'rgba(232,96,44,0.10)' : '#FAFAF9',
+                        border: sel ? '1.5px solid #E8602C' : '0.5px solid rgba(0,0,0,0.12)',
                         textAlign: 'left',
                         transition: 'border-color 0.15s, background-color 0.15s',
                       }}
                     >
-                      <p style={{ fontSize: 13, fontWeight: 500, color: sel ? '#E05A1E' : '#1a1a1a', marginBottom: 2 }}>
+                      <p style={{ fontSize: 13, fontWeight: 500, color: sel ? '#E8602C' : '#1F1B17', marginBottom: 2 }}>
                         {p.label}
                       </p>
-                      <p style={{ fontSize: 10, color: '#9B8F85' }}>{p.sub}</p>
+                      <p style={{ fontSize: 10, color: '#9C9591' }}>{p.sub}</p>
                     </button>
                   )
                 })}
@@ -592,7 +776,7 @@ export function AffaireFormModal({ affaire = null, onSave, onClose, scrollToSect
                     style={{ ...inputBase, width: 200 }}
                   />
                   {form.taux_tva !== '' && parseFloat(form.taux_tva) > 1 && (
-                    <p style={{ fontSize: 11, color: '#9B8F85', marginTop: 4 }}>
+                    <p style={{ fontSize: 11, color: '#9C9591', marginTop: 4 }}>
                       soit {((parseFloat(form.taux_tva) - 1) * 100).toFixed(2).replace(/\.?0+$/, '').replace('.', ',')} % de TVA
                     </p>
                   )}
@@ -610,9 +794,9 @@ export function AffaireFormModal({ affaire = null, onSave, onClose, scrollToSect
                   onChange={setNum('seuil_aleas_pct')}
                   style={{ ...inputBase, width: 120 }}
                 />
-                <span style={{ fontSize: 13, color: '#6b7280' }}>%</span>
+                <span style={{ fontSize: 13, color: '#5E5854' }}>%</span>
               </div>
-              <p style={{ fontSize: 11, color: '#9B8F85', marginTop: 6 }}>
+              <p style={{ fontSize: 11, color: '#9C9591', marginTop: 6 }}>
                 Pourcentage du marché de base au-delà duquel une alerte est déclenchée dans le suivi financier.
               </p>
             </Field>

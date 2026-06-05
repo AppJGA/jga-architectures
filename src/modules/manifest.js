@@ -4,7 +4,7 @@ export const phases = [
   {
     id: 'etude',
     label: 'Phase Étude',
-    color: '#E05A1E',
+    color: '#E8602C',
     supabasePhases: ['esq', 'avp', 'pro', 'dce'],
     modules: [
       {
@@ -22,7 +22,7 @@ export const phases = [
         icon: 'BarChart2',
         path: 'financier-etude',
         component: lazy(() => import('./etude/financier')),
-        enabled: false,
+        enabled: true,
         description: 'Honoraires, avenants, enveloppe prévisionnelle',
       },
       {
@@ -39,7 +39,7 @@ export const phases = [
   {
     id: 'chantier',
     label: 'Phase Chantier',
-    color: '#639922',
+    color: '#2A8A4E',
     supabasePhases: ['chantier'],
     modules: [
       {
@@ -54,12 +54,12 @@ export const phases = [
       },
       {
         id: 'comptes-rendus',
-        label: 'Comptes rendus',
+        label: 'Visites de chantier',
         icon: 'ClipboardList',
         path: 'comptes-rendus',
         component: lazy(() => import('./chantier/comptes-rendus')),
         enabled: true,
-        description: 'Comptes rendus de chantier',
+        description: 'Suivi des visites de chantier',
       },
       {
         id: 'opr',

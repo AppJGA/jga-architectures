@@ -2,9 +2,9 @@
 
 export const TYPE_COLORS = {
   etude:         '#E8A200',
-  validation:    '#639922',
+  validation:    '#2A8A4E',
   administratif: '#D97706',
-  chantier:      '#2563EB',
+  chantier:      '#1B3A5C',
 }
 
 export const TYPE_LABELS = {

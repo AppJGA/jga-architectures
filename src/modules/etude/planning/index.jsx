@@ -11,6 +11,7 @@ export default function PlanningEtudeModule() {
       affaireId={affaireId}
       affaireNumero={affaire?.numero ?? ''}
       affaireTitre={affaire?.nom ?? ''}
+      affaire={affaire ?? {}}
     />
   )
 }

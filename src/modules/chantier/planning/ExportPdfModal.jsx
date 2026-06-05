@@ -1,15 +1,16 @@
 import { useState, useMemo, useEffect } from 'react'
-import { FileDown, Printer, X, Check } from 'lucide-react'
+import { FileDown, X } from 'lucide-react'
 import { parseDate, formatDateISO, addWorkingDays } from './types'
+import { generatePlanningChantierPdf } from './generatePlanningChantierPdf'
 
 const LABEL = {
   fontSize: 10, fontWeight: 700, textTransform: 'uppercase',
-  letterSpacing: '0.06em', color: '#9B8F85', display: 'block', marginBottom: 6,
+  letterSpacing: '0.06em', color: '#9C9591', display: 'block', marginBottom: 5,
 }
 const INPUT = {
-  width: '100%', height: 36, padding: '0 10px', borderRadius: 8, fontSize: 13,
+  height: 34, padding: '0 10px', borderRadius: 6, fontSize: 12,
   border: '0.5px solid rgba(0,0,0,0.12)', backgroundColor: '#FAFAF9', outline: 'none',
-  boxSizing: 'border-box', color: '#1a1a1a',
+  boxSizing: 'border-box', color: '#1F1B17', width: '100%',
 }
 const BTN = {
   display: 'inline-flex', alignItems: 'center', gap: 6,
@@ -17,215 +18,250 @@ const BTN = {
   border: '0.5px solid rgba(0,0,0,0.15)', backgroundColor: 'white', color: '#374151',
 }
 const BTN_PRIMARY = {
-  ...BTN, backgroundColor: '#639922', color: 'white', border: 'none', fontWeight: 500,
+  ...BTN, backgroundColor: '#2A8A4E', color: 'white', border: 'none', fontWeight: 500,
 }
 
-export function ExportPdfModal({ open, onClose, onPrint, lots, tasks, affaireNumero, affaireTitre }) {
-  const [selectedLotIds, setSelectedLotIds] = useState(() => new Set(lots.map((l) => l.id)))
-  const [orientation, setOrientation] = useState('paysage')
+const PAGE_FORMATS = [
+  { label: 'A4 Portrait',  w: 210, h: 297 },
+  { label: 'A4 Paysage',   w: 297, h: 210 },
+  { label: 'A3 Portrait',  w: 297, h: 420 },
+  { label: 'A3 Paysage',   w: 420, h: 297 },
+  { label: 'A2 Paysage',   w: 594, h: 420 },
+  { label: 'A1 Paysage',   w: 841, h: 594 },
+]
 
-  const computedStart = useMemo(() => {
-    const dates = tasks.map((t) => parseDate(t.debut).getTime())
-    if (dates.length === 0) return formatDateISO(new Date())
-    return formatDateISO(new Date(Math.min(...dates)))
-  }, [tasks])
-
-  const computedEnd = useMemo(() => {
-    const ends = tasks.map((t) => {
-      const d = parseDate(t.debut)
-      return addWorkingDays(d, t.duree).getTime()
-    })
-    if (ends.length === 0) {
-      const d = new Date(); d.setMonth(d.getMonth() + 3); return formatDateISO(d)
+function computeRange(tasks) {
+  if (!tasks.length) {
+    const d = new Date()
+    const end = new Date(d)
+    end.setMonth(end.getMonth() + 3)
+    return { debut: formatDateISO(addWorkingDays(d, -5)), fin: formatDateISO(addWorkingDays(end, 5)) }
+  }
+  let minDate = parseDate(tasks[0].debut)
+  let maxEnd = addWorkingDays(parseDate(tasks[0].debut), tasks[0].duree)
+  for (const t of tasks) {
+    const d = parseDate(t.debut)
+    if (d < minDate) minDate = d
+    const end = addWorkingDays(d, t.duree)
+    if (end > maxEnd) maxEnd = end
+    if (t.appro_actif && t.appro_duree) {
+      const approStart = addWorkingDays(d, -t.appro_duree)
+      if (approStart < minDate) minDate = approStart
     }
-    return formatDateISO(new Date(Math.max(...ends)))
-  }, [tasks])
+  }
+  return {
+    debut: formatDateISO(addWorkingDays(minDate, -5)),
+    fin:   formatDateISO(addWorkingDays(maxEnd, 5)),
+  }
+}
 
-  const [dateDebut, setDateDebut] = useState(computedStart)
-  const [dateFin, setDateFin] = useState(computedEnd)
+export function ExportPdfModal({ open, onClose, lots = [], tasks = [], jalons = [], affaire = {} }) {
+  const computed = useMemo(() => computeRange(tasks), [tasks])
+
+  const [dateDebut,   setDateDebut]   = useState(computed.debut)
+  const [dateFin,     setDateFin]     = useState(computed.fin)
+  const [formatTab,   setFormatTab]   = useState('standard')
+  const [fmtIdx,      setFmtIdx]      = useState(3)   // A3 Paysage par défaut
+  const [customW,     setCustomW]     = useState(420)
+  const [customH,     setCustomH]     = useState(297)
+  const [isLandscape, setIsLandscape] = useState(true)
 
   useEffect(() => {
     if (!open) return
-    setDateDebut(computedStart)
-    setDateFin(computedEnd)
-    setSelectedLotIds(new Set(lots.map((l) => l.id)))
-  }, [open, computedStart, computedEnd, lots])
+    setDateDebut(computed.debut)
+    setDateFin(computed.fin)
+  }, [open, computed])
 
-  const toggleLot = (id) => {
-    setSelectedLotIds((prev) => {
-      const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
-      return next
-    })
-  }
+  const { totalDays, totalWeeks } = useMemo(() => {
+    if (!dateDebut || !dateFin) return { totalDays: 0, totalWeeks: 0 }
+    const d1 = parseDate(dateDebut)
+    const d2 = parseDate(dateFin)
+    const days = Math.max(0, Math.round((d2.getTime() - d1.getTime()) / (1000 * 3600 * 24)) + 1)
+    return { totalDays: days, totalWeeks: Math.round(days / 7) }
+  }, [dateDebut, dateFin])
 
-  const toggleAll = () => {
-    setSelectedLotIds(
-      selectedLotIds.size === lots.length
-        ? new Set()
-        : new Set(lots.map((l) => l.id))
-    )
-  }
-
-  const filteredTaskCount = useMemo(() => {
+  const tachesInPeriod = useMemo(() => {
+    if (!dateDebut || !dateFin) return []
     const start = parseDate(dateDebut).getTime()
     const end = parseDate(dateFin).getTime()
-    return tasks.filter((t) => {
-      if (!selectedLotIds.has(t.lot_id)) return false
+    return tasks.filter(t => {
       const tStart = parseDate(t.debut).getTime()
       const tEnd = addWorkingDays(parseDate(t.debut), t.duree).getTime()
       return tStart <= end && tEnd >= start
-    }).length
-  }, [tasks, selectedLotIds, dateDebut, dateFin])
+    })
+  }, [tasks, dateDebut, dateFin])
 
-  const handlePrint = () => {
-    onPrint({ selectedLotIds: Array.from(selectedLotIds), dateDebut, dateFin, orientation })
+  const finalFormat = formatTab === 'standard'
+    ? PAGE_FORMATS[fmtIdx]
+    : { w: Math.max(100, Math.min(2000, customW)), h: Math.max(100, Math.min(2000, customH)) }
+
+  const isValid = !!dateDebut && !!dateFin && totalDays > 0
+
+  const handleOrientationToggle = () => {
+    setIsLandscape(v => !v)
+    setCustomW(customH)
+    setCustomH(customW)
+  }
+
+  const handleGenerate = () => {
+    if (!isValid) return
+    generatePlanningChantierPdf({
+      tasks: tachesInPeriod,
+      lots,
+      jalons,
+      affaire,
+      dateDebut,
+      dateFin,
+      largeurMm: finalFormat.w,
+      hauteurMm: finalFormat.h,
+    })
+    onClose()
   }
 
   if (!open) return null
 
   return (
-    <div style={{
-      position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100,
-    }} onClick={onClose}>
-      <div style={{
-        backgroundColor: 'white', borderRadius: 16, padding: 28,
-        width: '100%', maxWidth: 540,
-      }} onClick={e => e.stopPropagation()}>
-
+    <div
+      style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}
+      onClick={onClose}
+    >
+      <div
+        style={{ backgroundColor: 'white', borderRadius: 16, padding: 28, width: '100%', maxWidth: 520, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 8px 40px rgba(0,0,0,0.12)' }}
+        onClick={e => e.stopPropagation()}
+      >
         {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <FileDown size={16} style={{ color: '#E05A1E' }} />
-              <h2 style={{ fontSize: 15, fontWeight: 500, color: '#1a1a1a' }}>Export PDF du planning</h2>
-            </div>
-            <p style={{ fontSize: 11, color: '#9B8F85', marginTop: 3 }}>
-              Définissez les lots et la période à inclure dans l'export.
-            </p>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 22 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <FileDown size={16} style={{ color: '#E8602C' }} />
+            <h2 style={{ fontSize: 15, fontWeight: 500, color: '#1F1B17' }}>Export PDF du planning</h2>
           </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9B8F85' }}>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9C9591' }}>
             <X size={18} />
           </button>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 18, marginTop: 16 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
-          {/* Lots */}
+          {/* ── A) PÉRIODE ── */}
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-              <label style={LABEL}>Lots à inclure</label>
-              <button type="button" onClick={toggleAll}
-                style={{ fontSize: 11, color: '#E05A1E', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 500 }}>
-                {selectedLotIds.size === lots.length ? 'Tout désélectionner' : 'Tout sélectionner'}
-              </button>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 192, overflowY: 'auto' }}>
-              {lots.map((lot) => {
-                const isSelected = selectedLotIds.has(lot.id)
-                const lotTaskCount = tasks.filter((t) => t.lot_id === lot.id).length
-                return (
-                  <button
-                    key={lot.id} type="button" onClick={() => toggleLot(lot.id)}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left',
-                      padding: '8px 12px', borderRadius: 8, transition: 'all 0.1s', cursor: 'pointer',
-                      border: `0.5px solid ${isSelected ? 'rgba(224,90,30,0.3)' : 'rgba(0,0,0,0.08)'}`,
-                      backgroundColor: isSelected ? 'rgba(224,90,30,0.04)' : 'rgba(155,143,133,0.08)',
-                      opacity: isSelected ? 1 : 0.55,
-                    }}
-                  >
-                    <div style={{ width: 12, height: 12, borderRadius: 3, flexShrink: 0, backgroundColor: lot.couleur }} />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <span style={{ fontSize: 12, fontWeight: 500, color: '#1a1a1a' }}>
-                        {lot.num_lot} – {lot.nom}
-                      </span>
-                      <span style={{ fontSize: 11, color: '#9B8F85', marginLeft: 8 }}>
-                        ({lotTaskCount} tâche{lotTaskCount > 1 ? 's' : ''})
-                      </span>
-                    </div>
-                    <div style={{
-                      width: 16, height: 16, borderRadius: 4, flexShrink: 0,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      backgroundColor: isSelected ? '#639922' : 'transparent',
-                      border: `2px solid ${isSelected ? '#639922' : 'rgba(0,0,0,0.2)'}`,
-                    }}>
-                      {isSelected && <Check size={10} style={{ color: 'white' }} strokeWidth={3} />}
-                    </div>
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-
-          {/* Période */}
-          <div>
-            <label style={LABEL}>Période</label>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <label style={LABEL}>Période d'export</label>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: 8, alignItems: 'end' }}>
               <div>
-                <label style={{ ...LABEL, textTransform: 'none', fontSize: 11, fontWeight: 400, color: '#9B8F85' }}>Du</label>
-                <input type="date" value={dateDebut} onChange={(e) => setDateDebut(e.target.value)} style={INPUT}
-                  onFocus={e => { e.target.style.borderColor = '#E05A1E' }}
-                  onBlur={e => { e.target.style.borderColor = 'rgba(0,0,0,0.12)' }} />
+                <span style={{ fontSize: 11, color: '#9C9591', display: 'block', marginBottom: 4 }}>Du jour</span>
+                <input
+                  type="date" value={dateDebut}
+                  onChange={e => setDateDebut(e.target.value)}
+                  style={INPUT}
+                />
               </div>
+              <span style={{ fontSize: 13, color: '#9C9591', paddingBottom: 6 }}>→</span>
               <div>
-                <label style={{ ...LABEL, textTransform: 'none', fontSize: 11, fontWeight: 400, color: '#9B8F85' }}>Au</label>
-                <input type="date" value={dateFin} onChange={(e) => setDateFin(e.target.value)} style={INPUT}
-                  onFocus={e => { e.target.style.borderColor = '#E05A1E' }}
-                  onBlur={e => { e.target.style.borderColor = 'rgba(0,0,0,0.12)' }} />
+                <span style={{ fontSize: 11, color: '#9C9591', display: 'block', marginBottom: 4 }}>au jour</span>
+                <input
+                  type="date" value={dateFin}
+                  onChange={e => setDateFin(e.target.value)}
+                  style={INPUT}
+                />
               </div>
             </div>
+            <p style={{ fontSize: 11, color: '#9C9591', marginTop: 6 }}>
+              {totalDays > 0
+                ? `${totalDays} jour${totalDays > 1 ? 's' : ''} · ${totalWeeks} semaine${totalWeeks > 1 ? 's' : ''}`
+                : 'Période invalide'}
+            </p>
           </div>
 
-          {/* Orientation */}
+          {/* ── B) FORMAT DE PAGE ── */}
           <div>
-            <label style={LABEL}>Orientation</label>
-            <div style={{ display: 'flex', gap: 8 }}>
-              {['paysage', 'portrait'].map((o) => (
-                <button
-                  key={o} type="button" onClick={() => setOrientation(o)}
+            <label style={LABEL}>Format de page</label>
+            <div style={{ display: 'flex', gap: 0, marginBottom: 12, border: '0.5px solid rgba(0,0,0,0.12)', borderRadius: 8, overflow: 'hidden' }}>
+              {['standard', 'custom'].map(tab => (
+                <button key={tab} type="button"
+                  onClick={() => setFormatTab(tab)}
                   style={{
-                    flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                    padding: '10px 12px', borderRadius: 8, fontSize: 12, fontWeight: 500, cursor: 'pointer',
-                    border: `1.5px solid ${orientation === o ? '#E05A1E' : 'rgba(0,0,0,0.12)'}`,
-                    backgroundColor: orientation === o ? 'rgba(224,90,30,0.05)' : 'white',
-                    color: orientation === o ? '#E05A1E' : '#6b7280',
+                    flex: 1, padding: '7px 12px', fontSize: 12, cursor: 'pointer', border: 'none',
+                    backgroundColor: formatTab === tab ? '#FAF7F2' : 'white',
+                    color: formatTab === tab ? '#1F1B17' : '#5E5854',
+                    fontWeight: formatTab === tab ? 500 : 400,
                   }}
                 >
-                  <div style={{
-                    border: `2px solid currentColor`, borderRadius: 2, flexShrink: 0,
-                    width: o === 'paysage' ? 24 : 16, height: o === 'paysage' ? 16 : 24,
-                  }} />
-                  {o.charAt(0).toUpperCase() + o.slice(1)}
+                  {tab === 'standard' ? 'Format standard' : 'Dimensions personnalisées'}
                 </button>
               ))}
             </div>
+
+            {formatTab === 'standard' ? (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
+                {PAGE_FORMATS.map((f, i) => (
+                  <button key={i} type="button"
+                    onClick={() => setFmtIdx(i)}
+                    style={{
+                      padding: '8px 6px', borderRadius: 6, cursor: 'pointer', textAlign: 'center',
+                      border: fmtIdx === i ? '1.5px solid #E8602C' : '0.5px solid rgba(0,0,0,0.12)',
+                      backgroundColor: fmtIdx === i ? 'rgba(232,96,44,0.10)' : '#FAFAF9',
+                    }}
+                  >
+                    <div style={{ fontSize: 12, fontWeight: fmtIdx === i ? 600 : 400, color: fmtIdx === i ? '#E8602C' : '#1F1B17' }}>{f.label}</div>
+                    <div style={{ fontSize: 10, color: '#9C9591', marginTop: 2 }}>{f.w} × {f.h} mm</div>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  <div>
+                    <span style={{ fontSize: 11, color: '#9C9591', display: 'block', marginBottom: 4 }}>Largeur (mm)</span>
+                    <input type="number" min={100} max={2000} value={customW}
+                      onChange={e => setCustomW(Number(e.target.value))}
+                      style={INPUT}
+                    />
+                  </div>
+                  <div>
+                    <span style={{ fontSize: 11, color: '#9C9591', display: 'block', marginBottom: 4 }}>Hauteur (mm)</span>
+                    <input type="number" min={100} max={2000} value={customH}
+                      onChange={e => setCustomH(Number(e.target.value))}
+                      style={INPUT}
+                    />
+                  </div>
+                </div>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 12, color: '#374151' }}>
+                  <input
+                    type="checkbox"
+                    checked={isLandscape}
+                    onChange={handleOrientationToggle}
+                    style={{ width: 14, height: 14, cursor: 'pointer', accentColor: '#E8602C' }}
+                  />
+                  Orientation paysage
+                </label>
+              </div>
+            )}
+            <p style={{ fontSize: 11, color: '#9C9591', marginTop: 8 }}>
+              Page : {finalFormat.w} mm × {finalFormat.h} mm
+            </p>
           </div>
 
-          {/* Résumé */}
-          <div style={{
-            borderRadius: 8, backgroundColor: '#F5F2F0', border: '0.5px solid rgba(0,0,0,0.08)',
-            padding: '12px 16px', fontSize: 12, color: '#6b7280',
-          }}>
-            <span style={{ fontWeight: 500, color: '#1a1a1a' }}>{filteredTaskCount}</span> tâche
-            {filteredTaskCount > 1 ? 's' : ''} sur{' '}
-            <span style={{ fontWeight: 500, color: '#1a1a1a' }}>{selectedLotIds.size}</span>{' '}
-            lot{selectedLotIds.size > 1 ? 's' : ''} · période sélectionnée
+          {/* ── C) RÉSUMÉ ── */}
+          <div style={{ borderRadius: 8, backgroundColor: '#FAF7F2', border: '0.5px solid rgba(0,0,0,0.08)', padding: '12px 16px' }}>
+            <p style={{ fontSize: 12, color: '#1F1B17', fontWeight: 500, marginBottom: 4 }}>Récapitulatif</p>
+            <p style={{ fontSize: 11, color: '#5E5854', lineHeight: 1.7 }}>
+              {tachesInPeriod.length} tâche{tachesInPeriod.length > 1 ? 's' : ''} sur la période sélectionnée<br />
+              Lots inclus : {lots.length > 0 ? lots.map(l => l.nom).join(', ') : '—'}<br />
+              Format : {finalFormat.w} mm × {finalFormat.h} mm<br />
+              <span style={{ color: '#9C9591', fontSize: 10 }}>Le tableau sera mis à l'échelle pour tenir sur une page.</span>
+            </p>
           </div>
+
         </div>
 
         {/* Footer */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20, paddingTop: 16, borderTop: '0.5px solid rgba(0,0,0,0.08)' }}>
-          <button style={BTN} onClick={onClose}>
-            <X size={13} /> Annuler
-          </button>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 22, paddingTop: 16, borderTop: '0.5px solid rgba(0,0,0,0.08)' }}>
+          <button style={BTN} onClick={onClose}><X size={13} /> Annuler</button>
           <button
-            style={{ ...BTN_PRIMARY, opacity: selectedLotIds.size === 0 || !dateDebut || !dateFin ? 0.5 : 1 }}
-            onClick={handlePrint}
-            disabled={selectedLotIds.size === 0 || !dateDebut || !dateFin}
+            style={{ ...BTN_PRIMARY, opacity: isValid ? 1 : 0.5 }}
+            onClick={handleGenerate}
+            disabled={!isValid}
           >
-            <Printer size={13} /> Imprimer / Exporter PDF
+            <FileDown size={13} /> Générer le PDF
           </button>
         </div>
       </div>

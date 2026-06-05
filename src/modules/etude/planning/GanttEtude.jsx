@@ -1,20 +1,86 @@
-import { useState, useRef, useCallback, useEffect } from 'react'
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { supabase } from '../../../core/supabase/client'
-import { propagateEtudeDependencies, computeLagSemaines } from './types'
+import { propagateEtudeDependencies, computeLagSemaines, addWeeks, weeksBetween, getCurrentWeek } from './types'
+import { computeCriticalPath } from './computeCriticalPath'
 import { usePlanningEtude } from '../../../shared/hooks/usePlanningEtude'
+import { useNotionSync, etudePhaseToNotion } from '../../../shared/hooks/useNotionSync'
 import { GanttEtudeToolbar } from './GanttEtudeToolbar'
 import { GanttEtudeSidebar } from './GanttEtudeSidebar'
 import { GanttEtudeTimeline } from './GanttEtudeTimeline'
 import { PhaseEtudeModal } from './PhaseEtudeModal'
 import { JalonEtudeModal } from './JalonEtudeModal'
 import { ExportEtudeModal } from './ExportEtudeModal'
+import { Toast } from '../../../shared/components/Toast'
 
-export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '' }) {
+export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', affaire = {} }) {
   const { phases: hookPhases, jalons, loading, error, addPhase, updatePhase, deletePhase, refetch } = usePlanningEtude(affaireId)
 
-  // Local optimistic state
+  // ── Notion sync ───────────────────────────────────────────────────────────────
+  const notionSync     = useNotionSync(affaireId)
+  const notionIdMapRef = useRef(new Map())   // supabase phase.id → notion page id
+  const [notionToast, setNotionToast] = useState(false)
+
+  // ── Local optimistic state (fusionne Supabase + Notion) ───────────────────────
   const [phases, setPhases] = useState([])
-  useEffect(() => setPhases(hookPhases), [hookPhases])
+
+  useEffect(() => {
+    if (notionSync.notionEnabled && notionSync.notionPhases.length > 0) {
+      // Construire la map supabase id → notion id
+      const map = new Map()
+      notionSync.notionPhases.forEach(np => {
+        const match = hookPhases.find(p =>
+          (np._codePhase && p.nom?.toLowerCase().includes(np._codePhase.toLowerCase())) ||
+          p.ordre === np.ordre
+        )
+        if (match && np.notion_id) map.set(match.id, np.notion_id)
+      })
+      notionIdMapRef.current = map
+
+      // Ajouter uniquement les phases Notion sans équivalent en Supabase
+      const unmatched = notionSync.notionPhases.filter(np =>
+        !hookPhases.some(p =>
+          (np._codePhase && p.nom?.toLowerCase().includes(np._codePhase.toLowerCase())) ||
+          p.ordre === np.ordre
+        )
+      )
+      setPhases([...hookPhases, ...unmatched])
+    } else {
+      setPhases(hookPhases)
+    }
+  }, [hookPhases, notionSync.notionEnabled, notionSync.notionPhases])
+
+  // Toast quand une mise à jour Notion arrive via WS
+  useEffect(() => {
+    if (!notionSync.lastUpdateAt) return
+    setNotionToast(true)
+  }, [notionSync.lastUpdateAt])
+
+  // ── CPM (chemin critique, recalculé après chaque changement de phases) ────────
+  const criticalIds = useMemo(() => computeCriticalPath(phases), [phases])
+
+  // ── Phases triées par ordre — passées aux deux sous-composants ────────────────
+  const sortedPhases = useMemo(
+    () => [...phases].sort((a, b) => (a.ordre ?? 0) - (b.ordre ?? 0)),
+    [phases]
+  )
+
+  // ── Semaine de référence — recalculée dynamiquement avec -4 sem de marge ──────
+  const refDate = useMemo(() => {
+    if (phases.length === 0) {
+      const cw = getCurrentWeek()
+      return addWeeks(cw.semaine, cw.annee, -4)
+    }
+    let minSemaine = phases[0].semaine_debut
+    let minAnnee   = phases[0].annee_debut
+    phases.forEach(p => {
+      if (p.annee_debut < minAnnee ||
+        (p.annee_debut === minAnnee && p.semaine_debut < minSemaine)) {
+        minSemaine = p.semaine_debut
+        minAnnee   = p.annee_debut
+      }
+    })
+    return addWeeks(minSemaine, minAnnee, -4)
+  }, [phases])
 
   const [semWidth, setSemWidth] = useState(40)
   const [showConnections, setShowConnections] = useState(true)
@@ -37,6 +103,14 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '' })
     requestAnimationFrame(() => { isScrolling.current = null })
   }, [])
 
+  // Centrer la vue sur la semaine courante à chaque changement de refDate/zoom
+  useEffect(() => {
+    if (!timelineRef.current || phases.length === 0) return
+    const cw = getCurrentWeek()
+    const currentX = weeksBetween(refDate.semaine, refDate.annee, cw.semaine, cw.annee) * semWidth
+    timelineRef.current.scrollLeft = Math.max(0, currentX - 8 * semWidth)
+  }, [refDate.semaine, refDate.annee, semWidth])
+
   // ── Phase CRUD ─────────────────────────────────────────────────────────────────
   const handleSavePhase = useCallback(async (data) => {
     if (phaseModalMode === 'create') {
@@ -51,15 +125,29 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '' })
     await deletePhase(id)
   }, [deletePhase])
 
-  // ── Cascade persist (fire-and-forget) ────────────────────────────────────────
-  const persistCascadeUpdates = useCallback(async (primaryId, primaryChanges, cascadeUpdates) => {
+  // ── Réordonnancement par drag & drop ─────────────────────────────────────────
+  const handleReorder = useCallback(async (reorderedPhases) => {
+    setPhases(reorderedPhases)
     try {
-      await supabase.from('planning_etude_phases').update(primaryChanges).eq('id', primaryId)
-      if (cascadeUpdates.length > 0) {
-        await Promise.all(cascadeUpdates.map(u =>
+      await Promise.all(
+        reorderedPhases.map(p =>
+          supabase.from('planning_etude_phases').update({ ordre: p.ordre }).eq('id', p.id)
+        )
+      )
+    } catch {
+      await refetch()
+    }
+  }, [refetch])
+
+  // ── Persist en arrière-plan (découplé du state updater) ──────────────────────
+  const persistUpdates = useCallback(async (phaseId, changes, cascades) => {
+    try {
+      await supabase.from('planning_etude_phases').update(changes).eq('id', phaseId)
+      if (cascades.length > 0) {
+        await Promise.all(cascades.map(c =>
           supabase.from('planning_etude_phases')
-            .update({ semaine_debut: u.semaine_debut, annee_debut: u.annee_debut })
-            .eq('id', u.id)
+            .update({ semaine_debut: c.semaine_debut, annee_debut: c.annee_debut })
+            .eq('id', c.id)
         ))
       }
     } catch {
@@ -67,42 +155,60 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '' })
     }
   }, [refetch])
 
-  // ── Drag/resize with optimistic cascade ───────────────────────────────────────
+  // ── Drag/resize avec cascade optimiste ────────────────────────────────────────
   const handlePhaseUpdate = useCallback((phaseId, changes) => {
+    // Variables capturées depuis l'updater pour les effets de bord
+    let capturedChanges  = changes
+    let capturedCascades = []
+    let capturedPhase    = null
+
     setPhases(prev => {
       const phase = prev.find(p => p.id === phaseId)
       if (!phase) return prev
 
-      const newSem = changes.semaine_debut ?? phase.semaine_debut
-      const newAnn = changes.annee_debut ?? phase.annee_debut
+      const newSem   = changes.semaine_debut  ?? phase.semaine_debut
+      const newAnn   = changes.annee_debut    ?? phase.annee_debut
       const newDuree = changes.duree_semaines ?? phase.duree_semaines
 
-      // Recalculate lag when child is moved
+      // Recalcul du lag quand l'enfant est déplacé manuellement
       let finalChanges = { ...changes }
       if (phase.depends_on && (changes.semaine_debut != null || changes.annee_debut != null)) {
         const parent = prev.find(p => p.id === phase.depends_on)
         if (parent) {
-          const newLag = computeLagSemaines(
-            parent.semaine_debut, parent.annee_debut, parent.duree_semaines,
-            newSem, newAnn
-          )
-          finalChanges = { ...finalChanges, lag_semaines: newLag }
+          finalChanges = {
+            ...finalChanges,
+            lag_semaines: computeLagSemaines(
+              parent.semaine_debut, parent.annee_debut, parent.duree_semaines,
+              newSem, newAnn
+            ),
+          }
         }
       }
 
-      const cascadeUpdates = propagateEtudeDependencies(prev, phaseId, newSem, newAnn, newDuree)
-      const cascadeMap = new Map(cascadeUpdates.map(u => [u.id, u]))
+      const cascades   = propagateEtudeDependencies(prev, phaseId, newSem, newAnn, newDuree)
+      const cascadeMap = new Map(cascades.map(u => [u.id, u]))
 
-      const nextPhases = prev.map(p => {
+      const next = prev.map(p => {
         if (p.id === phaseId) return { ...p, ...finalChanges }
-        if (cascadeMap.has(p.id)) return { ...p, ...cascadeMap.get(p.id) }
-        return p
+        const c = cascadeMap.get(p.id)
+        return c ? { ...p, semaine_debut: c.semaine_debut, annee_debut: c.annee_debut } : p
       })
 
-      persistCascadeUpdates(phaseId, finalChanges, cascadeUpdates)
-      return nextPhases
+      // Capture pour les effets hors updater
+      capturedChanges  = finalChanges
+      capturedCascades = cascades
+      capturedPhase    = next.find(p => p.id === phaseId) ?? null
+      return next
     })
-  }, [persistCascadeUpdates])
+
+    // Effets de bord APRÈS le state update — jamais dans l'updater
+    persistUpdates(phaseId, capturedChanges, capturedCascades)
+
+    const notionId = notionIdMapRef.current.get(phaseId)
+    if (notionId && capturedPhase) {
+      notionSync.pushToNotion(notionId, capturedPhase)
+    }
+  }, [persistUpdates, notionSync.pushToNotion])
 
   // ── Dependencies ──────────────────────────────────────────────────────────────
   const handleDependencyCreate = useCallback(async (fromPhaseId, toPhaseId, lagSemaines) => {
@@ -119,51 +225,13 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '' })
     await refetch()
   }, [refetch])
 
-  // ── Export PDF ────────────────────────────────────────────────────────────────
-  const handleRequestPrint = useCallback(() => {
-    setShowExportModal(false)
-    const win = window.open('', '_blank')
-    if (!win) { alert('Autorisez les pop-ups pour exporter en PDF.'); return }
-
-    const styles = Array.from(document.styleSheets).map(ss => {
-      try { return Array.from(ss.cssRules).map(r => r.cssText).join('\n') } catch { return '' }
-    }).join('\n')
-
-    const ganttEl = document.getElementById('gantt-etude-print-root')
-    const ganttHtml = ganttEl ? ganttEl.outerHTML : '<p>Planning non trouvé</p>'
-
-    win.document.write(`<!DOCTYPE html>
-<html lang="fr">
-<head>
-  <meta charset="UTF-8"/>
-  <title>Planning étude – ${affaireTitre}</title>
-  <style>
-    @page { size: A3 landscape; margin: 10mm 8mm; }
-    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; box-sizing: border-box; }
-    body { margin: 0; font-family: sans-serif; background: white; }
-    ${styles}
-    [data-print="hidden"] { display: none !important; }
-    h2.print-title { font-size: 14pt; font-weight: 800; margin: 0 0 4mm; padding-bottom: 2mm; border-bottom: 2px solid #E05A1E; }
-    p.print-subtitle { font-size: 9pt; color: #666; margin: 0 0 6mm; }
-  </style>
-</head>
-<body>
-  <h2 class="print-title">Planning d'étude – ${affaireTitre}</h2>
-  <p class="print-subtitle">${affaireNumero} · ${new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })}</p>
-  ${ganttHtml}
-  <script>window.onload = () => { window.print(); window.close(); }<\/script>
-</body>
-</html>`)
-    win.document.close()
-  }, [affaireTitre, affaireNumero])
-
   // ── Loading / error ───────────────────────────────────────────────────────────
   if (loading) {
     return (
       <div style={{ display: 'flex', height: 'calc(100vh - 52px)', alignItems: 'center', justifyContent: 'center', backgroundColor: '#FAFAF9' }}>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
-          <div style={{ width: 32, height: 32, borderRadius: '50%', border: '2px solid #E05A1E', borderTopColor: 'transparent', animation: 'spin 0.7s linear infinite' }} />
-          <span style={{ fontSize: 13, color: '#9B8F85' }}>Chargement du planning…</span>
+          <div style={{ width: 32, height: 32, borderRadius: '50%', border: '2px solid #E8602C', borderTopColor: 'transparent', animation: 'spin 0.7s linear infinite' }} />
+          <span style={{ fontSize: 13, color: '#9C9591' }}>Chargement du planning…</span>
         </div>
       </div>
     )
@@ -173,9 +241,9 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '' })
     return (
       <div style={{ display: 'flex', height: 'calc(100vh - 52px)', alignItems: 'center', justifyContent: 'center' }}>
         <div style={{ textAlign: 'center', maxWidth: 340 }}>
-          <p style={{ fontWeight: 500, color: '#DC2626', marginBottom: 6 }}>Erreur de chargement</p>
-          <p style={{ fontSize: 13, color: '#9B8F85', marginBottom: 12 }}>{error}</p>
-          <button onClick={refetch} style={{ fontSize: 13, color: '#E05A1E', textDecoration: 'underline', background: 'none', border: 'none', cursor: 'pointer' }}>
+          <p style={{ fontWeight: 500, color: '#B8412C', marginBottom: 6 }}>Erreur de chargement</p>
+          <p style={{ fontSize: 13, color: '#9C9591', marginBottom: 12 }}>{error}</p>
+          <button onClick={refetch} style={{ fontSize: 13, color: '#E8602C', textDecoration: 'underline', background: 'none', border: 'none', cursor: 'pointer' }}>
             Réessayer
           </button>
         </div>
@@ -195,6 +263,9 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '' })
           onToggleConnections={() => setShowConnections(v => !v)}
           showConnections={showConnections}
           semWidth={semWidth}
+          notionEnabled={notionSync.notionEnabled}
+          notionConnected={notionSync.notionConnected}
+          onToggleNotion={notionSync.toggleNotion}
         />
       </div>
 
@@ -211,8 +282,10 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '' })
           }}
         >
           <GanttEtudeSidebar
-            phases={phases}
+            phases={sortedPhases}
             onEdit={p => { setEditingPhase(p); setPhaseModalMode('edit'); setShowPhaseModal(true) }}
+            criticalIds={criticalIds}
+            onReorder={handleReorder}
           />
         </div>
 
@@ -223,7 +296,7 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '' })
           style={{ flex: 1, overflow: 'auto' }}
         >
           <GanttEtudeTimeline
-            phases={phases}
+            phases={sortedPhases}
             semWidth={semWidth}
             showConnections={showConnections}
             jalons={jalons}
@@ -232,7 +305,64 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '' })
             onPhaseUpdate={handlePhaseUpdate}
             onDependencyCreate={handleDependencyCreate}
             onDependencyDelete={handleDependencyDelete}
+            criticalIds={criticalIds}
+            refSemaine={refDate.semaine}
+            refAnnee={refDate.annee}
           />
+        </div>
+      </div>
+
+      {/* ── Légende ── */}
+      <div data-print="hidden" style={{
+        display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 16,
+        padding: '7px 20px',
+        borderTop: '0.5px solid rgba(0,0,0,0.08)',
+        backgroundColor: 'white', flexShrink: 0,
+      }}>
+        <span style={{
+          fontSize: 10, fontWeight: 600, color: '#9C9591',
+          letterSpacing: '0.06em', textTransform: 'uppercase', marginRight: 4,
+        }}>
+          Légende
+        </span>
+        {[
+          { color: '#E8A200', label: 'Phase MOE (ESQ, APS, APD…)' },
+          { color: '#2A8A4E', label: 'Validation / Visa' },
+          { color: '#D97706', label: 'Période administrative', dashed: true },
+          { color: '#1B3A5C', label: 'Phase chantier' },
+        ].map(item => (
+          <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div style={{
+              width: 24, height: 10, borderRadius: 3,
+              backgroundColor: item.dashed ? 'transparent' : item.color,
+              border: item.dashed ? `1.5px dashed ${item.color}` : 'none',
+              flexShrink: 0,
+            }} />
+            <span style={{ fontSize: 11, color: '#5E5854' }}>{item.label}</span>
+          </div>
+        ))}
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 8,
+          borderLeft: '0.5px solid rgba(0,0,0,0.1)', paddingLeft: 12, marginLeft: 4,
+        }}>
+          {[
+            { num: '1', label: 'Architecte' },
+            { num: '2', label: 'BET' },
+            { num: '3', label: 'Économiste' },
+          ].map(item => (
+            <div key={item.num} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <span style={{
+                width: 16, height: 16, borderRadius: 3,
+                backgroundColor: 'rgba(232,162,0,0.18)', color: '#B07C00',
+                fontSize: 10, fontWeight: 700,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                flexShrink: 0,
+              }}>
+                {item.num}
+              </span>
+              <span style={{ fontSize: 11, color: '#5E5854' }}>{item.label}</span>
+            </div>
+          ))}
         </div>
       </div>
 
@@ -259,10 +389,16 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '' })
         onClose={() => setShowExportModal(false)}
         taches={phases}
         jalons={jalons}
-        affaireNumero={affaireNumero}
-        affaireTitre={affaireTitre}
-        onPrint={handleRequestPrint}
+        affaire={affaire}
       />
+
+      {notionToast && (
+        <Toast
+          message="↔ Notion synchronisé"
+          duration={2000}
+          onDone={() => setNotionToast(false)}
+        />
+      )}
     </div>
   )
 }

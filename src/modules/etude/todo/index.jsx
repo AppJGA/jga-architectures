@@ -7,7 +7,7 @@ export default function TodoModule() {
       label="To-do list"
       description="Tâches par phase d'étude"
       icon={CheckSquare}
-      phaseColor="#E05A1E"
+      phaseColor="#E8602C"
     />
   )
 }

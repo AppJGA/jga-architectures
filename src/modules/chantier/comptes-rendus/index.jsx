@@ -1,377 +1,255 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { Plus, Printer, Cloud, Sun, CloudRain, Wind, ChevronDown, ChevronUp, Trash2 } from 'lucide-react'
-import { useAuth } from '../../../core/auth/useAuth'
-import { StatusBadge } from '../../../shared/components/Badge'
-import { Button } from '../../../shared/components/Button'
-import {
-  getComptesRendus, createCompteRendu, getReservesOuvertes,
-  createReserve, updateReserveStatut,
-} from './supabase'
+import { Plus, Copy, Trash2, Users, ChevronRight } from 'lucide-react'
+import { useAffaire } from '../../../shared/hooks/useAffaires'
+import { useComptesRendus } from '../../../shared/hooks/useComptesRendus'
+import { InterlocuteursModal } from './InterlocuteursModal'
+import { CrDetail } from './CrDetail'
 
-const METEO_OPTIONS = [
-  { value: 'ensoleille', label: 'Ensoleillé', Icon: Sun },
-  { value: 'nuageux', label: 'Nuageux', Icon: Cloud },
-  { value: 'pluvieux', label: 'Pluvieux', Icon: CloudRain },
-  { value: 'vent', label: 'Venteux', Icon: Wind },
-]
-
-const LOTS = ['Gros œuvre', 'Charpente', 'Couverture', 'Façade', 'Menuiseries ext.', 'Menuiseries int.', 'Plomberie', 'Électricité', 'Cloisonnement', 'Peinture', 'Carrelage', 'VRD', 'Espaces verts', 'Autre']
-
-function MeteoIcon({ meteo }) {
-  const opt = METEO_OPTIONS.find(m => m.value === meteo)
-  if (!opt) return null
-  const { Icon } = opt
-  return <Icon size={16} style={{ color: 'var(--jga-beige)' }} />
+function fmtDate(d) {
+  if (!d) return '—'
+  return new Date(d + 'T00:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
-function NouveauRapportForm({ affaireId, userId, onSave, onCancel }) {
-  const today = new Date().toISOString().split('T')[0]
-  const [dateVisite, setDateVisite] = useState(today)
-  const [meteo, setMeteo] = useState('ensoleille')
-  const [observations, setObservations] = useState('')
-  const [reserves, setReserves] = useState([])
-  const [saving, setSaving] = useState(false)
+function StatutBadge({ statut }) {
+  const isEmis = statut === 'emis'
+  return (
+    <span style={{
+      fontSize: 11, fontWeight: 500, borderRadius: 20, padding: '2px 9px',
+      backgroundColor: isEmis ? 'rgba(42,138,78,0.12)' : '#F3F4F6',
+      color: isEmis ? '#2A8A4E' : '#5E5854',
+    }}>
+      {isEmis ? 'Émis' : 'Brouillon'}
+    </span>
+  )
+}
 
-  const addReserve = () =>
-    setReserves(prev => [...prev, { description: '', lot: LOTS[0], statut: 'ouverte' }])
+function Spinner() {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 200 }}>
+      <div style={{ width: 24, height: 24, borderRadius: '50%', border: '2px solid rgba(232,96,44,0.10)', borderTopColor: '#E8602C', animation: 'jga-spin 0.7s linear infinite' }} />
+    </div>
+  )
+}
 
-  const updateReserve = (i, field, value) =>
-    setReserves(prev => prev.map((r, idx) => idx === i ? { ...r, [field]: value } : r))
+function CrRow({ cr, onOpen, onDuplicate, onDelete }) {
+  const [duplicating, setDuplicating] = useState(false)
 
-  const removeReserve = (i) =>
-    setReserves(prev => prev.filter((_, idx) => idx !== i))
-
-  const handleSubmit = async () => {
-    if (!dateVisite) return
-    setSaving(true)
-
-    const { data: cr, error } = await createCompteRendu({
-      affaire_id: affaireId,
-      date_visite: dateVisite,
-      meteo,
-      observations,
-      redacteur_id: userId,
-    })
-
-    if (!error && cr && reserves.length > 0) {
-      const { supabase } = await import('../../../core/supabase/client')
-      await supabase.from('reserves').insert(
-        reserves
-          .filter(r => r.description.trim())
-          .map(r => ({ ...r, compte_rendu_id: cr.id, affaire_id: affaireId }))
-      )
-    }
-
-    setSaving(false)
-    onSave()
-  }
+  const redacteurName = cr.profiles
+    ? [cr.profiles.prenom, cr.profiles.nom].filter(Boolean).join(' ')
+    : '—'
 
   return (
-    <div className="bg-white rounded-xl border p-6" style={{ borderColor: '#e9e5e2' }}>
-      <h3 className="text-sm font-medium text-gray-800 mb-5">Nouveau compte rendu de visite</h3>
-
-      <div className="grid grid-cols-2 gap-4 mb-4">
-        <div>
-          <label className="block text-xs mb-1.5" style={{ color: 'var(--jga-beige)' }}>
-            Date de visite
-          </label>
-          <input
-            type="date"
-            value={dateVisite}
-            onChange={e => setDateVisite(e.target.value)}
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none"
-            style={{ fontSize: 14 }}
-          />
+    <tr style={{ borderBottom: '0.5px solid rgba(0,0,0,0.06)' }}>
+      <td style={{ padding: '12px 16px', fontWeight: 500, color: '#1F1B17', fontSize: 13 }}>
+        {String(cr.numero).padStart(2, '0')}
+      </td>
+      <td style={{ padding: '12px 16px', fontSize: 13, color: '#374151' }}>
+        {fmtDate(cr.date_reunion)}
+      </td>
+      <td style={{ padding: '12px 16px', fontSize: 12, color: '#5E5854' }}>
+        {cr.date_prochaine_reunion ? fmtDate(cr.date_prochaine_reunion) : '—'}
+        {cr.heure_prochaine_reunion && ` · ${cr.heure_prochaine_reunion.slice(0, 5)}`}
+      </td>
+      <td style={{ padding: '12px 16px', fontSize: 12, color: '#5E5854' }}>{redacteurName}</td>
+      <td style={{ padding: '12px 16px' }}><StatutBadge statut={cr.statut} /></td>
+      <td style={{ padding: '12px 16px' }}>
+        <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+          <button
+            onClick={() => onOpen(cr.id)}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 10px', borderRadius: 7, fontSize: 11, border: '0.5px solid #E8602C', backgroundColor: 'rgba(232,96,44,0.10)', color: '#E8602C', cursor: 'pointer' }}
+          >
+            Ouvrir <ChevronRight size={12} />
+          </button>
+          <button
+            onClick={async () => { setDuplicating(true); await onDuplicate(cr.id); setDuplicating(false) }}
+            disabled={duplicating}
+            title="Dupliquer"
+            style={{ padding: '5px 8px', borderRadius: 7, fontSize: 11, border: '0.5px solid rgba(0,0,0,0.12)', backgroundColor: 'white', color: '#5E5854', cursor: 'pointer', opacity: duplicating ? 0.6 : 1 }}
+          >
+            <Copy size={13} />
+          </button>
+          <button
+            onClick={() => onDelete(cr)}
+            title="Supprimer"
+            style={{ padding: '5px 8px', borderRadius: 7, fontSize: 11, cursor: 'pointer', border: '0.5px solid rgba(0,0,0,0.12)', backgroundColor: 'white', color: '#9C9591' }}
+          >
+            <Trash2 size={13} />
+          </button>
         </div>
+      </td>
+    </tr>
+  )
+}
 
-        <div>
-          <label className="block text-xs mb-1.5" style={{ color: 'var(--jga-beige)' }}>Météo</label>
-          <div className="flex gap-2">
-            {METEO_OPTIONS.map(({ value, label, Icon }) => (
-              <button
-                key={value}
-                type="button"
-                title={label}
-                onClick={() => setMeteo(value)}
-                className="flex-1 flex items-center justify-center py-2 rounded-lg border transition-all"
-                style={{
-                  borderColor: meteo === value ? 'var(--jga-green)' : '#e9e5e2',
-                  backgroundColor: meteo === value ? 'var(--jga-green-light)' : 'transparent',
-                  color: meteo === value ? 'var(--jga-green)' : 'var(--jga-beige)',
-                }}
-              >
-                <Icon size={16} />
-              </button>
-            ))}
+function DeleteConfirmModal({ cr, onConfirm, onCancel }) {
+  const [deleting, setDeleting] = useState(false)
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.3)',
+      zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center',
+    }}>
+      <div style={{
+        background: 'white', borderRadius: 16, padding: '28px 32px',
+        maxWidth: 420, width: '100%', border: '0.5px solid rgba(0,0,0,0.08)',
+      }}>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', marginBottom: 16 }}>
+          <div style={{
+            width: 40, height: 40, borderRadius: 10, background: 'rgba(184,65,44,0.10)',
+            flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <Trash2 size={18} color="#B8412C" />
+          </div>
+          <div>
+            <p style={{ fontSize: 15, fontWeight: 500, color: '#1F1B17', marginBottom: 4 }}>
+              Supprimer le compte rendu ?
+            </p>
+            <p style={{ fontSize: 12, color: '#9C9591' }}>
+              Réunion n°{cr.numero} — {new Date(cr.date_reunion + 'T00:00:00').toLocaleDateString('fr-FR')}
+            </p>
           </div>
         </div>
-      </div>
 
-      <div className="mb-4">
-        <label className="block text-xs mb-1.5" style={{ color: 'var(--jga-beige)' }}>
-          Observations générales
-        </label>
-        <textarea
-          value={observations}
-          onChange={e => setObservations(e.target.value)}
-          rows={5}
-          placeholder="Déroulement de la visite, avancement des travaux, points d'attention…"
-          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none resize-none"
-          style={{ fontSize: 14 }}
+        <p style={{ fontSize: 13, color: '#5E5854', lineHeight: 1.6, marginBottom: 24 }}>
+          Cette action est <strong>irréversible</strong>. Toutes les présences et remarques associées seront définitivement supprimées.
+        </p>
+
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button
+            onClick={onCancel}
+            style={{ padding: '8px 16px', borderRadius: 10, border: '0.5px solid rgba(0,0,0,0.15)', background: 'transparent', fontSize: 13, cursor: 'pointer', color: '#374151' }}
+          >
+            Annuler
+          </button>
+          <button
+            onClick={async () => { setDeleting(true); await onConfirm(); setDeleting(false) }}
+            disabled={deleting}
+            style={{ padding: '8px 16px', borderRadius: 10, border: 'none', background: '#B8412C', color: 'white', fontSize: 13, fontWeight: 500, cursor: 'pointer', opacity: deleting ? 0.6 : 1 }}
+          >
+            {deleting ? 'Suppression…' : 'Supprimer définitivement'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+const TH = { padding: '10px 16px', fontSize: 10, fontWeight: 500, color: '#9C9591', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'left', borderBottom: '0.5px solid rgba(0,0,0,0.1)', whiteSpace: 'nowrap' }
+
+export default function ComptesRendusModule() {
+  const { affaireId } = useParams()
+  const { affaire } = useAffaire(affaireId)
+  const { comptesRendus, loading, createCR, deleteCR, duplicateCR } = useComptesRendus(affaireId)
+  const [selectedCrId, setSelectedCrId] = useState(null)
+  const [interloOpen, setInterloOpen] = useState(false)
+  const [creating, setCreating] = useState(false)
+  const [deletingCr, setDeletingCr] = useState(null)
+
+  const handleCreate = async () => {
+    setCreating(true)
+    try {
+      const cr = await createCR()
+      setSelectedCrId(cr.id)
+    } catch (err) { console.error(err) }
+    setCreating(false)
+  }
+
+  const handleDuplicate = async (crId) => {
+    const newCr = await duplicateCR(crId)
+    setSelectedCrId(newCr.id)
+  }
+
+  if (selectedCrId) {
+    return (
+      <>
+        <style>{`@keyframes jga-spin { to { transform: rotate(360deg); } }`}</style>
+        <CrDetail
+          crId={selectedCrId}
+          affaire={affaire}
+          onBack={() => setSelectedCrId(null)}
         />
-      </div>
-
-      <div className="mb-5">
-        <div className="flex items-center justify-between mb-2">
-          <label className="text-xs font-medium" style={{ color: 'var(--jga-beige)' }}>
-            Réserves ({reserves.length})
-          </label>
-          <Button variant="secondary" size="sm" onClick={addReserve}>
-            <Plus size={12} /> Ajouter
-          </Button>
-        </div>
-
-        <div className="flex flex-col gap-2">
-          {reserves.map((reserve, i) => (
-            <div key={i} className="flex gap-2 items-start p-3 bg-gray-50 rounded-lg">
-              <div className="flex-1 flex flex-col gap-2">
-                <input
-                  type="text"
-                  value={reserve.description}
-                  onChange={e => updateReserve(i, 'description', e.target.value)}
-                  placeholder="Description de la réserve…"
-                  className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm outline-none bg-white"
-                  style={{ fontSize: 14 }}
-                />
-                <select
-                  value={reserve.lot}
-                  onChange={e => updateReserve(i, 'lot', e.target.value)}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm outline-none bg-white"
-                >
-                  {LOTS.map(lot => <option key={lot}>{lot}</option>)}
-                </select>
-              </div>
-              <button onClick={() => removeReserve(i)} className="p-1.5 text-gray-400 hover:text-red-500">
-                <Trash2 size={14} />
-              </button>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="flex gap-2 justify-end">
-        <Button variant="ghost" onClick={onCancel}>Annuler</Button>
-        <Button onClick={handleSubmit} disabled={saving} style={{ backgroundColor: 'var(--jga-green)', borderColor: 'var(--jga-green)' }}>
-          {saving ? 'Enregistrement…' : 'Enregistrer'}
-        </Button>
-      </div>
-    </div>
-  )
-}
-
-function CompteRenduRow({ cr }) {
-  const [open, setOpen] = useState(false)
-  const dateStr = new Date(cr.date_visite).toLocaleDateString('fr-FR', {
-    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
-  })
-
-  return (
-    <div className="border rounded-xl overflow-hidden bg-white" style={{ borderColor: '#e9e5e2' }}>
-      <button
-        onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center gap-3 px-4 py-3 text-left"
-      >
-        <MeteoIcon meteo={cr.meteo} />
-        <span className="flex-1 text-sm text-gray-700 capitalize">{dateStr}</span>
-        <span className="text-xs" style={{ color: 'var(--jga-beige)' }}>
-          {cr.reserves?.length ?? 0} réserve{cr.reserves?.length !== 1 ? 's' : ''}
-        </span>
-        {open
-          ? <ChevronUp size={16} style={{ color: 'var(--jga-beige)' }} />
-          : <ChevronDown size={16} style={{ color: 'var(--jga-beige)' }} />
-        }
-      </button>
-
-      {open && (
-        <div className="px-4 pb-4 border-t" style={{ borderColor: '#e9e5e2' }}>
-          {cr.observations && (
-            <p className="text-sm text-gray-600 mt-3 mb-3 whitespace-pre-wrap leading-relaxed">
-              {cr.observations}
-            </p>
-          )}
-          {cr.reserves?.length > 0 && (
-            <div>
-              <p className="text-xs font-medium mb-2" style={{ color: 'var(--jga-beige)' }}>Réserves</p>
-              <div className="flex flex-col gap-1">
-                {cr.reserves.map(r => (
-                  <div key={r.id} className="flex items-center gap-2">
-                    <StatusBadge statut={r.statut} />
-                    <span className="text-xs text-gray-600">{r.description}</span>
-                    {r.lot && <span className="text-xs text-gray-400">— {r.lot}</span>}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function ReservesTable({ affaireId, refreshKey }) {
-  const [reserves, setReserves] = useState([])
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    setLoading(true)
-    getReservesOuvertes(affaireId).then(({ data }) => {
-      setReserves(data ?? [])
-      setLoading(false)
-    })
-  }, [affaireId, refreshKey])
-
-  const handleStatutChange = async (id, statut) => {
-    await updateReserveStatut(id, statut)
-    setReserves(prev =>
-      prev.map(r => r.id === id ? { ...r, statut } : r).filter(r => r.statut !== 'levee')
+      </>
     )
   }
 
-  if (loading) return null
+  const emis = comptesRendus.filter(cr => cr.statut === 'emis').length
 
   return (
-    <div>
-      <h3 className="text-sm font-medium text-gray-700 mb-3">
-        Réserves ouvertes ({reserves.length})
-      </h3>
-      {reserves.length === 0 ? (
-        <div className="bg-white rounded-xl border p-6 text-center" style={{ borderColor: '#e9e5e2' }}>
-          <p className="text-sm" style={{ color: 'var(--jga-beige)' }}>Aucune réserve ouverte</p>
+    <>
+      <style>{`@keyframes jga-spin { to { transform: rotate(360deg); } }`}</style>
+
+      {/* En-tête */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, flexWrap: 'wrap', gap: 10 }}>
+        <div>
+          <h2 style={{ fontSize: 15, fontWeight: 500, color: '#1F1B17', margin: 0 }}>Visites de chantier</h2>
+          <p style={{ fontSize: 12, color: '#9C9591', marginTop: 3 }}>
+            {comptesRendus.length} CR · {emis} émis
+          </p>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button
+            onClick={() => setInterloOpen(true)}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 8, fontSize: 12, border: '0.5px solid rgba(0,0,0,0.15)', backgroundColor: 'white', color: '#374151', cursor: 'pointer' }}
+          >
+            <Users size={13} /> Gérer les interlocuteurs
+          </button>
+          <button
+            onClick={handleCreate}
+            disabled={creating}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 8, fontSize: 12, fontWeight: 500, border: 'none', backgroundColor: '#2A8A4E', color: 'white', cursor: 'pointer', opacity: creating ? 0.6 : 1 }}
+          >
+            <Plus size={13} /> Nouvelle visite
+          </button>
+        </div>
+      </div>
+
+      {/* Liste */}
+      {loading ? (
+        <Spinner />
+      ) : comptesRendus.length === 0 ? (
+        <div style={{ backgroundColor: 'white', borderRadius: 14, border: '0.5px solid rgba(0,0,0,0.08)', padding: '48px 24px', textAlign: 'center' }}>
+          <p style={{ fontSize: 13, color: '#5E5854', marginBottom: 6 }}>Aucun compte rendu</p>
+          <p style={{ fontSize: 12, color: '#9C9591' }}>Commencez par créer le premier CR de cette affaire.</p>
         </div>
       ) : (
-        <div className="bg-white rounded-xl border overflow-hidden" style={{ borderColor: '#e9e5e2' }}>
-          <table className="w-full text-sm">
+        <div style={{ backgroundColor: 'white', borderRadius: 14, border: '0.5px solid rgba(0,0,0,0.08)', overflow: 'hidden' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
-              <tr className="border-b" style={{ borderColor: '#e9e5e2' }}>
-                <th className="text-left px-4 py-2.5 text-xs font-medium" style={{ color: 'var(--jga-beige)' }}>Description</th>
-                <th className="text-left px-4 py-2.5 text-xs font-medium" style={{ color: 'var(--jga-beige)' }}>Lot</th>
-                <th className="text-left px-4 py-2.5 text-xs font-medium" style={{ color: 'var(--jga-beige)' }}>Statut</th>
-                <th className="px-4 py-2.5" />
+              <tr style={{ backgroundColor: '#FAFAF9' }}>
+                <th style={TH}>N°</th>
+                <th style={TH}>Date réunion</th>
+                <th style={TH}>Prochaine réunion</th>
+                <th style={TH}>Rédacteur</th>
+                <th style={TH}>Statut</th>
+                <th style={{ ...TH, textAlign: 'right' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {reserves.map(r => (
-                <tr key={r.id} className="border-b last:border-0" style={{ borderColor: '#e9e5e2' }}>
-                  <td className="px-4 py-2.5 text-gray-700">{r.description}</td>
-                  <td className="px-4 py-2.5 text-xs" style={{ color: 'var(--jga-beige)' }}>{r.lot}</td>
-                  <td className="px-4 py-2.5"><StatusBadge statut={r.statut} /></td>
-                  <td className="px-4 py-2.5">
-                    <select
-                      value={r.statut}
-                      onChange={e => handleStatutChange(r.id, e.target.value)}
-                      className="text-xs border border-gray-200 rounded px-2 py-1 outline-none"
-                    >
-                      <option value="ouverte">Ouverte</option>
-                      <option value="en_cours">En cours</option>
-                      <option value="levee">Levée</option>
-                    </select>
-                  </td>
-                </tr>
+              {comptesRendus.map(cr => (
+                <CrRow
+                  key={cr.id}
+                  cr={cr}
+                  onOpen={setSelectedCrId}
+                  onDuplicate={handleDuplicate}
+                  onDelete={setDeletingCr}
+                />
               ))}
             </tbody>
           </table>
         </div>
       )}
-    </div>
-  )
-}
 
-export default function ComptesRendusModule() {
-  const { affaireId } = useParams()
-  const { user } = useAuth()
-  const [comptesRendus, setComptesRendus] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [showForm, setShowForm] = useState(false)
-  const [refreshKey, setRefreshKey] = useState(0)
-
-  const loadComptesRendus = () => {
-    setLoading(true)
-    getComptesRendus(affaireId).then(({ data }) => {
-      setComptesRendus(data ?? [])
-      setLoading(false)
-    })
-  }
-
-  useEffect(() => { loadComptesRendus() }, [affaireId, refreshKey])
-
-  const handleSaved = () => {
-    setShowForm(false)
-    setRefreshKey(k => k + 1)
-  }
-
-  return (
-    <div style={{ padding: '24px', maxWidth: 800, margin: '0 auto' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-        <div>
-          <h2 style={{ fontSize: 15, fontWeight: 500, color: '#1a1a1a' }}>Comptes rendus de visite</h2>
-          <p style={{ fontSize: 12, color: 'var(--jga-beige)', marginTop: 2 }}>
-            {comptesRendus.length} compte{comptesRendus.length > 1 ? 's' : ''} rendu{comptesRendus.length > 1 ? 's' : ''}
-          </p>
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <Button variant="ghost" onClick={() => window.print()}>
-            <Printer size={14} /> Imprimer
-          </Button>
-          <Button
-            onClick={() => setShowForm(true)}
-            style={{ backgroundColor: 'var(--jga-green)', borderColor: 'var(--jga-green)' }}
-          >
-            <Plus size={14} /> Nouveau CR
-          </Button>
-        </div>
-      </div>
-
-      {showForm && (
-        <div style={{ marginBottom: 20 }}>
-          <NouveauRapportForm
-            affaireId={affaireId}
-            userId={user?.id}
-            onSave={handleSaved}
-            onCancel={() => setShowForm(false)}
-          />
-        </div>
+      {interloOpen && (
+        <InterlocuteursModal affaireId={affaireId} onClose={() => setInterloOpen(false)} />
       )}
 
-      <div style={{ marginBottom: 32 }}>
-        <h3 style={{ fontSize: 13, fontWeight: 500, color: '#374151', marginBottom: 12 }}>
-          Visites de chantier ({comptesRendus.length})
-        </h3>
-        {loading ? (
-          <div style={{ display: 'flex', justifyContent: 'center', padding: 32 }}>
-            <div style={{
-              width: 24, height: 24, borderRadius: '50%',
-              border: '2px solid var(--jga-green-light)',
-              borderTopColor: 'var(--jga-green)',
-              animation: 'spin 0.8s linear infinite',
-            }} />
-          </div>
-        ) : comptesRendus.length === 0 ? (
-          <div className="bg-white rounded-xl border p-8 text-center" style={{ borderColor: '#e9e5e2' }}>
-            <p className="text-sm text-gray-500 mb-1">Aucun compte rendu</p>
-            <p className="text-xs" style={{ color: 'var(--jga-beige)' }}>
-              Cliquez sur "Nouveau CR" pour commencer le suivi de chantier.
-            </p>
-          </div>
-        ) : (
-          <div className="flex flex-col gap-2">
-            {comptesRendus.map(cr => <CompteRenduRow key={cr.id} cr={cr} />)}
-          </div>
-        )}
-      </div>
-
-      <ReservesTable affaireId={affaireId} refreshKey={refreshKey} />
-    </div>
+      {deletingCr && (
+        <DeleteConfirmModal
+          cr={deletingCr}
+          onConfirm={async () => { await deleteCR(deletingCr.id); setDeletingCr(null) }}
+          onCancel={() => setDeletingCr(null)}
+        />
+      )}
+    </>
   )
 }

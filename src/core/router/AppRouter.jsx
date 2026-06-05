@@ -10,6 +10,7 @@ import { tools } from '../../tools/manifest'
 
 const Heures = lazy(() => import('../../tools/heures'))
 const HomePage = lazy(() => import('../../pages/HomePage'))
+const CarnetAdresses = lazy(() => import('../../pages/CarnetAdressesPage'))
 
 function Spinner() {
   return (
@@ -62,6 +63,7 @@ export function AppRouter() {
           <Route path="affaires/:affaireId" element={<AffairePage />} />
           <Route path="affaires/:affaireId/:moduleId" element={<AffairePage />} />
 
+          <Route path="carnet-adresses" element={<Wrap><CarnetAdresses /></Wrap>} />
           <Route path="heures" element={<Wrap><Heures /></Wrap>} />
 
           {/* Tools */}

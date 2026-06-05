@@ -10,6 +10,7 @@ export default function PlanningChantierModule() {
       affaireId={affaireId}
       affaireNumero={affaire?.code_affaire ?? ''}
       affaireTitre={affaire?.nom ?? ''}
+      affaire={affaire ?? {}}
     />
   )
 }

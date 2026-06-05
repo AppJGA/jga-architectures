@@ -1,28 +1,42 @@
 import { useState, useEffect } from 'react'
 import { X, Trash2 } from 'lucide-react'
 import {
-  TYPE_COLORS, TYPE_LABELS,
   getWeekStart, getCurrentWeek, addWeeks,
   computeLagSemaines,
 } from './types'
 
 const LABEL = {
   display: 'block', fontSize: 10, fontWeight: 700, textTransform: 'uppercase',
-  letterSpacing: '0.06em', color: '#9B8F85', marginBottom: 4,
+  letterSpacing: '0.06em', color: '#9C9591', marginBottom: 4,
 }
 const INPUT = {
   width: '100%', height: 36, padding: '0 10px', borderRadius: 8, fontSize: 13,
   border: '0.5px solid rgba(0,0,0,0.12)', backgroundColor: '#FAFAF9', outline: 'none',
-  boxSizing: 'border-box', color: '#1a1a1a',
+  boxSizing: 'border-box', color: '#1F1B17',
 }
 
-const MOA_TYPES = ['validation', 'administratif', 'chantier']
+const TYPE_OPTIONS = [
+  { type: 'etude',         label: 'MOE',          sublabel: 'ESQ, APS, APD, PRO, DCE…',       couleur: '#E8A200', fondClair: '#FFF8E7' },
+  { type: 'validation',    label: 'MOA',           sublabel: 'Visas, validations, approbations', couleur: '#2A8A4E', fondClair: 'rgba(42,138,78,0.12)' },
+  { type: 'administratif', label: 'Administratif', sublabel: 'Instruction PC, recours, dépôt…', couleur: '#D97706', fondClair: '#FEF3C7' },
+  { type: 'chantier',      label: 'Chantier',      sublabel: 'DET, travaux, OPR, réception',    couleur: '#1B3A5C', fondClair: 'rgba(27,58,92,0.10)' },
+]
+
+const TYPE_PLACEHOLDERS = {
+  etude:         'Ex: APS — Avant-Projet Sommaire',
+  validation:    'Ex: Validation APS ORSAC',
+  administratif: "Ex: Instruction Permis de Construire",
+  chantier:      "Ex: DET — Direction de l'exécution des travaux",
+}
+
+export function typeToImportance(type) {
+  return { etude: 'moe', validation: 'moa', administratif: 'admin', chantier: 'chantier' }[type] ?? 'moa'
+}
 
 function emptyForm() {
   const now = getCurrentWeek()
   return {
     nom: '',
-    importance: 'moe',
     type_tache: 'etude',
     semaine_debut: now.semaine,
     annee_debut: now.annee,
@@ -45,18 +59,17 @@ export function PhaseEtudeModal({ open, onClose, phase, phases, onSave, onDelete
     if (!open) return
     if (phase) {
       setForm({
-        nom: phase.nom ?? '',
-        importance: phase.importance ?? 'moe',
-        type_tache: phase.type_tache ?? 'etude',
+        nom:           phase.nom ?? '',
+        type_tache:    phase.type_tache ?? 'etude',
         semaine_debut: phase.semaine_debut,
-        annee_debut: phase.annee_debut,
+        annee_debut:   phase.annee_debut,
         duree_semaines: phase.duree_semaines ?? 1,
-        duree_arch: phase.duree_arch ?? '',
-        duree_bet: phase.duree_bet ?? '',
-        duree_econ: phase.duree_econ ?? '',
-        label_barre: phase.label_barre ?? '',
-        depends_on: phase.depends_on ?? null,
-        lag_semaines: phase.lag_semaines ?? 0,
+        duree_arch:    phase.duree_arch ?? '',
+        duree_bet:     phase.duree_bet  ?? '',
+        duree_econ:    phase.duree_econ ?? '',
+        label_barre:   phase.label_barre ?? '',
+        depends_on:    phase.depends_on ?? null,
+        lag_semaines:  phase.lag_semaines ?? 0,
       })
     } else {
       setForm(emptyForm())
@@ -68,12 +81,16 @@ export function PhaseEtudeModal({ open, onClose, phase, phases, onSave, onDelete
 
   const set = (key, val) => setForm(f => ({ ...f, [key]: val }))
 
-  const handleImportanceChange = (imp) => {
+  const handleTypeChange = (type) => {
     setForm(f => ({
       ...f,
-      importance: imp,
-      type_tache: imp === 'moe' ? 'etude' : (f.type_tache === 'etude' ? 'validation' : f.type_tache),
-      ...(imp === 'moa' ? { duree_arch: '', duree_bet: '', duree_econ: '' } : {}),
+      type_tache: type,
+      // Réinitialiser les sous-durées si on quitte MOE
+      duree_arch: type === 'etude' ? f.duree_arch : '',
+      duree_bet:  type === 'etude' ? f.duree_bet  : '',
+      duree_econ: type === 'etude' ? f.duree_econ : '',
+      // Réinitialiser label_barre si on quitte administratif
+      label_barre: type === 'administratif' ? f.label_barre : '',
     }))
   }
 
@@ -105,19 +122,21 @@ export function PhaseEtudeModal({ open, onClose, phase, phases, onSave, onDelete
     e.preventDefault()
     if (!form.nom.trim()) return
     setSaving(true)
-    const isMoe = form.importance === 'moe'
+    const isMoe = form.type_tache === 'etude'
+    // importance : uniquement 'moe'/'moa' tant que la migration 013 n'est pas appliquée
+    const importance = isMoe ? 'moe' : 'moa'
     const payload = {
-      nom: form.nom.trim(),
-      importance: form.importance,
-      type_tache: isMoe ? 'etude' : form.type_tache,
-      semaine_debut: Number(form.semaine_debut),
-      annee_debut: Number(form.annee_debut),
+      nom:            form.nom.trim(),
+      type_tache:     form.type_tache,
+      importance,
+      semaine_debut:  Number(form.semaine_debut),
+      annee_debut:    Number(form.annee_debut),
       duree_semaines: Math.max(1, Number(form.duree_semaines)),
-      duree_arch: isMoe && form.duree_arch !== '' ? Number(form.duree_arch) : null,
-      duree_bet: isMoe && form.duree_bet !== '' ? Number(form.duree_bet) : null,
-      duree_econ: isMoe && form.duree_econ !== '' ? Number(form.duree_econ) : null,
+      duree_arch:  isMoe && form.duree_arch !== '' ? Number(form.duree_arch) : null,
+      duree_bet:   isMoe && form.duree_bet  !== '' ? Number(form.duree_bet)  : null,
+      duree_econ:  isMoe && form.duree_econ !== '' ? Number(form.duree_econ) : null,
       label_barre: form.type_tache === 'administratif' ? (form.label_barre || null) : null,
-      depends_on: form.depends_on ?? null,
+      depends_on:  form.depends_on ?? null,
       lag_semaines: form.depends_on ? lagSem : 0,
     }
     await onSave({ ...phase, ...payload })
@@ -146,10 +165,10 @@ export function PhaseEtudeModal({ open, onClose, phase, phases, onSave, onDelete
       >
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 22 }}>
-          <h2 style={{ fontSize: 15, fontWeight: 500, color: '#1a1a1a', margin: 0 }}>
+          <h2 style={{ fontSize: 15, fontWeight: 500, color: '#1F1B17', margin: 0 }}>
             {mode === 'create' ? 'Nouvelle phase' : 'Modifier la phase'}
           </h2>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9B8F85' }}>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9C9591' }}>
             <X size={18} />
           </button>
         </div>
@@ -157,57 +176,40 @@ export function PhaseEtudeModal({ open, onClose, phase, phases, onSave, onDelete
         <form onSubmit={handleSubmit}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-            {/* Importance: MOE / MOA */}
+            {/* 4 boutons de type */}
             <div>
-              <label style={LABEL}>Rôle de la phase</label>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                {[
-                  { value: 'moe', title: 'MOE', subtitle: "Maîtrise d'Œuvre", desc: 'ESQ, APS, APD, PRO, DCE…', color: '#E05A1E', bg: '#FAF0EB' },
-                  { value: 'moa', title: 'MOA', subtitle: "Maîtrise d'Ouvrage", desc: 'Validation, dépôt, instruction…', color: '#2563EB', bg: '#EFF6FF' },
-                ].map(({ value, title, subtitle, desc, color, bg }) => {
-                  const active = form.importance === value
+              <label style={LABEL}>Type de phase</label>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
+                {TYPE_OPTIONS.map(opt => {
+                  const isSelected = form.type_tache === opt.type
                   return (
-                    <button key={value} type="button" onClick={() => handleImportanceChange(value)}
+                    <button
+                      key={opt.type}
+                      type="button"
+                      onClick={() => handleTypeChange(opt.type)}
                       style={{
-                        padding: '12px 14px', borderRadius: 10, cursor: 'pointer', textAlign: 'left',
-                        border: `1.5px solid ${active ? color : 'rgba(0,0,0,0.1)'}`,
-                        backgroundColor: active ? bg : 'white',
+                        padding: '10px 12px',
+                        borderRadius: 8,
+                        border: isSelected
+                          ? `1.5px solid ${opt.couleur}`
+                          : '0.5px solid rgba(0,0,0,0.12)',
+                        backgroundColor: isSelected ? opt.fondClair : '#FAFAF9',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        transition: 'all 0.15s',
                       }}
                     >
-                      <div style={{ fontSize: 13, fontWeight: 700, color: active ? color : '#1a1a1a', marginBottom: 2 }}>{title}</div>
-                      <div style={{ fontSize: 11, fontWeight: 500, color: active ? color : '#6b7280', marginBottom: 2 }}>{subtitle}</div>
-                      <div style={{ fontSize: 10, color: '#9B8F85' }}>{desc}</div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: isSelected ? opt.couleur : '#1F1B17', marginBottom: 2 }}>
+                        {opt.label}
+                      </div>
+                      <div style={{ fontSize: 11, color: '#9C9591', lineHeight: 1.3 }}>
+                        {opt.sublabel}
+                      </div>
                     </button>
                   )
                 })}
               </div>
             </div>
-
-            {/* MOA: nature selector */}
-            {form.importance === 'moa' && (
-              <div>
-                <label style={LABEL}>Nature</label>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  {MOA_TYPES.map(type => {
-                    const color = TYPE_COLORS[type]
-                    const active = form.type_tache === type
-                    return (
-                      <button key={type} type="button" onClick={() => set('type_tache', type)}
-                        style={{
-                          flex: 1, padding: '8px 6px', borderRadius: 8, cursor: 'pointer', textAlign: 'center',
-                          border: `1.5px solid ${active ? color : 'rgba(0,0,0,0.1)'}`,
-                          backgroundColor: active ? color + '18' : 'transparent',
-                          fontSize: 11, fontWeight: 500, color: active ? color : '#6b7280',
-                        }}
-                      >
-                        <div style={{ width: 7, height: 7, borderRadius: '50%', backgroundColor: active ? color : '#d1d5db', margin: '0 auto 3px' }} />
-                        {TYPE_LABELS[type].replace("Phase d'", '').replace('Période ', '').replace(' / Visa', '')}
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
 
             {/* Nom */}
             <div>
@@ -215,9 +217,9 @@ export function PhaseEtudeModal({ open, onClose, phase, phases, onSave, onDelete
               <input
                 value={form.nom}
                 onChange={e => set('nom', e.target.value)}
-                placeholder={form.importance === 'moe' ? 'Ex: APS — Avant-Projet Sommaire' : 'Ex: Validation APS ORSAC'}
+                placeholder={TYPE_PLACEHOLDERS[form.type_tache]}
                 required style={INPUT}
-                onFocus={e => { e.target.style.borderColor = '#E05A1E'; e.target.style.boxShadow = '0 0 0 3px rgba(224,90,30,0.08)' }}
+                onFocus={e => { e.target.style.borderColor = '#E8602C'; e.target.style.boxShadow = '0 0 0 3px rgba(232,96,44,0.12)' }}
                 onBlur={e => { e.target.style.borderColor = 'rgba(0,0,0,0.12)'; e.target.style.boxShadow = 'none' }}
               />
             </div>
@@ -250,22 +252,22 @@ export function PhaseEtudeModal({ open, onClose, phase, phases, onSave, onDelete
                   />
                 </div>
               </div>
-              <p style={{ fontSize: 11, color: '#9B8F85', marginTop: 5 }}>
+              <p style={{ fontSize: 11, color: '#9C9591', marginTop: 5 }}>
                 Début : S{form.semaine_debut} {form.annee_debut} — {debutLabel}
                 {' · '}Fin : S{finWeek.semaine} {finWeek.annee}
               </p>
             </div>
 
-            {/* Sous-durées MOE */}
-            {form.importance === 'moe' && (
+            {/* Sous-durées — MOE (etude) uniquement */}
+            {form.type_tache === 'etude' && (
               <div style={{ padding: '14px 16px', borderRadius: 10, backgroundColor: '#FAFAF9', border: '0.5px solid rgba(0,0,0,0.08)' }}>
                 <label style={{ ...LABEL, marginBottom: 2 }}>Répartition des intervenants (optionnel)</label>
-                <p style={{ fontSize: 11, color: '#9B8F85', marginBottom: 10 }}>Décomposez la durée en sous-périodes successives</p>
+                <p style={{ fontSize: 11, color: '#9C9591', marginBottom: 10 }}>Décomposez la durée en sous-périodes successives</p>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
                   {[
-                    { key: 'duree_arch', label: 'Architecte', color: '#E8A200' },
-                    { key: 'duree_bet',  label: 'BE',          color: '#2563EB' },
-                    { key: 'duree_econ', label: 'Économiste',  color: '#639922' },
+                    { key: 'duree_arch', label: '① Architecte', color: '#E8A200' },
+                    { key: 'duree_bet',  label: '② BET',        color: '#1B3A5C' },
+                    { key: 'duree_econ', label: '③ Économiste', color: '#2A8A4E' },
                   ].map(({ key, label, color }) => (
                     <div key={key}>
                       <label style={{ ...LABEL, color }}>
@@ -279,7 +281,7 @@ export function PhaseEtudeModal({ open, onClose, phase, phases, onSave, onDelete
                           placeholder="—"
                           style={{ ...INPUT, paddingRight: 36 }}
                         />
-                        <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 10, color: '#9B8F85', pointerEvents: 'none' }}>
+                        <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 10, color: '#9C9591', pointerEvents: 'none' }}>
                           sem.
                         </span>
                       </div>
@@ -287,7 +289,7 @@ export function PhaseEtudeModal({ open, onClose, phase, phases, onSave, onDelete
                   ))}
                 </div>
                 {subTotal > 0 && (
-                  <p style={{ fontSize: 11, marginTop: 8, fontWeight: 500, color: subDelta > 0 ? '#DC2626' : subDelta === 0 ? '#639922' : '#9B8F85' }}>
+                  <p style={{ fontSize: 11, marginTop: 8, fontWeight: 500, color: subDelta > 0 ? '#B8412C' : subDelta === 0 ? '#2A8A4E' : '#9C9591' }}>
                     {subDelta > 0
                       ? `Total dépasse la durée (${subTotal} > ${form.duree_semaines} sem.)`
                       : subDelta === 0
@@ -298,8 +300,8 @@ export function PhaseEtudeModal({ open, onClose, phase, phases, onSave, onDelete
               </div>
             )}
 
-            {/* Label barre (administratif MOA) */}
-            {form.type_tache === 'administratif' && form.importance === 'moa' && (
+            {/* Label barre — administratif uniquement */}
+            {form.type_tache === 'administratif' && (
               <div>
                 <label style={LABEL}>Texte affiché dans la barre</label>
                 <input
@@ -336,7 +338,7 @@ export function PhaseEtudeModal({ open, onClose, phase, phases, onSave, onDelete
                       onChange={e => set('lag_semaines', Number(e.target.value))}
                       style={{ ...INPUT, width: 80 }}
                     />
-                    <p style={{ fontSize: 11, color: '#9B8F85', marginTop: 4 }}>{lagText}</p>
+                    <p style={{ fontSize: 11, color: '#9C9591', marginTop: 4 }}>{lagText}</p>
                   </div>
                 )}
               </div>
@@ -351,8 +353,8 @@ export function PhaseEtudeModal({ open, onClose, phase, phases, onSave, onDelete
                   display: 'inline-flex', alignItems: 'center', gap: 6,
                   padding: '8px 14px', borderRadius: 8, fontSize: 12, cursor: 'pointer',
                   border: `0.5px solid ${confirmDelete ? 'rgba(220,38,38,0.5)' : 'rgba(0,0,0,0.12)'}`,
-                  backgroundColor: confirmDelete ? '#FEF2F2' : 'white',
-                  color: confirmDelete ? '#DC2626' : '#9B8F85',
+                  backgroundColor: confirmDelete ? 'rgba(184,65,44,0.10)' : 'white',
+                  color: confirmDelete ? '#B8412C' : '#9C9591',
                   marginRight: 'auto',
                 }}
               >
@@ -369,7 +371,7 @@ export function PhaseEtudeModal({ open, onClose, phase, phases, onSave, onDelete
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 6,
                 padding: '8px 16px', borderRadius: 8, fontSize: 12, fontWeight: 500,
-                border: 'none', backgroundColor: '#639922', color: 'white', cursor: 'pointer',
+                border: 'none', backgroundColor: '#2A8A4E', color: 'white', cursor: 'pointer',
                 opacity: saving || !form.nom.trim() ? 0.6 : 1,
               }}
             >

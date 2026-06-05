@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, useNavigate } from 'react-router-dom'
 import {
   Building2, Plus, MoreHorizontal, Phone, Mail,
   Pencil, Trash2, X, Check, Search,
@@ -39,7 +39,7 @@ const INPUT = {
   width: '100%', height: 38,
   padding: '0 12px',
   border: '0.5px solid rgba(0,0,0,0.15)', borderRadius: 8,
-  fontSize: 13, color: '#1a1a1a', backgroundColor: '#FAFAF9',
+  fontSize: 13, color: '#1F1B17', backgroundColor: '#FAFAF9',
   outline: 'none', boxSizing: 'border-box',
 }
 
@@ -52,12 +52,12 @@ const LABEL = {
 const BTN_CANCEL = {
   padding: '8px 14px', borderRadius: 8,
   border: '0.5px solid rgba(0,0,0,0.15)', background: 'none',
-  fontSize: 12, cursor: 'pointer', color: '#6b7280',
+  fontSize: 12, cursor: 'pointer', color: '#5E5854',
 }
 
 const BTN_GREEN = {
   padding: '8px 16px', borderRadius: 8,
-  border: 'none', backgroundColor: '#639922', color: 'white',
+  border: 'none', backgroundColor: '#2A8A4E', color: 'white',
   fontSize: 12, fontWeight: 500, cursor: 'pointer',
 }
 
@@ -75,7 +75,7 @@ function Overlay({ children }) {
 function ModalHeader({ title, onClose }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-      <h2 style={{ fontSize: 15, fontWeight: 500, color: '#1a1a1a' }}>{title}</h2>
+      <h2 style={{ fontSize: 15, fontWeight: 500, color: '#1F1B17' }}>{title}</h2>
       <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--jga-beige)', padding: 2 }}>
         <X size={18} />
       </button>
@@ -144,6 +144,7 @@ function LotFormModal({ lots, editingLot, onSave, onClose }) {
 
 // ─── EntrepriseAssignModal ────────────────────────────────────────────────────
 function EntrepriseAssignModal({ lot, entreprises, createEntreprise, onSave, onClose }) {
+  const navigate = useNavigate()
   const [tab, setTab] = useState('existing')
   const [search, setSearch] = useState('')
   const [selectedE, setSelectedE] = useState(
@@ -197,7 +198,7 @@ function EntrepriseAssignModal({ lot, entreprises, createEntreprise, onSave, onC
   const tabBtn = (active) => ({
     flex: 1, padding: '7px 0', fontSize: 12, fontWeight: 500,
     border: 'none', cursor: 'pointer', borderRadius: 6,
-    backgroundColor: active ? '#639922' : 'transparent',
+    backgroundColor: active ? '#2A8A4E' : 'transparent',
     color: active ? 'white' : 'var(--jga-beige)',
   })
 
@@ -213,7 +214,7 @@ function EntrepriseAssignModal({ lot, entreprises, createEntreprise, onSave, onC
         />
 
         {/* Tabs */}
-        <div style={{ display: 'flex', gap: 4, padding: 4, backgroundColor: '#F5F2F0', borderRadius: 8, marginBottom: 16 }}>
+        <div style={{ display: 'flex', gap: 4, padding: 4, backgroundColor: '#FAF7F2', borderRadius: 8, marginBottom: 16 }}>
           <button style={tabBtn(tab === 'existing')} onClick={() => setTab('existing')}>
             Entreprise existante
           </button>
@@ -233,6 +234,13 @@ function EntrepriseAssignModal({ lot, entreprises, createEntreprise, onSave, onC
                 style={{ ...INPUT, paddingLeft: 30 }}
               />
             </div>
+            <button
+              type="button"
+              onClick={() => navigate('/carnet-adresses')}
+              style={{ fontSize: 11, color: '#E8602C', background: 'none', border: 'none', cursor: 'pointer', padding: '0 0 6px', textAlign: 'left' }}
+            >
+              Gérer le carnet d'adresses →
+            </button>
             <div style={{ maxHeight: 188, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 3 }}>
               {filtered.length === 0 ? (
                 <p style={{ fontSize: 12, color: 'var(--jga-beige)', textAlign: 'center', padding: '12px 0' }}>
@@ -245,13 +253,13 @@ function EntrepriseAssignModal({ lot, entreprises, createEntreprise, onSave, onC
                   style={{
                     width: '100%', textAlign: 'left', padding: '8px 12px',
                     borderRadius: 8, border: 'none', cursor: 'pointer',
-                    backgroundColor: selectedE?.id === e.id ? '#EAF3DE' : '#FAFAF9',
+                    backgroundColor: selectedE?.id === e.id ? 'rgba(42,138,78,0.12)' : '#FAFAF9',
                     display: 'flex', alignItems: 'center', gap: 8,
                   }}
                 >
-                  <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: '#1a1a1a' }}>{e.raison_sociale}</span>
+                  <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: '#1F1B17' }}>{e.raison_sociale}</span>
                   {e.ville && <span style={{ fontSize: 11, color: 'var(--jga-beige)' }}>{e.ville}</span>}
-                  {selectedE?.id === e.id && <Check size={14} style={{ color: '#639922', flexShrink: 0 }} />}
+                  {selectedE?.id === e.id && <Check size={14} style={{ color: '#2A8A4E', flexShrink: 0 }} />}
                 </button>
               ))}
             </div>
@@ -408,9 +416,9 @@ function LotCard({ lot, isSelected, menuOpen, onSelect, onOpenMenu, onEdit, onDe
       onClick={onSelect}
       style={{
         position: 'relative',
-        backgroundColor: isSelected ? '#EAF3DE' : 'white',
+        backgroundColor: isSelected ? 'rgba(42,138,78,0.12)' : 'white',
         borderRadius: 10,
-        border: isSelected ? '1.5px solid #639922' : '0.5px solid rgba(0,0,0,0.08)',
+        border: isSelected ? '1.5px solid #2A8A4E' : '0.5px solid rgba(0,0,0,0.08)',
         padding: '10px 12px', marginBottom: 6,
         cursor: 'pointer', transition: 'border-color 0.15s',
       }}
@@ -419,10 +427,10 @@ function LotCard({ lot, isSelected, menuOpen, onSelect, onOpenMenu, onEdit, onDe
     >
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 4 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <span style={{ fontSize: 10, fontWeight: 500, color: '#9B8F85', letterSpacing: '0.06em' }}>
+          <span style={{ fontSize: 10, fontWeight: 500, color: '#9C9591', letterSpacing: '0.06em' }}>
             Lot {lot.numero}
           </span>
-          <p style={{ fontSize: 13, fontWeight: 500, color: '#1a1a1a', lineHeight: 1.3, marginTop: 1 }}>{lot.nom}</p>
+          <p style={{ fontSize: 13, fontWeight: 500, color: '#1F1B17', lineHeight: 1.3, marginTop: 1 }}>{lot.nom}</p>
         </div>
         <button
           onClick={e => { e.stopPropagation(); onOpenMenu() }}
@@ -435,11 +443,11 @@ function LotCard({ lot, isSelected, menuOpen, onSelect, onOpenMenu, onEdit, onDe
       <div style={{ marginTop: 6 }}>
         {lot.raison_sociale ? (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
-            <span style={{ fontSize: 12, color: '#6b7280', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <span style={{ fontSize: 12, color: '#5E5854', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {lot.raison_sociale}
             </span>
             {lot.montant_marche_ht && (
-              <span style={{ fontSize: 12, fontWeight: 500, color: '#639922', flexShrink: 0 }}>
+              <span style={{ fontSize: 12, fontWeight: 500, color: '#2A8A4E', flexShrink: 0 }}>
                 {formatEuro(lot.montant_marche_ht)} HT
               </span>
             )}
@@ -465,8 +473,8 @@ function LotCard({ lot, isSelected, menuOpen, onSelect, onOpenMenu, onEdit, onDe
           onClick={e => e.stopPropagation()}
         >
           {[
-            { label: 'Modifier le lot', color: '#1a1a1a', hoverBg: '#F5F2F0', action: onEdit },
-            { label: 'Supprimer le lot', color: '#DC2626', hoverBg: '#FFF5F5', action: onDelete },
+            { label: 'Modifier le lot', color: '#1F1B17', hoverBg: '#FAF7F2', action: onEdit },
+            { label: 'Supprimer le lot', color: '#B8412C', hoverBg: '#FFF5F5', action: onDelete },
           ].map(({ label, color, hoverBg, action }) => (
             <button
               key={label}
@@ -496,14 +504,14 @@ function LotsSidebar({ lots, selectedLotId, menuLotId, onSelect, onOpenMenu, onA
     }}>
       <div style={{ padding: '16px 16px 12px', borderBottom: '0.5px solid rgba(0,0,0,0.06)', flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <span style={{ fontSize: 13, fontWeight: 500, color: '#1a1a1a' }}>Lots du chantier</span>
+          <span style={{ fontSize: 13, fontWeight: 500, color: '#1F1B17' }}>Lots du chantier</span>
           <button
             onClick={onAddLot}
             style={{
               display: 'flex', alignItems: 'center', gap: 4,
               padding: '4px 10px', borderRadius: 6,
-              border: '0.5px solid #639922', backgroundColor: 'transparent',
-              color: '#639922', fontSize: 11, cursor: 'pointer',
+              border: '0.5px solid #2A8A4E', backgroundColor: 'transparent',
+              color: '#2A8A4E', fontSize: 11, cursor: 'pointer',
             }}
           >
             <Plus size={11} /> Ajouter
@@ -516,7 +524,7 @@ function LotsSidebar({ lots, selectedLotId, menuLotId, onSelect, onOpenMenu, onA
           <div style={{ textAlign: 'center', paddingTop: 40 }}>
             <Building2 size={28} style={{ color: '#D1C9C4', marginBottom: 8 }} />
             <p style={{ fontSize: 12, color: 'var(--jga-beige)' }}>Aucun lot créé</p>
-            <p style={{ fontSize: 11, color: '#9B8F85', marginTop: 3 }}>Ajoutez les lots du marché</p>
+            <p style={{ fontSize: 11, color: '#9C9591', marginTop: 3 }}>Ajoutez les lots du marché</p>
           </div>
         ) : lots.map(lot => (
           <LotCard
@@ -535,7 +543,7 @@ function LotsSidebar({ lots, selectedLotId, menuLotId, onSelect, onOpenMenu, onA
       {lots.length > 0 && totalHt > 0 && (
         <div style={{ padding: '10px 16px', borderTop: '0.5px solid rgba(0,0,0,0.06)', backgroundColor: '#F9FBF6', flexShrink: 0 }}>
           <span style={{ fontSize: 11, color: 'var(--jga-beige)' }}>Total marchés HT </span>
-          <span style={{ fontSize: 13, fontWeight: 500, color: '#639922' }}>{formatEuro(totalHt)}</span>
+          <span style={{ fontSize: 13, fontWeight: 500, color: '#2A8A4E' }}>{formatEuro(totalHt)}</span>
         </div>
       )}
     </div>
@@ -550,9 +558,9 @@ function InfoRow({ label, value, href }) {
         {label}
       </p>
       {href ? (
-        <a href={href} style={{ fontSize: 13, color: '#1a1a1a', textDecoration: 'none' }}>{value ?? '—'}</a>
+        <a href={href} style={{ fontSize: 13, color: '#1F1B17', textDecoration: 'none' }}>{value ?? '—'}</a>
       ) : (
-        <p style={{ fontSize: 13, fontWeight: value ? 500 : 400, color: value ? '#1a1a1a' : 'var(--jga-beige)' }}>{value ?? '—'}</p>
+        <p style={{ fontSize: 13, fontWeight: value ? 500 : 400, color: value ? '#1F1B17' : 'var(--jga-beige)' }}>{value ?? '—'}</p>
       )}
     </div>
   )
@@ -560,23 +568,23 @@ function InfoRow({ label, value, href }) {
 
 function LotDetail({ lot, onEditLot, onAssign, onEditInterlocuteur }) {
   return (
-    <div style={{ flex: 1, overflowY: 'auto', padding: 20, display: 'flex', flexDirection: 'column', gap: 12, backgroundColor: '#F5F2F0' }}>
+    <div style={{ flex: 1, overflowY: 'auto', padding: 20, display: 'flex', flexDirection: 'column', gap: 12, backgroundColor: '#FAF7F2' }}>
       {/* En-tête lot */}
       <div style={{ backgroundColor: 'white', borderRadius: 12, padding: 16 }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
           <div>
-            <p style={{ fontSize: 10, fontWeight: 500, color: '#9B8F85', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>
+            <p style={{ fontSize: 10, fontWeight: 500, color: '#9C9591', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>
               Lot {lot.numero}
             </p>
-            <h2 style={{ fontSize: 18, fontWeight: 500, color: '#1a1a1a' }}>{lot.nom}</h2>
+            <h2 style={{ fontSize: 18, fontWeight: 500, color: '#1F1B17' }}>{lot.nom}</h2>
           </div>
           <button
             onClick={onEditLot}
             style={{
               display: 'inline-flex', alignItems: 'center', gap: 5,
               padding: '4px 10px', borderRadius: 6,
-              border: '0.5px solid #639922', backgroundColor: 'transparent',
-              color: '#639922', fontSize: 11, cursor: 'pointer',
+              border: '0.5px solid #2A8A4E', backgroundColor: 'transparent',
+              color: '#2A8A4E', fontSize: 11, cursor: 'pointer',
             }}
           >
             <Pencil size={10} /> Modifier
@@ -587,11 +595,11 @@ function LotDetail({ lot, onEditLot, onAssign, onEditInterlocuteur }) {
       {/* Entreprise */}
       <div style={{ backgroundColor: 'white', borderRadius: 12, padding: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-          <p style={{ fontSize: 10, fontWeight: 500, color: '#9B8F85', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+          <p style={{ fontSize: 10, fontWeight: 500, color: '#9C9591', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
             Entreprise attributaire
           </p>
           {lot.entreprise_id && (
-            <button onClick={onAssign} style={{ fontSize: 11, color: '#639922', background: 'none', border: 'none', cursor: 'pointer' }}>
+            <button onClick={onAssign} style={{ fontSize: 11, color: '#2A8A4E', background: 'none', border: 'none', cursor: 'pointer' }}>
               Changer
             </button>
           )}
@@ -603,13 +611,13 @@ function LotDetail({ lot, onEditLot, onAssign, onEditInterlocuteur }) {
             padding: '28px 16px', textAlign: 'center', backgroundColor: '#F9FBF6',
           }}>
             <Building2 size={28} style={{ color: '#C5D9A8', marginBottom: 10 }} />
-            <p style={{ fontSize: 13, color: '#6b7280', marginBottom: 14 }}>Aucune entreprise assignée à ce lot</p>
+            <p style={{ fontSize: 13, color: '#5E5854', marginBottom: 14 }}>Aucune entreprise assignée à ce lot</p>
             <button
               onClick={onAssign}
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 6,
                 padding: '8px 16px', borderRadius: 8, border: 'none',
-                backgroundColor: '#639922', color: 'white', fontSize: 12, fontWeight: 500, cursor: 'pointer',
+                backgroundColor: '#2A8A4E', color: 'white', fontSize: 12, fontWeight: 500, cursor: 'pointer',
               }}
             >
               <Plus size={13} /> Assigner une entreprise
@@ -626,27 +634,27 @@ function LotDetail({ lot, onEditLot, onAssign, onEditInterlocuteur }) {
             </div>
 
             <div style={{ height: '0.5px', backgroundColor: 'rgba(0,0,0,0.08)', marginBottom: 14 }} />
-            <p style={{ fontSize: 10, fontWeight: 500, color: '#9B8F85', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 10 }}>
+            <p style={{ fontSize: 10, fontWeight: 500, color: '#9C9591', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 10 }}>
               Marché de base
             </p>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px 16px', marginBottom: lot.observations ? 12 : 0 }}>
               <div>
                 <p style={{ fontSize: 10, color: 'var(--jga-beige)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2 }}>Montant HT</p>
-                <p style={{ fontSize: 18, fontWeight: 500, color: lot.montant_marche_ht ? '#639922' : 'var(--jga-beige)' }}>
+                <p style={{ fontSize: 18, fontWeight: 500, color: lot.montant_marche_ht ? '#2A8A4E' : 'var(--jga-beige)' }}>
                   {formatEuro(lot.montant_marche_ht) ?? '—'}
                 </p>
               </div>
               <div>
                 <p style={{ fontSize: 10, color: 'var(--jga-beige)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2 }}>Montant TTC</p>
-                <p style={{ fontSize: 14, color: '#6b7280' }}>{formatEuro(lot.montant_marche_ttc) ?? '—'}</p>
+                <p style={{ fontSize: 14, color: '#5E5854' }}>{formatEuro(lot.montant_marche_ttc) ?? '—'}</p>
               </div>
               <div>
                 <p style={{ fontSize: 10, color: 'var(--jga-beige)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2 }}>Date notification</p>
-                <p style={{ fontSize: 13, color: '#6b7280' }}>{fmtDate(lot.date_notification) ?? '—'}</p>
+                <p style={{ fontSize: 13, color: '#5E5854' }}>{fmtDate(lot.date_notification) ?? '—'}</p>
               </div>
             </div>
             {lot.observations && (
-              <p style={{ fontSize: 12, color: '#6b7280', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>
+              <p style={{ fontSize: 12, color: '#5E5854', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>
                 {lot.observations}
               </p>
             )}
@@ -657,11 +665,11 @@ function LotDetail({ lot, onEditLot, onAssign, onEditInterlocuteur }) {
       {/* Interlocuteur */}
       <div style={{ backgroundColor: 'white', borderRadius: 12, padding: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-          <p style={{ fontSize: 10, fontWeight: 500, color: '#9B8F85', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+          <p style={{ fontSize: 10, fontWeight: 500, color: '#9C9591', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
             Interlocuteur
           </p>
           {lot.interlocuteur_id && (
-            <button onClick={onEditInterlocuteur} style={{ fontSize: 11, color: '#639922', background: 'none', border: 'none', cursor: 'pointer' }}>
+            <button onClick={onEditInterlocuteur} style={{ fontSize: 11, color: '#2A8A4E', background: 'none', border: 'none', cursor: 'pointer' }}>
               Modifier
             </button>
           )}
@@ -673,14 +681,14 @@ function LotDetail({ lot, onEditLot, onAssign, onEditInterlocuteur }) {
           </p>
         ) : !lot.interlocuteur_id ? (
           <div>
-            <p style={{ fontSize: 12, color: '#6b7280', marginBottom: 10 }}>Aucun interlocuteur renseigné</p>
+            <p style={{ fontSize: 12, color: '#5E5854', marginBottom: 10 }}>Aucun interlocuteur renseigné</p>
             <button
               onClick={onEditInterlocuteur}
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 6,
                 padding: '6px 12px', borderRadius: 7,
-                border: '0.5px solid #639922', backgroundColor: 'transparent',
-                color: '#639922', fontSize: 11, cursor: 'pointer',
+                border: '0.5px solid #2A8A4E', backgroundColor: 'transparent',
+                color: '#2A8A4E', fontSize: 11, cursor: 'pointer',
               }}
             >
               <Plus size={11} /> Ajouter un interlocuteur
@@ -690,26 +698,26 @@ function LotDetail({ lot, onEditLot, onAssign, onEditInterlocuteur }) {
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
             <div style={{
               width: 36, height: 36, borderRadius: '50%',
-              backgroundColor: '#EAF3DE', color: '#639922',
+              backgroundColor: 'rgba(42,138,78,0.12)', color: '#2A8A4E',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               fontSize: 12, fontWeight: 500, flexShrink: 0,
             }}>
               {getInitials(lot.prenom, lot.nom_contact)}
             </div>
             <div>
-              <p style={{ fontSize: 14, fontWeight: 500, color: '#1a1a1a', marginBottom: 1 }}>
+              <p style={{ fontSize: 14, fontWeight: 500, color: '#1F1B17', marginBottom: 1 }}>
                 {lot.prenom} {lot.nom_contact}
               </p>
               {lot.fonction && (
-                <p style={{ fontSize: 12, color: '#9B8F85', marginBottom: 6 }}>{lot.fonction}</p>
+                <p style={{ fontSize: 12, color: '#9C9591', marginBottom: 6 }}>{lot.fonction}</p>
               )}
               {lot.interlocuteur_tel && (
-                <a href={`tel:${lot.interlocuteur_tel}`} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: '#6b7280', textDecoration: 'none', marginBottom: 2 }}>
+                <a href={`tel:${lot.interlocuteur_tel}`} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: '#5E5854', textDecoration: 'none', marginBottom: 2 }}>
                   <Phone size={12} style={{ color: 'var(--jga-beige)' }} /> {lot.interlocuteur_tel}
                 </a>
               )}
               {lot.interlocuteur_email && (
-                <a href={`mailto:${lot.interlocuteur_email}`} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: '#6b7280', textDecoration: 'none' }}>
+                <a href={`mailto:${lot.interlocuteur_email}`} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: '#5E5854', textDecoration: 'none' }}>
                   <Mail size={12} style={{ color: 'var(--jga-beige)' }} /> {lot.interlocuteur_email}
                 </a>
               )}
@@ -819,7 +827,7 @@ export default function LotsEntreprisesModule() {
             <div style={{
               flex: 1, display: 'flex', flexDirection: 'column',
               alignItems: 'center', justifyContent: 'center',
-              backgroundColor: '#F5F2F0', color: '#9B8F85',
+              backgroundColor: '#FAF7F2', color: '#9C9591',
             }}>
               <Building2 size={48} style={{ marginBottom: 12, opacity: 0.25 }} />
               <p style={{ fontSize: 13 }}>Sélectionnez un lot pour voir son détail</p>

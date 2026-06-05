@@ -293,7 +293,7 @@ export function GanttTimeline({
               }}>
                 <span style={{
                   fontSize: 10, fontWeight: 900, textTransform: 'uppercase',
-                  letterSpacing: '0.1em', color: '#E05A1E',
+                  letterSpacing: '0.1em', color: '#E8602C',
                 }}>
                   {day.toLocaleDateString('fr-FR', { month: i === 0 ? 'short' : 'long', year: 'numeric' })}
                 </span>
@@ -307,17 +307,24 @@ export function GanttTimeline({
             const isWeekend = day.getDay() === 0 || day.getDay() === 6
             const isToday = day.toDateString() === new Date().toDateString()
             const colWidth = isWeekend ? dayWidth * WEEKEND_RATIO : dayWidth
+            const isMonday = day.getDay() === 1
+            const isMonthStart = day.getDate() === 1
+            const borderRight = isMonthStart
+              ? '1px solid rgba(0,0,0,0.4)'
+              : isMonday
+                ? '1px solid rgba(0,0,0,0.25)'
+                : '1px solid rgba(0,0,0,0.12)'
             return (
               <div key={i} style={{
                 width: colWidth, minWidth: colWidth, flexShrink: 0,
                 display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end',
-                paddingBottom: 2, borderRight: '0.5px solid rgba(0,0,0,0.08)',
+                paddingBottom: 2, borderRight,
                 backgroundColor: isToday ? 'rgba(224,90,30,0.1)' : isWeekend ? 'rgba(0,0,0,0.05)' : 'transparent',
               }}>
                 {colWidth >= 14 && (
                   <span style={{
                     fontSize: 9, fontWeight: isToday ? 700 : 500, lineHeight: 1,
-                    color: isToday ? '#E05A1E' : isWeekend ? 'rgba(155,143,133,0.5)' : '#9B8F85',
+                    color: isToday ? '#E8602C' : isWeekend ? 'rgba(155,143,133,0.5)' : '#9C9591',
                   }}>
                     {day.toLocaleDateString('fr-FR', { weekday: 'narrow' })}
                   </span>
@@ -327,7 +334,7 @@ export function GanttTimeline({
                     fontSize: colWidth < 18 ? 8 : 10,
                     fontWeight: isToday ? 700 : 600,
                     fontVariantNumeric: 'tabular-nums',
-                    color: isToday ? '#E05A1E' : isWeekend ? 'rgba(155,143,133,0.5)' : '#1a1a1a',
+                    color: isToday ? '#E8602C' : isWeekend ? 'rgba(155,143,133,0.5)' : '#1F1B17',
                   }}>
                     {day.getDate()}
                   </span>
@@ -360,6 +367,24 @@ export function GanttTimeline({
               position: 'absolute', top: 0, bottom: 0, pointerEvents: 'none',
               left: dayPositions[i], width: colWidth,
               backgroundColor: 'rgba(0,0,0,0.03)',
+            }} />
+          )
+        })}
+
+        {/* Day grid lines */}
+        {days.map((day, i) => {
+          const isMonday = day.getDay() === 1
+          const isMonthStart = day.getDate() === 1
+          return (
+            <div key={`gl-${i}`} style={{
+              position: 'absolute', top: 0, bottom: 0,
+              left: dayPositions[i], width: 1,
+              backgroundColor: isMonthStart
+                ? 'rgba(0,0,0,0.4)'
+                : isMonday
+                  ? 'rgba(0,0,0,0.25)'
+                  : 'rgba(0,0,0,0.12)',
+              pointerEvents: 'none',
             }} />
           )
         })}
@@ -463,7 +488,7 @@ export function GanttTimeline({
               <path d="M0,0 L0,8 L8,4 z" fill="currentColor" />
             </marker>
             <marker id="dep-arrow-red" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-              <path d="M0,0 L0,8 L8,4 z" fill="#DC2626" />
+              <path d="M0,0 L0,8 L8,4 z" fill="#B8412C" />
             </marker>
             <marker id="dep-arrow-live" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
               <path d="M0,0 L0,8 L8,4 z" fill="currentColor" />
@@ -493,7 +518,7 @@ export function GanttTimeline({
               >
                 <path d={d} fill="none" stroke="transparent" strokeWidth="16" />
                 <path d={d} fill="none"
-                  stroke={isHovered ? '#DC2626' : 'currentColor'}
+                  stroke={isHovered ? '#B8412C' : 'currentColor'}
                   strokeWidth={isHovered ? 2.5 : 2}
                   strokeDasharray={isHovered ? 'none' : '6 3'}
                   strokeOpacity={isHovered ? 1 : 0.85}
@@ -502,7 +527,7 @@ export function GanttTimeline({
                 />
                 <circle cx={arrow.fromX} cy={arrow.fromY}
                   r={isHovered ? 5 : 3.5}
-                  fill={isHovered ? '#DC2626' : 'currentColor'}
+                  fill={isHovered ? '#B8412C' : 'currentColor'}
                   opacity={isHovered ? 1 : 0.85}
                   style={{ pointerEvents: 'none', transition: 'fill 0.12s, r 0.12s' }}
                 />
@@ -534,11 +559,11 @@ export function GanttTimeline({
           position: 'absolute', top: 0, bottom: 0, zIndex: 20,
           left: todayOffset, pointerEvents: 'none',
         }}>
-          <div style={{ height: '100%', width: 1, backgroundColor: '#E05A1E', opacity: 0.6 }} />
+          <div style={{ height: '100%', width: 1, backgroundColor: '#E8602C', opacity: 0.6 }} />
           <div style={{
             position: 'absolute', top: -4, left: -6,
             width: 12, height: 12, borderRadius: '50%',
-            backgroundColor: '#E05A1E', border: '2px solid white',
+            backgroundColor: '#E8602C', border: '2px solid white',
             boxShadow: '0 1px 4px rgba(0,0,0,0.2)',
           }} />
         </div>
@@ -548,7 +573,7 @@ export function GanttTimeline({
       {connectingFrom && (
         <div style={{
           position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)',
-          zIndex: 50, backgroundColor: '#E05A1E', color: 'white',
+          zIndex: 50, backgroundColor: '#E8602C', color: 'white',
           fontSize: 12, fontWeight: 700, padding: '10px 20px', borderRadius: 999,
           boxShadow: '0 4px 20px rgba(0,0,0,0.25)',
           display: 'flex', alignItems: 'center', gap: 10,
@@ -571,20 +596,20 @@ export function GanttTimeline({
           }} onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
               <div style={{
-                width: 36, height: 36, borderRadius: 10, backgroundColor: '#FEF2F2',
+                width: 36, height: 36, borderRadius: 10, backgroundColor: 'rgba(184,65,44,0.10)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
               }}>
-                <GitBranch size={18} style={{ color: '#DC2626' }} />
+                <GitBranch size={18} style={{ color: '#B8412C' }} />
               </div>
-              <span style={{ fontSize: 15, fontWeight: 500, color: '#1a1a1a' }}>
+              <span style={{ fontSize: 15, fontWeight: 500, color: '#1F1B17' }}>
                 Supprimer la dépendance
               </span>
             </div>
-            <p style={{ fontSize: 13, color: '#6b7280', lineHeight: 1.6, marginBottom: 20 }}>
+            <p style={{ fontSize: 13, color: '#5E5854', lineHeight: 1.6, marginBottom: 20 }}>
               La liaison entre{' '}
-              <strong style={{ color: '#1a1a1a' }}>{deletingArrow.fromTaskName}</strong>
+              <strong style={{ color: '#1F1B17' }}>{deletingArrow.fromTaskName}</strong>
               {' '}et{' '}
-              <strong style={{ color: '#1a1a1a' }}>{deletingArrow.toTaskName}</strong>
+              <strong style={{ color: '#1F1B17' }}>{deletingArrow.toTaskName}</strong>
               {' '}sera supprimée. Les dates ne seront pas modifiées.
             </p>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
@@ -603,7 +628,7 @@ export function GanttTimeline({
                 }}
                 style={{
                   padding: '8px 16px', borderRadius: 10, fontSize: 13, fontWeight: 500,
-                  border: 'none', backgroundColor: '#DC2626', color: 'white', cursor: 'pointer',
+                  border: 'none', backgroundColor: '#B8412C', color: 'white', cursor: 'pointer',
                 }}>
                 Supprimer la liaison
               </button>
@@ -660,7 +685,7 @@ function TaskBarRow({
         style={{
           position: 'absolute', left, width,
           top: BAR_PAD, bottom: BAR_PAD,
-          backgroundColor: color, borderRadius: 4,
+          backgroundColor: color, borderRadius: 0,
           display: 'flex', alignItems: 'center', overflow: 'hidden',
           boxShadow: isDragging ? '0 8px 24px rgba(0,0,0,0.2)' : '0 1px 3px rgba(0,0,0,0.15)',
           zIndex: isDragging ? 30 : 10,
@@ -682,7 +707,7 @@ function TaskBarRow({
             position: 'absolute', left: 0, top: 0, bottom: 0,
             width: HANDLE_W, cursor: 'ew-resize', flexShrink: 0,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            borderRadius: '4px 0 0 4px',
+            borderRadius: 0,
           }}
           onMouseDown={(e) => { e.stopPropagation(); onBarDragStart(e, task, 'resize-left') }}
           onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.2)'}
@@ -698,19 +723,6 @@ function TaskBarRow({
             width: `${task.avancement}%`, backgroundColor: 'rgba(0,0,0,0.22)',
           }} />
         )}
-
-        {/* Label */}
-        <span style={{
-          position: 'relative', zIndex: 10,
-          fontSize: 11, fontWeight: 600, color: 'white',
-          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-          pointerEvents: 'none', flex: 1, minWidth: 0,
-          paddingLeft: HANDLE_W + 6, paddingRight: HANDLE_W + PENCIL_SIZE + 10,
-          textShadow: '0 1px 2px rgba(0,0,0,0.3)',
-        }}>
-          {task.num_tache} – {task.nom}
-          {task.avancement > 0 && <span style={{ marginLeft: 6, opacity: 0.75 }}>{task.avancement}%</span>}
-        </span>
 
         {/* Bouton crayon */}
         <button
@@ -745,7 +757,7 @@ function TaskBarRow({
             position: 'absolute', right: 0, top: 0, bottom: 0,
             width: HANDLE_W, cursor: 'ew-resize', flexShrink: 0,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            borderRadius: '0 4px 4px 0',
+            borderRadius: 0,
           }}
           onMouseDown={(e) => { e.stopPropagation(); onBarDragStart(e, task, 'resize-right') }}
           onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.2)'}
@@ -753,6 +765,30 @@ function TaskBarRow({
         >
           <div style={{ height: 12, width: 1, backgroundColor: 'rgba(255,255,255,0.4)', pointerEvents: 'none' }} />
         </div>
+      </div>
+
+      {/* Label à droite de la barre */}
+      <div style={{
+        position: 'absolute',
+        left: left + width + 4,
+        top: 0,
+        bottom: 0,
+        display: 'flex',
+        alignItems: 'center',
+        whiteSpace: 'nowrap',
+        fontSize: 11,
+        fontWeight: 500,
+        color: '#1F1B17',
+        pointerEvents: 'none',
+        userSelect: 'none',
+        zIndex: 10,
+      }}>
+        {task.nom}
+        {task.avancement > 0 && task.avancement < 100 && (
+          <span style={{ marginLeft: 4, fontSize: 10, color: '#9C9591' }}>
+            {task.avancement}%
+          </span>
+        )}
       </div>
 
       {/* ── Extension d'approvisionnement ────────────────────────── */}
@@ -771,7 +807,7 @@ function TaskBarRow({
           left: left - DOT_R, top: BAR_BOTTOM - DOT_R,
           width: DOT_R * 2, height: DOT_R * 2,
           borderRadius: '50%', border: '2px solid white', cursor: 'crosshair',
-          backgroundColor: isStartHovered ? '#E05A1E' : color,
+          backgroundColor: isStartHovered ? '#E8602C' : color,
           transform: isStartHovered ? 'scale(1.5)' : 'scale(1)',
           boxShadow: isStartHovered ? '0 0 0 3px rgba(224,90,30,0.35)' : '0 1px 4px rgba(0,0,0,0.4)',
           opacity: showStartDot ? 1 : 0,
@@ -790,7 +826,7 @@ function TaskBarRow({
           left: left + width - DOT_R, top: BAR_BOTTOM - DOT_R,
           width: DOT_R * 2, height: DOT_R * 2,
           borderRadius: '50%', border: '2px solid white', cursor: 'crosshair',
-          backgroundColor: isSource || isEndHovered ? '#E05A1E' : color,
+          backgroundColor: isSource || isEndHovered ? '#E8602C' : color,
           transform: isEndHovered || isSource ? 'scale(1.5)' : 'scale(1)',
           boxShadow: (isEndHovered || isSource) ? '0 0 0 3px rgba(224,90,30,0.35)' : '0 1px 4px rgba(0,0,0,0.4)',
           opacity: showEndDot ? 1 : 0,
@@ -822,7 +858,7 @@ function ApproBar({ task, color, dateRef, dayPositions, dayWidth }) {
       left: approLeft, width: Math.max(approWidth, 4),
       top: BAR_PAD, bottom: BAR_PAD,
       backgroundColor: color, opacity: 0.28,
-      borderRadius: '6px 0 0 6px',
+      borderRadius: 0,
       border: `1.5px dashed ${color}`, borderRight: 'none',
       display: 'flex', alignItems: 'center', justifyContent: 'flex-end', paddingRight: 6,
       overflow: 'hidden',

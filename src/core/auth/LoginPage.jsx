@@ -63,9 +63,9 @@ function InputField({ label, type, value, onChange, placeholder, icon: Icon, rig
             borderRadius: 10,
             backgroundColor: focused ? 'white' : '#FAFAF9',
             fontSize: 14,
-            color: '#1a1a1a',
+            color: '#1F1B17',
             outline: 'none',
-            boxShadow: focused ? '0 0 0 3px rgba(224,90,30,0.08)' : 'none',
+            boxShadow: focused ? '0 0 0 3px rgba(232,96,44,0.12)' : 'none',
             transition: 'border-color 0.15s, box-shadow 0.15s, background-color 0.15s',
           }}
         />
@@ -110,7 +110,7 @@ export function LoginPage() {
       <div
         style={{
           minHeight: '100svh',
-          backgroundColor: 'white',
+          backgroundColor: '#FAF7F2',
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
@@ -140,7 +140,7 @@ export function LoginPage() {
         >
           {/* Card header */}
           <div style={{ textAlign: 'center', marginBottom: 28 }}>
-            <h1 style={{ fontSize: 15, fontWeight: 500, color: '#1a1a1a', marginBottom: 6 }}>
+            <h1 style={{ fontSize: 15, fontWeight: 500, color: '#1F1B17', marginBottom: 6 }}>
               Connexion à l'espace collaborateur
             </h1>
             <p style={{ fontSize: 12, color: 'var(--jga-beige)' }}>

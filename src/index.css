@@ -1,28 +1,74 @@
 @import "tailwindcss";
 
 :root {
-  --jga-orange:       #E05A1E;
-  --jga-orange-light: #FAF0EB;
-  --jga-orange-mid:   #F0997B;
-  --jga-beige:        #9B8F85;
-  --jga-beige-light:  #F5F2F0;
-  --jga-green:        #639922;
-  --jga-green-light:  #EAF3DE;
+  /* ── Palette principale ── */
+  --jga-orange:         #E8602C;
+  --jga-encre:          #1F1B17;
+  --jga-gris:           #9C9591;
+  --jga-papier:         #FAF7F2;
+
+  /* ── Palette étendue ── */
+  --jga-orange-profond: #C44A1B;
+  --jga-orange-clair:   #F8B89A;
+  --jga-os:             #E9E2D6;
+  --jga-blueprint:      #1B3A5C;
+  --jga-gris-profond:   #5E5854;
+  --jga-gris-clair:     #C9C4C0;
+  --jga-validation:     #2A8A4E;
+  --jga-alerte:         #B8412C;
+
+  /* ── Alias fonctionnels ── */
+  --color-primary:        var(--jga-orange);
+  --color-primary-hover:  var(--jga-orange-profond);
+  --color-primary-light:  var(--jga-orange-clair);
+  --color-bg:             var(--jga-papier);
+  --color-surface:        #FFFFFF;
+  --color-text:           var(--jga-encre);
+  --color-text-secondary: var(--jga-gris-profond);
+  --color-text-muted:     var(--jga-gris);
+  --color-border:         var(--jga-os);
+  --color-border-light:   rgba(31,27,23,0.08);
+  --color-success:        var(--jga-validation);
+  --color-error:          var(--jga-alerte);
+  --color-chantier:       var(--jga-validation);
+
+  /* ── Espacements (base 8px) ── */
+  --space-xs:  8px;
+  --space-s:   16px;
+  --space-m:   24px;
+  --space-l:   40px;
+  --space-xl:  64px;
+  --space-2xl: 96px;
+
+  /* ── Rétrocompatibilité ── */
+  --jga-orange-light: rgba(232,96,44,0.10);
+  --jga-orange-mid:   #F8B89A;
+  --jga-beige:        #9C9591;
+  --jga-beige-light:  #FAF7F2;
+  --jga-green:        #2A8A4E;
+  --jga-green-light:  rgba(42,138,78,0.12);
 }
+
+/* ── Corps global ── */
+body {
+  font-family: 'Inter', sans-serif;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--color-text);
+  background: var(--color-bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Utilitaires typographiques ── */
+.font-display { font-family: 'Archivo', sans-serif; }
+.font-ui      { font-family: 'Inter', sans-serif; }
+.font-mono    { font-family: 'JetBrains Mono', monospace; }
 
 * {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
-}
-
-body {
-  font-family: 'Inter', sans-serif;
-  font-size: 14px;
-  background: var(--jga-beige-light);
-  color: #1a1a1a;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
 }
 
 #root {

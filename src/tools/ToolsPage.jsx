@@ -48,12 +48,13 @@ function ToolCard({ tool, onClick }) {
         {Icon && (
           <Icon
             size={24}
+            strokeWidth={1.25}
             style={{ color: active ? 'white' : 'var(--jga-orange)', transition: 'color 0.15s ease' }}
           />
         )}
       </div>
 
-      <p style={{ fontSize: 12, fontWeight: 500, color: '#1a1a1a' }}>{tool.label}</p>
+      <p style={{ fontSize: 12, fontWeight: 500, color: '#1F1B17' }}>{tool.label}</p>
 
       <p style={{ fontSize: 11, color: 'var(--jga-beige)', lineHeight: 1.4 }}>
         {tool.description}
@@ -83,10 +84,10 @@ export function ToolsPage() {
   return (
     <div style={{ padding: '32px 40px' }}>
       <div style={{ marginBottom: 24 }}>
-        <h1 style={{ fontSize: 18, fontWeight: 500, color: '#1a1a1a', marginBottom: 6 }}>
+        <h1 style={{ fontSize: 18, fontWeight: 500, color: '#1F1B17', fontFamily: "'Archivo', sans-serif", marginBottom: 6 }}>
           Boîte à outils
         </h1>
-        <p style={{ fontSize: 13, color: '#6b7280' }}>
+        <p style={{ fontSize: 13, color: '#5E5854' }}>
           Outils transversaux pour l'ensemble des affaires
         </p>
       </div>

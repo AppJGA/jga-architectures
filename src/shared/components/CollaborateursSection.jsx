@@ -47,7 +47,7 @@ export function CollaborateursSection({ affaireId }) {
   return (
     <div>
       {loading ? (
-        <p style={{ fontSize: 12, color: '#9B8F85' }}>Chargement…</p>
+        <p style={{ fontSize: 12, color: '#9C9591' }}>Chargement…</p>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {collaborateurs.map(c => {
@@ -61,9 +61,9 @@ export function CollaborateursSection({ affaireId }) {
               <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <Avatar name={displayName} email={profile?.email} isOwner={isItemOwner} />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{ fontSize: 12, fontWeight: 500, color: '#1a1a1a' }}>{displayName}</p>
+                  <p style={{ fontSize: 12, fontWeight: 500, color: '#1F1B17' }}>{displayName}</p>
                   {profile?.email && (
-                    <p style={{ fontSize: 11, color: '#9B8F85', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <p style={{ fontSize: 11, color: '#9C9591', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {profile.email}
                     </p>
                   )}
@@ -71,7 +71,7 @@ export function CollaborateursSection({ affaireId }) {
                 {isItemOwner && (
                   <span style={{
                     fontSize: 10, fontWeight: 500,
-                    backgroundColor: '#FAF0EB', color: 'var(--jga-orange)',
+                    backgroundColor: 'rgba(232,96,44,0.10)', color: 'var(--jga-orange)',
                     borderRadius: 20, padding: '2px 8px', flexShrink: 0,
                   }}>
                     Responsable
@@ -82,13 +82,13 @@ export function CollaborateursSection({ affaireId }) {
                     <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                       <button
                         onClick={() => { removeCollaborateur(c.user_id); setConfirmRemove(null) }}
-                        style={{ fontSize: 11, color: '#DC2626', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                        style={{ fontSize: 11, color: '#B8412C', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
                       >
                         Confirmer
                       </button>
                       <button
                         onClick={() => setConfirmRemove(null)}
-                        style={{ fontSize: 11, color: '#9B8F85', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                        style={{ fontSize: 11, color: '#9C9591', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
                       >
                         Annuler
                       </button>
@@ -99,8 +99,8 @@ export function CollaborateursSection({ affaireId }) {
                       title="Retirer"
                       style={{
                         width: 22, height: 22, borderRadius: '50%', flexShrink: 0,
-                        border: 'none', backgroundColor: '#F5F2F0',
-                        color: '#9B8F85', cursor: 'pointer',
+                        border: 'none', backgroundColor: '#FAF7F2',
+                        color: '#9C9591', cursor: 'pointer',
                         fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center',
                       }}
                     >
@@ -113,7 +113,7 @@ export function CollaborateursSection({ affaireId }) {
           })}
 
           {collaborateurs.length === 0 && (
-            <p style={{ fontSize: 12, color: '#9B8F85' }}>Aucun collaborateur assigné.</p>
+            <p style={{ fontSize: 12, color: '#9C9591' }}>Aucun collaborateur assigné.</p>
           )}
         </div>
       )}
@@ -129,7 +129,7 @@ export function CollaborateursSection({ affaireId }) {
             style={{
               width: '100%', padding: '8px 10px',
               borderRadius: 8, border: '0.5px solid rgba(0,0,0,0.12)',
-              backgroundColor: '#FAFAF9', fontSize: 12, color: '#1a1a1a', outline: 'none',
+              backgroundColor: '#FAFAF9', fontSize: 12, color: '#1F1B17', outline: 'none',
             }}
           />
           {searchResults.length > 0 && (
@@ -148,13 +148,13 @@ export function CollaborateursSection({ affaireId }) {
                       padding: '8px 12px', cursor: 'pointer',
                       borderBottom: '0.5px solid rgba(0,0,0,0.06)',
                     }}
-                    onMouseEnter={e => e.currentTarget.style.backgroundColor = '#FAF0EB'}
+                    onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(232,96,44,0.10)'}
                     onMouseLeave={e => e.currentTarget.style.backgroundColor = ''}
                   >
                     <Avatar name={name || p.email} email={p.email} isOwner={false} />
                     <div>
                       <p style={{ fontSize: 12, fontWeight: 500 }}>{name || '—'}</p>
-                      <p style={{ fontSize: 11, color: '#9B8F85' }}>{p.email}</p>
+                      <p style={{ fontSize: 11, color: '#9C9591' }}>{p.email}</p>
                     </div>
                   </div>
                 )

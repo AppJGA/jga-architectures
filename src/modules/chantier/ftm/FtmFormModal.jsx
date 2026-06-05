@@ -2,9 +2,9 @@ import { useState, useEffect } from 'react'
 import { X } from 'lucide-react'
 
 const ORIGINE_OPTIONS = [
-  { value: 'mo', label: 'Demande MO', emoji: '👤', color: '#2563EB' },
-  { value: 'moe', label: 'Adaptation MOE', emoji: '📐', color: '#E05A1E' },
-  { value: 'aleas', label: 'Aléas', emoji: '⚡', color: '#639922' },
+  { value: 'mo', label: 'Demande MO', emoji: '👤', color: '#1B3A5C' },
+  { value: 'moe', label: 'Adaptation MOE', emoji: '📐', color: '#E8602C' },
+  { value: 'aleas', label: 'Aléas', emoji: '⚡', color: '#2A8A4E' },
 ]
 
 const TYPE_DEMANDE_OPTIONS = [
@@ -61,9 +61,9 @@ function YesNoToggle({ value, onChange, name }) {
             border: '1px solid',
             fontSize: 12,
             cursor: 'pointer',
-            borderColor: value === opt.val ? (opt.val ? '#639922' : '#dc2626') : '#d1d5db',
-            backgroundColor: value === opt.val ? (opt.val ? '#EAF3DE' : '#FEE2E2') : 'white',
-            color: value === opt.val ? (opt.val ? '#3a6011' : '#991b1b') : '#6b7280',
+            borderColor: value === opt.val ? (opt.val ? '#2A8A4E' : '#B8412C') : '#d1d5db',
+            backgroundColor: value === opt.val ? (opt.val ? 'rgba(42,138,78,0.12)' : '#FEE2E2') : 'white',
+            color: value === opt.val ? (opt.val ? '#3a6011' : '#991b1b') : '#5E5854',
             fontWeight: value === opt.val ? 600 : 400,
           }}
         >
@@ -82,13 +82,13 @@ const inputStyle = {
   fontSize: 12,
   outline: 'none',
   backgroundColor: 'white',
-  color: '#1a1a1a',
+  color: '#1F1B17',
 }
 
 const labelStyle = {
   fontSize: 11,
   fontWeight: 500,
-  color: '#6b7280',
+  color: '#5E5854',
   marginBottom: 4,
   display: 'block',
 }
@@ -177,7 +177,7 @@ export function FtmFormModal({ open, onClose, ftm, lots = [], affaire, onSave, o
       padding: 24,
     }}>
       <div style={{
-        backgroundColor: '#F5F2F0',
+        backgroundColor: '#FAF7F2',
         borderRadius: 14,
         width: '100%',
         maxWidth: 680,
@@ -192,15 +192,15 @@ export function FtmFormModal({ open, onClose, ftm, lots = [], affaire, onSave, o
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           padding: '16px 20px',
           borderBottom: '0.5px solid rgba(0,0,0,0.1)',
-          backgroundColor: '#F5F2F0',
+          backgroundColor: '#FAF7F2',
           flexShrink: 0,
         }}>
-          <h2 style={{ fontSize: 14, fontWeight: 600, color: '#1a1a1a', margin: 0 }}>
+          <h2 style={{ fontSize: 14, fontWeight: 600, color: '#1F1B17', margin: 0 }}>
             {ftm ? `Modifier FTM-${String(ftm.numero).padStart(3, '0')}` : 'Nouvelle fiche de travaux modificatifs'}
           </h2>
           <button
             onClick={onClose}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9B8F85', padding: 4 }}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9C9591', padding: 4 }}
           >
             <X size={18} />
           </button>
@@ -209,8 +209,8 @@ export function FtmFormModal({ open, onClose, ftm, lots = [], affaire, onSave, o
         {/* Scrollable body */}
         <div style={{ overflowY: 'auto', flex: 1 }}>
           {/* Section interne */}
-          <div style={{ padding: '16px 20px', backgroundColor: '#F5F2F0', borderBottom: '0.5px solid rgba(0,0,0,0.1)' }}>
-            <p style={{ fontSize: 10, fontWeight: 600, color: '#9B8F85', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 12 }}>
+          <div style={{ padding: '16px 20px', backgroundColor: '#FAF7F2', borderBottom: '0.5px solid rgba(0,0,0,0.1)' }}>
+            <p style={{ fontSize: 10, fontWeight: 600, color: '#9C9591', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 12 }}>
               Informations internes
             </p>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
@@ -229,7 +229,7 @@ export function FtmFormModal({ open, onClose, ftm, lots = [], affaire, onSave, o
                         border: '1.5px solid',
                         borderColor: form.origine === opt.value ? opt.color : '#d1d5db',
                         backgroundColor: form.origine === opt.value ? opt.color + '15' : 'white',
-                        color: form.origine === opt.value ? opt.color : '#6b7280',
+                        color: form.origine === opt.value ? opt.color : '#5E5854',
                         fontSize: 11,
                         fontWeight: form.origine === opt.value ? 600 : 400,
                         cursor: 'pointer',
@@ -261,7 +261,7 @@ export function FtmFormModal({ open, onClose, ftm, lots = [], affaire, onSave, o
 
           {/* Section formulaire */}
           <div style={{ padding: '16px 20px', backgroundColor: 'white' }}>
-            <p style={{ fontSize: 10, fontWeight: 600, color: '#9B8F85', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 16 }}>
+            <p style={{ fontSize: 10, fontWeight: 600, color: '#9C9591', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 16 }}>
               Formulaire
             </p>
 
@@ -278,10 +278,10 @@ export function FtmFormModal({ open, onClose, ftm, lots = [], affaire, onSave, o
             <div style={{ height: '0.5px', backgroundColor: '#f0ece9', margin: '4px 0 16px' }} />
 
             {/* 1. Description */}
-            <p style={{ fontSize: 12, fontWeight: 600, color: '#1a1a1a', marginBottom: 10 }}>1. Description de la demande</p>
+            <p style={{ fontSize: 12, fontWeight: 600, color: '#1F1B17', marginBottom: 10 }}>1. Description de la demande</p>
             <div style={{ display: 'flex', gap: 16, marginBottom: 10 }}>
               {TYPE_DEMANDE_OPTIONS.map(opt => (
-                <label key={opt.value} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer', color: '#1a1a1a' }}>
+                <label key={opt.value} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer', color: '#1F1B17' }}>
                   <input
                     type="radio"
                     name="type_demande"
@@ -306,10 +306,10 @@ export function FtmFormModal({ open, onClose, ftm, lots = [], affaire, onSave, o
             <div style={{ height: '0.5px', backgroundColor: '#f0ece9', margin: '4px 0 16px' }} />
 
             {/* 2. Motivation */}
-            <p style={{ fontSize: 12, fontWeight: 600, color: '#1a1a1a', marginBottom: 10 }}>2. Motivation de la demande</p>
+            <p style={{ fontSize: 12, fontWeight: 600, color: '#1F1B17', marginBottom: 10 }}>2. Motivation de la demande</p>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 16px', marginBottom: 10 }}>
               {MOTIVATION_OPTIONS.map(opt => (
-                <label key={opt.value} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer', color: '#1a1a1a' }}>
+                <label key={opt.value} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer', color: '#1F1B17' }}>
                   <input
                     type="radio"
                     name="motivation"
@@ -336,7 +336,7 @@ export function FtmFormModal({ open, onClose, ftm, lots = [], affaire, onSave, o
             <div style={{ height: '0.5px', backgroundColor: '#f0ece9', margin: '4px 0 16px' }} />
 
             {/* 3. Analyse MOE */}
-            <p style={{ fontSize: 12, fontWeight: 600, color: '#1a1a1a', marginBottom: 12 }}>3. Analyse par le Maître d'Œuvre</p>
+            <p style={{ fontSize: 12, fontWeight: 600, color: '#1F1B17', marginBottom: 12 }}>3. Analyse par le Maître d'Œuvre</p>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
               <div>
                 <label style={labelStyle}>Faisabilité technique</label>
@@ -382,7 +382,7 @@ export function FtmFormModal({ open, onClose, ftm, lots = [], affaire, onSave, o
                   style={inputStyle}
                 />
                 {travHTNum !== 0 && (
-                  <p style={{ fontSize: 10, color: '#9B8F85', marginTop: 3 }}>
+                  <p style={{ fontSize: 10, color: '#9C9591', marginTop: 3 }}>
                     ≈ {new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' }).format(travHTNum * tva)} TTC
                   </p>
                 )}
@@ -397,7 +397,7 @@ export function FtmFormModal({ open, onClose, ftm, lots = [], affaire, onSave, o
                   style={inputStyle}
                 />
                 {honHTNum !== 0 && (
-                  <p style={{ fontSize: 10, color: '#9B8F85', marginTop: 3 }}>
+                  <p style={{ fontSize: 10, color: '#9C9591', marginTop: 3 }}>
                     ≈ {new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' }).format(honHTNum * tva)} TTC
                   </p>
                 )}
@@ -407,7 +407,7 @@ export function FtmFormModal({ open, onClose, ftm, lots = [], affaire, onSave, o
             <div style={{ height: '0.5px', backgroundColor: '#f0ece9', margin: '16px 0' }} />
 
             {/* 4. Décision MOA */}
-            <p style={{ fontSize: 12, fontWeight: 600, color: '#1a1a1a', marginBottom: 10 }}>4. Décision du Maître d'Ouvrage</p>
+            <p style={{ fontSize: 12, fontWeight: 600, color: '#1F1B17', marginBottom: 10 }}>4. Décision du Maître d'Ouvrage</p>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <div>
                 <label style={labelStyle}>Décision</label>
@@ -415,8 +415,8 @@ export function FtmFormModal({ open, onClose, ftm, lots = [], affaire, onSave, o
                   {DECISION_OPTIONS.map(opt => {
                     const colors = {
                       en_attente: { border: '#d97706', bg: '#FEF3C7', color: '#92400E' },
-                      accepte: { border: '#639922', bg: '#EAF3DE', color: '#3a6011' },
-                      renonce: { border: '#9B8F85', bg: '#F1EFE8', color: '#6b5f5a' },
+                      accepte: { border: '#2A8A4E', bg: 'rgba(42,138,78,0.12)', color: '#3a6011' },
+                      renonce: { border: '#9C9591', bg: '#F1EFE8', color: '#6b5f5a' },
                     }
                     const c = colors[opt.value]
                     const active = form.decision === opt.value
@@ -430,7 +430,7 @@ export function FtmFormModal({ open, onClose, ftm, lots = [], affaire, onSave, o
                           borderRadius: 6, border: '1px solid',
                           borderColor: active ? c.border : '#d1d5db',
                           backgroundColor: active ? c.bg : 'white',
-                          color: active ? c.color : '#6b7280',
+                          color: active ? c.color : '#5E5854',
                           fontSize: 11, fontWeight: active ? 600 : 400,
                           cursor: 'pointer', transition: 'all 0.12s',
                         }}
@@ -458,7 +458,7 @@ export function FtmFormModal({ open, onClose, ftm, lots = [], affaire, onSave, o
           display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10,
           padding: '14px 20px',
           borderTop: '0.5px solid rgba(0,0,0,0.1)',
-          backgroundColor: '#F5F2F0',
+          backgroundColor: '#FAF7F2',
           flexShrink: 0,
         }}>
           <button
@@ -467,7 +467,7 @@ export function FtmFormModal({ open, onClose, ftm, lots = [], affaire, onSave, o
             style={{
               padding: '7px 16px', borderRadius: 8,
               border: '1px solid #d1d5db', backgroundColor: 'white',
-              fontSize: 12, color: '#6b7280', cursor: 'pointer',
+              fontSize: 12, color: '#5E5854', cursor: 'pointer',
             }}
           >
             Annuler
@@ -477,7 +477,7 @@ export function FtmFormModal({ open, onClose, ftm, lots = [], affaire, onSave, o
             disabled={saving}
             style={{
               padding: '7px 16px', borderRadius: 8,
-              border: 'none', backgroundColor: '#639922',
+              border: 'none', backgroundColor: '#2A8A4E',
               fontSize: 12, color: 'white', cursor: 'pointer',
               fontWeight: 500,
             }}
@@ -489,7 +489,7 @@ export function FtmFormModal({ open, onClose, ftm, lots = [], affaire, onSave, o
             disabled={saving}
             style={{
               padding: '7px 16px', borderRadius: 8,
-              border: 'none', backgroundColor: '#E05A1E',
+              border: 'none', backgroundColor: '#E8602C',
               fontSize: 12, color: 'white', cursor: 'pointer',
               fontWeight: 500,
             }}

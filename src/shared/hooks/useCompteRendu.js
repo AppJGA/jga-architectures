@@ -117,6 +117,15 @@ export function useCompteRendu(crId, affaireId) {
     await fetchAll()
   }, [fetchAll])
 
+  const reorderSectionsByIds = useCallback(async (orderedIds) => {
+    await Promise.all(
+      orderedIds.map((id, idx) =>
+        supabase.from('cr_sections').update({ ordre: idx }).eq('id', id)
+      )
+    )
+    await fetchAll()
+  }, [fetchAll])
+
   const reorderSection = useCallback(async (id, dir) => {
     const sorted = [...sections].sort((a, b) => a.ordre - b.ordre)
     const idx = sorted.findIndex(s => s.id === id)
@@ -171,7 +180,7 @@ export function useCompteRendu(crId, affaireId) {
     const maxOrdre = (ss?.remarques ?? []).reduce((m, r) => Math.max(m, r.ordre), -1)
     const { error } = await supabase.from('cr_remarques').insert({
       cr_id: crId, sous_section_id: sousSectionId,
-      affaire_id, ordre: maxOrdre + 1, ...payload,
+      affaire_id: affaireId, ordre: maxOrdre + 1, ...payload,
     })
     if (error) throw error
     await fetchAll()
@@ -222,7 +231,7 @@ export function useCompteRendu(crId, affaireId) {
   return {
     cr, sections, presences, profiles, loading,
     syncPresences, updateCr,
-    addSection, updateSection, deleteSection, reorderSection,
+    addSection, updateSection, deleteSection, reorderSection, reorderSectionsByIds,
     addSousSection, updateSousSection, deleteSousSection, reorderSousSection,
     addRemarque, updateRemarque, deleteRemarque, reorderRemarque,
     setPresence, setConvoque,

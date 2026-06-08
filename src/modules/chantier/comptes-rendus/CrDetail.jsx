@@ -335,7 +335,7 @@ export function CrDetail({ crId, affaire, onBack }) {
   const {
     cr, sections, presences, profiles, loading,
     syncPresences, updateCr,
-    addSection, updateSection, deleteSection, reorderSection,
+    addSection, updateSection, deleteSection, reorderSection, reorderSectionsByIds,
     addSousSection, updateSousSection, deleteSousSection, reorderSousSection,
     addRemarque, updateRemarque, deleteRemarque, reorderRemarque,
     setPresence, setConvoque, refetch,
@@ -348,7 +348,7 @@ export function CrDetail({ crId, affaire, onBack }) {
   }, [crId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const ops = {
-    addSection, updateSection, deleteSection, reorderSection,
+    addSection, updateSection, deleteSection, reorderSection, reorderSectionsByIds,
     addSousSection, updateSousSection, deleteSousSection, reorderSousSection,
     addRemarque, updateRemarque, deleteRemarque, reorderRemarque,
   }
@@ -385,7 +385,7 @@ export function CrDetail({ crId, affaire, onBack }) {
             onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--jga-orange)'; e.currentTarget.style.color = 'var(--jga-orange)' }}
             onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(0,0,0,0.15)'; e.currentTarget.style.color = '#1F1B17' }}
           >
-            <LayoutDashboard size={16} /> Retour au compte rendu
+            <LayoutDashboard size={16} /> Retour à la visite
           </button>
         </div>
       ) : (

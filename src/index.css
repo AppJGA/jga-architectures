@@ -92,3 +92,20 @@ body {
 }
 
 .print-only { display: none; }
+
+/* ── Optimisation tablette (écrans tactiles) ── */
+@media (pointer: coarse) {
+  button, [role="button"] {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  input, select, textarea {
+    min-height: 48px;
+    font-size: 16px; /* évite le zoom auto sur iOS */
+  }
+  /* Exceptions : petits boutons d'action inline (icônes) */
+  button[data-compact] {
+    min-height: unset;
+    min-width: unset;
+  }
+}

@@ -133,7 +133,7 @@ function OrganisationView({ cr, profiles, updateCr, onApplyTemplate, lots, inter
 
         <div>
           <label style={LABEL}>Rédacteur</label>
-          <select value={form.redacteur_id ?? ''} onChange={e => set('redacteur_id', e.target.value)} style={{ ...INPUT, cursor: 'pointer' }} onFocus={focusOn} onBlur={focusOff}>
+          <select value={form.redacteur_id ?? ''} onChange={e => set('redacteur_id', e.target.value || null)} style={{ ...INPUT, cursor: 'pointer' }} onFocus={focusOn} onBlur={focusOff}>
             <option value="">— Non défini —</option>
             {profiles.map(p => (
               <option key={p.id} value={p.id}>{[p.prenom, p.nom].filter(Boolean).join(' ') || p.email}</option>

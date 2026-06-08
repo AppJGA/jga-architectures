@@ -1,5 +1,9 @@
 import { useState } from 'react'
-import { Plus, Pencil, Trash2, ChevronDown, ChevronUp, ChevronRight, X, GripVertical, MessageSquarePlus, ToggleLeft, ToggleRight } from 'lucide-react'
+import {
+  Plus, Pencil, Trash2, ChevronDown, ChevronUp, ChevronRight, X,
+  GripVertical, MessageSquarePlus, ToggleLeft, ToggleRight, MessageSquare,
+  Check, RotateCcw,
+} from 'lucide-react'
 import { CATEGORIE_META } from '../../../shared/hooks/useAffaireInterlocuteurs'
 
 // ─── Utilitaires ──────────────────────────────────────────────────────────────
@@ -13,12 +17,6 @@ function nextRoman(sections) {
 
 const STATUT_SUGGESTIONS = ['À faire', 'Fait', 'Pour mémoire', 'À prévoir', 'En cours', 'Urgent', 'Annulé']
 
-const ATTR_OPTS = [
-  { id: 'general',       label: 'Générale',      color: '#9C9591', bg: '#FAF7F2', border: '#9C9591' },
-  { id: 'lot',           label: 'Lot',            color: '#2A8A4E', bg: 'rgba(42,138,78,0.12)', border: '#2A8A4E' },
-  { id: 'interlocuteur', label: 'Interlocuteur',  color: '#E8602C', bg: 'rgba(232,96,44,0.10)', border: '#E8602C' },
-]
-
 const LABEL = {
   display: 'block', fontSize: 11, fontWeight: 500,
   textTransform: 'uppercase', letterSpacing: '0.05em', color: '#9C9591', marginBottom: 3,
@@ -31,34 +29,49 @@ const INPUT = {
 function focusOn(e)  { e.target.style.borderColor = '#E8602C'; e.target.style.boxShadow = '0 0 0 3px rgba(224,90,30,0.07)' }
 function focusOff(e) { e.target.style.borderColor = 'rgba(0,0,0,0.12)'; e.target.style.boxShadow = 'none' }
 
-function getAttrMode(initial) {
-  if (initial?.interlocuteur_id) return 'interlocuteur'
-  if (initial?.lot_id) return 'lot'
-  return 'general'
-}
-
 // ─── Formulaire de remarque ────────────────────────────────────────────────────
+// Évolution 1: 'general' → aucune attribution, 'interlocuteurs' → sélect combiné
 
 function RemarqueForm({ initial, crDate, suggestions, lots, interlocuteurs, sectionType, onSave, onCancel, onDelete }) {
   const today = crDate ?? new Date().toISOString().split('T')[0]
-  const defaultAttribution = sectionType === 'interlocuteurs' ? 'interlocuteur' : 'general'
-  const [form, setForm] = useState(initial ?? {
+  const [form, setForm] = useState(() => ({
     date_note: today, pour: '', description: '',
     statut: 'En cours', date_echeance: '',
     est_important: false, est_clos: false, est_nouveau: false,
-    attribution: defaultAttribution, lot_id: '', interlocuteur_id: '',
-  })
-  const [saving, setSaving] = useState(false)
+    lot_id: '', interlocuteur_id: '',
+    ...(initial ? {
+      date_note:        initial.date_note ?? today,
+      pour:             initial.pour ?? '',
+      description:      initial.description ?? '',
+      statut:           initial.statut ?? 'En cours',
+      date_echeance:    initial.date_echeance ?? '',
+      est_important:    !!initial.est_important,
+      est_clos:         !!initial.est_clos,
+      est_nouveau:      !!initial.est_nouveau,
+      lot_id:           initial.lot_id ?? '',
+      interlocuteur_id: initial.interlocuteur_id ?? '',
+    } : {}),
+  }))
+  const [saving, setSaving]     = useState(false)
   const [confirmDel, setConfirmDel] = useState(false)
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
-  useState(() => {
-    if (initial) set('attribution', getAttrMode(initial))
-  })
+  // Valeur combinée lots + interlocuteurs (sections 'interlocuteurs' uniquement)
+  const destinataireVal = form.lot_id
+    ? `lot:${form.lot_id}`
+    : form.interlocuteur_id
+    ? `interlo:${form.interlocuteur_id}`
+    : ''
 
-  const setAttribution = (mode) => {
-    setForm(f => ({ ...f, attribution: mode, lot_id: '', interlocuteur_id: '' }))
+  const setDestinataire = (val) => {
+    if (!val) {
+      setForm(f => ({ ...f, lot_id: '', interlocuteur_id: '' }))
+    } else if (val.startsWith('lot:')) {
+      setForm(f => ({ ...f, lot_id: val.slice(4), interlocuteur_id: '' }))
+    } else {
+      setForm(f => ({ ...f, interlocuteur_id: val.slice(8), lot_id: '' }))
+    }
   }
 
   const handleSubmit = async (e) => {
@@ -75,8 +88,8 @@ function RemarqueForm({ initial, crDate, suggestions, lots, interlocuteurs, sect
         est_important:    !!form.est_important,
         est_clos:         !!form.est_clos,
         est_nouveau:      !!form.est_nouveau,
-        lot_id:           form.attribution === 'lot'           ? (form.lot_id || null)           : null,
-        interlocuteur_id: form.attribution === 'interlocuteur' ? (form.interlocuteur_id || null) : null,
+        lot_id:           sectionType === 'general' ? null : (form.lot_id || null),
+        interlocuteur_id: sectionType === 'general' ? null : (form.interlocuteur_id || null),
       })
     } catch (err) { console.error(err) }
     setSaving(false)
@@ -86,24 +99,39 @@ function RemarqueForm({ initial, crDate, suggestions, lots, interlocuteurs, sect
     <form onSubmit={handleSubmit} style={{ backgroundColor: '#FAFAF9', borderRadius: 2, padding: '12px 14px', border: '0.5px solid rgba(0,0,0,0.08)', marginBottom: 6 }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
 
-        {/* Destinataire proéminent pour sections interlocuteurs */}
-        {sectionType === 'interlocuteurs' && interlocuteurs?.length > 0 && (
+        {/* Destinataire combiné (sections interlocuteurs uniquement) */}
+        {sectionType === 'interlocuteurs' && (
           <div>
-            <label style={{ ...LABEL, color: '#E8602C' }}>Destinataire</label>
+            <label style={{ ...LABEL, color: '#1B3A5C' }}>Destinataire</label>
             <select
-              value={form.interlocuteur_id ?? ''} onChange={e => { set('interlocuteur_id', e.target.value); set('attribution', 'interlocuteur') }}
-              style={{ ...INPUT, cursor: 'pointer', borderColor: '#E8602C' }} onFocus={focusOn} onBlur={focusOff}
+              value={destinataireVal}
+              onChange={e => setDestinataire(e.target.value)}
+              style={{ ...INPUT, cursor: 'pointer' }}
+              onFocus={focusOn} onBlur={focusOff}
             >
-              <option value="">— Sélectionner un destinataire —</option>
-              {interlocuteurs.map(i => {
-                const meta = CATEGORIE_META[i.categorie]
-                const name = [i.prenom, i.nom].filter(Boolean).join(' ') || i.organisation || '—'
-                return (
-                  <option key={i.id} value={i.id}>
-                    [{meta?.label ?? i.categorie}] {name}{i.organisation ? ` — ${i.organisation}` : ''}
-                  </option>
-                )
-              })}
+              <option value="">— Aucun destinataire —</option>
+              {(lots ?? []).length > 0 && (
+                <optgroup label="Lots / Entreprises">
+                  {lots.map(l => (
+                    <option key={l.id} value={`lot:${l.id}`}>
+                      {l.numero ? `Lot ${l.numero} — ` : ''}{l.nom}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {(interlocuteurs ?? []).length > 0 && (
+                <optgroup label="Interlocuteurs">
+                  {interlocuteurs.map(i => {
+                    const meta = CATEGORIE_META[i.categorie]
+                    const name = [i.prenom, i.nom].filter(Boolean).join(' ') || i.organisation || '—'
+                    return (
+                      <option key={i.id} value={`interlo:${i.id}`}>
+                        [{meta?.label ?? i.categorie}] {name}{i.organisation ? ` — ${i.organisation}` : ''}
+                      </option>
+                    )
+                  })}
+                </optgroup>
+              )}
             </select>
           </div>
         )}
@@ -158,55 +186,6 @@ function RemarqueForm({ initial, crDate, suggestions, lots, interlocuteurs, sect
           </div>
         </div>
 
-        {/* Attribution — masquée si section type interlocuteurs */}
-        {sectionType !== 'interlocuteurs' && (
-          <div>
-            <label style={LABEL}>Attribution (optionnel)</label>
-            <div style={{ display: 'flex', gap: 6, marginBottom: (form.attribution === 'lot' || form.attribution === 'interlocuteur') ? 8 : 0 }}>
-              {ATTR_OPTS.map(opt => {
-                const active = form.attribution === opt.id
-                return (
-                  <button key={opt.id} type="button" onClick={() => setAttribution(opt.id)}
-                    style={{
-                      padding: '5px 12px', borderRadius: 2, fontSize: 12, cursor: 'pointer',
-                      border: `0.5px solid ${active ? opt.border : 'rgba(0,0,0,0.12)'}`,
-                      backgroundColor: active ? opt.bg : '#FAFAF9',
-                      color: active ? opt.color : '#5E5854',
-                      fontWeight: active ? 500 : 400,
-                    }}
-                  >
-                    {opt.label}
-                  </button>
-                )
-              })}
-            </div>
-
-            {form.attribution === 'lot' && lots?.length > 0 && (
-              <select value={form.lot_id ?? ''} onChange={e => set('lot_id', e.target.value)} style={{ ...INPUT, cursor: 'pointer' }} onFocus={focusOn} onBlur={focusOff}>
-                <option value="">— Sélectionner un lot —</option>
-                {lots.map(l => (
-                  <option key={l.id} value={l.id}>{l.numero ? `Lot ${l.numero} — ` : ''}{l.nom}</option>
-                ))}
-              </select>
-            )}
-
-            {form.attribution === 'interlocuteur' && interlocuteurs?.length > 0 && (
-              <select value={form.interlocuteur_id ?? ''} onChange={e => set('interlocuteur_id', e.target.value)} style={{ ...INPUT, cursor: 'pointer' }} onFocus={focusOn} onBlur={focusOff}>
-                <option value="">— Sélectionner un interlocuteur —</option>
-                {interlocuteurs.map(i => {
-                  const meta = CATEGORIE_META[i.categorie]
-                  const name = [i.prenom, i.nom].filter(Boolean).join(' ') || i.organisation || '—'
-                  return (
-                    <option key={i.id} value={i.id}>
-                      [{meta?.label ?? i.categorie}] {name}{i.organisation ? ` — ${i.organisation}` : ''}
-                    </option>
-                  )
-                })}
-              </select>
-            )}
-          </div>
-        )}
-
         {/* Options */}
         <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
           {[
@@ -240,8 +219,10 @@ function RemarqueForm({ initial, crDate, suggestions, lots, interlocuteurs, sect
 }
 
 // ─── Badge d'attribution ──────────────────────────────────────────────────────
+// Évolution 1: masqué pour les sections 'general'
 
-function AttrBadge({ rem, lots, interlocuteurs }) {
+function AttrBadge({ rem, lots, interlocuteurs, sectionType }) {
+  if (sectionType === 'general') return null
   if (rem.lot_id) {
     const lot = (lots ?? []).find(l => l.id === rem.lot_id)
     if (!lot) return null
@@ -264,61 +245,189 @@ function AttrBadge({ rem, lots, interlocuteurs }) {
   return null
 }
 
-// ─── Affichage d'une remarque ──────────────────────────────────────────────────
+// ─── Sous-remarque (fil de suivi) ─────────────────────────────────────────────
+// Évolution 4
 
-function RemarqueRow({ rem, idx, total, crDate, suggestions, lots, interlocuteurs, sectionType, onEdit, onDelete, onReorder, hidden }) {
-  const [editOpen, setEditOpen] = useState(false)
+function SousRemarqueRow({ sr, onDelete, onToggleClos }) {
+  const fmtD = (d) => d ? new Date(d + 'T00:00:00').toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' }) : '—'
+  return (
+    <div className="sous-remarque-row" style={{ display: 'flex', gap: 8, padding: '4px 0', borderBottom: '0.5px solid rgba(0,0,0,0.05)', alignItems: 'flex-start' }}>
+      {sr.est_nouveau && <span style={{ color: '#E8602C', fontSize: 10, flexShrink: 0, marginTop: 2 }}>▶</span>}
+      <span style={{ color: '#9C9591', fontSize: 11, fontFamily: "'JetBrains Mono', monospace", minWidth: 40, flexShrink: 0, marginTop: 1 }}>
+        {fmtD(sr.date_note)}
+      </span>
+      {sr.pour && (
+        <span style={{ color: '#E8602C', fontSize: 11, fontWeight: 500, minWidth: 28, flexShrink: 0, marginTop: 1 }}>{sr.pour}</span>
+      )}
+      <span style={{ flex: 1, fontSize: 12, textDecoration: sr.est_clos ? 'line-through' : 'none', color: sr.est_clos ? '#9CA3AF' : '#374151' }}>
+        {sr.description}
+      </span>
+      <div className="sous-remarque-actions" style={{ display: 'flex', gap: 3, opacity: 0, transition: 'opacity 0.15s', flexShrink: 0 }}>
+        <button onClick={() => onToggleClos(sr.id, !sr.est_clos)} title={sr.est_clos ? 'Rouvrir' : 'Clôturer'} data-compact
+          style={{ padding: 2, background: 'none', border: 'none', cursor: 'pointer', color: sr.est_clos ? '#2A8A4E' : '#9C9591' }}>
+          {sr.est_clos ? <RotateCcw size={11} /> : <Check size={11} />}
+        </button>
+        <button onClick={() => onDelete(sr.id)} data-compact
+          style={{ padding: 2, background: 'none', border: 'none', cursor: 'pointer', color: '#B8412C' }}>
+          <Trash2 size={11} />
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function SousRemarqueForm({ crDate, onSave, onCancel }) {
+  const today = crDate ?? new Date().toISOString().split('T')[0]
+  const [date, setDate]               = useState(today)
+  const [pour, setPour]               = useState('')
+  const [description, setDescription] = useState('')
+  const [saving, setSaving]           = useState(false)
+
+  return (
+    <div style={{ marginLeft: 24, marginTop: 4, borderLeft: '2px solid #E9E2D6', paddingLeft: 12, paddingBottom: 6 }}>
+      <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+        <input type="date" value={date} onChange={e => setDate(e.target.value)}
+          style={{ ...INPUT, width: 140, height: 30, fontSize: 11 }} onFocus={focusOn} onBlur={focusOff} />
+        <input value={pour} onChange={e => setPour(e.target.value)} placeholder="Pour…"
+          style={{ ...INPUT, width: 70, height: 30, fontSize: 11 }} onFocus={focusOn} onBlur={focusOff} />
+        <textarea
+          value={description} onChange={e => setDescription(e.target.value)}
+          placeholder="Suivi…" autoFocus rows={2}
+          style={{ flex: 1, minWidth: 180, padding: '5px 8px', borderRadius: 2, fontSize: 12, border: '0.5px solid rgba(0,0,0,0.12)', outline: 'none', boxSizing: 'border-box', color: '#1F1B17', resize: 'vertical', minHeight: 50 }}
+          onFocus={focusOn} onBlur={focusOff}
+        />
+      </div>
+      <div style={{ display: 'flex', gap: 6, marginTop: 6, justifyContent: 'flex-end' }}>
+        <button type="button" onClick={onCancel}
+          style={{ padding: '3px 10px', borderRadius: 2, fontSize: 11, cursor: 'pointer', border: '0.5px solid rgba(0,0,0,0.15)', backgroundColor: 'white', color: '#374151' }}>
+          Annuler
+        </button>
+        <button type="button"
+          onClick={async () => {
+            if (!description.trim()) return
+            setSaving(true)
+            try {
+              await onSave({ date_note: date || null, pour: pour || null, description: description.trim(), est_nouveau: true, est_clos: false, est_important: false })
+            } catch (err) { console.error(err) }
+            setSaving(false)
+          }}
+          disabled={saving || !description.trim()}
+          style={{ padding: '3px 12px', borderRadius: 2, fontSize: 11, fontWeight: 500, border: 'none', backgroundColor: '#E8602C', color: 'white', cursor: 'pointer', opacity: (saving || !description.trim()) ? 0.6 : 1 }}
+        >{saving ? 'Enregistrement…' : 'Enregistrer'}</button>
+      </div>
+    </div>
+  )
+}
+
+// ─── Affichage d'une remarque ──────────────────────────────────────────────────
+// Évolution 4: sous_remarques + bouton "+ Suivi"
+
+function RemarqueRow({ rem, idx, total, crDate, suggestions, lots, interlocuteurs, sectionType, onEdit, onDelete, onReorder, onAddSousRemarque, noReorder, hidden }) {
+  const [editOpen, setEditOpen]       = useState(false)
+  const [addingSuivi, setAddingSuivi] = useState(false)
   const fmtD = (d) => d ? new Date(d + 'T00:00:00').toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : null
 
   let descStyle = { fontSize: 13, color: '#1F1B17', lineHeight: 1.5 }
   if (rem.est_clos) descStyle = { ...descStyle, textDecoration: 'line-through', color: '#9CA3AF' }
   if (rem.est_important) descStyle = { ...descStyle, fontWeight: 500, color: '#E8602C' }
 
+  const sousSousRems = rem.sous_remarques ?? []
+
   if (editOpen) return (
-    <RemarqueForm
-      initial={{ ...rem, attribution: getAttrMode(rem) }}
-      crDate={crDate}
-      suggestions={suggestions}
-      lots={lots}
-      interlocuteurs={interlocuteurs}
-      sectionType={sectionType}
-      onSave={async (data) => { await onEdit(rem.id, data); setEditOpen(false) }}
-      onCancel={() => setEditOpen(false)}
-      onDelete={async () => { await onDelete(rem.id); setEditOpen(false) }}
-    />
+    <div style={{ marginBottom: 4 }}>
+      <RemarqueForm
+        initial={{ ...rem }}
+        crDate={crDate}
+        suggestions={suggestions}
+        lots={lots}
+        interlocuteurs={interlocuteurs}
+        sectionType={sectionType}
+        onSave={async (data) => { await onEdit(rem.id, data); setEditOpen(false) }}
+        onCancel={() => setEditOpen(false)}
+        onDelete={async () => { await onDelete(rem.id); setEditOpen(false) }}
+      />
+      {sousSousRems.length > 0 && (
+        <div style={{ marginLeft: 24, borderLeft: '2px solid #E9E2D6', paddingLeft: 12, marginBottom: 4 }}>
+          {sousSousRems.map(sr => (
+            <SousRemarqueRow key={sr.id} sr={sr}
+              onDelete={onDelete}
+              onToggleClos={async (id, clos) => await onEdit(id, { est_clos: clos })}
+            />
+          ))}
+        </div>
+      )}
+    </div>
   )
 
   return (
-    <div style={{ display: hidden ? 'none' : 'flex', gap: 8, padding: '8px 10px', backgroundColor: 'white', borderRadius: 2, border: '0.5px solid rgba(0,0,0,0.06)', marginBottom: 4 }}>
-      <div style={{ flexShrink: 0, width: 100, paddingTop: 2 }}>
-        <p style={{ fontSize: 11, color: '#5E5854' }}>
-          {rem.est_nouveau && <span style={{ color: '#E8602C', marginRight: 2 }}>▶</span>}
-          {fmtD(rem.date_note) ?? '—'}
-        </p>
-        {rem.pour && <p style={{ fontSize: 10, color: '#E8602C', fontWeight: 500, marginTop: 2 }}>{rem.pour}</p>}
-      </div>
-
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', flexWrap: 'wrap', gap: 4 }}>
-          <p style={{ ...descStyle, margin: 0 }}>{rem.description}</p>
-          <AttrBadge rem={rem} lots={lots} interlocuteurs={interlocuteurs} />
+    <div style={{ display: hidden ? 'none' : 'block', marginBottom: 4 }}>
+      <div style={{ display: 'flex', gap: 8, padding: '8px 10px', backgroundColor: 'white', borderRadius: 2, border: '0.5px solid rgba(0,0,0,0.06)' }}>
+        <div style={{ flexShrink: 0, width: 100, paddingTop: 2 }}>
+          <p style={{ fontSize: 11, color: '#5E5854' }}>
+            {rem.est_nouveau && <span style={{ color: '#E8602C', marginRight: 2 }}>▶</span>}
+            {fmtD(rem.date_note) ?? '—'}
+          </p>
+          {rem.pour && <p style={{ fontSize: 10, color: '#E8602C', fontWeight: 500, marginTop: 2 }}>{rem.pour}</p>}
         </div>
-        {rem.date_echeance && (
-          <p style={{ fontSize: 11, color: '#5E5854', marginTop: 3 }}>Pour le {fmtD(rem.date_echeance)}</p>
+
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', flexWrap: 'wrap', gap: 4 }}>
+            <p style={{ ...descStyle, margin: 0 }}>{rem.description}</p>
+            <AttrBadge rem={rem} lots={lots} interlocuteurs={interlocuteurs} sectionType={sectionType} />
+          </div>
+          {rem.date_echeance && (
+            <p style={{ fontSize: 11, color: '#5E5854', marginTop: 3 }}>Pour le {fmtD(rem.date_echeance)}</p>
+          )}
+        </div>
+
+        {rem.statut && (
+          <div style={{ flexShrink: 0, paddingTop: 2 }}>
+            <span style={{ fontSize: 10, color: '#5E5854', backgroundColor: '#FAF7F2', borderRadius: 3, padding: '2px 6px' }}>{rem.statut}</span>
+          </div>
         )}
+
+        <div style={{ display: 'flex', gap: 2, flexShrink: 0, alignItems: 'flex-start' }}>
+          {!noReorder && (
+            <>
+              <button onClick={() => onReorder(rem.id, 'up')} disabled={idx === 0} data-compact style={{ padding: 3, background: 'none', border: 'none', cursor: idx === 0 ? 'default' : 'pointer', color: idx === 0 ? '#D1D5DB' : '#9C9591' }}><ChevronUp size={12} /></button>
+              <button onClick={() => onReorder(rem.id, 'down')} disabled={idx === total - 1} data-compact style={{ padding: 3, background: 'none', border: 'none', cursor: idx === total - 1 ? 'default' : 'pointer', color: idx === total - 1 ? '#D1D5DB' : '#9C9591' }}><ChevronDown size={12} /></button>
+            </>
+          )}
+          <button onClick={() => setEditOpen(true)} data-compact style={{ padding: 3, background: 'none', border: 'none', cursor: 'pointer', color: '#9C9591' }}><Pencil size={12} /></button>
+          {onAddSousRemarque && (
+            <button onClick={() => setAddingSuivi(a => !a)} data-compact
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 2, padding: '2px 5px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 10, color: addingSuivi ? '#E8602C' : '#9C9591' }}
+              title="Ajouter un suivi"
+            >
+              <MessageSquare size={11} />+ Suivi
+            </button>
+          )}
+        </div>
       </div>
 
-      {rem.statut && (
-        <div style={{ flexShrink: 0, paddingTop: 2 }}>
-          <span style={{ fontSize: 10, color: '#5E5854', backgroundColor: '#FAF7F2', borderRadius: 3, padding: '2px 6px' }}>{rem.statut}</span>
+      {/* Sous-remarques existantes */}
+      {sousSousRems.length > 0 && (
+        <div style={{ marginLeft: 24, borderLeft: '2px solid #E9E2D6', paddingLeft: 12, marginTop: 2 }}>
+          {sousSousRems.map(sr => (
+            <SousRemarqueRow key={sr.id} sr={sr}
+              onDelete={onDelete}
+              onToggleClos={async (id, clos) => await onEdit(id, { est_clos: clos })}
+            />
+          ))}
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: 2, flexShrink: 0, alignItems: 'flex-start' }}>
-        <button onClick={() => onReorder(rem.id, 'up')} disabled={idx === 0} style={{ padding: 3, background: 'none', border: 'none', cursor: idx === 0 ? 'default' : 'pointer', color: idx === 0 ? '#D1D5DB' : '#9C9591' }}><ChevronUp size={12} /></button>
-        <button onClick={() => onReorder(rem.id, 'down')} disabled={idx === total - 1} style={{ padding: 3, background: 'none', border: 'none', cursor: idx === total - 1 ? 'default' : 'pointer', color: idx === total - 1 ? '#D1D5DB' : '#9C9591' }}><ChevronDown size={12} /></button>
-        <button onClick={() => setEditOpen(true)} style={{ padding: 3, background: 'none', border: 'none', cursor: 'pointer', color: '#9C9591' }}><Pencil size={12} /></button>
-      </div>
+      {/* Formulaire d'ajout de suivi */}
+      {addingSuivi && (
+        <SousRemarqueForm
+          crDate={crDate}
+          onSave={async (data) => {
+            await onAddSousRemarque(rem.id, data)
+            setAddingSuivi(false)
+          }}
+          onCancel={() => setAddingSuivi(false)}
+        />
+      )}
     </div>
   )
 }
@@ -326,17 +435,17 @@ function RemarqueRow({ rem, idx, total, crDate, suggestions, lots, interlocuteur
 // ─── Sous-section ──────────────────────────────────────────────────────────────
 
 function SousSectionBlock({ ss, sectionId, ssIdx, ssTotal, crDate, suggestions, lots, interlocuteurs, sectionType, ops, filterFn }) {
-  const [collapsed, setCollapsed] = useState(false)
-  const [addRem, setAddRem] = useState(false)
-  const [editSs, setEditSs] = useState(false)
+  const [collapsed, setCollapsed]   = useState(false)
+  const [addRem, setAddRem]         = useState(false)
+  const [editSs, setEditSs]         = useState(false)
   const [confirmDel, setConfirmDel] = useState(false)
-  const [ssCode, setSsCode] = useState(ss.code)
-  const [ssTitre, setSsTitre] = useState(ss.titre)
+  const [ssCode, setSsCode]         = useState(ss.code)
+  const [ssTitre, setSsTitre]       = useState(ss.titre)
 
   return (
     <div style={{ marginBottom: 8, paddingLeft: 12, borderLeft: '2px solid rgba(0,0,0,0.06)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: collapsed ? 0 : 6 }}>
-        <button onClick={() => setCollapsed(c => !c)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: '#9C9591', flexShrink: 0 }}>
+        <button onClick={() => setCollapsed(c => !c)} data-compact style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: '#9C9591', flexShrink: 0 }}>
           {collapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
         </button>
 
@@ -357,10 +466,10 @@ function SousSectionBlock({ ss, sectionId, ssIdx, ssTotal, crDate, suggestions, 
         )}
 
         <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
-          <button onClick={() => ops.reorderSousSection(sectionId, ss.id, 'up')} disabled={ssIdx === 0} style={{ padding: 3, background: 'none', border: 'none', cursor: ssIdx === 0 ? 'default' : 'pointer', color: ssIdx === 0 ? '#D1D5DB' : '#9C9591' }}><ChevronUp size={12} /></button>
-          <button onClick={() => ops.reorderSousSection(sectionId, ss.id, 'down')} disabled={ssIdx === ssTotal - 1} style={{ padding: 3, background: 'none', border: 'none', cursor: ssIdx === ssTotal - 1 ? 'default' : 'pointer', color: ssIdx === ssTotal - 1 ? '#D1D5DB' : '#9C9591' }}><ChevronDown size={12} /></button>
-          <button onClick={() => { setSsCode(ss.code); setSsTitre(ss.titre); setEditSs(!editSs) }} style={{ padding: 3, background: 'none', border: 'none', cursor: 'pointer', color: '#9C9591' }}><Pencil size={12} /></button>
-          <button onClick={async () => { if (!confirmDel) { setConfirmDel(true); return } await ops.deleteSousSection(ss.id) }}
+          <button onClick={() => ops.reorderSousSection(sectionId, ss.id, 'up')} disabled={ssIdx === 0} data-compact style={{ padding: 3, background: 'none', border: 'none', cursor: ssIdx === 0 ? 'default' : 'pointer', color: ssIdx === 0 ? '#D1D5DB' : '#9C9591' }}><ChevronUp size={12} /></button>
+          <button onClick={() => ops.reorderSousSection(sectionId, ss.id, 'down')} disabled={ssIdx === ssTotal - 1} data-compact style={{ padding: 3, background: 'none', border: 'none', cursor: ssIdx === ssTotal - 1 ? 'default' : 'pointer', color: ssIdx === ssTotal - 1 ? '#D1D5DB' : '#9C9591' }}><ChevronDown size={12} /></button>
+          <button onClick={() => { setSsCode(ss.code); setSsTitre(ss.titre); setEditSs(!editSs) }} data-compact style={{ padding: 3, background: 'none', border: 'none', cursor: 'pointer', color: '#9C9591' }}><Pencil size={12} /></button>
+          <button onClick={async () => { if (!confirmDel) { setConfirmDel(true); return } await ops.deleteSousSection(ss.id) }} data-compact
             style={{ padding: 3, background: 'none', border: 'none', cursor: 'pointer', color: confirmDel ? '#B8412C' : '#9C9591' }}>
             <Trash2 size={12} />
           </button>
@@ -380,7 +489,11 @@ function SousSectionBlock({ ss, sectionId, ssIdx, ssTotal, crDate, suggestions, 
               lots={lots}
               interlocuteurs={interlocuteurs}
               sectionType={sectionType}
-              onSave={async (data) => { await ops.addRemarque(ss.id, data); setAddRem(false) }}
+              onSave={async (data) => {
+                // Inclure section_id pour faciliter la navigation
+                await ops.addRemarque(ss.id, { ...data, section_id: sectionId })
+                setAddRem(false)
+              }}
               onCancel={() => setAddRem(false)}
             />
           )}
@@ -398,6 +511,7 @@ function SousSectionBlock({ ss, sectionId, ssIdx, ssTotal, crDate, suggestions, 
               onEdit={ops.updateRemarque}
               onDelete={ops.deleteRemarque}
               onReorder={(id, dir) => ops.reorderRemarque(ss.id, id, dir)}
+              onAddSousRemarque={ops.addSousRemarque}
               hidden={!filterFn(rem)}
             />
           ))}
@@ -410,17 +524,103 @@ function SousSectionBlock({ ss, sectionId, ssIdx, ssTotal, crDate, suggestions, 
   )
 }
 
+// ─── Vue groupée par destinataire (sections interlocuteurs) ───────────────────
+// Évolution 3: tri par interlocuteur puis par date
+
+function InterlocuteursGroupedView({ section, crDate, suggestions, lots, interlocuteurs, ops, filterFn }) {
+  const allRems = [
+    ...(section.directRemarques ?? []),
+    ...(section.sousSections ?? []).flatMap(ss => ss.remarques ?? []),
+  ]
+  const visible = allRems.filter(filterFn)
+
+  const sortByDate = (arr) =>
+    [...arr].sort((a, b) => {
+      const d1 = a.date_note ? new Date(a.date_note) : new Date(0)
+      const d2 = b.date_note ? new Date(b.date_note) : new Date(0)
+      if (d1 - d2 !== 0) return d1 - d2
+      return new Date(a.created_at ?? 0) - new Date(b.created_at ?? 0)
+    })
+
+  const sansDestinataire = sortByDate(visible.filter(r => !r.lot_id && !r.interlocuteur_id))
+
+  const sortedLots = [...(lots ?? [])].sort((a, b) => (a.numero ?? 999) - (b.numero ?? 999))
+  const lotGroups = sortedLots
+    .map(l => ({
+      key: `lot:${l.id}`,
+      label: l.numero ? `LOT ${l.numero} — ${l.nom.toUpperCase()}` : l.nom.toUpperCase(),
+      remarques: sortByDate(visible.filter(r => r.lot_id === l.id)),
+    }))
+    .filter(g => g.remarques.length > 0)
+
+  const interloGroups = (interlocuteurs ?? [])
+    .map(i => {
+      const meta = CATEGORIE_META[i.categorie]
+      const name = [i.prenom, i.nom].filter(Boolean).join(' ') || i.organisation || '—'
+      return {
+        key: `interlo:${i.id}`,
+        label: `${name.toUpperCase()}${i.organisation ? ` — ${i.organisation.toUpperCase()}` : ''} (${(meta?.label ?? i.categorie).toUpperCase()})`,
+        remarques: sortByDate(visible.filter(r => r.interlocuteur_id === i.id)),
+      }
+    })
+    .filter(g => g.remarques.length > 0)
+
+  const groups = [
+    ...(sansDestinataire.length > 0 ? [{ key: 'none', label: 'SANS DESTINATAIRE', remarques: sansDestinataire }] : []),
+    ...lotGroups,
+    ...interloGroups,
+  ]
+
+  if (groups.length === 0) {
+    return <p style={{ fontSize: 11, color: '#9C9591', fontStyle: 'italic', padding: '4px 0 4px 4px' }}>Aucune remarque</p>
+  }
+
+  return (
+    <div>
+      {groups.map(g => (
+        <div key={g.key} style={{ marginBottom: 14 }}>
+          <div style={{ backgroundColor: '#E9E2D6', padding: '4px 12px', fontSize: 11, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.04em', color: '#5E5854', marginBottom: 6 }}>
+            {g.label}
+          </div>
+          {g.remarques.map((rem, i) => (
+            <RemarqueRow
+              key={rem.id}
+              rem={rem}
+              idx={i}
+              total={g.remarques.length}
+              crDate={crDate}
+              suggestions={suggestions}
+              lots={lots}
+              interlocuteurs={interlocuteurs ?? []}
+              sectionType="interlocuteurs"
+              onEdit={ops.updateRemarque}
+              onDelete={ops.deleteRemarque}
+              onReorder={() => {}}
+              noReorder
+              onAddSousRemarque={ops.addSousRemarque}
+              hidden={false}
+            />
+          ))}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // ─── Section ──────────────────────────────────────────────────────────────────
+// Évolution 2: remarques directes + bouton dédié
+// Évolution 3: vue groupée pour sections 'interlocuteurs'
 
 function SectionBlock({ section, sIdx, sTotal, crDate, suggestions, lots, interlocuteurs, ops, filterFn, onDragStart, onDragOver, onDrop, onDragEnd, isDragging }) {
-  const [open, setOpen] = useState(true)
-  const [addSs, setAddSs] = useState(false)
-  const [newSsCode, setNewSsCode] = useState('')
-  const [newSsTitre, setNewSsTitre] = useState('')
-  const [editTitle, setEditTitle] = useState(false)
-  const [editRomain, setEditRomain] = useState(section.numero_romain)
-  const [editTitre, setEditTitre] = useState(section.titre)
-  const [confirmDel, setConfirmDel] = useState(false)
+  const [open, setOpen]               = useState(true)
+  const [addSs, setAddSs]             = useState(false)
+  const [addDirectRem, setAddDirectRem] = useState(false)
+  const [newSsCode, setNewSsCode]     = useState('')
+  const [newSsTitre, setNewSsTitre]   = useState('')
+  const [editTitle, setEditTitle]     = useState(false)
+  const [editRomain, setEditRomain]   = useState(section.numero_romain)
+  const [editTitre, setEditTitre]     = useState(section.titre)
+  const [confirmDel, setConfirmDel]   = useState(false)
 
   const sectionType = section.type_section ?? 'general'
 
@@ -435,8 +635,8 @@ function SectionBlock({ section, sIdx, sTotal, crDate, suggestions, lots, interl
       onDragOver={e => { e.preventDefault(); onDragOver() }}
       onDrop={e => { e.preventDefault(); onDrop() }}
     >
+      {/* En-tête de section */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 16px', backgroundColor: '#FFF8F5', borderBottom: open ? '0.5px solid rgba(0,0,0,0.08)' : 'none' }}>
-        {/* Grip handle */}
         <div
           draggable
           onDragStart={e => { e.dataTransfer.effectAllowed = 'move'; onDragStart() }}
@@ -447,7 +647,7 @@ function SectionBlock({ section, sIdx, sTotal, crDate, suggestions, lots, interl
           <GripVertical size={14} />
         </div>
 
-        <button onClick={() => setOpen(o => !o)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: '#E8602C', flexShrink: 0 }}>
+        <button onClick={() => setOpen(o => !o)} data-compact style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: '#E8602C', flexShrink: 0 }}>
           {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         </button>
         <span style={{ fontSize: 12, fontWeight: 500, color: '#E8602C', backgroundColor: 'rgba(232,96,44,0.10)', borderRadius: 3, padding: '2px 8px', flexShrink: 0 }}>
@@ -467,7 +667,7 @@ function SectionBlock({ section, sIdx, sTotal, crDate, suggestions, lots, interl
           <span style={{ fontSize: 13, fontWeight: 500, color: '#1F1B17', flex: 1, textTransform: 'uppercase' }}>{section.titre}</span>
         )}
 
-        {/* Type de section toggle */}
+        {/* Toggle type de section */}
         <button
           onClick={toggleType}
           title={sectionType === 'interlocuteurs' ? 'Section interlocuteurs — cliquer pour passer en général' : 'Section générale — cliquer pour passer en interlocuteurs'}
@@ -486,31 +686,90 @@ function SectionBlock({ section, sIdx, sTotal, crDate, suggestions, lots, interl
         </button>
 
         <div style={{ display: 'flex', gap: 3, flexShrink: 0 }}>
-          <button onClick={() => { setEditRomain(section.numero_romain); setEditTitre(section.titre); setEditTitle(!editTitle) }} style={{ padding: 3, background: 'none', border: 'none', cursor: 'pointer', color: '#9C9591' }}><Pencil size={13} /></button>
-          <button onClick={async () => { if (!confirmDel) { setConfirmDel(true); return } await ops.deleteSection(section.id) }}
+          <button onClick={() => { setEditRomain(section.numero_romain); setEditTitre(section.titre); setEditTitle(!editTitle) }} data-compact style={{ padding: 3, background: 'none', border: 'none', cursor: 'pointer', color: '#9C9591' }}><Pencil size={13} /></button>
+          <button onClick={async () => { if (!confirmDel) { setConfirmDel(true); return } await ops.deleteSection(section.id) }} data-compact
             style={{ padding: 3, background: 'none', border: 'none', cursor: 'pointer', color: confirmDel ? '#B8412C' : '#9C9591' }}><Trash2 size={13} /></button>
         </div>
       </div>
 
       {open && (
         <div style={{ padding: '12px 16px' }}>
-          {section.sousSections.map((ss, si) => (
-            <SousSectionBlock
-              key={ss.id}
-              ss={ss}
-              sectionId={section.id}
-              ssIdx={si}
-              ssTotal={section.sousSections.length}
+          {sectionType === 'interlocuteurs' ? (
+            // Évolution 3: vue groupée par destinataire
+            <InterlocuteursGroupedView
+              section={section}
               crDate={crDate}
               suggestions={suggestions}
               lots={lots}
               interlocuteurs={interlocuteurs}
-              sectionType={sectionType}
               ops={ops}
               filterFn={filterFn}
             />
-          ))}
+          ) : (
+            // Vue normale avec sous-sections + remarques directes
+            <>
+              {section.sousSections.map((ss, si) => (
+                <SousSectionBlock
+                  key={ss.id}
+                  ss={ss}
+                  sectionId={section.id}
+                  ssIdx={si}
+                  ssTotal={section.sousSections.length}
+                  crDate={crDate}
+                  suggestions={suggestions}
+                  lots={lots}
+                  interlocuteurs={interlocuteurs}
+                  sectionType={sectionType}
+                  ops={ops}
+                  filterFn={filterFn}
+                />
+              ))}
 
+              {/* Évolution 2: remarques directes de section */}
+              {(section.directRemarques ?? []).length > 0 && (
+                <div style={{ marginTop: section.sousSections.length > 0 ? 10 : 0 }}>
+                  {section.sousSections.length > 0 && (
+                    <p style={{ fontSize: 10, color: '#9C9591', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 500, marginBottom: 6, borderBottom: '0.5px solid rgba(0,0,0,0.06)', paddingBottom: 4 }}>
+                      Remarques directes
+                    </p>
+                  )}
+                  {section.directRemarques.map((rem, i) => (
+                    <RemarqueRow
+                      key={rem.id}
+                      rem={rem}
+                      idx={i}
+                      total={section.directRemarques.length}
+                      crDate={crDate}
+                      suggestions={suggestions}
+                      lots={lots}
+                      interlocuteurs={interlocuteurs}
+                      sectionType={sectionType}
+                      onEdit={ops.updateRemarque}
+                      onDelete={ops.deleteRemarque}
+                      onReorder={(id, dir) => ops.reorderSectionRemarque(section.id, id, dir)}
+                      onAddSousRemarque={ops.addSousRemarque}
+                      hidden={!filterFn(rem)}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {/* Formulaire remarque directe */}
+              {addDirectRem && (
+                <RemarqueForm
+                  crDate={crDate}
+                  suggestions={suggestions}
+                  lots={lots}
+                  interlocuteurs={interlocuteurs}
+                  sectionType={sectionType}
+                  onSave={async (data) => { await ops.addSectionRemarque(section.id, data); setAddDirectRem(false) }}
+                  onCancel={() => setAddDirectRem(false)}
+                />
+              )}
+            </>
+          )}
+
+          {/* Ajout sous-section + remarque directe */}
           {addSs ? (
             <div style={{ marginTop: 8 }}>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '8px 12px', backgroundColor: '#FAFAF9', borderRadius: 2, border: '0.5px solid rgba(0,0,0,0.08)' }}>
@@ -519,18 +778,24 @@ function SectionBlock({ section, sIdx, sTotal, crDate, suggestions, lots, interl
                 <button type="button" onClick={async () => {
                   if (!newSsTitre.trim()) return
                   await ops.addSousSection(section.id, { code: newSsCode || String(section.sousSections.length + 1), titre: newSsTitre })
-                  setNewSsCode('')
-                  setNewSsTitre('')
-                  setAddSs(false)
+                  setNewSsCode(''); setNewSsTitre(''); setAddSs(false)
                 }} style={{ padding: '3px 10px', borderRadius: 3, fontSize: 11, border: 'none', backgroundColor: '#E8602C', color: 'white', cursor: 'pointer' }}>OK</button>
                 <button type="button" onClick={() => setAddSs(false)} style={{ padding: 3, background: 'none', border: 'none', cursor: 'pointer', color: '#9C9591' }}><X size={14} /></button>
               </div>
             </div>
           ) : (
-            <button onClick={() => setAddSs(true)}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 8, padding: '5px 10px', borderRadius: 2, fontSize: 11, border: '0.5px dashed rgba(0,0,0,0.2)', backgroundColor: 'transparent', color: '#5E5854', cursor: 'pointer' }}>
-              <Plus size={11} /> Sous-section
-            </button>
+            <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+              <button onClick={() => { setAddSs(true); setAddDirectRem(false) }}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 2, fontSize: 11, border: '0.5px dashed rgba(0,0,0,0.2)', backgroundColor: 'transparent', color: '#5E5854', cursor: 'pointer' }}>
+                <Plus size={11} /> Sous-section
+              </button>
+              {sectionType !== 'interlocuteurs' && !addDirectRem && (
+                <button onClick={() => { setAddDirectRem(true); setAddSs(false) }}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 2, fontSize: 11, border: '0.5px dashed rgba(0,0,0,0.2)', backgroundColor: 'transparent', color: '#5E5854', cursor: 'pointer' }}>
+                  <Plus size={11} /> Remarque directe
+                </button>
+              )}
+            </div>
           )}
         </div>
       )}
@@ -541,7 +806,7 @@ function SectionBlock({ section, sIdx, sTotal, crDate, suggestions, lots, interl
 // ─── Barre de filtre ──────────────────────────────────────────────────────────
 
 function FilterBar({ filter, setFilter, lots, interlocuteurs }) {
-  const hasLots = lots?.length > 0
+  const hasLots     = lots?.length > 0
   const hasInterlos = interlocuteurs?.length > 0
 
   const pill = (type, label, active) => (
@@ -605,17 +870,17 @@ function FilterBar({ filter, setFilter, lots, interlocuteurs }) {
 }
 
 // ─── Modal nouvelle remarque globale ──────────────────────────────────────────
+// Évolution 2: sous-section optionnelle ("Directement dans la section")
 
 function NewRemarqueModal({ sections, crDate, suggestions, lots, interlocuteurs, ops, onClose }) {
   const [secId, setSecId] = useState(sections[0]?.id ?? '')
-  const sec = sections.find(s => s.id === secId)
+  const sec     = sections.find(s => s.id === secId)
   const sousSecs = sec?.sousSections ?? []
-  const [ssId, setSsId] = useState(sousSecs[0]?.id ?? '')
+  const [ssId, setSsId] = useState('')  // vide = directement dans la section
 
   const handleSecChange = (id) => {
     setSecId(id)
-    const found = sections.find(s => s.id === id)
-    setSsId(found?.sousSections[0]?.id ?? '')
+    setSsId('')
   }
 
   if (sections.length === 0) return (
@@ -632,7 +897,7 @@ function NewRemarqueModal({ sections, crDate, suggestions, lots, interlocuteurs,
       <div style={{ backgroundColor: 'white', borderRadius: 0, padding: '24px 28px', width: '100%', maxWidth: 620 }} onClick={e => e.stopPropagation()}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
           <h3 style={{ fontSize: 15, fontWeight: 500, color: '#1F1B17', margin: 0 }}>Nouvelle remarque</h3>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9C9591', padding: 4 }}><X size={18} /></button>
+          <button onClick={onClose} data-compact style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9C9591', padding: 4 }}><X size={18} /></button>
         </div>
 
         <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
@@ -644,36 +909,36 @@ function NewRemarqueModal({ sections, crDate, suggestions, lots, interlocuteurs,
               ))}
             </select>
           </div>
-          {sousSecs.length > 0 && (
-            <div style={{ flex: 1 }}>
-              <label style={LABEL}>Sous-section</label>
-              <select value={ssId} onChange={e => setSsId(e.target.value)} style={{ ...INPUT, cursor: 'pointer' }} onFocus={focusOn} onBlur={focusOff}>
-                {sousSecs.map(ss => (
-                  <option key={ss.id} value={ss.id}>{ss.code} — {ss.titre}</option>
-                ))}
-              </select>
-            </div>
-          )}
+          <div style={{ flex: 1 }}>
+            <label style={LABEL}>
+              Sous-section{' '}
+              <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0, color: '#C9C4C0', fontSize: 10 }}>(optionnel)</span>
+            </label>
+            <select value={ssId} onChange={e => setSsId(e.target.value)} style={{ ...INPUT, cursor: 'pointer' }} onFocus={focusOn} onBlur={focusOff}>
+              <option value="">— Directement dans la section —</option>
+              {sousSecs.map(ss => (
+                <option key={ss.id} value={ss.id}>{ss.code} — {ss.titre}</option>
+              ))}
+            </select>
+          </div>
         </div>
 
-        {ssId ? (
-          <RemarqueForm
-            crDate={crDate}
-            suggestions={suggestions}
-            lots={lots}
-            interlocuteurs={interlocuteurs}
-            sectionType={sec?.type_section ?? 'general'}
-            onSave={async (data) => { await ops.addRemarque(ssId, data); onClose() }}
-            onCancel={onClose}
-          />
-        ) : (
-          <p style={{ fontSize: 13, color: '#9C9591', fontStyle: 'italic' }}>
-            {sec && sec.sousSections.length === 0
-              ? 'Cette section n\'a pas encore de sous-section. Ajoutez-en une dans l\'éditeur.'
-              : 'Sélectionnez une section et une sous-section.'
+        <RemarqueForm
+          crDate={crDate}
+          suggestions={suggestions}
+          lots={lots}
+          interlocuteurs={interlocuteurs}
+          sectionType={sec?.type_section ?? 'general'}
+          onSave={async (data) => {
+            if (ssId) {
+              await ops.addRemarque(ssId, { ...data, section_id: secId })
+            } else {
+              await ops.addSectionRemarque(secId, data)
             }
-          </p>
-        )}
+            onClose()
+          }}
+          onCancel={onClose}
+        />
       </div>
     </div>
   )
@@ -682,11 +947,11 @@ function NewRemarqueModal({ sections, crDate, suggestions, lots, interlocuteurs,
 // ─── Export principal ─────────────────────────────────────────────────────────
 
 export function CrSectionEditor({ sections, crDate, interlocuteurs, lotEntreprises, ops }) {
-  const [addSec, setAddSec] = useState(false)
-  const [newSec, setNewSec] = useState({ numero_romain: '', titre: '' })
-  const [filter, setFilter] = useState({ type: 'all', lotId: '', interloId: '' })
+  const [addSec, setAddSec]             = useState(false)
+  const [newSec, setNewSec]             = useState({ numero_romain: '', titre: '' })
+  const [filter, setFilter]             = useState({ type: 'all', lotId: '', interloId: '' })
   const [globalAddOpen, setGlobalAddOpen] = useState(false)
-  const [dragId, setDragId] = useState(null)
+  const [dragId, setDragId]             = useState(null)
   const [dropBeforeId, setDropBeforeId] = useState(null)
 
   const lots = (lotEntreprises ?? []).map(le => le.lots).filter(Boolean)
@@ -778,7 +1043,7 @@ export function CrSectionEditor({ sections, crDate, interlocuteurs, lotEntrepris
         </div>
       ))}
 
-      {/* Zone de drop en fin de liste */}
+      {/* Zone de drop fin de liste */}
       <div
         onDragOver={e => { e.preventDefault(); if (dragId) setDropBeforeId('_end') }}
         onDrop={e => { e.preventDefault(); handleDrop('_end') }}
@@ -829,7 +1094,7 @@ export function CrSectionEditor({ sections, crDate, interlocuteurs, lotEntrepris
         </button>
       )}
 
-      {/* Modal nouvelle remarque globale */}
+      {/* Modal nouvelle remarque */}
       {globalAddOpen && (
         <NewRemarqueModal
           sections={sections}

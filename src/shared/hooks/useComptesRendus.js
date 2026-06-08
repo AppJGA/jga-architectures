@@ -40,7 +40,7 @@ export function useComptesRendus(affaireId) {
       .single()
     if (error) throw error
 
-    // Auto-import non-closed remarks from most recent previous CR
+    // Auto-import des remarques non clôturées du CR précédent
     const { data: prevCR } = await supabase
       .from('comptes_rendus')
       .select('id')
@@ -58,9 +58,13 @@ export function useComptesRendus(affaireId) {
       ] = await Promise.all([
         supabase.from('cr_sections').select('*').eq('cr_id', prevCR.id).order('ordre'),
         supabase.from('cr_sous_sections').select('*').eq('cr_id', prevCR.id).order('ordre'),
-        supabase.from('cr_remarques').select('*').eq('cr_id', prevCR.id).eq('est_clos', false),
+        supabase.from('cr_remarques').select('*')
+          .eq('cr_id', prevCR.id)
+          .eq('est_clos', false)
+          .is('parent_id', null),
       ])
 
+      // Mapping sections
       const sIdMap = {}
       for (const s of sections ?? []) {
         const { data: ns } = await supabase
@@ -70,6 +74,7 @@ export function useComptesRendus(affaireId) {
         if (ns) sIdMap[s.id] = ns.id
       }
 
+      // Mapping sous-sections
       const ssIdMap = {}
       for (const ss of sousSections ?? []) {
         const newSId = sIdMap[ss.section_id]
@@ -81,14 +86,14 @@ export function useComptesRendus(affaireId) {
         if (nss) ssIdMap[ss.id] = nss.id
       }
 
+      // Reprise des remarques principales non clôturées
+      const remIdMap = {}
       for (const r of remarques ?? []) {
-        const newSsId = ssIdMap[r.sous_section_id]
-        if (!newSsId) continue
-        await supabase.from('cr_remarques').insert({
+        const insertPayload = {
           cr_id: cr.id,
-          sous_section_id: newSsId,
           affaire_id: affaireId,
           lot_id: r.lot_id,
+          interlocuteur_id: r.interlocuteur_id,
           date_note: r.date_note,
           pour: r.pour,
           description: r.description,
@@ -98,7 +103,47 @@ export function useComptesRendus(affaireId) {
           est_clos: false,
           est_nouveau: true,
           ordre: r.ordre,
-        })
+        }
+
+        if (r.sous_section_id) {
+          const newSsId = ssIdMap[r.sous_section_id]
+          if (!newSsId) continue
+          insertPayload.sous_section_id = newSsId
+          if (r.section_id) insertPayload.section_id = sIdMap[r.section_id] ?? null
+        } else if (r.section_id) {
+          const newSecId = sIdMap[r.section_id]
+          if (!newSecId) continue
+          insertPayload.section_id = newSecId
+        } else {
+          continue
+        }
+
+        const { data: newR } = await supabase.from('cr_remarques').insert(insertPayload).select().single()
+        if (newR) remIdMap[r.id] = newR.id
+      }
+
+      // Reprise des sous-remarques des remarques reprises
+      const parentIds = Object.keys(remIdMap)
+      if (parentIds.length > 0) {
+        const { data: sousRems } = await supabase
+          .from('cr_remarques')
+          .select('*')
+          .in('parent_id', parentIds)
+
+        for (const sr of sousRems ?? []) {
+          const newParentId = remIdMap[sr.parent_id]
+          if (!newParentId) continue
+          await supabase.from('cr_remarques').insert({
+            cr_id: cr.id,
+            parent_id: newParentId,
+            affaire_id: affaireId,
+            date_note: sr.date_note,
+            pour: sr.pour,
+            description: sr.description,
+            est_clos: false,
+            est_nouveau: true,
+          })
+        }
       }
     }
 
@@ -107,19 +152,13 @@ export function useComptesRendus(affaireId) {
   }, [affaireId, nextNumero, fetchAll])
 
   const updateCR = useCallback(async (id, payload) => {
-    const { error } = await supabase
-      .from('comptes_rendus')
-      .update(payload)
-      .eq('id', id)
+    const { error } = await supabase.from('comptes_rendus').update(payload).eq('id', id)
     if (error) throw error
     await fetchAll()
   }, [fetchAll])
 
   const deleteCR = useCallback(async (id) => {
-    const { error } = await supabase
-      .from('comptes_rendus')
-      .delete()
-      .eq('id', id)
+    const { error } = await supabase.from('comptes_rendus').delete().eq('id', id)
     if (error) throw error
     await fetchAll()
   }, [fetchAll])

@@ -216,7 +216,10 @@ function CrAccueil({ cr, presences, sections, onNavigate, onEmit }) {
     ? new Date(cr.date_reunion + 'T00:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })
     : 'Date non définie'
 
-  const allRemarques = sections.flatMap(s => (s.sousSections ?? []).flatMap(ss => ss.remarques ?? []))
+  const allRemarques = sections.flatMap(s => [
+    ...(s.directRemarques ?? []),
+    ...(s.sousSections ?? []).flatMap(ss => ss.remarques ?? []),
+  ])
   const enCoursCount = allRemarques.filter(r => !r.est_clos && r.statut && (
     r.statut.toLowerCase().includes('faire') || r.statut.toLowerCase().includes('cours')
   )).length
@@ -337,7 +340,8 @@ export function CrDetail({ crId, affaire, onBack }) {
     syncPresences, updateCr,
     addSection, updateSection, deleteSection, reorderSection, reorderSectionsByIds,
     addSousSection, updateSousSection, deleteSousSection, reorderSousSection,
-    addRemarque, updateRemarque, deleteRemarque, reorderRemarque,
+    addRemarque, addSectionRemarque, updateRemarque, deleteRemarque, reorderRemarque, reorderSectionRemarque,
+    addSousRemarque,
     setPresence, setConvoque, refetch,
   } = useCompteRendu(crId, affaire?.id)
 
@@ -350,7 +354,8 @@ export function CrDetail({ crId, affaire, onBack }) {
   const ops = {
     addSection, updateSection, deleteSection, reorderSection, reorderSectionsByIds,
     addSousSection, updateSousSection, deleteSousSection, reorderSousSection,
-    addRemarque, updateRemarque, deleteRemarque, reorderRemarque,
+    addRemarque, addSectionRemarque, updateRemarque, deleteRemarque, reorderRemarque, reorderSectionRemarque,
+    addSousRemarque,
   }
 
   const handleEmit = async () => {

@@ -109,3 +109,6 @@ body {
     min-width: unset;
   }
 }
+
+/* ── Sous-remarques : actions visibles au survol ── */
+.sous-remarque-row:hover .sous-remarque-actions { opacity: 1 !important; }

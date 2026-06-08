@@ -2,30 +2,60 @@ import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../../core/supabase/client'
 
 function buildTree(sections, sousSections, remarques) {
-  const rem = {}
-  for (const r of remarques) {
-    if (!rem[r.sous_section_id]) rem[r.sous_section_id] = []
-    rem[r.sous_section_id].push(r)
+  // Séparer remarques principales (sans parent) des sous-remarques
+  const principales = remarques.filter(r => !r.parent_id)
+  const sousRems    = remarques.filter(r => !!r.parent_id)
+
+  const sousRemsByParent = {}
+  for (const sr of sousRems) {
+    if (!sousRemsByParent[sr.parent_id]) sousRemsByParent[sr.parent_id] = []
+    sousRemsByParent[sr.parent_id].push(sr)
   }
+
+  const withSousRems = (remList) =>
+    remList.sort((a, b) => a.ordre - b.ordre).map(r => ({
+      ...r,
+      sous_remarques: (sousRemsByParent[r.id] ?? [])
+        .sort((a, b) => new Date(a.date_note || '1970') - new Date(b.date_note || '1970')),
+    }))
+
+  // Grouper par sous-section ou par section directe
+  const subRemBySSId  = {}
+  const dirRemBySecId = {}
+  for (const r of principales) {
+    if (r.sous_section_id) {
+      if (!subRemBySSId[r.sous_section_id]) subRemBySSId[r.sous_section_id] = []
+      subRemBySSId[r.sous_section_id].push(r)
+    } else if (r.section_id) {
+      if (!dirRemBySecId[r.section_id]) dirRemBySecId[r.section_id] = []
+      dirRemBySecId[r.section_id].push(r)
+    }
+  }
+
   const ssMap = {}
   for (const ss of sousSections) {
     if (!ssMap[ss.section_id]) ssMap[ss.section_id] = []
-    ssMap[ss.section_id].push({ ...ss, remarques: (rem[ss.id] ?? []).sort((a, b) => a.ordre - b.ordre) })
+    ssMap[ss.section_id].push({
+      ...ss,
+      remarques: withSousRems(subRemBySSId[ss.id] ?? []),
+    })
   }
+
   return sections
     .sort((a, b) => a.ordre - b.ordre)
     .map(s => ({
       ...s,
-      sousSections: (ssMap[s.id] ?? []).sort((a, b) => a.ordre - b.ordre),
+      sousSections:    (ssMap[s.id] ?? []).sort((a, b) => a.ordre - b.ordre),
+      directRemarques: withSousRems(dirRemBySecId[s.id] ?? []),
     }))
 }
 
 export function useCompteRendu(crId, affaireId) {
-  const [cr, setCr] = useState(null)
+  const [cr, setCr]           = useState(null)
   const [sections, setSections] = useState([])
   const [presences, setPresences] = useState([])
-  const [profiles, setProfiles] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [profiles, setProfiles]   = useState([])
+  const [loading, setLoading]     = useState(true)
 
   const fetchAll = useCallback(async () => {
     if (!crId) return
@@ -66,7 +96,7 @@ export function useCompteRendu(crId, affaireId) {
 
   useEffect(() => { fetchAll() }, [fetchAll])
 
-  // ── Sync presences from affaire contacts ─────────────────────────────────────
+  // ── Sync presences depuis les contacts de l'affaire ──────────────────────────
   const syncPresences = useCallback(async () => {
     if (!affaireId || !crId) return
     const [
@@ -79,14 +109,12 @@ export function useCompteRendu(crId, affaireId) {
       supabase.from('cr_presences').select('interlocuteur_id, lot_entreprise_id').eq('cr_id', crId),
     ])
     const existInterlo = new Set((existing ?? []).filter(p => p.interlocuteur_id).map(p => p.interlocuteur_id))
-    const existLot = new Set((existing ?? []).filter(p => p.lot_entreprise_id).map(p => p.lot_entreprise_id))
+    const existLot     = new Set((existing ?? []).filter(p => p.lot_entreprise_id).map(p => p.lot_entreprise_id))
     const toInsert = [
       ...(interlos ?? []).filter(i => !existInterlo.has(i.id)).map(i => ({ cr_id: crId, interlocuteur_id: i.id, presence: 'na', convoque: false })),
       ...(lotEnts ?? []).filter(l => !existLot.has(l.id)).map(l => ({ cr_id: crId, lot_entreprise_id: l.id, presence: 'na', convoque: false })),
     ]
-    if (toInsert.length > 0) {
-      await supabase.from('cr_presences').insert(toInsert)
-    }
+    if (toInsert.length > 0) await supabase.from('cr_presences').insert(toInsert)
     await fetchAll()
   }, [affaireId, crId, fetchAll])
 
@@ -118,11 +146,7 @@ export function useCompteRendu(crId, affaireId) {
   }, [fetchAll])
 
   const reorderSectionsByIds = useCallback(async (orderedIds) => {
-    await Promise.all(
-      orderedIds.map((id, idx) =>
-        supabase.from('cr_sections').update({ ordre: idx }).eq('id', id)
-      )
-    )
+    await Promise.all(orderedIds.map((id, idx) => supabase.from('cr_sections').update({ ordre: idx }).eq('id', id)))
     await fetchAll()
   }, [fetchAll])
 
@@ -138,7 +162,7 @@ export function useCompteRendu(crId, affaireId) {
     await fetchAll()
   }, [sections, fetchAll])
 
-  // ── Sous-sections ─────────────────────────────────────────────────────────────
+  // ── Sous-sections ────────────────────────────────────────────────────────────
   const addSousSection = useCallback(async (sectionId, payload) => {
     const sec = sections.find(s => s.id === sectionId)
     const maxOrdre = (sec?.sousSections ?? []).reduce((m, ss) => Math.max(m, ss.ordre), -1)
@@ -176,10 +200,22 @@ export function useCompteRendu(crId, affaireId) {
   // ── Remarques ─────────────────────────────────────────────────────────────────
   const addRemarque = useCallback(async (sousSectionId, payload) => {
     const sec = sections.find(s => s.sousSections?.some(ss => ss.id === sousSectionId))
-    const ss = sec?.sousSections?.find(ss => ss.id === sousSectionId)
+    const ss  = sec?.sousSections?.find(ss => ss.id === sousSectionId)
     const maxOrdre = (ss?.remarques ?? []).reduce((m, r) => Math.max(m, r.ordre), -1)
     const { error } = await supabase.from('cr_remarques').insert({
       cr_id: crId, sous_section_id: sousSectionId,
+      affaire_id: affaireId, ordre: maxOrdre + 1, ...payload,
+    })
+    if (error) throw error
+    await fetchAll()
+  }, [crId, affaireId, sections, fetchAll])
+
+  // Remarque directement dans une section (sans sous-section)
+  const addSectionRemarque = useCallback(async (sectionId, payload) => {
+    const sec = sections.find(s => s.id === sectionId)
+    const maxOrdre = (sec?.directRemarques ?? []).reduce((m, r) => Math.max(m, r.ordre), -1)
+    const { error } = await supabase.from('cr_remarques').insert({
+      cr_id: crId, section_id: sectionId, sous_section_id: null,
       affaire_id: affaireId, ordre: maxOrdre + 1, ...payload,
     })
     if (error) throw error
@@ -215,6 +251,29 @@ export function useCompteRendu(crId, affaireId) {
     await fetchAll()
   }, [sections, fetchAll])
 
+  const reorderSectionRemarque = useCallback(async (sectionId, id, dir) => {
+    const sec = sections.find(s => s.id === sectionId)
+    if (!sec) return
+    const sorted = [...(sec.directRemarques ?? [])].sort((a, b) => a.ordre - b.ordre)
+    const idx = sorted.findIndex(r => r.id === id)
+    const swapIdx = dir === 'up' ? idx - 1 : idx + 1
+    if (swapIdx < 0 || swapIdx >= sorted.length) return
+    await Promise.all([
+      supabase.from('cr_remarques').update({ ordre: sorted[swapIdx].ordre }).eq('id', sorted[idx].id),
+      supabase.from('cr_remarques').update({ ordre: sorted[idx].ordre }).eq('id', sorted[swapIdx].id),
+    ])
+    await fetchAll()
+  }, [sections, fetchAll])
+
+  // Sous-remarque (fil de suivi)
+  const addSousRemarque = useCallback(async (parentId, payload) => {
+    const { error } = await supabase.from('cr_remarques').insert({
+      cr_id: crId, parent_id: parentId, affaire_id: affaireId, ...payload,
+    })
+    if (error) throw error
+    await fetchAll()
+  }, [crId, affaireId, fetchAll])
+
   // ── Présences ────────────────────────────────────────────────────────────────
   const setPresence = useCallback(async (presenceId, presence) => {
     const { error } = await supabase.from('cr_presences').update({ presence }).eq('id', presenceId)
@@ -233,7 +292,8 @@ export function useCompteRendu(crId, affaireId) {
     syncPresences, updateCr,
     addSection, updateSection, deleteSection, reorderSection, reorderSectionsByIds,
     addSousSection, updateSousSection, deleteSousSection, reorderSousSection,
-    addRemarque, updateRemarque, deleteRemarque, reorderRemarque,
+    addRemarque, addSectionRemarque, updateRemarque, deleteRemarque, reorderRemarque, reorderSectionRemarque,
+    addSousRemarque,
     setPresence, setConvoque,
     refetch: fetchAll,
   }

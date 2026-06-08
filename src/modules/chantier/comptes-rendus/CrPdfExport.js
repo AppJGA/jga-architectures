@@ -58,8 +58,10 @@ function buildPresencePill(presence) {
   return `<span class="presence-pill" style="background:${bg};color:white">${lbl}</span>`
 }
 
+// Évolution 4: inclut les sous-remarques indentées sous leur remarque parente
 function buildRemarquesTable(remarques, lots, interlocuteurs) {
   if (!remarques.length) return '<p style="color:#9C9591;font-size:10pt;font-style:italic;padding:4px 0">Aucune remarque</p>'
+
   const rows = remarques.map(r => {
     let dateHtml = ''
     if (r.est_nouveau) dateHtml += '<span class="new-triangle">▶ </span>'
@@ -86,16 +88,38 @@ function buildRemarquesTable(remarques, lots, interlocuteurs) {
     const descHtml = `<span style="${descStyle}">${escHtml(r.description)}</span>`
 
     const echeanceHtml = r.date_echeance ? fmtDateShort(r.date_echeance) : '—'
-    const statutHtml = r.statut ? `<span class="rem-statut">${escHtml(r.statut)}</span>` : ''
+    const statutHtml   = r.statut ? `<span class="rem-statut">${escHtml(r.statut)}</span>` : ''
 
-    return `
+    const mainRow = `
       <tr class="${r.est_clos ? 'rem-clos' : ''}">
         <td class="td-date">${dateHtml}</td>
         <td class="td-desc">${descHtml}</td>
         <td class="td-echeance">${echeanceHtml}</td>
         <td class="td-statut">${statutHtml}</td>
       </tr>`
+
+    // Sous-remarques (fil de suivi) — indentées avec bordure gauche grise
+    const sousRows = (r.sous_remarques ?? []).map(sr => {
+      let srDateHtml = ''
+      if (sr.est_nouveau) srDateHtml += '<span class="new-triangle">▶ </span>'
+      srDateHtml += `<span class="rem-date">${fmtDateShort(sr.date_note)}</span>`
+      if (sr.pour) srDateHtml += `<br><span class="rem-pour">${escHtml(sr.pour)}</span>`
+
+      const srDescStyle = `font-size:8pt;padding-left:8px;border-left:2px solid #E9E2D6;${sr.est_clos ? 'text-decoration:line-through;color:#9CA3AF;' : 'color:#374151;'}`
+      const srDescHtml  = `<span style="${srDescStyle}">${escHtml(sr.description)}</span>`
+
+      return `
+        <tr style="background:#FAFAFA;">
+          <td class="td-date" style="padding-left:12pt;font-size:8pt;">${srDateHtml}</td>
+          <td class="td-desc">${srDescHtml}</td>
+          <td class="td-echeance" style="color:#C9C4C0;font-size:8pt;"></td>
+          <td class="td-statut" style="color:#C9C4C0;font-size:8pt;"></td>
+        </tr>`
+    }).join('')
+
+    return mainRow + sousRows
   }).join('')
+
   return `
     <table class="remarques-table">
       <thead>
@@ -111,7 +135,7 @@ function buildRemarquesTable(remarques, lots, interlocuteurs) {
 }
 
 export function generateCrPdf(cr, sections, presences, affaire, { autoPrint = true, lots = [], interlocuteurs = [] } = {}) {
-  const num = String(cr.numero).padStart(2, '0')
+  const num     = String(cr.numero).padStart(2, '0')
   const logoUrl = window.location.origin + '/Logo_JGA_Archi.jpg'
 
   const dateReunion = fmtDate(cr.date_reunion)
@@ -119,7 +143,6 @@ export function generateCrPdf(cr, sections, presences, affaire, { autoPrint = tr
     ? `${fmtDate(cr.date_prochaine_reunion)}${cr.heure_prochaine_reunion ? ' à ' + fmtTime(cr.heure_prochaine_reunion) : ''}`
     : 'À définir'
 
-  // Séparation présences interlocuteurs / entreprises
   const interloPresences = presences
     .filter(p => p.affaire_interlocuteurs)
     .sort((a, b) => (a.affaire_interlocuteurs?.ordre ?? 99) - (b.affaire_interlocuteurs?.ordre ?? 99))
@@ -135,9 +158,9 @@ export function generateCrPdf(cr, sections, presences, affaire, { autoPrint = tr
       return `<span style="font-size:9pt;color:#5E5854">${escHtml(lbl)}</span>`
     }},
     { label: 'Contact', render: p => {
-      const i = p.affaire_interlocuteurs
+      const i    = p.affaire_interlocuteurs
       const name = [i?.prenom, i?.nom].filter(Boolean).join(' ')
-      const org = i?.organisation
+      const org  = i?.organisation
       return `<strong>${escHtml(name)}</strong>${org ? '<br><span style="color:#5E5854;font-size:9pt">' + escHtml(org) + '</span>' : ''}`
     }},
     { label: 'Adresse', render: p => escHtml(p.affaire_interlocuteurs?.adresse) },
@@ -154,13 +177,13 @@ export function generateCrPdf(cr, sections, presences, affaire, { autoPrint = tr
 
   const lotColumns = [
     { label: 'Lot', render: p => {
-      const le = p.lot_entreprises
+      const le       = p.lot_entreprises
       const lotLabel = le?.lots ? `Lot ${le.lots.numero ?? ''} — ${le.lots.nom ?? ''}` : '—'
       return escHtml(lotLabel)
     }},
     { label: 'Entreprise', render: p => {
-      const le = p.lot_entreprises
-      const name = le?.entreprises?.raison_sociale ?? '—'
+      const le      = p.lot_entreprises
+      const name    = le?.entreprises?.raison_sociale ?? '—'
       const contact = le?.interlocuteurs ? `${le.interlocuteurs.prenom ?? ''} ${le.interlocuteurs.nom ?? ''}`.trim() : ''
       return `<strong>${escHtml(name)}</strong>${contact ? '<br><span style="color:#5E5854;font-size:9pt">' + escHtml(contact) + '</span>' : ''}`
     }},
@@ -179,19 +202,30 @@ export function generateCrPdf(cr, sections, presences, affaire, { autoPrint = tr
     ? `<script>window.onload = function() { window.print(); }<\/script>`
     : ''
 
+  // Évolution 2: inclut les remarques directes de section
   const sectionsHtml = sections.map(section => {
     const sousSectionsHtml = section.sousSections.map(ss => `
       <div class="sous-section">
         <div class="ss-header">${escHtml(ss.code)} — ${escHtml(ss.titre)}</div>
         ${buildRemarquesTable(ss.remarques, lots, interlocuteurs)}
       </div>`).join('')
+
+    const directRems = section.directRemarques ?? []
+    const directHtml = directRems.length > 0
+      ? `<div class="sous-section" style="border-top:${sousSectionsHtml ? '0.5px solid #E9E2D6;margin-top:8px;padding-top:8px;' : ''}">
+          ${buildRemarquesTable(directRems, lots, interlocuteurs)}
+         </div>`
+      : ''
+
+    const contentHtml = (sousSectionsHtml + directHtml) || '<p style="color:#9C9591;font-style:italic;font-size:10pt">Aucune sous-section</p>'
+
     return `
       <div class="section">
         <div class="section-header">
           <span class="section-numero">${escHtml(section.numero_romain)}</span>
           &nbsp;—&nbsp;${escHtml(section.titre)}
         </div>
-        ${sousSectionsHtml || '<p style="color:#9C9591;font-style:italic;font-size:10pt">Aucune sous-section</p>'}
+        ${contentHtml}
       </div>`
   }).join('')
 

@@ -15,7 +15,7 @@ const LABEL = {
   textTransform: 'uppercase', letterSpacing: '0.05em', color: '#9C9591', marginBottom: 3,
 }
 const INPUT = {
-  width: '100%', height: 34, padding: '0 10px', borderRadius: 8, fontSize: 13,
+  width: '100%', height: 34, padding: '0 10px', borderRadius: 2, fontSize: 13,
   border: '0.5px solid rgba(0,0,0,0.12)', backgroundColor: 'white', outline: 'none',
   boxSizing: 'border-box', color: '#1F1B17',
 }
@@ -74,7 +74,7 @@ function RemarqueForm({ initial, crDate, suggestions, lots, interlocuteurs, onSa
   }
 
   return (
-    <form onSubmit={handleSubmit} style={{ backgroundColor: '#FAFAF9', borderRadius: 10, padding: '12px 14px', border: '0.5px solid rgba(0,0,0,0.08)', marginBottom: 6 }}>
+    <form onSubmit={handleSubmit} style={{ backgroundColor: '#FAFAF9', borderRadius: 2, padding: '12px 14px', border: '0.5px solid rgba(0,0,0,0.08)', marginBottom: 6 }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
 
         {/* Date + Pour */}
@@ -103,7 +103,7 @@ function RemarqueForm({ initial, crDate, suggestions, lots, interlocuteurs, onSa
             value={form.description ?? ''} onChange={e => set('description', e.target.value)}
             placeholder="Remarque, observation, action à mener…"
             required rows={3}
-            style={{ width: '100%', padding: '8px 10px', borderRadius: 8, fontSize: 13, border: '0.5px solid rgba(0,0,0,0.12)', backgroundColor: 'white', outline: 'none', boxSizing: 'border-box', color: '#1F1B17', resize: 'vertical', minHeight: 72 }}
+            style={{ width: '100%', padding: '8px 10px', borderRadius: 2, fontSize: 13, border: '0.5px solid rgba(0,0,0,0.12)', backgroundColor: 'white', outline: 'none', boxSizing: 'border-box', color: '#1F1B17', resize: 'vertical', minHeight: 72 }}
             onFocus={focusOn} onBlur={focusOff}
           />
         </div>
@@ -136,7 +136,7 @@ function RemarqueForm({ initial, crDate, suggestions, lots, interlocuteurs, onSa
               return (
                 <button key={opt.id} type="button" onClick={() => setAttribution(opt.id)}
                   style={{
-                    padding: '5px 12px', borderRadius: 7, fontSize: 12, cursor: 'pointer',
+                    padding: '5px 12px', borderRadius: 2, fontSize: 12, cursor: 'pointer',
                     border: `0.5px solid ${active ? opt.border : 'rgba(0,0,0,0.12)'}`,
                     backgroundColor: active ? opt.bg : '#FAFAF9',
                     color: active ? opt.color : '#5E5854',
@@ -200,14 +200,14 @@ function RemarqueForm({ initial, crDate, suggestions, lots, interlocuteurs, onSa
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12, alignItems: 'center' }}>
         {onDelete && (
           <button type="button" onClick={() => { if (!confirmDel) { setConfirmDel(true); return } onDelete() }}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 10px', borderRadius: 8, fontSize: 11, cursor: 'pointer',
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 10px', borderRadius: 2, fontSize: 11, cursor: 'pointer',
               border: `0.5px solid ${confirmDel ? 'rgba(220,38,38,0.5)' : 'rgba(0,0,0,0.12)'}`,
               backgroundColor: confirmDel ? 'rgba(184,65,44,0.10)' : 'white', color: confirmDel ? '#B8412C' : '#9C9591', marginRight: 'auto' }}
           ><Trash2 size={12} />{confirmDel ? 'Confirmer' : 'Supprimer'}</button>
         )}
-        <button type="button" onClick={onCancel} style={{ padding: '5px 10px', borderRadius: 8, fontSize: 12, cursor: 'pointer', border: '0.5px solid rgba(0,0,0,0.15)', backgroundColor: 'white', color: '#374151' }}>Annuler</button>
+        <button type="button" onClick={onCancel} style={{ padding: '5px 10px', borderRadius: 2, fontSize: 12, cursor: 'pointer', border: '0.5px solid rgba(0,0,0,0.15)', backgroundColor: 'white', color: '#374151' }}>Annuler</button>
         <button type="submit" disabled={saving || !form.description?.trim()}
-          style={{ padding: '5px 12px', borderRadius: 8, fontSize: 12, fontWeight: 500, border: 'none', backgroundColor: '#2A8A4E', color: 'white', cursor: 'pointer', opacity: (saving || !form.description?.trim()) ? 0.6 : 1 }}
+          style={{ padding: '5px 12px', borderRadius: 2, fontSize: 12, fontWeight: 500, border: 'none', backgroundColor: '#2A8A4E', color: 'white', cursor: 'pointer', opacity: (saving || !form.description?.trim()) ? 0.6 : 1 }}
         >{saving ? 'Enregistrement…' : 'Enregistrer'}</button>
       </div>
     </form>
@@ -221,7 +221,7 @@ function AttrBadge({ rem, lots, interlocuteurs }) {
     const lot = (lots ?? []).find(l => l.id === rem.lot_id)
     if (!lot) return null
     return (
-      <span style={{ fontSize: 10, background: 'rgba(42,138,78,0.12)', color: '#2A8A4E', borderRadius: 4, padding: '1px 6px', marginLeft: 6, whiteSpace: 'nowrap' }}>
+      <span style={{ fontSize: 10, background: 'rgba(42,138,78,0.12)', color: '#2A8A4E', borderRadius: 3, padding: '1px 6px', marginLeft: 6, whiteSpace: 'nowrap' }}>
         {lot.numero ? `Lot ${lot.numero}` : lot.nom}
       </span>
     )
@@ -231,7 +231,7 @@ function AttrBadge({ rem, lots, interlocuteurs }) {
     if (!i) return null
     const name = [i.prenom, i.nom].filter(Boolean).join(' ') || i.organisation || '—'
     return (
-      <span style={{ fontSize: 10, background: 'rgba(232,96,44,0.10)', color: '#993C1D', borderRadius: 4, padding: '1px 6px', marginLeft: 6, whiteSpace: 'nowrap' }}>
+      <span style={{ fontSize: 10, background: 'rgba(232,96,44,0.10)', color: '#993C1D', borderRadius: 3, padding: '1px 6px', marginLeft: 6, whiteSpace: 'nowrap' }}>
         {name}
       </span>
     )
@@ -263,7 +263,7 @@ function RemarqueRow({ rem, idx, total, crDate, suggestions, lots, interlocuteur
   )
 
   return (
-    <div style={{ display: hidden ? 'none' : 'flex', gap: 8, padding: '8px 10px', backgroundColor: 'white', borderRadius: 8, border: '0.5px solid rgba(0,0,0,0.06)', marginBottom: 4 }}>
+    <div style={{ display: hidden ? 'none' : 'flex', gap: 8, padding: '8px 10px', backgroundColor: 'white', borderRadius: 2, border: '0.5px solid rgba(0,0,0,0.06)', marginBottom: 4 }}>
       {/* Date + pour */}
       <div style={{ flexShrink: 0, width: 100, paddingTop: 2 }}>
         <p style={{ fontSize: 11, color: '#5E5854' }}>
@@ -287,7 +287,7 @@ function RemarqueRow({ rem, idx, total, crDate, suggestions, lots, interlocuteur
       {/* Statut */}
       {rem.statut && (
         <div style={{ flexShrink: 0, paddingTop: 2 }}>
-          <span style={{ fontSize: 10, color: '#5E5854', backgroundColor: '#FAF7F2', borderRadius: 4, padding: '2px 6px' }}>{rem.statut}</span>
+          <span style={{ fontSize: 10, color: '#5E5854', backgroundColor: '#FAF7F2', borderRadius: 3, padding: '2px 6px' }}>{rem.statut}</span>
         </div>
       )}
 
@@ -326,8 +326,8 @@ function SousSectionBlock({ ss, sectionId, ssIdx, ssTotal, crDate, suggestions, 
                 titre: document.getElementById(`ss-titre-${ss.id}`).value,
               })
               setEditSs(false)
-            }} style={{ padding: '3px 10px', borderRadius: 6, fontSize: 11, border: 'none', backgroundColor: '#E8602C', color: 'white', cursor: 'pointer' }}>OK</button>
-            <button type="button" onClick={() => setEditSs(false)} style={{ padding: '3px 8px', borderRadius: 6, fontSize: 11, border: '0.5px solid rgba(0,0,0,0.15)', backgroundColor: 'white', color: '#374151', cursor: 'pointer' }}><X size={11} /></button>
+            }} style={{ padding: '3px 10px', borderRadius: 3, fontSize: 11, border: 'none', backgroundColor: '#E8602C', color: 'white', cursor: 'pointer' }}>OK</button>
+            <button type="button" onClick={() => setEditSs(false)} style={{ padding: '3px 8px', borderRadius: 3, fontSize: 11, border: '0.5px solid rgba(0,0,0,0.15)', backgroundColor: 'white', color: '#374151', cursor: 'pointer' }}><X size={11} /></button>
           </div>
         ) : (
           <span style={{ fontSize: 12, fontWeight: 500, color: '#374151', flex: 1 }}>
@@ -344,7 +344,7 @@ function SousSectionBlock({ ss, sectionId, ssIdx, ssTotal, crDate, suggestions, 
             <Trash2 size={12} />
           </button>
           <button onClick={() => setAddRem(true)}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 8px', borderRadius: 5, fontSize: 11, border: '0.5px solid #2A8A4E', backgroundColor: 'rgba(42,138,78,0.12)', color: '#2A8A4E', cursor: 'pointer', marginLeft: 4 }}>
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 8px', borderRadius: 3, fontSize: 11, border: '0.5px solid #2A8A4E', backgroundColor: 'rgba(42,138,78,0.12)', color: '#2A8A4E', cursor: 'pointer', marginLeft: 4 }}>
             <Plus size={10} /> Remarque
           </button>
         </div>
@@ -396,12 +396,12 @@ function SectionBlock({ section, sIdx, sTotal, crDate, suggestions, lots, interl
   const [confirmDel, setConfirmDel] = useState(false)
 
   return (
-    <div style={{ marginBottom: 12, backgroundColor: 'white', borderRadius: 14, border: '0.5px solid rgba(0,0,0,0.08)', overflow: 'hidden' }}>
+    <div style={{ marginBottom: 12, backgroundColor: 'white', borderRadius: 0, border: '0.5px solid rgba(0,0,0,0.08)', overflow: 'hidden' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 16px', backgroundColor: '#FFF8F5', borderBottom: open ? '0.5px solid rgba(0,0,0,0.08)' : 'none' }}>
         <button onClick={() => setOpen(o => !o)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: '#E8602C', flexShrink: 0 }}>
           {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         </button>
-        <span style={{ fontSize: 12, fontWeight: 500, color: '#E8602C', backgroundColor: 'rgba(232,96,44,0.10)', borderRadius: 6, padding: '2px 8px', flexShrink: 0 }}>
+        <span style={{ fontSize: 12, fontWeight: 500, color: '#E8602C', backgroundColor: 'rgba(232,96,44,0.10)', borderRadius: 3, padding: '2px 8px', flexShrink: 0 }}>
           {section.numero_romain}
         </span>
         {editTitle ? (
@@ -414,8 +414,8 @@ function SectionBlock({ section, sIdx, sTotal, crDate, suggestions, lots, interl
                 numero_romain: document.getElementById(`sec-romain-${section.id}`).value,
               })
               setEditTitle(false)
-            }} style={{ padding: '3px 10px', borderRadius: 6, fontSize: 11, border: 'none', backgroundColor: '#E8602C', color: 'white', cursor: 'pointer' }}>OK</button>
-            <button onClick={() => setEditTitle(false)} style={{ padding: '3px 8px', borderRadius: 6, fontSize: 11, border: '0.5px solid rgba(0,0,0,0.15)', backgroundColor: 'white', color: '#374151', cursor: 'pointer' }}><X size={11} /></button>
+            }} style={{ padding: '3px 10px', borderRadius: 3, fontSize: 11, border: 'none', backgroundColor: '#E8602C', color: 'white', cursor: 'pointer' }}>OK</button>
+            <button onClick={() => setEditTitle(false)} style={{ padding: '3px 8px', borderRadius: 3, fontSize: 11, border: '0.5px solid rgba(0,0,0,0.15)', backgroundColor: 'white', color: '#374151', cursor: 'pointer' }}><X size={11} /></button>
           </div>
         ) : (
           <span style={{ fontSize: 13, fontWeight: 500, color: '#1F1B17', flex: 1, textTransform: 'uppercase' }}>{section.titre}</span>
@@ -449,7 +449,7 @@ function SectionBlock({ section, sIdx, sTotal, crDate, suggestions, lots, interl
 
           {addSs ? (
             <div style={{ marginTop: 8 }}>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '8px 12px', backgroundColor: '#FAFAF9', borderRadius: 8, border: '0.5px solid rgba(0,0,0,0.08)' }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '8px 12px', backgroundColor: '#FAFAF9', borderRadius: 2, border: '0.5px solid rgba(0,0,0,0.08)' }}>
                 <input id={`new-ss-code-${section.id}`} placeholder="1-1" style={{ ...INPUT, width: 70, height: 30, fontSize: 12 }} onFocus={focusOn} onBlur={focusOff} />
                 <input id={`new-ss-titre-${section.id}`} placeholder="Titre de la sous-section" style={{ ...INPUT, flex: 1, height: 30, fontSize: 12 }} onFocus={focusOn} onBlur={focusOff} />
                 <button type="button" onClick={async () => {
@@ -458,13 +458,13 @@ function SectionBlock({ section, sIdx, sTotal, crDate, suggestions, lots, interl
                   if (!titre.trim()) return
                   await ops.addSousSection(section.id, { code: code || String(section.sousSections.length + 1), titre })
                   setAddSs(false)
-                }} style={{ padding: '3px 10px', borderRadius: 6, fontSize: 11, border: 'none', backgroundColor: '#E8602C', color: 'white', cursor: 'pointer' }}>OK</button>
+                }} style={{ padding: '3px 10px', borderRadius: 3, fontSize: 11, border: 'none', backgroundColor: '#E8602C', color: 'white', cursor: 'pointer' }}>OK</button>
                 <button type="button" onClick={() => setAddSs(false)} style={{ padding: 3, background: 'none', border: 'none', cursor: 'pointer', color: '#9C9591' }}><X size={14} /></button>
               </div>
             </div>
           ) : (
             <button onClick={() => setAddSs(true)}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 8, padding: '5px 10px', borderRadius: 7, fontSize: 11, border: '0.5px dashed rgba(0,0,0,0.2)', backgroundColor: 'transparent', color: '#5E5854', cursor: 'pointer' }}>
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 8, padding: '5px 10px', borderRadius: 2, fontSize: 11, border: '0.5px dashed rgba(0,0,0,0.2)', backgroundColor: 'transparent', color: '#5E5854', cursor: 'pointer' }}>
               <Plus size={11} /> Sous-section
             </button>
           )}
@@ -485,7 +485,7 @@ function FilterBar({ filter, setFilter, lots, interlocuteurs }) {
       key={type}
       onClick={() => setFilter({ type, lotId: '', interloId: '' })}
       style={{
-        padding: '4px 12px', borderRadius: 20, fontSize: 11, cursor: 'pointer',
+        padding: '4px 12px', borderRadius: 3, fontSize: 11, cursor: 'pointer',
         border: `0.5px solid ${active ? '#E8602C' : 'rgba(0,0,0,0.12)'}`,
         backgroundColor: active ? 'rgba(232,96,44,0.10)' : 'white',
         color: active ? '#E8602C' : '#5E5854',
@@ -497,7 +497,7 @@ function FilterBar({ filter, setFilter, lots, interlocuteurs }) {
   )
 
   const SELECT = {
-    height: 28, padding: '0 8px', borderRadius: 8, fontSize: 12,
+    height: 28, padding: '0 8px', borderRadius: 2, fontSize: 12,
     border: '0.5px solid rgba(0,0,0,0.12)', backgroundColor: 'white',
     outline: 'none', color: '#1F1B17', cursor: 'pointer',
   }
@@ -592,7 +592,7 @@ export function CrSectionEditor({ sections, crDate, interlocuteurs, lotEntrepris
       ))}
 
       {addSec ? (
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '10px 14px', backgroundColor: 'white', borderRadius: 10, border: '0.5px solid rgba(0,0,0,0.08)', marginBottom: 8 }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '10px 14px', backgroundColor: 'white', borderRadius: 2, border: '0.5px solid rgba(0,0,0,0.08)', marginBottom: 8 }}>
           <input id="new-sec-romain" placeholder="N° romain" style={{ ...INPUT, width: 80, height: 32, fontSize: 12 }} onFocus={focusOn} onBlur={focusOff} />
           <input id="new-sec-titre" placeholder="Titre de la section" style={{ ...INPUT, flex: 1, height: 32, fontSize: 12 }} onFocus={focusOn} onBlur={focusOff} />
           <button type="button" onClick={async () => {
@@ -601,13 +601,13 @@ export function CrSectionEditor({ sections, crDate, interlocuteurs, lotEntrepris
             if (!numero_romain.trim() || !titre.trim()) return
             await ops.addSection({ numero_romain, titre })
             setAddSec(false)
-          }} style={{ padding: '4px 12px', borderRadius: 8, fontSize: 12, border: 'none', backgroundColor: '#E8602C', color: 'white', cursor: 'pointer' }}>OK</button>
+          }} style={{ padding: '4px 12px', borderRadius: 2, fontSize: 12, border: 'none', backgroundColor: '#E8602C', color: 'white', cursor: 'pointer' }}>OK</button>
           <button type="button" onClick={() => setAddSec(false)} style={{ padding: 4, background: 'none', border: 'none', cursor: 'pointer', color: '#9C9591' }}><X size={14} /></button>
         </div>
       ) : (
         <button
           onClick={() => setAddSec(true)}
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 10, fontSize: 12, border: '0.5px dashed rgba(0,0,0,0.2)', backgroundColor: 'transparent', color: '#5E5854', cursor: 'pointer' }}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 2, fontSize: 12, border: '0.5px dashed rgba(0,0,0,0.2)', backgroundColor: 'transparent', color: '#5E5854', cursor: 'pointer' }}
         >
           <Plus size={13} /> Ajouter une section
         </button>

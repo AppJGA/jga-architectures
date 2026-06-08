@@ -92,7 +92,7 @@ export function Topbar() {
         <button
           style={{
             display: 'flex', alignItems: 'center', gap: 6,
-            padding: '5px 12px', borderRadius: 20,
+            padding: '5px 12px', borderRadius: 3,
             border: '0.5px solid rgba(0,0,0,0.12)', backgroundColor: 'white',
             cursor: 'default', fontSize: 12, color: '#5E5854',
           }}

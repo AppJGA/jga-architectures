@@ -40,13 +40,13 @@ const LABEL = {
 }
 
 const INPUT = {
-  width: '100%', height: 38, padding: '0 12px', borderRadius: 8, fontSize: 13,
+  width: '100%', height: 38, padding: '0 12px', borderRadius: 2, fontSize: 13,
   border: '0.5px solid rgba(0,0,0,0.12)', backgroundColor: 'white', outline: 'none',
   boxSizing: 'border-box', color: '#1F1B17',
 }
 
 const TEXTAREA = {
-  width: '100%', padding: '10px 12px', borderRadius: 8, fontSize: 13,
+  width: '100%', padding: '10px 12px', borderRadius: 2, fontSize: 13,
   border: '0.5px solid rgba(0,0,0,0.12)', backgroundColor: 'white', outline: 'none',
   boxSizing: 'border-box', color: '#1F1B17', resize: 'vertical', minHeight: 72,
 }
@@ -142,7 +142,7 @@ function PhaseFormModal({ open, onClose, existing, affaire, onSave, onDelete }) 
       onClick={onClose}
     >
       <div
-        style={{ backgroundColor: 'white', borderRadius: 16, padding: '28px 32px', width: '100%', maxWidth: 480, maxHeight: '90vh', overflowY: 'auto' }}
+        style={{ backgroundColor: 'white', borderRadius: 0, padding: '28px 32px', width: '100%', maxWidth: 480, maxHeight: '90vh', overflowY: 'auto' }}
         onClick={e => e.stopPropagation()}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 22 }}>
@@ -247,7 +247,7 @@ function PhaseFormModal({ open, onClose, existing, affaire, onSave, onDelete }) 
                 type="button" onClick={handleDelete} disabled={saving}
                 style={{
                   display: 'inline-flex', alignItems: 'center', gap: 6,
-                  padding: '8px 14px', borderRadius: 8, fontSize: 12, cursor: 'pointer',
+                  padding: '8px 14px', borderRadius: 2, fontSize: 12, cursor: 'pointer',
                   border: `0.5px solid ${confirmDelete ? 'rgba(220,38,38,0.5)' : 'rgba(0,0,0,0.12)'}`,
                   backgroundColor: confirmDelete ? 'rgba(184,65,44,0.10)' : 'white',
                   color: confirmDelete ? '#B8412C' : '#9C9591', marginRight: 'auto',
@@ -259,13 +259,13 @@ function PhaseFormModal({ open, onClose, existing, affaire, onSave, onDelete }) 
             )}
             <button
               type="button" onClick={onClose}
-              style={{ padding: '8px 14px', borderRadius: 8, fontSize: 12, cursor: 'pointer', border: '0.5px solid rgba(0,0,0,0.15)', backgroundColor: 'white', color: '#374151' }}
+              style={{ padding: '8px 14px', borderRadius: 2, fontSize: 12, cursor: 'pointer', border: '0.5px solid rgba(0,0,0,0.15)', backgroundColor: 'white', color: '#374151' }}
             >
               Annuler
             </button>
             <button
               type="submit" disabled={saving}
-              style={{ padding: '8px 16px', borderRadius: 8, fontSize: 12, fontWeight: 500, border: 'none', backgroundColor: '#E8602C', color: 'white', cursor: 'pointer', opacity: saving ? 0.6 : 1 }}
+              style={{ padding: '8px 16px', borderRadius: 2, fontSize: 12, fontWeight: 500, border: 'none', backgroundColor: '#E8602C', color: 'white', cursor: 'pointer', opacity: saving ? 0.6 : 1 }}
             >
               {saving ? 'Enregistrement…' : 'Enregistrer'}
             </button>
@@ -376,7 +376,7 @@ function EstimationFormModal({ open, onClose, existing, affaire, lotsExistants, 
       onClick={onClose}
     >
       <div
-        style={{ backgroundColor: 'white', borderRadius: 16, padding: '28px 32px', width: '100%', maxWidth: 440, maxHeight: '90vh', overflowY: 'auto' }}
+        style={{ backgroundColor: 'white', borderRadius: 0, padding: '28px 32px', width: '100%', maxWidth: 440, maxHeight: '90vh', overflowY: 'auto' }}
         onClick={e => e.stopPropagation()}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 22 }}>
@@ -487,7 +487,7 @@ function EstimationFormModal({ open, onClose, existing, affaire, lotsExistants, 
                 type="button" onClick={handleDelete} disabled={saving}
                 style={{
                   display: 'inline-flex', alignItems: 'center', gap: 6,
-                  padding: '8px 14px', borderRadius: 8, fontSize: 12, cursor: 'pointer',
+                  padding: '8px 14px', borderRadius: 2, fontSize: 12, cursor: 'pointer',
                   border: `0.5px solid ${confirmDelete ? 'rgba(220,38,38,0.5)' : 'rgba(0,0,0,0.12)'}`,
                   backgroundColor: confirmDelete ? 'rgba(184,65,44,0.10)' : 'white',
                   color: confirmDelete ? '#B8412C' : '#9C9591', marginRight: 'auto',
@@ -499,13 +499,13 @@ function EstimationFormModal({ open, onClose, existing, affaire, lotsExistants, 
             )}
             <button
               type="button" onClick={onClose}
-              style={{ padding: '8px 14px', borderRadius: 8, fontSize: 12, cursor: 'pointer', border: '0.5px solid rgba(0,0,0,0.15)', backgroundColor: 'white', color: '#374151' }}
+              style={{ padding: '8px 14px', borderRadius: 2, fontSize: 12, cursor: 'pointer', border: '0.5px solid rgba(0,0,0,0.15)', backgroundColor: 'white', color: '#374151' }}
             >
               Annuler
             </button>
             <button
               type="submit" disabled={saving || !nomLotValid}
-              style={{ padding: '8px 16px', borderRadius: 8, fontSize: 12, fontWeight: 500, border: 'none', backgroundColor: '#E8602C', color: 'white', cursor: 'pointer', opacity: (saving || !nomLotValid) ? 0.6 : 1 }}
+              style={{ padding: '8px 16px', borderRadius: 2, fontSize: 12, fontWeight: 500, border: 'none', backgroundColor: '#E8602C', color: 'white', cursor: 'pointer', opacity: (saving || !nomLotValid) ? 0.6 : 1 }}
             >
               {saving ? 'Enregistrement…' : 'Enregistrer'}
             </button>
@@ -562,7 +562,7 @@ function EnveloppeBandeau({ affaire, suiviParPhase }) {
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 20 }}>
       {cells.map((cell, i) => (
         <div key={i} style={{
-          backgroundColor: 'white', borderRadius: 14,
+          backgroundColor: 'white', borderRadius: 0,
           border: '0.5px solid rgba(0,0,0,0.08)', padding: '16px 20px',
         }}>
           <p style={{ fontSize: 11, fontWeight: 500, color: '#9C9591', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
@@ -598,7 +598,7 @@ function PhaseBadge({ phaseId }) {
   return (
     <span style={{
       fontSize: 11, fontWeight: 500, color: p.color,
-      backgroundColor: p.bg, borderRadius: 20,
+      backgroundColor: p.bg, borderRadius: 3,
       padding: '3px 10px', letterSpacing: '0.03em', whiteSpace: 'nowrap',
     }}>
       {p.label}
@@ -618,7 +618,7 @@ function EvoBadge({ current, reference }) {
       fontSize: 11, fontWeight: 500,
       color: isUp ? '#B8412C' : '#2A8A4E',
       backgroundColor: isUp ? 'rgba(184,65,44,0.10)' : 'rgba(42,138,78,0.12)',
-      borderRadius: 20, padding: '3px 10px', whiteSpace: 'nowrap',
+      borderRadius: 3, padding: '3px 10px', whiteSpace: 'nowrap',
     }}>
       {isUp ? '+' : ''}{euro(delta)} ({isUp ? '+' : ''}{pct.toFixed(1)} %)
     </span>
@@ -639,7 +639,7 @@ function PhaseCard({ phase, entry, prevEnveloppe, enveloppeInitiale, onEdit }) {
 
   return (
     <div style={{
-      backgroundColor: 'white', borderRadius: 14,
+      backgroundColor: 'white', borderRadius: 0,
       border: '0.5px solid rgba(0,0,0,0.08)', padding: '16px 20px',
     }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: fields.length > 0 ? 14 : 0 }}>
@@ -651,7 +651,7 @@ function PhaseCard({ phase, entry, prevEnveloppe, enveloppeInitiale, onEdit }) {
           onClick={() => onEdit(entry)}
           style={{
             display: 'inline-flex', alignItems: 'center', gap: 4,
-            padding: '4px 10px', borderRadius: 6, fontSize: 11,
+            padding: '4px 10px', borderRadius: 3, fontSize: 11,
             border: '0.5px solid rgba(0,0,0,0.12)', backgroundColor: 'white',
             color: '#5E5854', cursor: 'pointer', flexShrink: 0,
           }}
@@ -674,7 +674,7 @@ function PhaseCard({ phase, entry, prevEnveloppe, enveloppeInitiale, onEdit }) {
       )}
 
       {entry.motif_evolution && (
-        <div style={{ backgroundColor: 'rgba(232,96,44,0.10)', borderRadius: 8, padding: '8px 12px', marginBottom: entry.notes ? 8 : 0 }}>
+        <div style={{ backgroundColor: 'rgba(232,96,44,0.10)', borderRadius: 2, padding: '8px 12px', marginBottom: entry.notes ? 8 : 0 }}>
           <p style={{ fontSize: 10, fontWeight: 500, color: '#9C9591', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 3 }}>
             Motif d'évolution
           </p>
@@ -696,7 +696,7 @@ function EmptyPhaseRow({ phase, onAdd }) {
   return (
     <div style={{
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      padding: '10px 16px', borderRadius: 10,
+      padding: '10px 16px', borderRadius: 2,
       border: `0.5px dashed rgba(0,0,0,0.15)`,
       backgroundColor: 'transparent',
     }}>
@@ -712,7 +712,7 @@ function EmptyPhaseRow({ phase, onAdd }) {
         onClick={onAdd}
         style={{
           display: 'inline-flex', alignItems: 'center', gap: 4,
-          padding: '4px 10px', borderRadius: 6, fontSize: 11,
+          padding: '4px 10px', borderRadius: 3, fontSize: 11,
           border: `0.5px solid ${p.color}`, backgroundColor: p.bg,
           color: p.color, cursor: 'pointer',
         }}
@@ -805,7 +805,7 @@ function EstimationsTable({ estimationsLots, marchesLots, onEdit, onAdd }) {
       {/* Rows */}
       {rows.length === 0 ? (
         <div style={{
-          backgroundColor: 'white', borderRadius: 10,
+          backgroundColor: 'white', borderRadius: 2,
           border: '0.5px solid rgba(0,0,0,0.08)', padding: '20px 16px',
           textAlign: 'center',
         }}>
@@ -816,7 +816,7 @@ function EstimationsTable({ estimationsLots, marchesLots, onEdit, onAdd }) {
           {rows.map(row => (
             <div key={row.id} style={{
               display: 'flex', alignItems: 'center', gap: 8,
-              backgroundColor: 'white', borderRadius: 10,
+              backgroundColor: 'white', borderRadius: 2,
               border: '0.5px solid rgba(0,0,0,0.08)', padding: '10px 16px',
             }}>
               {/* Lot */}
@@ -997,7 +997,7 @@ export default function FinancierEtudeModule() {
               onClick={() => openAddPhase(null)}
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 6,
-                padding: '6px 12px', borderRadius: 8, fontSize: 12,
+                padding: '6px 12px', borderRadius: 2, fontSize: 12,
                 border: '0.5px solid #E8602C', backgroundColor: 'var(--jga-orange-light)',
                 color: '#E8602C', cursor: 'pointer',
               }}
@@ -1025,7 +1025,7 @@ export default function FinancierEtudeModule() {
                 onClick={openAddEst}
                 style={{
                   display: 'inline-flex', alignItems: 'center', gap: 6,
-                  padding: '6px 12px', borderRadius: 8, fontSize: 12,
+                  padding: '6px 12px', borderRadius: 2, fontSize: 12,
                   border: '0.5px solid #E8602C', backgroundColor: 'var(--jga-orange-light)',
                   color: '#E8602C', cursor: 'pointer',
                 }}
@@ -1036,7 +1036,7 @@ export default function FinancierEtudeModule() {
             }
           />
           <div style={{
-            backgroundColor: '#FAF7F2', borderRadius: 14,
+            backgroundColor: '#FAF7F2', borderRadius: 0,
             border: '0.5px solid rgba(0,0,0,0.06)', padding: 4,
           }}>
             <EstimationsTable

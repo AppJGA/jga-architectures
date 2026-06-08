@@ -57,7 +57,7 @@ function YesNoToggle({ value, onChange, name }) {
           onClick={() => onChange(value === opt.val ? null : opt.val)}
           style={{
             padding: '4px 14px',
-            borderRadius: 6,
+            borderRadius: 3,
             border: '1px solid',
             fontSize: 12,
             cursor: 'pointer',
@@ -77,7 +77,7 @@ function YesNoToggle({ value, onChange, name }) {
 const inputStyle = {
   width: '100%',
   border: '1px solid #d1d5db',
-  borderRadius: 6,
+  borderRadius: 3,
   padding: '6px 10px',
   fontSize: 12,
   outline: 'none',
@@ -178,7 +178,7 @@ export function FtmFormModal({ open, onClose, ftm, lots = [], affaire, onSave, o
     }}>
       <div style={{
         backgroundColor: '#FAF7F2',
-        borderRadius: 14,
+        borderRadius: 0,
         width: '100%',
         maxWidth: 680,
         maxHeight: '90vh',
@@ -225,7 +225,7 @@ export function FtmFormModal({ open, onClose, ftm, lots = [], affaire, onSave, o
                       style={{
                         flex: 1,
                         padding: '8px 6px',
-                        borderRadius: 8,
+                        borderRadius: 2,
                         border: '1.5px solid',
                         borderColor: form.origine === opt.value ? opt.color : '#d1d5db',
                         backgroundColor: form.origine === opt.value ? opt.color + '15' : 'white',
@@ -427,7 +427,7 @@ export function FtmFormModal({ open, onClose, ftm, lots = [], affaire, onSave, o
                         onClick={() => set('decision', opt.value)}
                         style={{
                           flex: 1, padding: '5px 8px',
-                          borderRadius: 6, border: '1px solid',
+                          borderRadius: 3, border: '1px solid',
                           borderColor: active ? c.border : '#d1d5db',
                           backgroundColor: active ? c.bg : 'white',
                           color: active ? c.color : '#5E5854',
@@ -465,7 +465,7 @@ export function FtmFormModal({ open, onClose, ftm, lots = [], affaire, onSave, o
             onClick={onClose}
             disabled={saving}
             style={{
-              padding: '7px 16px', borderRadius: 8,
+              padding: '7px 16px', borderRadius: 2,
               border: '1px solid #d1d5db', backgroundColor: 'white',
               fontSize: 12, color: '#5E5854', cursor: 'pointer',
             }}
@@ -476,7 +476,7 @@ export function FtmFormModal({ open, onClose, ftm, lots = [], affaire, onSave, o
             onClick={() => handleSubmit(false)}
             disabled={saving}
             style={{
-              padding: '7px 16px', borderRadius: 8,
+              padding: '7px 16px', borderRadius: 2,
               border: 'none', backgroundColor: '#2A8A4E',
               fontSize: 12, color: 'white', cursor: 'pointer',
               fontWeight: 500,
@@ -488,7 +488,7 @@ export function FtmFormModal({ open, onClose, ftm, lots = [], affaire, onSave, o
             onClick={() => handleSubmit(true)}
             disabled={saving}
             style={{
-              padding: '7px 16px', borderRadius: 8,
+              padding: '7px 16px', borderRadius: 2,
               border: 'none', backgroundColor: '#E8602C',
               fontSize: 12, color: 'white', cursor: 'pointer',
               fontWeight: 500,

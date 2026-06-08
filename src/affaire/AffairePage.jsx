@@ -266,7 +266,7 @@ function AffaireHeader({ affaire, onEdit, collaborateurs, canEdit, collabLoading
               fontSize: 11, color: 'var(--jga-orange)',
               background: 'var(--jga-orange-light)',
               border: '0.5px solid var(--jga-orange-mid)',
-              borderRadius: 6, padding: '4px 10px', cursor: 'pointer',
+              borderRadius: 3, padding: '4px 10px', cursor: 'pointer',
             }}
           >
             + M'assigner comme responsable
@@ -278,7 +278,7 @@ function AffaireHeader({ affaire, onEdit, collaborateurs, canEdit, collabLoading
             onClick={onEdit}
             style={{
               display: 'inline-flex', alignItems: 'center', gap: 5,
-              padding: '4px 10px', borderRadius: 6,
+              padding: '4px 10px', borderRadius: 3,
               border: '0.5px solid var(--jga-orange)',
               backgroundColor: 'transparent', color: 'var(--jga-orange)',
               fontSize: 11, cursor: 'pointer',
@@ -351,7 +351,7 @@ function ModuleItem({ mod, phaseColor, affaireId, isActive }) {
         display: 'flex', alignItems: 'center', gap: 10,
         width: '100%', textAlign: 'left',
         padding: '7px 12px',
-        borderRadius: 8,
+        borderRadius: 2,
         fontSize: 12,
         backgroundColor: show ? hoverBg : 'transparent',
         boxShadow: isActive && !disabled ? activeShadow : 'none',
@@ -429,7 +429,7 @@ function ModulesSidebar({ affaireId, moduleId }) {
                 style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                   padding: '6px 12px', cursor: 'pointer', userSelect: 'none',
-                  borderRadius: 6,
+                  borderRadius: 3,
                 }}
                 onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.03)'}
                 onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
@@ -482,7 +482,7 @@ function ModulesSidebar({ affaireId, moduleId }) {
       </p>
       <div style={{
         display: 'flex', alignItems: 'center', gap: 10,
-        padding: '7px 12px', borderRadius: 8,
+        padding: '7px 12px', borderRadius: 2,
         fontSize: 12, color: '#5E5854',
         opacity: 0.4, cursor: 'default',
       }}>
@@ -510,7 +510,7 @@ function ModuleTile({ icon: Icon, label, phaseColor, active, children, onClick }
       style={{
         position: 'relative',
         backgroundColor: 'white',
-        borderRadius: 14,
+        borderRadius: 0,
         border: hovered ? `0.5px solid ${hoverBorder}` : '0.5px solid rgba(0,0,0,0.08)',
         padding: 20,
         cursor: active ? 'pointer' : 'default',
@@ -523,7 +523,7 @@ function ModuleTile({ icon: Icon, label, phaseColor, active, children, onClick }
           position: 'absolute', top: 12, right: 12,
           fontSize: 10, fontWeight: 500,
           backgroundColor: '#F1EFE8', color: '#9C9591',
-          borderRadius: 20, padding: '2px 7px',
+          borderRadius: 3, padding: '2px 7px',
         }}>
           Bientôt
         </span>
@@ -614,7 +614,7 @@ function PhaseSection({ phase, affaire, stats, affaireId, navigate }) {
                       </p>
                     )}
                     {stats.crProchaineReunion && (
-                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, backgroundColor: 'rgba(42,138,78,0.12)', borderRadius: 5, padding: '2px 7px' }}>
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, backgroundColor: 'rgba(42,138,78,0.12)', borderRadius: 3, padding: '2px 7px' }}>
                         <span style={{ fontSize: 11, color: '#2A8A4E' }}>Prochain {fmtDate(stats.crProchaineReunion)}</span>
                       </div>
                     )}
@@ -653,7 +653,7 @@ function PhaseSection({ phase, affaire, stats, affaireId, navigate }) {
                     </div>
                     {stats.financierAleasPct > 5 && (
                       <div style={{
-                        backgroundColor: '#FEF3C7', borderRadius: 6, padding: '4px 8px',
+                        backgroundColor: '#FEF3C7', borderRadius: 3, padding: '4px 8px',
                         fontSize: 11, color: '#92400E',
                       }}>
                         Aléas {stats.financierAleasPct.toFixed(1)}% du marché
@@ -700,7 +700,7 @@ function PhaseSection({ phase, affaire, stats, affaireId, navigate }) {
                           fontSize: 11, fontWeight: 500,
                           color: ['esq','avp','pro','dce'].includes(stats.financierEtudeDernierePhase) ? '#E8602C' : '#2A8A4E',
                           backgroundColor: ['esq','avp','pro','dce'].includes(stats.financierEtudeDernierePhase) ? 'rgba(232,96,44,0.10)' : 'rgba(42,138,78,0.12)',
-                          borderRadius: 20, padding: '2px 8px',
+                          borderRadius: 3, padding: '2px 8px',
                         }}>
                           {stats.financierEtudeDernierePhase.toUpperCase()}
                         </span>
@@ -756,7 +756,7 @@ function PhaseSection({ phase, affaire, stats, affaireId, navigate }) {
                     </p>
                     {stats.planningDateFin && (
                       <div style={{
-                        backgroundColor: '#F0F7E8', borderRadius: 6, padding: '3px 8px',
+                        backgroundColor: '#F0F7E8', borderRadius: 3, padding: '3px 8px',
                         fontSize: 11, color: '#3a6011', display: 'inline-block',
                       }}>
                         Fin estimée {stats.planningDateFin.toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' })}
@@ -830,7 +830,7 @@ function AffaireOverview({ affaire, stats, affaireId, onEdit, canEdit }) {
       {/* Infos affaire */}
       <div style={{
         backgroundColor: 'white',
-        borderRadius: 14,
+        borderRadius: 0,
         border: '0.5px solid rgba(0,0,0,0.08)',
         padding: 20,
       }}>
@@ -942,7 +942,7 @@ export function AffairePage() {
             {!collabLoading && !canEdit && (
               <div style={{
                 background: '#FEF3C7', border: '0.5px solid #D97706',
-                borderRadius: 8, padding: '8px 14px', fontSize: 12, color: '#92400E',
+                borderRadius: 2, padding: '8px 14px', fontSize: 12, color: '#92400E',
                 display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16,
               }}>
                 <Eye size={14} strokeWidth={1.25} />

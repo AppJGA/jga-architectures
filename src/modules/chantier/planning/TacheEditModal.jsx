@@ -7,13 +7,13 @@ const LABEL = {
   letterSpacing: '0.06em', color: '#9C9591', marginBottom: 4,
 }
 const INPUT = {
-  width: '100%', height: 36, padding: '0 10px', borderRadius: 8, fontSize: 13,
+  width: '100%', height: 36, padding: '0 10px', borderRadius: 2, fontSize: 13,
   border: '0.5px solid rgba(0,0,0,0.12)', backgroundColor: '#FAFAF9', outline: 'none',
   boxSizing: 'border-box', color: '#1F1B17',
 }
 const BTN = {
   display: 'inline-flex', alignItems: 'center', gap: 6,
-  padding: '8px 14px', borderRadius: 8, fontSize: 12, cursor: 'pointer',
+  padding: '8px 14px', borderRadius: 2, fontSize: 12, cursor: 'pointer',
   border: '0.5px solid rgba(0,0,0,0.15)', backgroundColor: 'white', color: '#374151',
 }
 const BTN_PRIMARY = {
@@ -112,7 +112,7 @@ export function TacheEditModal({ open, onClose, task, tasks, lots, onSave, onDel
       display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100,
     }} onClick={onClose}>
       <div style={{
-        backgroundColor: 'white', borderRadius: 16, padding: 28,
+        backgroundColor: 'white', borderRadius: 0, padding: 28,
         width: '100%', maxWidth: 480, maxHeight: '90vh', overflowY: 'auto',
       }} onClick={e => e.stopPropagation()}>
 

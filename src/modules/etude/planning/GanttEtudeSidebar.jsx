@@ -161,7 +161,7 @@ function PhaseRow({
         onClick={() => onEdit(phase)}
         style={{
           width: 24, height: 24, flexShrink: 0, display: 'flex', alignItems: 'center',
-          justifyContent: 'center', borderRadius: 6, background: 'none', border: 'none',
+          justifyContent: 'center', borderRadius: 3, background: 'none', border: 'none',
           cursor: 'pointer', color: hovered ? '#E8602C' : '#9C9591',
           opacity: hovered ? 1 : 0,
           transition: 'opacity 0.15s, color 0.12s',

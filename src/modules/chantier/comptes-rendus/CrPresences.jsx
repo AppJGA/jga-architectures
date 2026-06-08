@@ -23,7 +23,7 @@ function Toggle({ value, onChange }) {
     <div
       onClick={() => onChange(!value)}
       style={{
-        width: 36, height: 20, borderRadius: 10, cursor: 'pointer',
+        width: 36, height: 20, borderRadius: 2, cursor: 'pointer',
         background: value ? '#2A8A4E' : 'rgba(0,0,0,0.15)',
         position: 'relative', transition: 'background 0.2s', flexShrink: 0,
       }}
@@ -82,7 +82,7 @@ function ConvoqueCell({ presence, onUpdate }) {
         onChange={e => onUpdate(presence.id, { heure_convocation: e.target.value })}
         style={{
           fontSize: 11, width: 70,
-          border: '0.5px solid rgba(0,0,0,0.12)', borderRadius: 6,
+          border: '0.5px solid rgba(0,0,0,0.12)', borderRadius: 3,
           padding: '2px 6px', outline: 'none',
           color: presence.convoque ? '#1F1B17' : '#9C9591',
           background: presence.convoque ? 'white' : '#FAF7F2',
@@ -106,7 +106,7 @@ function InterloRow({ presence, onPresence, onUpdate }) {
   return (
     <tr>
       <td style={{ padding: '10px 12px', verticalAlign: 'top' }}>
-        <span style={{ fontSize: 11, fontWeight: 500, color: meta?.color ?? '#9C9591', backgroundColor: meta?.bg ?? '#FAF7F2', borderRadius: 20, padding: '2px 8px', whiteSpace: 'nowrap' }}>
+        <span style={{ fontSize: 11, fontWeight: 500, color: meta?.color ?? '#9C9591', backgroundColor: meta?.bg ?? '#FAF7F2', borderRadius: 3, padding: '2px 8px', whiteSpace: 'nowrap' }}>
           {catLabel}
         </span>
       </td>
@@ -172,7 +172,7 @@ function PresenceTable({ title, headers, rows }) {
   return (
     <div style={{ marginBottom: 24 }}>
       <h3 style={{ fontSize: 13, fontWeight: 500, color: '#1F1B17', marginBottom: 10 }}>{title}</h3>
-      <div style={{ backgroundColor: 'white', borderRadius: 12, border: '0.5px solid rgba(0,0,0,0.08)', overflow: 'hidden' }}>
+      <div style={{ backgroundColor: 'white', borderRadius: 0, border: '0.5px solid rgba(0,0,0,0.08)', overflow: 'hidden' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ backgroundColor: '#FAFAF9' }}>
@@ -219,7 +219,7 @@ export function CrPresences({ presences: presencesProp, setPresence, setConvoque
       {(interloPresences.length > 0 || lotPresences.length > 0) && (
         <div style={{
           display: 'flex', alignItems: 'center', gap: 16, marginBottom: 16,
-          padding: '8px 14px', background: '#FAF7F2', borderRadius: 8, fontSize: 11, flexWrap: 'wrap',
+          padding: '8px 14px', background: '#FAF7F2', borderRadius: 2, fontSize: 11, flexWrap: 'wrap',
         }}>
           <span style={{ fontWeight: 500, color: '#9C9591', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
             Légende :

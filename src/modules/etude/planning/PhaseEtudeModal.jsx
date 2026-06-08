@@ -10,7 +10,7 @@ const LABEL = {
   letterSpacing: '0.06em', color: '#9C9591', marginBottom: 4,
 }
 const INPUT = {
-  width: '100%', height: 36, padding: '0 10px', borderRadius: 8, fontSize: 13,
+  width: '100%', height: 36, padding: '0 10px', borderRadius: 2, fontSize: 13,
   border: '0.5px solid rgba(0,0,0,0.12)', backgroundColor: '#FAFAF9', outline: 'none',
   boxSizing: 'border-box', color: '#1F1B17',
 }
@@ -160,7 +160,7 @@ export function PhaseEtudeModal({ open, onClose, phase, phases, onSave, onDelete
       onClick={onClose}
     >
       <div
-        style={{ backgroundColor: 'white', borderRadius: 16, padding: 28, width: '100%', maxWidth: 520, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 8px 40px rgba(0,0,0,0.14)' }}
+        style={{ backgroundColor: 'white', borderRadius: 0, padding: 28, width: '100%', maxWidth: 520, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 8px 40px rgba(0,0,0,0.14)' }}
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
@@ -189,7 +189,7 @@ export function PhaseEtudeModal({ open, onClose, phase, phases, onSave, onDelete
                       onClick={() => handleTypeChange(opt.type)}
                       style={{
                         padding: '10px 12px',
-                        borderRadius: 8,
+                        borderRadius: 2,
                         border: isSelected
                           ? `1.5px solid ${opt.couleur}`
                           : '0.5px solid rgba(0,0,0,0.12)',
@@ -260,7 +260,7 @@ export function PhaseEtudeModal({ open, onClose, phase, phases, onSave, onDelete
 
             {/* Sous-durées — MOE (etude) uniquement */}
             {form.type_tache === 'etude' && (
-              <div style={{ padding: '14px 16px', borderRadius: 10, backgroundColor: '#FAFAF9', border: '0.5px solid rgba(0,0,0,0.08)' }}>
+              <div style={{ padding: '14px 16px', borderRadius: 2, backgroundColor: '#FAFAF9', border: '0.5px solid rgba(0,0,0,0.08)' }}>
                 <label style={{ ...LABEL, marginBottom: 2 }}>Répartition des intervenants (optionnel)</label>
                 <p style={{ fontSize: 11, color: '#9C9591', marginBottom: 10 }}>Décomposez la durée en sous-périodes successives</p>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
@@ -351,7 +351,7 @@ export function PhaseEtudeModal({ open, onClose, phase, phases, onSave, onDelete
               <button type="button" onClick={handleDelete} disabled={saving}
                 style={{
                   display: 'inline-flex', alignItems: 'center', gap: 6,
-                  padding: '8px 14px', borderRadius: 8, fontSize: 12, cursor: 'pointer',
+                  padding: '8px 14px', borderRadius: 2, fontSize: 12, cursor: 'pointer',
                   border: `0.5px solid ${confirmDelete ? 'rgba(220,38,38,0.5)' : 'rgba(0,0,0,0.12)'}`,
                   backgroundColor: confirmDelete ? 'rgba(184,65,44,0.10)' : 'white',
                   color: confirmDelete ? '#B8412C' : '#9C9591',
@@ -363,14 +363,14 @@ export function PhaseEtudeModal({ open, onClose, phase, phases, onSave, onDelete
               </button>
             )}
             <button type="button" onClick={onClose}
-              style={{ padding: '8px 14px', borderRadius: 8, fontSize: 12, cursor: 'pointer', border: '0.5px solid rgba(0,0,0,0.15)', backgroundColor: 'white', color: '#374151' }}
+              style={{ padding: '8px 14px', borderRadius: 2, fontSize: 12, cursor: 'pointer', border: '0.5px solid rgba(0,0,0,0.15)', backgroundColor: 'white', color: '#374151' }}
             >
               Annuler
             </button>
             <button type="submit" disabled={saving || !form.nom.trim()}
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 6,
-                padding: '8px 16px', borderRadius: 8, fontSize: 12, fontWeight: 500,
+                padding: '8px 16px', borderRadius: 2, fontSize: 12, fontWeight: 500,
                 border: 'none', backgroundColor: '#2A8A4E', color: 'white', cursor: 'pointer',
                 opacity: saving || !form.nom.trim() ? 0.6 : 1,
               }}

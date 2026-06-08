@@ -10,7 +10,7 @@ const LABEL = {
   textTransform: 'uppercase', letterSpacing: '0.05em', color: '#9C9591', marginBottom: 4,
 }
 const INPUT = {
-  width: '100%', height: 36, padding: '0 10px', borderRadius: 8, fontSize: 13,
+  width: '100%', height: 36, padding: '0 10px', borderRadius: 2, fontSize: 13,
   border: '0.5px solid rgba(0,0,0,0.12)', backgroundColor: 'white', outline: 'none',
   boxSizing: 'border-box', color: '#1F1B17',
 }
@@ -69,7 +69,7 @@ function InterloForm({ initial, onSave, onCancel, onDelete }) {
   const needsLabel = form.categorie === 'autre'
 
   return (
-    <form onSubmit={handleSubmit} style={{ backgroundColor: '#FAFAF9', borderRadius: 10, padding: '14px 16px', border: '0.5px solid rgba(0,0,0,0.08)' }}>
+    <form onSubmit={handleSubmit} style={{ backgroundColor: '#FAFAF9', borderRadius: 2, padding: '14px 16px', border: '0.5px solid rgba(0,0,0,0.08)' }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
 
         {/* Catégorie */}
@@ -102,7 +102,7 @@ function InterloForm({ initial, onSave, onCancel, onDelete }) {
             />
           </div>
           {suggestions.length > 0 && (
-            <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50, backgroundColor: 'white', border: '0.5px solid rgba(0,0,0,0.12)', borderRadius: 8, overflow: 'hidden' }}>
+            <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50, backgroundColor: 'white', border: '0.5px solid rgba(0,0,0,0.12)', borderRadius: 2, overflow: 'hidden' }}>
               {suggestions.map(s => (
                 <button key={s.id} type="button" onMouseDown={() => applySuggestion(s)}
                   style={{ display: 'block', width: '100%', padding: '8px 12px', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: '#1F1B17', borderBottom: '0.5px solid rgba(0,0,0,0.06)' }}
@@ -156,7 +156,7 @@ function InterloForm({ initial, onSave, onCancel, onDelete }) {
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14, alignItems: 'center' }}>
         {onDelete && (
           <button type="button" onClick={() => { if (!confirmDel) { setConfirmDel(true); return } onDelete() }}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, fontSize: 11, cursor: 'pointer',
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 2, fontSize: 11, cursor: 'pointer',
               border: `0.5px solid ${confirmDel ? 'rgba(220,38,38,0.5)' : 'rgba(0,0,0,0.12)'}`,
               backgroundColor: confirmDel ? 'rgba(184,65,44,0.10)' : 'white', color: confirmDel ? '#B8412C' : '#9C9591', marginRight: 'auto' }}
           >
@@ -164,10 +164,10 @@ function InterloForm({ initial, onSave, onCancel, onDelete }) {
           </button>
         )}
         <button type="button" onClick={onCancel}
-          style={{ padding: '6px 12px', borderRadius: 8, fontSize: 12, cursor: 'pointer', border: '0.5px solid rgba(0,0,0,0.15)', backgroundColor: 'white', color: '#374151' }}
+          style={{ padding: '6px 12px', borderRadius: 2, fontSize: 12, cursor: 'pointer', border: '0.5px solid rgba(0,0,0,0.15)', backgroundColor: 'white', color: '#374151' }}
         >Annuler</button>
         <button type="submit" disabled={saving}
-          style={{ padding: '6px 14px', borderRadius: 8, fontSize: 12, fontWeight: 500, border: 'none', backgroundColor: '#E8602C', color: 'white', cursor: 'pointer', opacity: saving ? 0.6 : 1 }}
+          style={{ padding: '6px 14px', borderRadius: 2, fontSize: 12, fontWeight: 500, border: 'none', backgroundColor: '#E8602C', color: 'white', cursor: 'pointer', opacity: saving ? 0.6 : 1 }}
         >{saving ? 'Enregistrement…' : 'Enregistrer'}</button>
       </div>
     </form>
@@ -182,11 +182,11 @@ function CategorySection({ cat, items, onAdd, onEdit, onDelete, onReorder }) {
   return (
     <div style={{ marginBottom: 20 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-        <span style={{ fontSize: 11, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.06em', color: meta?.color ?? '#9C9591', backgroundColor: meta?.bg ?? '#FAF7F2', borderRadius: 20, padding: '3px 10px' }}>
+        <span style={{ fontSize: 11, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.06em', color: meta?.color ?? '#9C9591', backgroundColor: meta?.bg ?? '#FAF7F2', borderRadius: 3, padding: '3px 10px' }}>
           {meta?.label ?? cat}
         </span>
         <button onClick={() => setAddOpen(true)}
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 6, fontSize: 11, border: `0.5px solid ${meta?.color ?? '#9C9591'}`, backgroundColor: meta?.bg ?? '#FAF7F2', color: meta?.color ?? '#9C9591', cursor: 'pointer' }}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 3, fontSize: 11, border: `0.5px solid ${meta?.color ?? '#9C9591'}`, backgroundColor: meta?.bg ?? '#FAF7F2', color: meta?.color ?? '#9C9591', cursor: 'pointer' }}
         ><Plus size={11} /> Ajouter</button>
       </div>
 
@@ -212,7 +212,7 @@ function CategorySection({ cat, items, onAdd, onEdit, onDelete, onReorder }) {
               />
             </div>
           ) : (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', backgroundColor: 'white', borderRadius: 8, border: '0.5px solid rgba(0,0,0,0.08)', marginBottom: 4 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', backgroundColor: 'white', borderRadius: 2, border: '0.5px solid rgba(0,0,0,0.08)', marginBottom: 4 }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <p style={{ fontSize: 12, fontWeight: 500, color: '#1F1B17' }}>
                   {[item.prenom, item.nom].filter(Boolean).join(' ') || item.organisation || '—'}
@@ -254,7 +254,7 @@ export function InterlocuteursModal({ affaireId, onClose }) {
       onClick={onClose}
     >
       <div
-        style={{ backgroundColor: 'white', borderRadius: 16, padding: '28px 32px', width: '100%', maxWidth: 700, minHeight: 200 }}
+        style={{ backgroundColor: 'white', borderRadius: 0, padding: '28px 32px', width: '100%', maxWidth: 700, minHeight: 200 }}
         onClick={e => e.stopPropagation()}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>

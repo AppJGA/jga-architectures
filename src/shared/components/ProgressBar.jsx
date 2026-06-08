@@ -15,14 +15,14 @@ export function ProgressBar({ value, phase = 'esq' }) {
       style={{
         width: '100%',
         height: 3,
-        borderRadius: 99,
+        borderRadius: 0,
         backgroundColor: 'rgba(0,0,0,0.08)',
       }}
     >
       <div
         style={{
           height: 3,
-          borderRadius: 99,
+          borderRadius: 0,
           width: `${Math.min(100, Math.max(0, value))}%`,
           backgroundColor: color,
           transition: 'width 0.3s ease',

@@ -90,7 +90,7 @@ function TaskRow({ task, lotColor, rowHeight, onEdit, onAvancementChange }) {
     >
       {/* Color bar + task number */}
       <div style={{ display: 'flex', width: 48, flexShrink: 0, alignItems: 'center', gap: 6 }}>
-        <div style={{ width: 2, height: 16, borderRadius: 999, backgroundColor: lotColor }} />
+        <div style={{ width: 2, height: 16, borderRadius: 2, backgroundColor: lotColor }} />
         <span style={{ fontSize: 11, fontWeight: 600, color: '#9C9591', fontVariantNumeric: 'tabular-nums' }}>
           {task.num_tache}
         </span>
@@ -111,7 +111,7 @@ function TaskRow({ task, lotColor, rowHeight, onEdit, onAvancementChange }) {
         {task.appro_actif && task.appro_duree > 0 && (
           <span style={{
             fontSize: 9, color: '#9C9591', background: '#FAF7F2',
-            borderRadius: 4, padding: '1px 4px', marginLeft: 4, flexShrink: 0,
+            borderRadius: 3, padding: '1px 4px', marginLeft: 4, flexShrink: 0,
             fontVariantNumeric: 'tabular-nums',
           }}>
             +{task.appro_duree}j
@@ -128,7 +128,7 @@ function TaskRow({ task, lotColor, rowHeight, onEdit, onAvancementChange }) {
             onAvancementChange(task.id, v)
           }}
           style={{
-            width: 46, height: 24, borderRadius: 6, textAlign: 'center', fontSize: 11,
+            width: 46, height: 24, borderRadius: 3, textAlign: 'center', fontSize: 11,
             border: '0.5px solid rgba(0,0,0,0.15)', backgroundColor: '#FAFAF9',
             padding: '0 4px', fontVariantNumeric: 'tabular-nums', outline: 'none',
           }}
@@ -143,7 +143,7 @@ function TaskRow({ task, lotColor, rowHeight, onEdit, onAvancementChange }) {
         className="opacity-0 group-hover:opacity-100"
         style={{
           width: 24, height: 24, flexShrink: 0, display: 'flex', alignItems: 'center',
-          justifyContent: 'center', borderRadius: 6, background: 'none', border: 'none',
+          justifyContent: 'center', borderRadius: 3, background: 'none', border: 'none',
           cursor: 'pointer', color: '#9C9591', transition: 'opacity 0.15s',
         }}
         onMouseEnter={e => e.currentTarget.style.color = '#E8602C'}

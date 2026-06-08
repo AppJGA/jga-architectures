@@ -60,7 +60,7 @@ function InputField({ label, type, value, onChange, placeholder, icon: Icon, rig
             border: focused
               ? '0.5px solid var(--jga-orange)'
               : '0.5px solid rgba(0,0,0,0.12)',
-            borderRadius: 10,
+            borderRadius: 2,
             backgroundColor: focused ? 'white' : '#FAFAF9',
             fontSize: 14,
             color: '#1F1B17',
@@ -133,7 +133,7 @@ export function LoginPage() {
             width: '100%',
             maxWidth: 380,
             backgroundColor: 'white',
-            borderRadius: 16,
+            borderRadius: 0,
             border: '0.5px solid rgba(0,0,0,0.08)',
             padding: '32px 36px',
           }}
@@ -214,7 +214,7 @@ export function LoginPage() {
               style={{
                 width: '100%',
                 height: 44,
-                borderRadius: 10,
+                borderRadius: 2,
                 border: 'none',
                 backgroundColor: 'var(--jga-orange)',
                 color: 'white',

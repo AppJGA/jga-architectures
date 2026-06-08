@@ -38,7 +38,7 @@ function getInitials(prenom, nom) {
 const INPUT = {
   width: '100%', height: 38,
   padding: '0 12px',
-  border: '0.5px solid rgba(0,0,0,0.15)', borderRadius: 8,
+  border: '0.5px solid rgba(0,0,0,0.15)', borderRadius: 2,
   fontSize: 13, color: '#1F1B17', backgroundColor: '#FAFAF9',
   outline: 'none', boxSizing: 'border-box',
 }
@@ -50,13 +50,13 @@ const LABEL = {
 }
 
 const BTN_CANCEL = {
-  padding: '8px 14px', borderRadius: 8,
+  padding: '8px 14px', borderRadius: 2,
   border: '0.5px solid rgba(0,0,0,0.15)', background: 'none',
   fontSize: 12, cursor: 'pointer', color: '#5E5854',
 }
 
 const BTN_GREEN = {
-  padding: '8px 16px', borderRadius: 8,
+  padding: '8px 16px', borderRadius: 2,
   border: 'none', backgroundColor: '#2A8A4E', color: 'white',
   fontSize: 12, fontWeight: 500, cursor: 'pointer',
 }
@@ -102,7 +102,7 @@ function LotFormModal({ lots, editingLot, onSave, onClose }) {
 
   return (
     <Overlay>
-      <div style={{ backgroundColor: 'white', borderRadius: 16, padding: 28, width: '100%', maxWidth: 440 }}>
+      <div style={{ backgroundColor: 'white', borderRadius: 0, padding: 28, width: '100%', maxWidth: 440 }}>
         <ModalHeader title={editingLot ? 'Modifier le lot' : 'Nouveau lot'} onClose={onClose} />
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -197,7 +197,7 @@ function EntrepriseAssignModal({ lot, entreprises, createEntreprise, onSave, onC
 
   const tabBtn = (active) => ({
     flex: 1, padding: '7px 0', fontSize: 12, fontWeight: 500,
-    border: 'none', cursor: 'pointer', borderRadius: 6,
+    border: 'none', cursor: 'pointer', borderRadius: 3,
     backgroundColor: active ? '#2A8A4E' : 'transparent',
     color: active ? 'white' : 'var(--jga-beige)',
   })
@@ -205,7 +205,7 @@ function EntrepriseAssignModal({ lot, entreprises, createEntreprise, onSave, onC
   return (
     <Overlay>
       <div style={{
-        backgroundColor: 'white', borderRadius: 16, padding: 28,
+        backgroundColor: 'white', borderRadius: 0, padding: 28,
         width: '100%', maxWidth: 520, maxHeight: '90vh', overflowY: 'auto',
       }}>
         <ModalHeader
@@ -214,7 +214,7 @@ function EntrepriseAssignModal({ lot, entreprises, createEntreprise, onSave, onC
         />
 
         {/* Tabs */}
-        <div style={{ display: 'flex', gap: 4, padding: 4, backgroundColor: '#FAF7F2', borderRadius: 8, marginBottom: 16 }}>
+        <div style={{ display: 'flex', gap: 4, padding: 4, backgroundColor: '#FAF7F2', borderRadius: 2, marginBottom: 16 }}>
           <button style={tabBtn(tab === 'existing')} onClick={() => setTab('existing')}>
             Entreprise existante
           </button>
@@ -252,7 +252,7 @@ function EntrepriseAssignModal({ lot, entreprises, createEntreprise, onSave, onC
                   onClick={() => setSelectedE(e)}
                   style={{
                     width: '100%', textAlign: 'left', padding: '8px 12px',
-                    borderRadius: 8, border: 'none', cursor: 'pointer',
+                    borderRadius: 2, border: 'none', cursor: 'pointer',
                     backgroundColor: selectedE?.id === e.id ? 'rgba(42,138,78,0.12)' : '#FAFAF9',
                     display: 'flex', alignItems: 'center', gap: 8,
                   }}
@@ -363,7 +363,7 @@ function InterlocuteurFormModal({ lot, onSave, onClose }) {
 
   return (
     <Overlay>
-      <div style={{ backgroundColor: 'white', borderRadius: 16, padding: 28, width: '100%', maxWidth: 440 }}>
+      <div style={{ backgroundColor: 'white', borderRadius: 0, padding: 28, width: '100%', maxWidth: 440 }}>
         <ModalHeader
           title={isEdit ? "Modifier l'interlocuteur" : 'Ajouter un interlocuteur'}
           onClose={onClose}
@@ -417,7 +417,7 @@ function LotCard({ lot, isSelected, menuOpen, onSelect, onOpenMenu, onEdit, onDe
       style={{
         position: 'relative',
         backgroundColor: isSelected ? 'rgba(42,138,78,0.12)' : 'white',
-        borderRadius: 10,
+        borderRadius: 2,
         border: isSelected ? '1.5px solid #2A8A4E' : '0.5px solid rgba(0,0,0,0.08)',
         padding: '10px 12px', marginBottom: 6,
         cursor: 'pointer', transition: 'border-color 0.15s',
@@ -434,7 +434,7 @@ function LotCard({ lot, isSelected, menuOpen, onSelect, onOpenMenu, onEdit, onDe
         </div>
         <button
           onClick={e => { e.stopPropagation(); onOpenMenu() }}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--jga-beige)', padding: '2px 2px', flexShrink: 0, borderRadius: 4 }}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--jga-beige)', padding: '2px 2px', flexShrink: 0, borderRadius: 3 }}
         >
           <MoreHorizontal size={14} />
         </button>
@@ -456,7 +456,7 @@ function LotCard({ lot, isSelected, menuOpen, onSelect, onOpenMenu, onEdit, onDe
           <span style={{
             fontSize: 10, fontWeight: 500,
             backgroundColor: '#FEF3C7', color: '#92400E',
-            borderRadius: 20, padding: '2px 8px', display: 'inline-block',
+            borderRadius: 3, padding: '2px 8px', display: 'inline-block',
           }}>
             Non attribué
           </span>
@@ -467,7 +467,7 @@ function LotCard({ lot, isSelected, menuOpen, onSelect, onOpenMenu, onEdit, onDe
         <div
           style={{
             position: 'absolute', top: 34, right: 8, zIndex: 20,
-            backgroundColor: 'white', borderRadius: 8,
+            backgroundColor: 'white', borderRadius: 2,
             border: '0.5px solid rgba(0,0,0,0.12)', minWidth: 160, overflow: 'hidden',
           }}
           onClick={e => e.stopPropagation()}
@@ -509,7 +509,7 @@ function LotsSidebar({ lots, selectedLotId, menuLotId, onSelect, onOpenMenu, onA
             onClick={onAddLot}
             style={{
               display: 'flex', alignItems: 'center', gap: 4,
-              padding: '4px 10px', borderRadius: 6,
+              padding: '4px 10px', borderRadius: 3,
               border: '0.5px solid #2A8A4E', backgroundColor: 'transparent',
               color: '#2A8A4E', fontSize: 11, cursor: 'pointer',
             }}
@@ -570,7 +570,7 @@ function LotDetail({ lot, onEditLot, onAssign, onEditInterlocuteur }) {
   return (
     <div style={{ flex: 1, overflowY: 'auto', padding: 20, display: 'flex', flexDirection: 'column', gap: 12, backgroundColor: '#FAF7F2' }}>
       {/* En-tête lot */}
-      <div style={{ backgroundColor: 'white', borderRadius: 12, padding: 16 }}>
+      <div style={{ backgroundColor: 'white', borderRadius: 0, padding: 16 }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
           <div>
             <p style={{ fontSize: 10, fontWeight: 500, color: '#9C9591', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>
@@ -582,7 +582,7 @@ function LotDetail({ lot, onEditLot, onAssign, onEditInterlocuteur }) {
             onClick={onEditLot}
             style={{
               display: 'inline-flex', alignItems: 'center', gap: 5,
-              padding: '4px 10px', borderRadius: 6,
+              padding: '4px 10px', borderRadius: 3,
               border: '0.5px solid #2A8A4E', backgroundColor: 'transparent',
               color: '#2A8A4E', fontSize: 11, cursor: 'pointer',
             }}
@@ -593,7 +593,7 @@ function LotDetail({ lot, onEditLot, onAssign, onEditInterlocuteur }) {
       </div>
 
       {/* Entreprise */}
-      <div style={{ backgroundColor: 'white', borderRadius: 12, padding: 16 }}>
+      <div style={{ backgroundColor: 'white', borderRadius: 0, padding: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
           <p style={{ fontSize: 10, fontWeight: 500, color: '#9C9591', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
             Entreprise attributaire
@@ -607,7 +607,7 @@ function LotDetail({ lot, onEditLot, onAssign, onEditInterlocuteur }) {
 
         {!lot.entreprise_id ? (
           <div style={{
-            border: '1px dashed rgba(99,153,34,0.3)', borderRadius: 10,
+            border: '1px dashed rgba(99,153,34,0.3)', borderRadius: 2,
             padding: '28px 16px', textAlign: 'center', backgroundColor: '#F9FBF6',
           }}>
             <Building2 size={28} style={{ color: '#C5D9A8', marginBottom: 10 }} />
@@ -616,7 +616,7 @@ function LotDetail({ lot, onEditLot, onAssign, onEditInterlocuteur }) {
               onClick={onAssign}
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 6,
-                padding: '8px 16px', borderRadius: 8, border: 'none',
+                padding: '8px 16px', borderRadius: 2, border: 'none',
                 backgroundColor: '#2A8A4E', color: 'white', fontSize: 12, fontWeight: 500, cursor: 'pointer',
               }}
             >
@@ -663,7 +663,7 @@ function LotDetail({ lot, onEditLot, onAssign, onEditInterlocuteur }) {
       </div>
 
       {/* Interlocuteur */}
-      <div style={{ backgroundColor: 'white', borderRadius: 12, padding: 16 }}>
+      <div style={{ backgroundColor: 'white', borderRadius: 0, padding: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
           <p style={{ fontSize: 10, fontWeight: 500, color: '#9C9591', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
             Interlocuteur
@@ -686,7 +686,7 @@ function LotDetail({ lot, onEditLot, onAssign, onEditInterlocuteur }) {
               onClick={onEditInterlocuteur}
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 6,
-                padding: '6px 12px', borderRadius: 7,
+                padding: '6px 12px', borderRadius: 2,
                 border: '0.5px solid #2A8A4E', backgroundColor: 'transparent',
                 color: '#2A8A4E', fontSize: 11, cursor: 'pointer',
               }}

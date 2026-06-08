@@ -2,12 +2,12 @@ import { ZoomIn, ZoomOut, Layers, FileDown, Plus, CalendarDays, GitBranch, Flag 
 
 const BTN = {
   display: 'inline-flex', alignItems: 'center', gap: 6,
-  padding: '5px 12px', borderRadius: 8, fontSize: 12, cursor: 'pointer',
+  padding: '5px 12px', borderRadius: 2, fontSize: 12, cursor: 'pointer',
   border: '0.5px solid rgba(0,0,0,0.15)', backgroundColor: 'white', color: '#374151',
 }
 const BTN_ICON = {
   display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-  width: 32, height: 32, borderRadius: 8, fontSize: 12, cursor: 'pointer',
+  width: 32, height: 32, borderRadius: 2, fontSize: 12, cursor: 'pointer',
   border: '0.5px solid rgba(0,0,0,0.15)', backgroundColor: 'white', color: '#374151',
 }
 const BTN_PRIMARY = {
@@ -37,7 +37,7 @@ export function GanttToolbar({
         </button>
         <div style={{
           display: 'flex', alignItems: 'center', gap: 4, height: 32, padding: '0 8px',
-          border: '0.5px solid rgba(0,0,0,0.12)', borderRadius: 8, backgroundColor: '#FAFAF9',
+          border: '0.5px solid rgba(0,0,0,0.12)', borderRadius: 2, backgroundColor: '#FAFAF9',
         }}>
           <CalendarDays size={11} style={{ color: '#9C9591' }} />
           <span style={{ fontSize: 11, fontWeight: 500, color: '#9C9591', minWidth: 30, textAlign: 'center' }}>

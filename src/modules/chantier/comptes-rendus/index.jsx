@@ -15,7 +15,7 @@ function StatutBadge({ statut }) {
   const isEmis = statut === 'emis'
   return (
     <span style={{
-      fontSize: 11, fontWeight: 500, borderRadius: 20, padding: '2px 9px',
+      fontSize: 11, fontWeight: 500, borderRadius: 3, padding: '2px 9px',
       backgroundColor: isEmis ? 'rgba(42,138,78,0.12)' : '#F3F4F6',
       color: isEmis ? '#2A8A4E' : '#5E5854',
     }}>
@@ -57,7 +57,7 @@ function CrRow({ cr, onOpen, onDuplicate, onDelete }) {
         <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
           <button
             onClick={() => onOpen(cr.id)}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 10px', borderRadius: 7, fontSize: 11, border: '0.5px solid #E8602C', backgroundColor: 'rgba(232,96,44,0.10)', color: '#E8602C', cursor: 'pointer' }}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 10px', borderRadius: 2, fontSize: 11, border: '0.5px solid #E8602C', backgroundColor: 'rgba(232,96,44,0.10)', color: '#E8602C', cursor: 'pointer' }}
           >
             Ouvrir <ChevronRight size={12} />
           </button>
@@ -65,14 +65,14 @@ function CrRow({ cr, onOpen, onDuplicate, onDelete }) {
             onClick={async () => { setDuplicating(true); await onDuplicate(cr.id); setDuplicating(false) }}
             disabled={duplicating}
             title="Dupliquer"
-            style={{ padding: '5px 8px', borderRadius: 7, fontSize: 11, border: '0.5px solid rgba(0,0,0,0.12)', backgroundColor: 'white', color: '#5E5854', cursor: 'pointer', opacity: duplicating ? 0.6 : 1 }}
+            style={{ padding: '5px 8px', borderRadius: 2, fontSize: 11, border: '0.5px solid rgba(0,0,0,0.12)', backgroundColor: 'white', color: '#5E5854', cursor: 'pointer', opacity: duplicating ? 0.6 : 1 }}
           >
             <Copy size={13} />
           </button>
           <button
             onClick={() => onDelete(cr)}
             title="Supprimer"
-            style={{ padding: '5px 8px', borderRadius: 7, fontSize: 11, cursor: 'pointer', border: '0.5px solid rgba(0,0,0,0.12)', backgroundColor: 'white', color: '#9C9591' }}
+            style={{ padding: '5px 8px', borderRadius: 2, fontSize: 11, cursor: 'pointer', border: '0.5px solid rgba(0,0,0,0.12)', backgroundColor: 'white', color: '#9C9591' }}
           >
             <Trash2 size={13} />
           </button>
@@ -90,12 +90,12 @@ function DeleteConfirmModal({ cr, onConfirm, onCancel }) {
       zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center',
     }}>
       <div style={{
-        background: 'white', borderRadius: 16, padding: '28px 32px',
+        background: 'white', borderRadius: 0, padding: '28px 32px',
         maxWidth: 420, width: '100%', border: '0.5px solid rgba(0,0,0,0.08)',
       }}>
         <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', marginBottom: 16 }}>
           <div style={{
-            width: 40, height: 40, borderRadius: 10, background: 'rgba(184,65,44,0.10)',
+            width: 40, height: 40, borderRadius: 2, background: 'rgba(184,65,44,0.10)',
             flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
             <Trash2 size={18} color="#B8412C" />
@@ -117,14 +117,14 @@ function DeleteConfirmModal({ cr, onConfirm, onCancel }) {
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <button
             onClick={onCancel}
-            style={{ padding: '8px 16px', borderRadius: 10, border: '0.5px solid rgba(0,0,0,0.15)', background: 'transparent', fontSize: 13, cursor: 'pointer', color: '#374151' }}
+            style={{ padding: '8px 16px', borderRadius: 2, border: '0.5px solid rgba(0,0,0,0.15)', background: 'transparent', fontSize: 13, cursor: 'pointer', color: '#374151' }}
           >
             Annuler
           </button>
           <button
             onClick={async () => { setDeleting(true); await onConfirm(); setDeleting(false) }}
             disabled={deleting}
-            style={{ padding: '8px 16px', borderRadius: 10, border: 'none', background: '#B8412C', color: 'white', fontSize: 13, fontWeight: 500, cursor: 'pointer', opacity: deleting ? 0.6 : 1 }}
+            style={{ padding: '8px 16px', borderRadius: 2, border: 'none', background: '#B8412C', color: 'white', fontSize: 13, fontWeight: 500, cursor: 'pointer', opacity: deleting ? 0.6 : 1 }}
           >
             {deleting ? 'Suppression…' : 'Supprimer définitivement'}
           </button>
@@ -189,14 +189,14 @@ export default function ComptesRendusModule() {
         <div style={{ display: 'flex', gap: 8 }}>
           <button
             onClick={() => setInterloOpen(true)}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 8, fontSize: 12, border: '0.5px solid rgba(0,0,0,0.15)', backgroundColor: 'white', color: '#374151', cursor: 'pointer' }}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 2, fontSize: 12, border: '0.5px solid rgba(0,0,0,0.15)', backgroundColor: 'white', color: '#374151', cursor: 'pointer' }}
           >
             <Users size={13} /> Gérer les interlocuteurs
           </button>
           <button
             onClick={handleCreate}
             disabled={creating}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 8, fontSize: 12, fontWeight: 500, border: 'none', backgroundColor: '#2A8A4E', color: 'white', cursor: 'pointer', opacity: creating ? 0.6 : 1 }}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 2, fontSize: 12, fontWeight: 500, border: 'none', backgroundColor: '#2A8A4E', color: 'white', cursor: 'pointer', opacity: creating ? 0.6 : 1 }}
           >
             <Plus size={13} /> Nouvelle visite
           </button>
@@ -207,12 +207,12 @@ export default function ComptesRendusModule() {
       {loading ? (
         <Spinner />
       ) : comptesRendus.length === 0 ? (
-        <div style={{ backgroundColor: 'white', borderRadius: 14, border: '0.5px solid rgba(0,0,0,0.08)', padding: '48px 24px', textAlign: 'center' }}>
+        <div style={{ backgroundColor: 'white', borderRadius: 0, border: '0.5px solid rgba(0,0,0,0.08)', padding: '48px 24px', textAlign: 'center' }}>
           <p style={{ fontSize: 13, color: '#5E5854', marginBottom: 6 }}>Aucun compte rendu</p>
           <p style={{ fontSize: 12, color: '#9C9591' }}>Commencez par créer le premier CR de cette affaire.</p>
         </div>
       ) : (
-        <div style={{ backgroundColor: 'white', borderRadius: 14, border: '0.5px solid rgba(0,0,0,0.08)', overflow: 'hidden' }}>
+        <div style={{ backgroundColor: 'white', borderRadius: 0, border: '0.5px solid rgba(0,0,0,0.08)', overflow: 'hidden' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ backgroundColor: '#FAFAF9' }}>

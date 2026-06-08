@@ -11,7 +11,7 @@ const LABEL = {
   letterSpacing: '0.06em', color: '#9C9591', marginBottom: 4,
 }
 const INPUT = {
-  width: '100%', height: 36, padding: '0 10px', borderRadius: 8, fontSize: 13,
+  width: '100%', height: 36, padding: '0 10px', borderRadius: 2, fontSize: 13,
   border: '0.5px solid rgba(0,0,0,0.12)', backgroundColor: '#FAFAF9', outline: 'none',
   boxSizing: 'border-box', color: '#1F1B17',
 }
@@ -133,7 +133,7 @@ export function TacheEtudeModal({ open, onClose, tache, taches, onSave, onDelete
     >
       <div
         style={{
-          backgroundColor: 'white', borderRadius: 16, padding: 28,
+          backgroundColor: 'white', borderRadius: 0, padding: 28,
           width: '100%', maxWidth: 520, maxHeight: '90vh', overflowY: 'auto',
           boxShadow: '0 8px 40px rgba(0,0,0,0.14)',
         }}
@@ -185,7 +185,7 @@ export function TacheEtudeModal({ open, onClose, tache, taches, onSave, onDelete
                       key={type} type="button"
                       onClick={() => set('type_tache', type)}
                       style={{
-                        padding: '8px 6px', borderRadius: 8, cursor: 'pointer', textAlign: 'center',
+                        padding: '8px 6px', borderRadius: 2, cursor: 'pointer', textAlign: 'center',
                         border: `1.5px solid ${active ? color : 'rgba(0,0,0,0.1)'}`,
                         backgroundColor: active ? color + '18' : 'transparent',
                         fontSize: 11, fontWeight: 500,
@@ -250,7 +250,7 @@ export function TacheEtudeModal({ open, onClose, tache, taches, onSave, onDelete
                         key={iv.id} type="button"
                         onClick={() => toggleIntervenant(iv.id)}
                         style={{
-                          padding: '4px 10px', borderRadius: 6, fontSize: 11,
+                          padding: '4px 10px', borderRadius: 3, fontSize: 11,
                           border: `1px solid ${active ? color : 'rgba(0,0,0,0.12)'}`,
                           backgroundColor: active ? color + '18' : 'white',
                           color: active ? color : '#5E5854',
@@ -336,7 +336,7 @@ export function TacheEtudeModal({ open, onClose, tache, taches, onSave, onDelete
                 type="button" onClick={handleDelete} disabled={saving}
                 style={{
                   display: 'inline-flex', alignItems: 'center', gap: 6,
-                  padding: '8px 14px', borderRadius: 8, fontSize: 12, cursor: 'pointer',
+                  padding: '8px 14px', borderRadius: 2, fontSize: 12, cursor: 'pointer',
                   border: `0.5px solid ${confirmDelete ? 'rgba(220,38,38,0.5)' : 'rgba(0,0,0,0.12)'}`,
                   backgroundColor: confirmDelete ? 'rgba(184,65,44,0.10)' : 'white',
                   color: confirmDelete ? '#B8412C' : '#9C9591',
@@ -350,7 +350,7 @@ export function TacheEtudeModal({ open, onClose, tache, taches, onSave, onDelete
             <button
               type="button" onClick={onClose}
               style={{
-                padding: '8px 14px', borderRadius: 8, fontSize: 12, cursor: 'pointer',
+                padding: '8px 14px', borderRadius: 2, fontSize: 12, cursor: 'pointer',
                 border: '0.5px solid rgba(0,0,0,0.15)', backgroundColor: 'white', color: '#374151',
               }}
             >
@@ -360,7 +360,7 @@ export function TacheEtudeModal({ open, onClose, tache, taches, onSave, onDelete
               type="submit" disabled={saving || !form.nom.trim()}
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 6,
-                padding: '8px 16px', borderRadius: 8, fontSize: 12, fontWeight: 500,
+                padding: '8px 16px', borderRadius: 2, fontSize: 12, fontWeight: 500,
                 border: 'none', backgroundColor: '#2A8A4E', color: 'white', cursor: 'pointer',
                 opacity: saving || !form.nom.trim() ? 0.6 : 1,
               }}

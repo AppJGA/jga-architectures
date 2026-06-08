@@ -88,7 +88,7 @@ export function DashboardPage() {
                 onChange={e => setSearch(e.target.value)}
                 style={{
                   paddingLeft: 30, paddingRight: 12, paddingTop: 7, paddingBottom: 7,
-                  border: '0.5px solid rgba(0,0,0,0.12)', borderRadius: 8,
+                  border: '0.5px solid rgba(0,0,0,0.12)', borderRadius: 2,
                   fontSize: 12, color: '#1F1B17', backgroundColor: 'white',
                   outline: 'none', width: 180,
                 }}
@@ -99,7 +99,7 @@ export function DashboardPage() {
               onClick={() => setModalOpen(true)}
               style={{
                 display: 'flex', alignItems: 'center', gap: 6,
-                padding: '8px 16px', borderRadius: 20, border: 'none',
+                padding: '8px 16px', borderRadius: 3, border: 'none',
                 backgroundColor: 'var(--jga-orange)', color: 'white',
                 fontSize: 13, fontWeight: 500, cursor: 'pointer',
               }}
@@ -182,14 +182,14 @@ export function DashboardPage() {
             onClick={e => e.stopPropagation()}
             style={{
               backgroundColor: 'white',
-              borderRadius: 16, padding: '28px 32px',
+              borderRadius: 0, padding: '28px 32px',
               maxWidth: 440, width: '100%',
               border: '0.5px solid rgba(0,0,0,0.08)',
             }}
           >
             <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', marginBottom: 16 }}>
               <div style={{
-                width: 40, height: 40, borderRadius: 10, flexShrink: 0,
+                width: 40, height: 40, borderRadius: 2, flexShrink: 0,
                 backgroundColor: 'rgba(184,65,44,0.10)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}>
@@ -214,7 +214,7 @@ export function DashboardPage() {
               <button
                 onClick={() => setDeletingAffaire(null)}
                 style={{
-                  padding: '8px 16px', borderRadius: 10,
+                  padding: '8px 16px', borderRadius: 2,
                   border: '0.5px solid rgba(0,0,0,0.15)',
                   backgroundColor: 'transparent', fontSize: 13, cursor: 'pointer',
                 }}
@@ -224,7 +224,7 @@ export function DashboardPage() {
               <button
                 onClick={() => handleDeleteAffaire(deletingAffaire.id)}
                 style={{
-                  padding: '8px 16px', borderRadius: 10,
+                  padding: '8px 16px', borderRadius: 2,
                   border: 'none', backgroundColor: '#B8412C',
                   color: 'white', fontSize: 13, fontWeight: 500, cursor: 'pointer',
                 }}

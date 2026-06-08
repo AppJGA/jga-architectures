@@ -18,7 +18,7 @@ const LABEL = {
   textTransform: 'uppercase', letterSpacing: '0.05em', color: '#9C9591', marginBottom: 4,
 }
 const INPUT = {
-  width: '100%', height: 36, padding: '0 10px', borderRadius: 8, fontSize: 13,
+  width: '100%', height: 36, padding: '0 10px', borderRadius: 2, fontSize: 13,
   border: '0.5px solid rgba(0,0,0,0.12)', backgroundColor: 'white', outline: 'none',
   boxSizing: 'border-box', color: '#1F1B17',
 }
@@ -144,13 +144,13 @@ function OrganisationView({ cr, profiles, updateCr, onApplyTemplate, lots, inter
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
           <button
             onClick={handleSave} disabled={saving}
-            style={{ padding: '7px 16px', borderRadius: 8, fontSize: 12, fontWeight: 500, border: 'none', backgroundColor: '#2A8A4E', color: 'white', cursor: 'pointer', opacity: saving ? 0.6 : 1 }}
+            style={{ padding: '7px 16px', borderRadius: 2, fontSize: 12, fontWeight: 500, border: 'none', backgroundColor: '#2A8A4E', color: 'white', cursor: 'pointer', opacity: saving ? 0.6 : 1 }}
           >
             {saving ? 'Enregistrement…' : 'Enregistrer'}
           </button>
           <button
             onClick={() => setTemplateOpen(true)}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 8, fontSize: 12, border: '0.5px solid rgba(0,0,0,0.15)', backgroundColor: 'white', color: '#374151', cursor: 'pointer' }}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 2, fontSize: 12, border: '0.5px solid rgba(0,0,0,0.15)', backgroundColor: 'white', color: '#374151', cursor: 'pointer' }}
           >
             <Zap size={13} /> Appliquer un template de sections
           </button>
@@ -195,7 +195,7 @@ function ExportView({ cr, sections, presences, affaire, lotEntreprises, interloc
         })}
         style={{
           display: 'inline-flex', alignItems: 'center', gap: 8,
-          padding: '10px 24px', borderRadius: 10, fontSize: 13, fontWeight: 500,
+          padding: '10px 24px', borderRadius: 2, fontSize: 13, fontWeight: 500,
           border: 'none', backgroundColor: '#E8602C', color: 'white', cursor: 'pointer',
         }}
       >
@@ -230,7 +230,7 @@ function CrAccueil({ cr, presences, sections, onNavigate, onEmit }) {
           <p style={{ fontSize: 12, color: '#9C9591' }}>{dateLabel}</p>
         </div>
         <span style={{
-          fontSize: 11, fontWeight: 500, borderRadius: 20, padding: '3px 10px',
+          fontSize: 11, fontWeight: 500, borderRadius: 3, padding: '3px 10px',
           backgroundColor: cr.statut === 'emis' ? 'rgba(42,138,78,0.12)' : '#F3F4F6',
           color: cr.statut === 'emis' ? '#2A8A4E' : '#5E5854',
         }}>
@@ -240,7 +240,7 @@ function CrAccueil({ cr, presences, sections, onNavigate, onEmit }) {
           onClick={onEmit}
           style={{
             display: 'inline-flex', alignItems: 'center', gap: 6,
-            padding: '6px 14px', borderRadius: 8, fontSize: 12, fontWeight: 500,
+            padding: '6px 14px', borderRadius: 2, fontSize: 12, fontWeight: 500,
             border: 'none', cursor: 'pointer',
             backgroundColor: cr.statut === 'emis' ? '#F3F4F6' : '#2A8A4E',
             color: cr.statut === 'emis' ? '#5E5854' : 'white',
@@ -258,7 +258,7 @@ function CrAccueil({ cr, presences, sections, onNavigate, onEmit }) {
             key={vue.id}
             onClick={() => onNavigate(vue.id)}
             style={{
-              background: 'white', borderRadius: 16,
+              background: 'white', borderRadius: 0,
               border: '0.5px solid rgba(0,0,0,0.08)',
               padding: '28px 24px', cursor: 'pointer',
               display: 'flex', flexDirection: 'column',
@@ -294,7 +294,7 @@ function CrAccueil({ cr, presences, sections, onNavigate, onEmit }) {
             {vue.id === 'presences' && presences.length > 0 && (
               <span style={{
                 fontSize: 10, color: vue.couleur, background: vue.fondClair,
-                border: `0.5px solid ${vue.couleur}40`, borderRadius: 20, padding: '2px 8px',
+                border: `0.5px solid ${vue.couleur}40`, borderRadius: 3, padding: '2px 8px',
               }}>
                 {presences.length} participant{presences.length > 1 ? 's' : ''}
               </span>
@@ -303,7 +303,7 @@ function CrAccueil({ cr, presences, sections, onNavigate, onEmit }) {
             {vue.id === 'remarques' && allRemarques.length > 0 && (
               <span style={{
                 fontSize: 10, color: vue.couleur, background: vue.fondClair,
-                border: `0.5px solid ${vue.couleur}40`, borderRadius: 20, padding: '2px 8px',
+                border: `0.5px solid ${vue.couleur}40`, borderRadius: 3, padding: '2px 8px',
               }}>
                 {enCoursCount > 0 ? `${enCoursCount} point${enCoursCount > 1 ? 's' : ''} en cours` : `${allRemarques.length} remarque${allRemarques.length > 1 ? 's' : ''}`}
               </span>
@@ -377,7 +377,7 @@ export function CrDetail({ crId, affaire, onBack }) {
             onClick={() => setActiveView(null)}
             style={{
               display: 'flex', alignItems: 'center', gap: 8,
-              padding: '10px 16px', borderRadius: 10,
+              padding: '10px 16px', borderRadius: 2,
               border: '0.5px solid rgba(0,0,0,0.15)', background: 'white',
               fontSize: 13, fontWeight: 500, color: '#1F1B17',
               cursor: 'pointer', transition: 'all 0.15s',
@@ -392,7 +392,7 @@ export function CrDetail({ crId, affaire, onBack }) {
         <div style={{ marginBottom: 24 }}>
           <button
             onClick={onBack}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 10px', borderRadius: 8, fontSize: 12, border: '0.5px solid rgba(0,0,0,0.12)', backgroundColor: 'white', color: '#5E5854', cursor: 'pointer' }}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 10px', borderRadius: 2, fontSize: 12, border: '0.5px solid rgba(0,0,0,0.12)', backgroundColor: 'white', color: '#5E5854', cursor: 'pointer' }}
           >
             <ArrowLeft size={13} /> Liste des visites
           </button>

@@ -72,7 +72,7 @@ export function CollaborateursSection({ affaireId }) {
                   <span style={{
                     fontSize: 10, fontWeight: 500,
                     backgroundColor: 'rgba(232,96,44,0.10)', color: 'var(--jga-orange)',
-                    borderRadius: 20, padding: '2px 8px', flexShrink: 0,
+                    borderRadius: 3, padding: '2px 8px', flexShrink: 0,
                   }}>
                     Responsable
                   </span>
@@ -128,14 +128,14 @@ export function CollaborateursSection({ affaireId }) {
             placeholder="Ajouter par email…"
             style={{
               width: '100%', padding: '8px 10px',
-              borderRadius: 8, border: '0.5px solid rgba(0,0,0,0.12)',
+              borderRadius: 2, border: '0.5px solid rgba(0,0,0,0.12)',
               backgroundColor: '#FAFAF9', fontSize: 12, color: '#1F1B17', outline: 'none',
             }}
           />
           {searchResults.length > 0 && (
             <div style={{
               marginTop: 4, border: '0.5px solid rgba(0,0,0,0.1)',
-              borderRadius: 8, overflow: 'hidden', backgroundColor: 'white',
+              borderRadius: 2, overflow: 'hidden', backgroundColor: 'white',
             }}>
               {searchResults.map(p => {
                 const name = `${p.prenom ?? ''} ${p.nom ?? ''}`.trim()

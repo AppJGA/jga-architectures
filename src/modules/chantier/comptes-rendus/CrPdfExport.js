@@ -219,7 +219,7 @@ export function generateCrPdf(cr, sections, presences, affaire, { autoPrint = tr
     .header-right { text-align:right; }
 
     /* BLOC INFO */
-    .info-block { background:#F5F5F5; border-radius:6px; padding:10px 14px; margin-bottom:10px; }
+    .info-block { background:#F5F5F5; border-radius: 3px; padding:10px 14px; margin-bottom:10px; }
     .info-block-title { font-size:9pt; font-weight:bold; text-transform:uppercase; color:#E8602C; letter-spacing:0.08em; margin-bottom:6px; }
     .info-row { display:flex; gap:16px; flex-wrap:wrap; }
     .info-cell { flex:1; min-width:140px; }
@@ -227,7 +227,7 @@ export function generateCrPdf(cr, sections, presences, affaire, { autoPrint = tr
     .info-value { font-size:10pt; font-weight:500; }
 
     /* PROCHAINE RÉUNION */
-    .prochaine-bloc { background:rgba(232,96,44,0.10); border-radius:6px; padding:8px 14px; margin-bottom:12px; display:flex; align-items:center; gap:12px; }
+    .prochaine-bloc { background:rgba(232,96,44,0.10); border-radius: 3px; padding:8px 14px; margin-bottom:12px; display:flex; align-items:center; gap:12px; }
     .prochaine-label { font-size:9pt; color:#E8602C; font-weight:bold; text-transform:uppercase; }
     .prochaine-date  { font-size:10pt; font-weight:500; }
 

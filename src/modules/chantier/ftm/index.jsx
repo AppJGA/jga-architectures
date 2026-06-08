@@ -37,7 +37,7 @@ function FtmCard({ ftm, lots, affaire, onEdit, onDelete }) {
   return (
     <div style={{
       backgroundColor: 'white',
-      borderRadius: 10,
+      borderRadius: 2,
       border: '0.5px solid rgba(0,0,0,0.08)',
       borderLeft: `3px solid ${origineColor}`,
       padding: '14px 16px',
@@ -53,14 +53,14 @@ function FtmCard({ ftm, lots, affaire, onEdit, onDelete }) {
             fontSize: 10, fontWeight: 600,
             color: origineColor,
             backgroundColor: origineColor + '18',
-            borderRadius: 4, padding: '1px 6px',
+            borderRadius: 3, padding: '1px 6px',
           }}>
             {ORIGINE_LABEL[ftm.origine] ?? ftm.origine}
           </span>
           <span style={{
             fontSize: 10, fontWeight: 500,
             color: badge.color, backgroundColor: badge.bg,
-            borderRadius: 4, padding: '1px 6px',
+            borderRadius: 3, padding: '1px 6px',
           }}>
             {badge.label}
           </span>
@@ -151,7 +151,7 @@ function FtmCard({ ftm, lots, affaire, onEdit, onDelete }) {
 const iconBtnStyle = {
   width: 28, height: 28,
   display: 'flex', alignItems: 'center', justifyContent: 'center',
-  borderRadius: 6,
+  borderRadius: 3,
   border: '0.5px solid rgba(0,0,0,0.12)',
   backgroundColor: 'white',
   color: '#5E5854',
@@ -232,7 +232,7 @@ export default function FtmModule() {
             <span style={{
               fontSize: 11, fontWeight: 500,
               color: '#2A8A4E', backgroundColor: 'rgba(42,138,78,0.12)',
-              borderRadius: 20, padding: '2px 10px',
+              borderRadius: 3, padding: '2px 10px',
             }}>
               {ftms.length}
             </span>
@@ -242,7 +242,7 @@ export default function FtmModule() {
           onClick={handleNew}
           style={{
             display: 'inline-flex', alignItems: 'center', gap: 6,
-            padding: '7px 16px', borderRadius: 20,
+            padding: '7px 16px', borderRadius: 3,
             border: 'none', backgroundColor: '#2A8A4E',
             color: 'white', fontSize: 12, fontWeight: 500,
             cursor: 'pointer',
@@ -258,7 +258,7 @@ export default function FtmModule() {
         <div style={{
           display: 'flex', gap: 16,
           backgroundColor: 'white',
-          borderRadius: 10,
+          borderRadius: 2,
           border: '0.5px solid rgba(0,0,0,0.08)',
           padding: '12px 16px',
           marginBottom: 16,
@@ -307,7 +307,7 @@ export default function FtmModule() {
             display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
             height: 200,
             backgroundColor: 'white',
-            borderRadius: 10,
+            borderRadius: 2,
             border: '0.5px dashed rgba(0,0,0,0.15)',
             gap: 10,
           }}>

@@ -77,7 +77,7 @@ function formatTvaPct(tva) {
 
 const INPUT = {
   height: 38, padding: '0 12px', fontSize: 13, color: '#1F1B17',
-  border: '0.5px solid rgba(0,0,0,0.15)', borderRadius: 8,
+  border: '0.5px solid rgba(0,0,0,0.15)', borderRadius: 2,
   backgroundColor: '#FAFAF9', outline: 'none', boxSizing: 'border-box', width: '100%',
 }
 
@@ -148,7 +148,7 @@ function LigneModal({ lots, editingLigne, defaultLotId, onSave, onClose, tva }) 
 
   return (
     <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
-      <div style={{ backgroundColor: 'white', borderRadius: 16, padding: 28, width: '100%', maxWidth: 500, maxHeight: '90vh', overflowY: 'auto' }}>
+      <div style={{ backgroundColor: 'white', borderRadius: 0, padding: 28, width: '100%', maxWidth: 500, maxHeight: '90vh', overflowY: 'auto' }}>
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
           <h2 style={{ fontSize: 15, fontWeight: 500, color: '#1F1B17' }}>
@@ -180,7 +180,7 @@ function LigneModal({ lots, editingLigne, defaultLotId, onSave, onClose, tva }) 
                   type="button"
                   onClick={() => setCategorie(key)}
                   style={{
-                    padding: '9px 6px', borderRadius: 8, cursor: 'pointer',
+                    padding: '9px 6px', borderRadius: 2, cursor: 'pointer',
                     border: `1.5px solid ${categorie === key ? cfg.color : 'rgba(0,0,0,0.1)'}`,
                     backgroundColor: categorie === key ? cfg.bg : 'transparent',
                     fontSize: 11, fontWeight: 500,
@@ -217,7 +217,7 @@ function LigneModal({ lots, editingLigne, defaultLotId, onSave, onClose, tva }) 
                   onClick={() => setIsNegative(!isNegative)}
                   style={{
                     width: 38, height: 38, flexShrink: 0,
-                    border: '0.5px solid rgba(0,0,0,0.15)', borderRadius: '8px 0 0 8px',
+                    border: '0.5px solid rgba(0,0,0,0.15)', borderRadius: 0,
                     borderRight: 'none',
                     backgroundColor: isNegative ? 'rgba(42,138,78,0.12)' : 'rgba(232,96,44,0.10)',
                     color: isNegative ? '#2A8A4E' : '#B8412C',
@@ -271,13 +271,13 @@ function LigneModal({ lots, editingLigne, defaultLotId, onSave, onClose, tva }) 
         </div>
 
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 20 }}>
-          <button onClick={onClose} style={{ padding: '8px 14px', borderRadius: 8, border: '0.5px solid rgba(0,0,0,0.15)', background: 'none', fontSize: 12, cursor: 'pointer', color: '#5E5854' }}>
+          <button onClick={onClose} style={{ padding: '8px 14px', borderRadius: 2, border: '0.5px solid rgba(0,0,0,0.15)', background: 'none', fontSize: 12, cursor: 'pointer', color: '#5E5854' }}>
             Annuler
           </button>
           <button
             onClick={handleSubmit}
             disabled={!canSave || saving}
-            style={{ padding: '8px 16px', borderRadius: 8, border: 'none', backgroundColor: '#2A8A4E', color: 'white', fontSize: 12, fontWeight: 500, cursor: 'pointer', opacity: !canSave || saving ? 0.5 : 1 }}
+            style={{ padding: '8px 16px', borderRadius: 2, border: 'none', backgroundColor: '#2A8A4E', color: 'white', fontSize: 12, fontWeight: 500, cursor: 'pointer', opacity: !canSave || saving ? 0.5 : 1 }}
           >
             {saving ? 'Enregistrement…' : 'Enregistrer'}
           </button>
@@ -291,7 +291,7 @@ function LigneModal({ lots, editingLigne, defaultLotId, onSave, onClose, tva }) 
 
 function StatCard({ label, valueEl, sub, subColor, alertBg }) {
   return (
-    <div style={{ flex: 1, backgroundColor: alertBg ?? '#FAF7F2', borderRadius: 10, padding: '12px 14px', minWidth: 0 }}>
+    <div style={{ flex: 1, backgroundColor: alertBg ?? '#FAF7F2', borderRadius: 2, padding: '12px 14px', minWidth: 0 }}>
       <p style={{ fontSize: 10, fontWeight: 500, color: '#9C9591', letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 4 }}>
         {label}
       </p>
@@ -406,7 +406,7 @@ function LigneRow({ ligne, filter, onEdit, onDelete, onOpenFtm }) {
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               width: 20, height: 20,
-              borderRadius: 5,
+              borderRadius: 3,
               border: '0.5px solid rgba(0,0,0,0.12)',
               background: 'rgba(232,96,44,0.10)',
               color: '#E8602C',
@@ -432,7 +432,7 @@ function LigneRow({ ligne, filter, onEdit, onDelete, onOpenFtm }) {
         <span style={{ fontSize: 12, color: '#1F1B17', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {ligne.intitule}
         </span>
-        <span style={{ fontSize: 10, fontWeight: 500, backgroundColor: st.bg, color: st.color, borderRadius: 20, padding: '1px 7px', whiteSpace: 'nowrap', flexShrink: 0 }}>
+        <span style={{ fontSize: 10, fontWeight: 500, backgroundColor: st.bg, color: st.color, borderRadius: 3, padding: '1px 7px', whiteSpace: 'nowrap', flexShrink: 0 }}>
           {st.label}
         </span>
       </div>
@@ -444,10 +444,10 @@ function LigneRow({ ligne, filter, onEdit, onDelete, onOpenFtm }) {
       <div style={{ flex: C.pct }} />
       <div style={{ flex: C.ttc }} />
       <div style={{ flex: C.act, display: 'flex', justifyContent: 'flex-end', gap: 4, opacity: hovered ? 1 : 0, transition: 'opacity 0.1s' }}>
-        <button onClick={() => onEdit(ligne)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--jga-beige)', padding: 2, borderRadius: 4 }}>
+        <button onClick={() => onEdit(ligne)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--jga-beige)', padding: 2, borderRadius: 3 }}>
           <Pencil size={12} />
         </button>
-        <button onClick={() => onDelete(ligne.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#B8412C', padding: 2, borderRadius: 4 }}>
+        <button onClick={() => onDelete(ligne.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#B8412C', padding: 2, borderRadius: 3 }}>
           <Trash2 size={12} />
         </button>
       </div>
@@ -461,7 +461,7 @@ function LotSection({ lot, filter, onAdd, onEdit, onDelete, onOpenFtm, affaireId
       <div style={{
         display: 'flex', alignItems: 'center', gap: 8,
         padding: '10px 14px', backgroundColor: 'white',
-        marginBottom: 6, borderRadius: 6, opacity: 0.7,
+        marginBottom: 6, borderRadius: 3, opacity: 0.7,
       }}>
         <span style={{ flex: 1, fontSize: 12, color: '#9C9591', fontStyle: 'italic' }}>
           Lot {lot.numero} — {lot.nom}
@@ -481,7 +481,7 @@ function LotSection({ lot, filter, onAdd, onEdit, onDelete, onOpenFtm, affaireId
     : lot.lignes.some(l => l.statut === filter)
 
   return (
-    <div style={{ marginBottom: 8, backgroundColor: 'white', borderRadius: 8, overflow: 'hidden' }}>
+    <div style={{ marginBottom: 8, backgroundColor: 'white', borderRadius: 2, overflow: 'hidden' }}>
       {/* Ligne marché de base */}
       <Row bg="#FAFDF7">
         <Cel flex={C.des} bold clip>Lot {lot.numero} — {lot.nom}</Cel>
@@ -495,7 +495,7 @@ function LotSection({ lot, filter, onAdd, onEdit, onDelete, onOpenFtm, affaireId
         <div style={{ flex: C.act, display: 'flex', justifyContent: 'flex-end' }}>
           <button
             onClick={() => onAdd(lot.id)}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#2A8A4E', padding: 2, borderRadius: 4 }}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#2A8A4E', padding: 2, borderRadius: 3 }}
             title="Ajouter une ligne"
           >
             <Plus size={14} />
@@ -711,7 +711,7 @@ export default function FinancierChantierModule() {
                 key={f.id}
                 onClick={() => setFilter(f.id)}
                 style={{
-                  padding: '5px 12px', borderRadius: 20, fontSize: 11, fontWeight: 500,
+                  padding: '5px 12px', borderRadius: 3, fontSize: 11, fontWeight: 500,
                   border: filter === f.id ? '1.5px solid #2A8A4E' : '0.5px solid rgba(0,0,0,0.12)',
                   backgroundColor: filter === f.id ? 'rgba(42,138,78,0.12)' : 'white',
                   color: filter === f.id ? '#2A8A4E' : '#5E5854',
@@ -729,7 +729,7 @@ export default function FinancierChantierModule() {
               onClick={handlePrint}
               style={{
                 display: 'flex', alignItems: 'center', gap: 5,
-                padding: '6px 12px', borderRadius: 7,
+                padding: '6px 12px', borderRadius: 2,
                 border: '0.5px solid rgba(0,0,0,0.12)', backgroundColor: 'white',
                 color: '#5E5854', fontSize: 12, cursor: 'pointer',
               }}
@@ -740,7 +740,7 @@ export default function FinancierChantierModule() {
               onClick={() => handleAdd(null)}
               style={{
                 display: 'flex', alignItems: 'center', gap: 5,
-                padding: '6px 14px', borderRadius: 7,
+                padding: '6px 14px', borderRadius: 2,
                 border: 'none', backgroundColor: '#2A8A4E',
                 color: 'white', fontSize: 12, fontWeight: 500, cursor: 'pointer',
               }}

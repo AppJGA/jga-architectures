@@ -13,7 +13,7 @@ const LABEL = {
 }
 const BTN = {
   display: 'inline-flex', alignItems: 'center', gap: 6,
-  padding: '8px 14px', borderRadius: 8, fontSize: 12, cursor: 'pointer',
+  padding: '8px 14px', borderRadius: 2, fontSize: 12, cursor: 'pointer',
   border: '0.5px solid rgba(0,0,0,0.15)', backgroundColor: 'white', color: '#374151',
 }
 const BTN_PRIMARY = {
@@ -52,7 +52,7 @@ export function LotsColorModal({ open, onClose, lots, onSave }) {
       display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100,
     }} onClick={onClose}>
       <div style={{
-        backgroundColor: 'white', borderRadius: 16, padding: 28,
+        backgroundColor: 'white', borderRadius: 0, padding: 28,
         width: '100%', maxWidth: 520, maxHeight: '85vh',
         display: 'flex', flexDirection: 'column',
       }} onClick={e => e.stopPropagation()}>
@@ -69,7 +69,7 @@ export function LotsColorModal({ open, onClose, lots, onSave }) {
 
         {/* Info message */}
         <div style={{
-          backgroundColor: '#FAF7F2', borderRadius: 8, padding: '8px 12px',
+          backgroundColor: '#FAF7F2', borderRadius: 2, padding: '8px 12px',
           marginBottom: 16, flexShrink: 0,
         }}>
           <p style={{ fontSize: 11, color: '#9C9591' }}>
@@ -86,12 +86,12 @@ export function LotsColorModal({ open, onClose, lots, onSave }) {
             return (
               <div key={lot.id} style={{
                 display: 'flex', alignItems: 'center', gap: 12, padding: 12,
-                borderRadius: 10, border: '0.5px solid rgba(0,0,0,0.08)',
+                borderRadius: 2, border: '0.5px solid rgba(0,0,0,0.08)',
                 backgroundColor: '#FAFAF9',
               }}>
                 {/* Color picker */}
                 <div style={{
-                  width: 40, height: 40, borderRadius: 10, flexShrink: 0,
+                  width: 40, height: 40, borderRadius: 2, flexShrink: 0,
                   backgroundColor: couleur, border: '0.5px solid rgba(0,0,0,0.12)',
                   position: 'relative', overflow: 'hidden', cursor: 'pointer',
                 }} title="Cliquer pour changer la couleur">

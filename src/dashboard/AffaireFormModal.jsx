@@ -98,7 +98,7 @@ const inputBase = {
   width: '100%',
   height: 38,
   padding: '0 10px',
-  borderRadius: 8,
+  borderRadius: 2,
   border: '0.5px solid rgba(0,0,0,0.12)',
   backgroundColor: '#FAFAF9',
   fontSize: 13,
@@ -164,7 +164,7 @@ function TextArea({ value, onChange, placeholder }) {
         width: '100%',
         minHeight: 80,
         padding: '8px 10px',
-        borderRadius: 8,
+        borderRadius: 2,
         border: '0.5px solid rgba(0,0,0,0.12)',
         backgroundColor: focused ? 'white' : '#FAFAF9',
         borderColor: focused ? 'var(--jga-orange)' : 'rgba(0,0,0,0.12)',
@@ -445,7 +445,7 @@ export function AffaireFormModal({ affaire = null, onSave, onClose, scrollToSect
           width: '100%',
           maxWidth: 720,
           backgroundColor: 'white',
-          borderRadius: 16,
+          borderRadius: 0,
           border: '0.5px solid rgba(0,0,0,0.08)',
           display: 'flex',
           flexDirection: 'column',
@@ -476,7 +476,7 @@ export function AffaireFormModal({ affaire = null, onSave, onClose, scrollToSect
             onClick={onClose}
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              width: 30, height: 30, borderRadius: 8,
+              width: 30, height: 30, borderRadius: 2,
               border: 'none', backgroundColor: 'transparent',
               cursor: 'pointer', color: 'var(--jga-beige)',
             }}
@@ -504,7 +504,7 @@ export function AffaireFormModal({ affaire = null, onSave, onClose, scrollToSect
               style={{ display: 'none' }}
             />
             {photoPreview ? (
-              <div style={{ position: 'relative', height: 160, borderRadius: 10, overflow: 'hidden', cursor: 'pointer' }}
+              <div style={{ position: 'relative', height: 160, borderRadius: 2, overflow: 'hidden', cursor: 'pointer' }}
                 onClick={() => photoInputRef.current?.click()}
               >
                 <img
@@ -525,7 +525,7 @@ export function AffaireFormModal({ affaire = null, onSave, onClose, scrollToSect
                     type="button"
                     onClick={() => photoInputRef.current?.click()}
                     style={{
-                      padding: '6px 14px', borderRadius: 6, fontSize: 12, fontWeight: 500,
+                      padding: '6px 14px', borderRadius: 3, fontSize: 12, fontWeight: 500,
                       border: 'none', backgroundColor: 'white', color: '#1F1B17', cursor: 'pointer',
                       opacity: 0, transition: 'opacity 0.15s',
                     }}
@@ -555,7 +555,7 @@ export function AffaireFormModal({ affaire = null, onSave, onClose, scrollToSect
                 type="button"
                 onClick={() => photoInputRef.current?.click()}
                 style={{
-                  width: '100%', height: 160, borderRadius: 10,
+                  width: '100%', height: 160, borderRadius: 2,
                   border: '1.5px dashed rgba(0,0,0,0.15)', backgroundColor: '#FAFAF9',
                   display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
                   gap: 8, cursor: 'pointer', color: '#9C9591', transition: 'border-color 0.15s, background-color 0.15s',
@@ -750,7 +750,7 @@ export function AffaireFormModal({ affaire = null, onSave, onClose, scrollToSect
                         if (p.value !== 'autre') setForm(f => ({ ...f, taux_tva: parseFloat(p.value) }))
                       }}
                       style={{
-                        flex: 1, padding: '8px 12px', borderRadius: 8, cursor: 'pointer',
+                        flex: 1, padding: '8px 12px', borderRadius: 2, cursor: 'pointer',
                         backgroundColor: sel ? 'rgba(232,96,44,0.10)' : '#FAFAF9',
                         border: sel ? '1.5px solid #E8602C' : '0.5px solid rgba(0,0,0,0.12)',
                         textAlign: 'left',
@@ -842,7 +842,7 @@ export function AffaireFormModal({ affaire = null, onSave, onClose, scrollToSect
                       fontSize: 11, color: 'var(--jga-orange)',
                       background: 'var(--jga-orange-light)',
                       border: '0.5px solid rgba(224,90,30,0.3)',
-                      borderRadius: 6, padding: '4px 10px',
+                      borderRadius: 3, padding: '4px 10px',
                       cursor: 'pointer', marginBottom: 12,
                     }}
                   >
@@ -887,7 +887,7 @@ export function AffaireFormModal({ affaire = null, onSave, onClose, scrollToSect
             onClick={onClose}
             style={{
               padding: '9px 18px',
-              borderRadius: 8,
+              borderRadius: 2,
               border: '0.5px solid rgba(0,0,0,0.15)',
               backgroundColor: 'transparent',
               fontSize: 13,
@@ -903,7 +903,7 @@ export function AffaireFormModal({ affaire = null, onSave, onClose, scrollToSect
             disabled={saving}
             style={{
               padding: '9px 22px',
-              borderRadius: 8,
+              borderRadius: 2,
               border: 'none',
               backgroundColor: 'var(--jga-orange)',
               color: 'white',

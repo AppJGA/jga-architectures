@@ -8,13 +8,13 @@ const LABEL = {
   letterSpacing: '0.06em', color: '#9C9591', display: 'block', marginBottom: 5,
 }
 const INPUT = {
-  height: 34, padding: '0 10px', borderRadius: 6, fontSize: 12,
+  height: 34, padding: '0 10px', borderRadius: 3, fontSize: 12,
   border: '0.5px solid rgba(0,0,0,0.12)', backgroundColor: '#FAFAF9', outline: 'none',
   boxSizing: 'border-box', color: '#1F1B17', width: '100%',
 }
 const BTN = {
   display: 'inline-flex', alignItems: 'center', gap: 6,
-  padding: '8px 14px', borderRadius: 8, fontSize: 12, cursor: 'pointer',
+  padding: '8px 14px', borderRadius: 2, fontSize: 12, cursor: 'pointer',
   border: '0.5px solid rgba(0,0,0,0.15)', backgroundColor: 'white', color: '#374151',
 }
 const BTN_PRIMARY = {
@@ -127,7 +127,7 @@ export function ExportEtudeModal({ open, onClose, taches = [], jalons = [], affa
       onClick={onClose}
     >
       <div
-        style={{ backgroundColor: 'white', borderRadius: 16, padding: 28, width: '100%', maxWidth: 520, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 8px 40px rgba(0,0,0,0.12)' }}
+        style={{ backgroundColor: 'white', borderRadius: 0, padding: 28, width: '100%', maxWidth: 520, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 8px 40px rgba(0,0,0,0.12)' }}
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
@@ -183,7 +183,7 @@ export function ExportEtudeModal({ open, onClose, taches = [], jalons = [], affa
           {/* ── B) FORMAT DE PAGE ── */}
           <div>
             <label style={LABEL}>Format de page</label>
-            <div style={{ display: 'flex', gap: 0, marginBottom: 12, border: '0.5px solid rgba(0,0,0,0.12)', borderRadius: 8, overflow: 'hidden' }}>
+            <div style={{ display: 'flex', gap: 0, marginBottom: 12, border: '0.5px solid rgba(0,0,0,0.12)', borderRadius: 2, overflow: 'hidden' }}>
               {['standard', 'custom'].map(tab => (
                 <button key={tab} type="button"
                   onClick={() => setFormatTab(tab)}
@@ -205,7 +205,7 @@ export function ExportEtudeModal({ open, onClose, taches = [], jalons = [], affa
                   <button key={i} type="button"
                     onClick={() => setFmtIdx(i)}
                     style={{
-                      padding: '8px 6px', borderRadius: 6, cursor: 'pointer', textAlign: 'center',
+                      padding: '8px 6px', borderRadius: 3, cursor: 'pointer', textAlign: 'center',
                       border: fmtIdx === i ? '1.5px solid #E8602C' : '0.5px solid rgba(0,0,0,0.12)',
                       backgroundColor: fmtIdx === i ? 'rgba(232,96,44,0.10)' : '#FAFAF9',
                     }}
@@ -250,7 +250,7 @@ export function ExportEtudeModal({ open, onClose, taches = [], jalons = [], affa
           </div>
 
           {/* ── C) RÉSUMÉ ── */}
-          <div style={{ borderRadius: 8, backgroundColor: '#FAF7F2', border: '0.5px solid rgba(0,0,0,0.08)', padding: '12px 16px' }}>
+          <div style={{ borderRadius: 2, backgroundColor: '#FAF7F2', border: '0.5px solid rgba(0,0,0,0.08)', padding: '12px 16px' }}>
             <p style={{ fontSize: 12, color: '#1F1B17', fontWeight: 500, marginBottom: 4 }}>Récapitulatif</p>
             <p style={{ fontSize: 11, color: '#5E5854', lineHeight: 1.7 }}>
               {tachesInPeriod.length} phase{tachesInPeriod.length > 1 ? 's' : ''} sur la période sélectionnée<br />

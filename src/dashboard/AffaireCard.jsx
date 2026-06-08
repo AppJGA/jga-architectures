@@ -102,7 +102,7 @@ export function AffaireCard({ affaire, onDeleteRequest, isAuthorized = true }) {
         width: '100%',
         textAlign: 'left',
         backgroundColor: 'white',
-        borderRadius: 14,
+        borderRadius: 0,
         overflow: 'hidden',
         border: isAuthorized && hovered
           ? '0.5px solid var(--jga-orange-mid)'
@@ -119,7 +119,7 @@ export function AffaireCard({ affaire, onDeleteRequest, isAuthorized = true }) {
           position: 'absolute', top: 8, right: 8, zIndex: 20,
           background: 'rgba(0,0,0,0.6)', color: 'white',
           fontSize: 9, fontWeight: 500, padding: '2px 6px',
-          borderRadius: 4, display: 'flex', alignItems: 'center', gap: 3,
+          borderRadius: 3, display: 'flex', alignItems: 'center', gap: 3,
           letterSpacing: '0.04em',
         }}>
           <Lock size={8} />
@@ -129,7 +129,7 @@ export function AffaireCard({ affaire, onDeleteRequest, isAuthorized = true }) {
 
       {/* Haut : photo ou trait coloré */}
       {affaire.photo_url ? (
-        <div style={{ height: 90, borderRadius: '14px 14px 0 0', overflow: 'hidden', position: 'relative' }}>
+        <div style={{ height: 90, borderRadius: 0, overflow: 'hidden', position: 'relative' }}>
           <img
             src={affaire.photo_url}
             alt={affaire.nom}
@@ -148,7 +148,7 @@ export function AffaireCard({ affaire, onDeleteRequest, isAuthorized = true }) {
           title="Supprimer cette affaire"
           style={{
             position: 'absolute', top: affaire.photo_url ? 8 : 10, right: 10,
-            width: 26, height: 26, borderRadius: 7,
+            width: 26, height: 26, borderRadius: 2,
             border: '0.5px solid rgba(220,38,38,0.3)',
             backgroundColor: 'rgba(184,65,44,0.10)', color: '#B8412C',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -192,7 +192,7 @@ export function AffaireCard({ affaire, onDeleteRequest, isAuthorized = true }) {
               <div
                 key={id}
                 style={{
-                  width: 18, height: 18, borderRadius: 5,
+                  width: 18, height: 18, borderRadius: 3,
                   backgroundColor: iconBg,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   flexShrink: 0,

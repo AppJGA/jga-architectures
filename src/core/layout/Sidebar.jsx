@@ -52,7 +52,7 @@ function NavIcon({ icon: Icon, path, label, isTools }) {
         justifyContent: 'center',
         width: 36,
         height: 36,
-        borderRadius: 8,
+        borderRadius: 2,
         backgroundColor: bg,
         border,
         transition: 'background-color 0.15s, border-color 0.15s',

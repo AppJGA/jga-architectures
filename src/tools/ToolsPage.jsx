@@ -23,7 +23,7 @@ function ToolCard({ tool, onClick }) {
         textAlign: 'center',
         gap: 12,
         padding: '20px 14px',
-        borderRadius: 16,
+        borderRadius: 0,
         border: active ? '0.5px solid var(--jga-orange)' : '0.5px solid rgba(0,0,0,0.08)',
         backgroundColor: active ? 'var(--jga-orange-light)' : 'white',
         opacity: tool.enabled ? 1 : 0.55,
@@ -36,7 +36,7 @@ function ToolCard({ tool, onClick }) {
         style={{
           width: 52,
           height: 52,
-          borderRadius: 14,
+          borderRadius: 0,
           backgroundColor: active ? 'var(--jga-orange)' : 'var(--jga-orange-light)',
           display: 'flex',
           alignItems: 'center',
@@ -67,7 +67,7 @@ function ToolCard({ tool, onClick }) {
             fontWeight: 500,
             backgroundColor: '#F1EFE8',
             color: '#5F5E5A',
-            borderRadius: 20,
+            borderRadius: 3,
             padding: '2px 8px',
           }}
         >

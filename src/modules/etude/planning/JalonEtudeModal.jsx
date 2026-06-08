@@ -25,7 +25,7 @@ const LABEL_STYLE = {
   letterSpacing: '0.06em', color: '#9C9591', marginBottom: 4,
 }
 const INPUT = {
-  width: '100%', height: 34, padding: '0 10px', borderRadius: 8, fontSize: 13,
+  width: '100%', height: 34, padding: '0 10px', borderRadius: 2, fontSize: 13,
   border: '0.5px solid rgba(0,0,0,0.12)', backgroundColor: '#FAFAF9', outline: 'none',
   boxSizing: 'border-box', color: '#1F1B17',
 }
@@ -51,7 +51,7 @@ function ColorPicker({ value, onChange }) {
         />
       ))}
       <input type="color" value={value} onChange={e => onChange(e.target.value)}
-        style={{ width: 24, height: 24, borderRadius: 4, border: '0.5px solid rgba(0,0,0,0.15)', cursor: 'pointer', padding: 0 }}
+        style={{ width: 24, height: 24, borderRadius: 3, border: '0.5px solid rgba(0,0,0,0.15)', cursor: 'pointer', padding: 0 }}
         title="Couleur personnalisée"
       />
     </div>
@@ -94,10 +94,10 @@ function JalonRow({ jalon, onUpdate, onDelete }) {
         />
         <ColorPicker value={draft.couleur} onChange={c => setDraft(d => ({ ...d, couleur: c }))} />
         <div style={{ display: 'flex', gap: 4 }}>
-          <button type="button" onClick={handleSave} style={{ width: 28, height: 28, borderRadius: 6, border: 'none', cursor: 'pointer', backgroundColor: '#2A8A4E', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <button type="button" onClick={handleSave} style={{ width: 28, height: 28, borderRadius: 3, border: 'none', cursor: 'pointer', backgroundColor: '#2A8A4E', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <Check size={13} />
           </button>
-          <button type="button" onClick={() => setEditing(false)} style={{ width: 28, height: 28, borderRadius: 6, cursor: 'pointer', border: '0.5px solid rgba(0,0,0,0.15)', backgroundColor: 'white', color: '#5E5854', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <button type="button" onClick={() => setEditing(false)} style={{ width: 28, height: 28, borderRadius: 3, cursor: 'pointer', border: '0.5px solid rgba(0,0,0,0.15)', backgroundColor: 'white', color: '#5E5854', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <X size={13} />
           </button>
         </div>
@@ -115,7 +115,7 @@ function JalonRow({ jalon, onUpdate, onDelete }) {
         S{jalon.semaine} {jalon.annee} · {fmtSemaine(jalon.semaine, jalon.annee)}
       </span>
       <button type="button" onClick={() => { setEditing(true); setConfirming(false) }}
-        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9C9591', padding: 4, borderRadius: 4, display: 'flex' }}
+        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9C9591', padding: 4, borderRadius: 3, display: 'flex' }}
         onMouseEnter={e => e.currentTarget.style.color = '#E8602C'}
         onMouseLeave={e => e.currentTarget.style.color = '#9C9591'}
       >
@@ -127,7 +127,7 @@ function JalonRow({ jalon, onUpdate, onDelete }) {
           background: confirming ? 'rgba(184,65,44,0.10)' : 'none',
           border: confirming ? '0.5px solid rgba(220,38,38,0.3)' : 'none',
           cursor: 'pointer', color: confirming ? '#B8412C' : '#9C9591',
-          padding: '3px 6px', borderRadius: 4, fontSize: 11,
+          padding: '3px 6px', borderRadius: 3, fontSize: 11,
         }}
         onMouseEnter={e => !confirming && (e.currentTarget.style.color = '#B8412C')}
         onMouseLeave={e => !confirming && (e.currentTarget.style.color = '#9C9591')}
@@ -178,11 +178,11 @@ export function JalonEtudeModal({ open, onClose, jalons, affaireId, onRefetch })
 
   return (
     <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={onClose}>
-      <div style={{ backgroundColor: 'white', borderRadius: 16, padding: 28, width: '100%', maxWidth: 560, maxHeight: '80vh', display: 'flex', flexDirection: 'column', boxShadow: '0 8px 40px rgba(0,0,0,0.12)' }} onClick={e => e.stopPropagation()}>
+      <div style={{ backgroundColor: 'white', borderRadius: 0, padding: 28, width: '100%', maxWidth: 560, maxHeight: '80vh', display: 'flex', flexDirection: 'column', boxShadow: '0 8px 40px rgba(0,0,0,0.12)' }} onClick={e => e.stopPropagation()}>
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, flexShrink: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: 'rgba(139,92,246,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ width: 34, height: 34, borderRadius: 2, backgroundColor: 'rgba(139,92,246,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Flag size={16} style={{ color: '#8B5CF6' }} />
             </div>
             <div>
@@ -235,7 +235,7 @@ export function JalonEtudeModal({ open, onClose, jalons, affaireId, onRefetch })
                 <ColorPicker value={newCouleur} onChange={setNewCouleur} />
               </div>
               <button type="submit" disabled={saving}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '0 14px', height: 34, borderRadius: 8, fontSize: 12, cursor: saving ? 'default' : 'pointer', border: 'none', backgroundColor: '#2A8A4E', color: 'white', fontWeight: 500, opacity: saving ? 0.7 : 1, flexShrink: 0 }}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '0 14px', height: 34, borderRadius: 2, fontSize: 12, cursor: saving ? 'default' : 'pointer', border: 'none', backgroundColor: '#2A8A4E', color: 'white', fontWeight: 500, opacity: saving ? 0.7 : 1, flexShrink: 0 }}
               >
                 <Plus size={13} /> Ajouter
               </button>

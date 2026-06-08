@@ -26,7 +26,7 @@ export function Toast({ message, duration = 2000, onDone }) {
       fontSize: 12,
       fontWeight: 500,
       padding: '8px 18px',
-      borderRadius: 999,
+      borderRadius: 2,
       boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
       whiteSpace: 'nowrap',
     }}>

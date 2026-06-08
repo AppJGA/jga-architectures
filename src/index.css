@@ -32,6 +32,13 @@
   --color-error:          var(--jga-alerte);
   --color-chantier:       var(--jga-validation);
 
+  /* ── Rayons — système orthogonal JGA ── */
+  --radius-none: 0px;
+  --radius-sm:   2px;   /* légère adoucissement sur très petits éléments */
+  --radius-md:   4px;   /* badges, tags */
+  --radius-lg:   0px;   /* cartes, modales */
+  --radius-full: 0px;   /* pills → carrés */
+
   /* ── Espacements (base 8px) ── */
   --space-xs:  8px;
   --space-s:   16px;

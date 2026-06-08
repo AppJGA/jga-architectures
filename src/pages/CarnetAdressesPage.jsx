@@ -5,7 +5,7 @@ import { supabase } from '../core/supabase/client'
 
 const INPUT = {
   width: '100%', height: 36, padding: '0 12px',
-  border: '0.5px solid rgba(0,0,0,0.12)', borderRadius: 8,
+  border: '0.5px solid rgba(0,0,0,0.12)', borderRadius: 2,
   fontSize: 13, backgroundColor: 'white', outline: 'none', boxSizing: 'border-box', color: '#1F1B17',
 }
 const LABEL = {
@@ -14,7 +14,7 @@ const LABEL = {
 }
 const BTN = {
   display: 'inline-flex', alignItems: 'center', gap: 6,
-  padding: '6px 12px', borderRadius: 8, fontSize: 12, cursor: 'pointer',
+  padding: '6px 12px', borderRadius: 2, fontSize: 12, cursor: 'pointer',
   border: '0.5px solid rgba(0,0,0,0.12)', backgroundColor: 'white', color: '#374151',
 }
 const BTN_PRIMARY = {
@@ -48,7 +48,7 @@ function EntrepriseCard({ entreprise, onEdit, onDelete }) {
     <div
       className="entreprise-card"
       style={{
-        position: 'relative', backgroundColor: 'white', borderRadius: 12,
+        position: 'relative', backgroundColor: 'white', borderRadius: 0,
         border: '0.5px solid rgba(0,0,0,0.08)', padding: 16,
         display: 'flex', flexDirection: 'column', gap: 10,
       }}
@@ -59,7 +59,7 @@ function EntrepriseCard({ entreprise, onEdit, onDelete }) {
         onClick={e => { e.stopPropagation(); onDelete(entreprise) }}
         style={{
           position: 'absolute', top: 10, right: 10,
-          width: 28, height: 28, borderRadius: 8,
+          width: 28, height: 28, borderRadius: 2,
           border: '0.5px solid rgba(220,38,38,0.3)',
           background: 'rgba(184,65,44,0.10)', color: '#B8412C',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -151,7 +151,7 @@ function EntrepriseCard({ entreprise, onEdit, onDelete }) {
                 key={a.id}
                 onClick={() => navigate(`/affaires/${a.id}`)}
                 style={{
-                  fontSize: 10, padding: '2px 8px', borderRadius: 20,
+                  fontSize: 10, padding: '2px 8px', borderRadius: 3,
                   backgroundColor: 'rgba(232,96,44,0.10)', color: '#E8602C', cursor: 'pointer',
                   border: '0.5px solid rgba(224,90,30,0.2)', whiteSpace: 'nowrap',
                 }}
@@ -160,7 +160,7 @@ function EntrepriseCard({ entreprise, onEdit, onDelete }) {
               </span>
             ))}
             {affaires.length > 3 && (
-              <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 20, backgroundColor: '#FAF7F2', color: '#9C9591' }}>
+              <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 3, backgroundColor: '#FAF7F2', color: '#9C9591' }}>
                 +{affaires.length - 3}
               </span>
             )}
@@ -253,7 +253,7 @@ function EntrepriseRow({ entreprise, onEdit, onDelete }) {
         {affaires.length > 0
           ? <span
               onClick={() => navigate(`/affaires/${affaires[0].id}`)}
-              style={{ fontSize: 10, padding: '2px 8px', borderRadius: 20, backgroundColor: 'rgba(232,96,44,0.10)', color: '#E8602C', border: '0.5px solid rgba(224,90,30,0.2)', cursor: 'pointer' }}
+              style={{ fontSize: 10, padding: '2px 8px', borderRadius: 3, backgroundColor: 'rgba(232,96,44,0.10)', color: '#E8602C', border: '0.5px solid rgba(224,90,30,0.2)', cursor: 'pointer' }}
             >
               {affaires.length}
             </span>
@@ -265,14 +265,14 @@ function EntrepriseRow({ entreprise, onEdit, onDelete }) {
       <div style={{ width: 64, display: 'flex', gap: 4, justifyContent: 'flex-end', opacity: hovered ? 1 : 0, transition: 'opacity 0.15s', flexShrink: 0 }}>
         <button
           onClick={() => onEdit(entreprise)}
-          style={{ width: 28, height: 28, borderRadius: 6, border: '0.5px solid rgba(0,0,0,0.12)', backgroundColor: 'white', color: '#374151', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+          style={{ width: 28, height: 28, borderRadius: 3, border: '0.5px solid rgba(0,0,0,0.12)', backgroundColor: 'white', color: '#374151', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
           title="Éditer"
         >
           <Pencil size={12} />
         </button>
         <button
           onClick={e => { e.stopPropagation(); onDelete(entreprise) }}
-          style={{ width: 28, height: 28, borderRadius: 6, border: '0.5px solid rgba(220,38,38,0.3)', backgroundColor: 'rgba(184,65,44,0.10)', color: '#B8412C', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+          style={{ width: 28, height: 28, borderRadius: 3, border: '0.5px solid rgba(220,38,38,0.3)', backgroundColor: 'rgba(184,65,44,0.10)', color: '#B8412C', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
           title="Supprimer"
         >
           <Trash2 size={12} />
@@ -312,7 +312,7 @@ function EntrepriseEditModal({ entreprise, onSave, onClose }) {
       onClick={onClose}
     >
       <div
-        style={{ backgroundColor: 'white', borderRadius: 16, padding: 28, width: '100%', maxWidth: 480, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 8px 40px rgba(0,0,0,0.12)' }}
+        style={{ backgroundColor: 'white', borderRadius: 0, padding: 28, width: '100%', maxWidth: 480, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 8px 40px rgba(0,0,0,0.12)' }}
         onClick={e => e.stopPropagation()}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
@@ -441,7 +441,7 @@ export default function CarnetAdressesPage() {
   })
 
   const toggleBtnStyle = (active) => ({
-    width: 32, height: 32, borderRadius: 8,
+    width: 32, height: 32, borderRadius: 2,
     border: '0.5px solid rgba(0,0,0,0.12)',
     background: active ? 'var(--jga-orange-light)' : 'transparent',
     color: active ? 'var(--jga-orange)' : '#9C9591',
@@ -487,7 +487,7 @@ export default function CarnetAdressesPage() {
               key={f.key}
               onClick={() => setFilter(f.key)}
               style={{
-                padding: '5px 14px', borderRadius: 20, fontSize: 12, cursor: 'pointer',
+                padding: '5px 14px', borderRadius: 3, fontSize: 12, cursor: 'pointer',
                 border: filter === f.key ? '0.5px solid #E8602C' : '0.5px solid rgba(0,0,0,0.12)',
                 backgroundColor: filter === f.key ? 'rgba(232,96,44,0.10)' : 'white',
                 color: filter === f.key ? '#E8602C' : '#5E5854',
@@ -524,7 +524,7 @@ export default function CarnetAdressesPage() {
           ))}
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', borderRadius: 8, overflow: 'hidden', border: '0.5px solid rgba(0,0,0,0.08)' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', borderRadius: 2, overflow: 'hidden', border: '0.5px solid rgba(0,0,0,0.08)' }}>
           {/* Header liste */}
           <div style={{
             display: 'flex', alignItems: 'center',
@@ -562,11 +562,11 @@ export default function CarnetAdressesPage() {
           onClick={() => setDeletingEntreprise(null)}
         >
           <div
-            style={{ background: 'white', borderRadius: 16, padding: '28px 32px', maxWidth: 420, width: '100%', border: '0.5px solid rgba(0,0,0,0.08)', boxShadow: '0 8px 40px rgba(0,0,0,0.12)' }}
+            style={{ background: 'white', borderRadius: 0, padding: '28px 32px', maxWidth: 420, width: '100%', border: '0.5px solid rgba(0,0,0,0.08)', boxShadow: '0 8px 40px rgba(0,0,0,0.12)' }}
             onClick={e => e.stopPropagation()}
           >
             <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', marginBottom: 16 }}>
-              <div style={{ width: 40, height: 40, borderRadius: 10, background: 'rgba(184,65,44,0.10)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <div style={{ width: 40, height: 40, borderRadius: 2, background: 'rgba(184,65,44,0.10)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 <Trash2 size={18} color="#B8412C" />
               </div>
               <div>
@@ -580,13 +580,13 @@ export default function CarnetAdressesPage() {
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button
                 onClick={() => setDeletingEntreprise(null)}
-                style={{ padding: '8px 16px', borderRadius: 10, border: '0.5px solid rgba(0,0,0,0.15)', background: 'transparent', fontSize: 13, cursor: 'pointer', color: '#374151' }}
+                style={{ padding: '8px 16px', borderRadius: 2, border: '0.5px solid rgba(0,0,0,0.15)', background: 'transparent', fontSize: 13, cursor: 'pointer', color: '#374151' }}
               >
                 Annuler
               </button>
               <button
                 onClick={() => handleDelete(deletingEntreprise.id)}
-                style={{ padding: '8px 16px', borderRadius: 10, border: 'none', background: '#B8412C', color: 'white', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}
+                style={{ padding: '8px 16px', borderRadius: 2, border: 'none', background: '#B8412C', color: 'white', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}
               >
                 Supprimer définitivement
               </button>

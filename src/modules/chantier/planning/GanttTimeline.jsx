@@ -406,7 +406,7 @@ export function GanttTimeline({
               <div style={{
                 position: 'absolute', top: 4, left: 5,
                 backgroundColor: jalon.couleur, color: 'white',
-                fontSize: 10, fontWeight: 600, padding: '2px 6px', borderRadius: 4,
+                fontSize: 10, fontWeight: 600, padding: '2px 6px', borderRadius: 3,
                 whiteSpace: 'nowrap', letterSpacing: '0.02em',
                 boxShadow: '0 1px 4px rgba(0,0,0,0.15)', userSelect: 'none',
               }}>
@@ -574,7 +574,7 @@ export function GanttTimeline({
         <div style={{
           position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)',
           zIndex: 50, backgroundColor: '#E8602C', color: 'white',
-          fontSize: 12, fontWeight: 700, padding: '10px 20px', borderRadius: 999,
+          fontSize: 12, fontWeight: 700, padding: '10px 20px', borderRadius: 2,
           boxShadow: '0 4px 20px rgba(0,0,0,0.25)',
           display: 'flex', alignItems: 'center', gap: 10,
         }}>
@@ -590,13 +590,13 @@ export function GanttTimeline({
           zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center',
         }} onClick={() => setDeletingArrow(null)}>
           <div style={{
-            backgroundColor: 'white', borderRadius: 16, padding: '28px 32px',
+            backgroundColor: 'white', borderRadius: 0, padding: '28px 32px',
             maxWidth: 420, width: '100%', border: '0.5px solid rgba(0,0,0,0.08)',
             boxShadow: '0 8px 40px rgba(0,0,0,0.12)',
           }} onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
               <div style={{
-                width: 36, height: 36, borderRadius: 10, backgroundColor: 'rgba(184,65,44,0.10)',
+                width: 36, height: 36, borderRadius: 2, backgroundColor: 'rgba(184,65,44,0.10)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
               }}>
                 <GitBranch size={18} style={{ color: '#B8412C' }} />
@@ -616,7 +616,7 @@ export function GanttTimeline({
               <button
                 onClick={() => setDeletingArrow(null)}
                 style={{
-                  padding: '8px 16px', borderRadius: 10, fontSize: 13, cursor: 'pointer',
+                  padding: '8px 16px', borderRadius: 2, fontSize: 13, cursor: 'pointer',
                   border: '0.5px solid rgba(0,0,0,0.15)', backgroundColor: 'transparent', color: '#374151',
                 }}>
                 Annuler
@@ -627,7 +627,7 @@ export function GanttTimeline({
                   setDeletingArrow(null)
                 }}
                 style={{
-                  padding: '8px 16px', borderRadius: 10, fontSize: 13, fontWeight: 500,
+                  padding: '8px 16px', borderRadius: 2, fontSize: 13, fontWeight: 500,
                   border: 'none', backgroundColor: '#B8412C', color: 'white', cursor: 'pointer',
                 }}>
                 Supprimer la liaison
@@ -732,7 +732,7 @@ function TaskBarRow({
             right: HANDLE_W + 3, top: '50%', transform: 'translateY(-50%)',
             width: PENCIL_SIZE + 6, height: PENCIL_SIZE + 6,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            borderRadius: 4, border: 'none', cursor: 'pointer',
+            borderRadius: 3, border: 'none', cursor: 'pointer',
             backgroundColor: 'rgba(0,0,0,0.3)', color: 'white',
             opacity: isHovered ? 1 : 0,
             transition: 'opacity 0.15s, background-color 0.1s',

@@ -63,7 +63,7 @@ export function CollabModal({
       onClick={onClose}
     >
       <div
-        style={{ backgroundColor: 'white', borderRadius: 16, padding: 28, width: '100%', maxWidth: 480, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 8px 40px rgba(0,0,0,0.12)' }}
+        style={{ backgroundColor: 'white', borderRadius: 0, padding: 28, width: '100%', maxWidth: 480, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 8px 40px rgba(0,0,0,0.12)' }}
         onClick={e => e.stopPropagation()}
       >
         {/* En-tête */}
@@ -103,7 +103,7 @@ export function CollabModal({
                   </div>
 
                   <span style={{
-                    fontSize: 10, padding: '3px 8px', borderRadius: 20, fontWeight: 500, flexShrink: 0,
+                    fontSize: 10, padding: '3px 8px', borderRadius: 3, fontWeight: 500, flexShrink: 0,
                     backgroundColor: isOwner ? 'rgba(232,96,44,0.10)' : '#F1EFE8',
                     color: isOwner ? '#993C1D' : '#5E5854',
                   }}>
@@ -124,19 +124,19 @@ export function CollabModal({
                 {confirmRemove === c.user_id && (
                   <div style={{
                     display: 'flex', alignItems: 'center', gap: 8,
-                    padding: '6px 10px', borderRadius: 8, marginBottom: 4,
+                    padding: '6px 10px', borderRadius: 2, marginBottom: 4,
                     backgroundColor: 'rgba(184,65,44,0.10)', fontSize: 12, color: '#B8412C',
                   }}>
                     <span>Retirer {c.profiles?.prenom} ?</span>
                     <button
                       onClick={() => handleRemove(c.user_id)}
-                      style={{ fontSize: 11, fontWeight: 500, padding: '3px 8px', borderRadius: 6, backgroundColor: '#B8412C', color: 'white', border: 'none', cursor: 'pointer' }}
+                      style={{ fontSize: 11, fontWeight: 500, padding: '3px 8px', borderRadius: 3, backgroundColor: '#B8412C', color: 'white', border: 'none', cursor: 'pointer' }}
                     >
                       Confirmer
                     </button>
                     <button
                       onClick={() => setConfirmRemove(null)}
-                      style={{ fontSize: 11, padding: '3px 8px', borderRadius: 6, backgroundColor: 'transparent', color: '#5E5854', border: '0.5px solid rgba(0,0,0,0.15)', cursor: 'pointer' }}
+                      style={{ fontSize: 11, padding: '3px 8px', borderRadius: 3, backgroundColor: 'transparent', color: '#5E5854', border: '0.5px solid rgba(0,0,0,0.15)', cursor: 'pointer' }}
                     >
                       Annuler
                     </button>
@@ -162,7 +162,7 @@ export function CollabModal({
                 onChange={e => setSearch(e.target.value)}
                 style={{
                   width: '100%', height: 36, paddingLeft: 32, paddingRight: 12,
-                  border: '0.5px solid rgba(0,0,0,0.12)', borderRadius: 8,
+                  border: '0.5px solid rgba(0,0,0,0.12)', borderRadius: 2,
                   fontSize: 13, backgroundColor: '#FAFAF9', outline: 'none', boxSizing: 'border-box',
                 }}
               />
@@ -170,7 +170,7 @@ export function CollabModal({
               {search.length >= 2 && (
                 <div style={{
                   position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4,
-                  backgroundColor: 'white', borderRadius: 8,
+                  backgroundColor: 'white', borderRadius: 2,
                   border: '0.5px solid rgba(0,0,0,0.12)', maxHeight: 180, overflowY: 'auto',
                   zIndex: 50, boxShadow: '0 4px 16px rgba(0,0,0,0.1)',
                 }}>

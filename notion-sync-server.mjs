@@ -239,6 +239,29 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// GET /ping — health check externe (maintient la connexion Supabase active)
+app.get("/ping", async (req, res) => {
+  try {
+    const { createClient } = await import("@supabase/supabase-js");
+    const supabase = createClient(
+      process.env.VITE_SUPABASE_URL,
+      process.env.VITE_SUPABASE_ANON_KEY
+    );
+    await supabase.from("affaires").select("id").limit(1);
+
+    res.json({
+      status: "ok",
+      timestamp: new Date().toISOString(),
+      message: "Supabase actif",
+    });
+  } catch (err) {
+    res.status(500).json({
+      status: "error",
+      message: err.message,
+    });
+  }
+});
+
 // GET /affaires — toutes les affaires
 app.get("/affaires", async (req, res) => {
   try {

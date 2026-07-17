@@ -3,9 +3,9 @@ import { lazy } from 'react'
 export const tools = [
   {
     id: 'rasterisation',
-    label: 'Rastérisation PDF',
-    icon: 'FileType',
-    description: 'Convertit les plans vectoriels en bitmap haute résolution',
+    label: 'Aplatisseur de plan',
+    icon: 'Layers',
+    description: 'Convertit les plans PDF vectoriels en images bitmap aplaties',
     path: 'rasterisation',
     component: lazy(() => import('./rasterisation')),
     enabled: true,
@@ -13,11 +13,11 @@ export const tools = [
   {
     id: 'analyseur',
     label: 'Analyseur réglementaire',
-    icon: 'Bot',
+    icon: 'ShieldCheck',
     description: 'Conformité ERP, PMR, thermique via IA',
     path: 'analyseur',
     component: lazy(() => import('./analyseur')),
-    enabled: false,
+    enabled: true,
   },
   {
     id: 'heures',

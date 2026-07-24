@@ -5,6 +5,7 @@ import {
   formatDateISO,
   isWorkingDay,
   addWorkingDays,
+  workingDaysBetween,
   computeLag,
 } from './types'
 
@@ -161,19 +162,24 @@ function barWidthAtMonth(dureeJours, monthWidth) {
 //
 // geo = { viewMode, dateRef, dayPositions, dayWidth, weekWidth, monthWidth, months }
 //
+// Largeur minimale garantie pour qu'une barre reste visible/cliquable à fort dézoom
+const MIN_BAR_WIDTH = 2
+
 function computeGeometry(startDate, duree, geo) {
+  let result
   if (geo.viewMode === 'month') {
-    return { left: xAtDateMonth(startDate, geo.months, geo.monthWidth), width: barWidthAtMonth(duree, geo.monthWidth) }
+    result = { left: xAtDateMonth(startDate, geo.months, geo.monthWidth), width: barWidthAtMonth(duree, geo.monthWidth) }
+  } else if (geo.viewMode === 'week') {
+    result = { left: xAtDateWeekSnapped(startDate, geo.dateRef, geo.weekWidth), width: barWidthAtWeek(duree, geo.weekWidth) }
+  } else {
+    result = {
+      left: xAtDate(startDate, geo.dateRef, geo.dayPositions),
+      width: geo.periodes && geo.periodes.length > 0
+        ? barWidthAtBlocked(startDate, duree, geo.dateRef, geo.dayPositions, geo.dayWidth, geo.periodes)
+        : barWidthAt(startDate, duree, geo.dateRef, geo.dayPositions, geo.dayWidth),
+    }
   }
-  if (geo.viewMode === 'week') {
-    return { left: xAtDateWeekSnapped(startDate, geo.dateRef, geo.weekWidth), width: barWidthAtWeek(duree, geo.weekWidth) }
-  }
-  return {
-    left: xAtDate(startDate, geo.dateRef, geo.dayPositions),
-    width: geo.periodes && geo.periodes.length > 0
-      ? barWidthAtBlocked(startDate, duree, geo.dateRef, geo.dayPositions, geo.dayWidth, geo.periodes)
-      : barWidthAt(startDate, duree, geo.dateRef, geo.dayPositions, geo.dayWidth),
-  }
+  return { ...result, width: Math.max(MIN_BAR_WIDTH, result.width) }
 }
 
 function getTaskGeometry(task, geo) {
@@ -235,6 +241,16 @@ function applyDeltaDays(origDate, deltaDays, viewMode) {
     while (!isWorkingDay(raw)) raw.setDate(raw.getDate() + 1)
   }
   return raw
+}
+
+// Recalcule la durée d'un resize par la poignée gauche pour que la date de fin
+// (dernier jour ouvré) reste fixe, même si le décalage traverse un week-end.
+// `origDuree - deltaDays` mélangeait un delta calendaire (pxToDays) avec une
+// durée en jours ouvrés, ce qui faisait dériver la fin dès qu'un week-end
+// était traversé — la barre semblait s'étendre des deux côtés.
+function resizeLeftDuree(origDebut, origDuree, newDebut, minDuree) {
+  const origLastDay = addWorkingDays(origDebut, origDuree - 1)
+  return Math.max(minDuree, workingDaysBetween(newDebut, origLastDay) + 1)
 }
 
 // Aligne une date sur l'unité de la vue active après un drag (lundi en semaine, 1er du mois en mois)
@@ -589,7 +605,9 @@ export function GanttTimeline({
       } else if (type === 'resize-left') {
         const shift = Math.min(deltaDays, origDuree - minDuree)
         newDebut = applyDeltaDays(origDebut, shift, viewMode)
-        newDuree = Math.max(minDuree, origDuree - deltaDays)
+        newDuree = viewMode === 'day'
+          ? resizeLeftDuree(origDebut, origDuree, newDebut, minDuree)
+          : Math.max(minDuree, origDuree - deltaDays)
       }
       const el = document.querySelector(`[data-taskid="${taskId}"]`)
       if (el) {
@@ -621,7 +639,9 @@ export function GanttTimeline({
           const shift = Math.min(deltaDays, origDuree - minDuree)
           newDebut = applyDeltaDays(origDebut, shift, viewMode)
           if (getNextWorkingDay) newDebut = getNextWorkingDay(newDebut)
-          newDuree = Math.max(minDuree, origDuree - deltaDays)
+          newDuree = viewMode === 'day'
+            ? resizeLeftDuree(origDebut, origDuree, newDebut, minDuree)
+            : Math.max(minDuree, origDuree - deltaDays)
         }
         if (formatDateISO(newDebut) !== formatDateISO(origDebut) || newDuree !== origDuree) {
           onTaskUpdate(taskId, { debut: formatDateISO(newDebut), duree: newDuree })
@@ -1267,6 +1287,12 @@ function TaskBarRow({
   const DOT_R = connectionPointSize / 2
   const BAR_BOTTOM = rowHeight - BAR_PAD
 
+  // À fort dézoom, les labels à droite des barres se chevauchent — on les masque.
+  // Seuils proportionnés à l'échelle propre à chaque vue (dayWidth / weekWidth / monthWidth).
+  const showLabel = geo.viewMode === 'month' ? geo.monthWidth >= 32
+    : geo.viewMode === 'week' ? geo.weekWidth >= 16
+      : geo.dayWidth >= 10
+
   const isOwnSource = sameEndpoint(connectingFrom, { type: 'task', taskId: task.id })
   const isSource = isOwnSource
   const isStartHovered = hoveredPoint?.type === 'task' && hoveredPoint?.taskId === task.id && hoveredPoint?.side === 'start'
@@ -1383,7 +1409,7 @@ function TaskBarRow({
       </div>
 
       {/* Label à droite de la barre */}
-      <div style={{
+      {showLabel && <div style={{
         position: 'absolute',
         left: left + width + 4,
         top: 0,
@@ -1404,7 +1430,7 @@ function TaskBarRow({
             {task.avancement}%
           </span>
         )}
-      </div>
+      </div>}
 
       {/* ── Extension d'approvisionnement ────────────────────────── */}
       {task.appro_actif && task.appro_duree > 0 && (
@@ -1452,7 +1478,7 @@ function TaskBarRow({
                 onBarClick(task)
               }}
             />
-            {seg.afficher_nom && (
+            {seg.afficher_nom && showLabel && (
               <div style={{
                 position: 'absolute',
                 left: segGeo.left + segGeo.width + 4,

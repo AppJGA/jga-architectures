@@ -111,6 +111,14 @@ function getNextAvailableDate(tasks) {
 
 const DEFAULT_DAY_WIDTH = 40
 
+// ── Bornes de zoom ──────────────────────────────────────────────────────────────
+// Vue jour : `dayWidth` est un pixel/jour brut. Vues semaine/mois : `zoomLevel`
+// est un facteur multiplicatif appliqué à WEEK_WIDTH_BASE/MONTH_WIDTH_BASE.
+const DAY_WIDTH_MIN = 4
+const DAY_WIDTH_MAX = 100
+const ZOOM_LEVEL_MIN = 0.1
+const ZOOM_LEVEL_MAX = 4
+
 export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', affaire = {} }) {
   const [tasks, setTasks] = useState([])
   const [lots, setLots] = useState([])
@@ -217,9 +225,9 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
       const delta = e.deltaY > 0 ? -1 : 1
 
       if (viewMode === 'day') {
-        setDayWidth((w) => Math.min(100, Math.max(15, w + delta * 3)))
+        setDayWidth((w) => Math.min(DAY_WIDTH_MAX, Math.max(DAY_WIDTH_MIN, w + delta * 3)))
       } else {
-        setZoomLevel((z) => Math.min(2, Math.max(0.5, Math.round((z + delta * 0.15) * 100) / 100)))
+        setZoomLevel((z) => Math.min(ZOOM_LEVEL_MAX, Math.max(ZOOM_LEVEL_MIN, Math.round((z + delta * 0.15) * 100) / 100)))
       }
 
       requestAnimationFrame(() => {
@@ -992,8 +1000,8 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
   }
 
   // ── Zoom ──────────────────────────────────────────────────────────────────────
-  const handleZoomIn = () => setDayWidth((w) => Math.min(100, w + 5))
-  const handleZoomOut = () => setDayWidth((w) => Math.max(15, w - 5))
+  const handleZoomIn = () => setDayWidth((w) => Math.min(DAY_WIDTH_MAX, w + 5))
+  const handleZoomOut = () => setDayWidth((w) => Math.max(DAY_WIDTH_MIN, w - 5))
   const handleResetDayWidth = () => setDayWidth(DEFAULT_DAY_WIDTH)
 
   // ── Ouverture/fermeture de la modale tâche — préserve le scroll horizontal ─────
@@ -1069,6 +1077,8 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
           showConnections={showConnections}
           onOpenJalons={() => setShowJalonsModal(true)}
           dayWidth={dayWidth}
+          dayWidthMin={DAY_WIDTH_MIN}
+          dayWidthMax={DAY_WIDTH_MAX}
           colorMode={colorMode}
           onColorModeChange={setColorMode}
           onOpenZones={() => setShowZonesModal(true)}
@@ -1076,6 +1086,8 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
           onViewModeChange={setViewMode}
           zoomLevel={zoomLevel}
           onZoomLevelChange={setZoomLevel}
+          zoomLevelMin={ZOOM_LEVEL_MIN}
+          zoomLevelMax={ZOOM_LEVEL_MAX}
           periodes={periodes}
           onOpenPeriodesBloquees={() => setShowPeriodesModal(true)}
         />

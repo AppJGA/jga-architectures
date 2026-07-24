@@ -21,12 +21,13 @@ const BTN_PRIMARY = {
 export function GanttToolbar({
   onZoomIn, onZoomOut, onResetDayWidth, onOpenLots, onExportPdf, onExportExcel, onAddTask,
   onToggleConnections, showConnections, onOpenJalons, dayWidth,
+  dayWidthMin = 15, dayWidthMax = 100, zoomLevelMin = 0.5, zoomLevelMax = 2,
   colorMode, onColorModeChange, onOpenZones,
   viewMode, onViewModeChange, zoomLevel = 1, onZoomLevelChange,
   periodes = [], onOpenPeriodesBloquees,
 }) {
-  const canZoomOut = dayWidth > 15
-  const canZoomIn = dayWidth < 100
+  const canZoomOut = dayWidth > dayWidthMin
+  const canZoomIn = dayWidth < dayWidthMax
   const [showExportMenu, setShowExportMenu] = useState(false)
 
   return (
@@ -101,17 +102,17 @@ export function GanttToolbar({
         {viewMode !== 'day' && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: 6 }}>
             <button
-              onClick={() => onZoomLevelChange((z) => Math.max(0.5, z - 0.25))}
-              disabled={zoomLevel <= 0.5}
+              onClick={() => onZoomLevelChange((z) => Math.max(zoomLevelMin, Math.round((z - 0.1) * 100) / 100))}
+              disabled={zoomLevel <= zoomLevelMin}
               title="Dézoomer (⌘ + molette)"
               style={{
                 width: 28, height: 28,
                 border: '0.5px solid rgba(0,0,0,0.15)',
                 background: 'transparent',
-                cursor: zoomLevel <= 0.5 ? 'not-allowed' : 'pointer',
+                cursor: zoomLevel <= zoomLevelMin ? 'not-allowed' : 'pointer',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 color: '#5E5854',
-                opacity: zoomLevel <= 0.5 ? 0.4 : 1,
+                opacity: zoomLevel <= zoomLevelMin ? 0.4 : 1,
               }}
             >
               <ZoomOut size={13} />
@@ -131,17 +132,17 @@ export function GanttToolbar({
             </span>
 
             <button
-              onClick={() => onZoomLevelChange((z) => Math.min(2, z + 0.25))}
-              disabled={zoomLevel >= 2}
+              onClick={() => onZoomLevelChange((z) => Math.min(zoomLevelMax, Math.round((z + 0.1) * 100) / 100))}
+              disabled={zoomLevel >= zoomLevelMax}
               title="Zoomer (⌘ + molette)"
               style={{
                 width: 28, height: 28,
                 border: '0.5px solid rgba(0,0,0,0.15)',
                 background: 'transparent',
-                cursor: zoomLevel >= 2 ? 'not-allowed' : 'pointer',
+                cursor: zoomLevel >= zoomLevelMax ? 'not-allowed' : 'pointer',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 color: '#5E5854',
-                opacity: zoomLevel >= 2 ? 0.4 : 1,
+                opacity: zoomLevel >= zoomLevelMax ? 0.4 : 1,
               }}
             >
               <ZoomIn size={13} />

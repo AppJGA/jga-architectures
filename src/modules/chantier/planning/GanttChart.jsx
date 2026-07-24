@@ -4,6 +4,7 @@ import { parseDate, formatDateISO, applyLag, computeLag, addWorkingDays } from '
 import { supabase } from '../../../core/supabase/client'
 import { usePlanningZones } from '../../../shared/hooks/usePlanningZones'
 import { usePlanningSegments } from '../../../shared/hooks/usePlanningSegments'
+import { usePeriodesBloquees } from '../../../shared/hooks/usePeriodesBloquees'
 import { GanttToolbar } from './GanttToolbar'
 import { GanttSidebar } from './GanttSidebar'
 import { GanttTimeline, HEADER_HEIGHT } from './GanttTimeline'
@@ -12,6 +13,7 @@ import { LotsColorModal } from './LotsColorModal'
 import { ExportPdfModal } from './ExportPdfModal'
 import { JalonModal } from './JalonModal'
 import { ZonesModal } from './ZonesModal'
+import { PeriodesBloqueesModal } from './PeriodesBloqueesModal'
 
 // ─── Propagation en cascade avec conservation du lag ─────────────────────────
 //
@@ -90,6 +92,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
   const [showExportModal, setShowExportModal] = useState(false)
   const [showJalonsModal, setShowJalonsModal] = useState(false)
   const [showZonesModal, setShowZonesModal] = useState(false)
+  const [showPeriodesModal, setShowPeriodesModal] = useState(false)
   const [showConnections, setShowConnections] = useState(true)
   const [newTaskDebut, setNewTaskDebut] = useState(null)
 
@@ -118,6 +121,9 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
   const {
     segments, addSegment, updateSegment, updateSegmentLocal, deleteSegment, getSegmentsForTache,
   } = usePlanningSegments(affaireId)
+  const {
+    periodes, addPeriode, updatePeriode, deletePeriode, getNextWorkingDay,
+  } = usePeriodesBloquees(affaireId)
 
   const ROW_HEIGHT = 40
 
@@ -470,6 +476,8 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
           onViewModeChange={setViewMode}
           zoomLevel={zoomLevel}
           onZoomLevelChange={setZoomLevel}
+          periodes={periodes}
+          onOpenPeriodesBloquees={() => setShowPeriodesModal(true)}
         />
       </div>
 
@@ -528,6 +536,8 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
             segments={segments}
             updateSegment={updateSegment}
             updateSegmentLocal={updateSegmentLocal}
+            periodes={periodes}
+            getNextWorkingDay={getNextWorkingDay}
           />
         </div>
       </div>
@@ -610,6 +620,15 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
         jalons={jalons}
         affaireId={affaireId}
         onRefetch={fetchAllData}
+      />
+
+      <PeriodesBloqueesModal
+        open={showPeriodesModal}
+        onClose={() => setShowPeriodesModal(false)}
+        periodes={periodes}
+        addPeriode={addPeriode}
+        updatePeriode={updatePeriode}
+        deletePeriode={deletePeriode}
       />
     </div>
   )

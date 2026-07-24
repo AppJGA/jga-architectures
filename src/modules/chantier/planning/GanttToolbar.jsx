@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import {
-  ZoomIn, ZoomOut, Layers, Plus, CalendarDays, GitBranch, Flag, Palette, Eye,
+  ZoomIn, ZoomOut, Plus, CalendarDays, Calendar, GitBranch, Flag, Palette, Eye, Ban,
   Download, ChevronDown, FileText, TableProperties,
 } from 'lucide-react'
 
@@ -23,6 +23,7 @@ export function GanttToolbar({
   onToggleConnections, showConnections, onOpenJalons, dayWidth,
   colorMode, onColorModeChange, onOpenZones,
   viewMode, onViewModeChange, zoomLevel = 1, onZoomLevelChange,
+  periodes = [], onOpenPeriodesBloquees,
 }) {
   const canZoomOut = dayWidth > 15
   const canZoomIn = dayWidth < 100
@@ -59,32 +60,34 @@ export function GanttToolbar({
         </button>
 
         {/* Mode d'affichage : jours / semaines / mois */}
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 0, marginLeft: 4,
-          border: '0.5px solid rgba(0,0,0,0.15)', borderRadius: 2, overflow: 'hidden',
-        }}>
-          {[
-            { value: 'day', label: 'Jours' },
-            { value: 'week', label: 'Semaines' },
-            { value: 'month', label: 'Mois' },
-          ].map((opt, idx) => (
-            <button
-              key={opt.value}
-              onClick={() => onViewModeChange(opt.value)}
-              style={{
-                padding: '5px 12px',
-                fontSize: 12,
-                border: 'none',
-                borderRight: idx < 2 ? '0.5px solid rgba(0,0,0,0.15)' : 'none',
-                background: viewMode === opt.value ? '#E8602C' : 'transparent',
-                color: viewMode === opt.value ? 'white' : '#5E5854',
-                cursor: 'pointer',
-                fontWeight: viewMode === opt.value ? 500 : 400,
-              }}
-            >
-              {opt.label}
-            </button>
-          ))}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 4 }}>
+          <Calendar size={14} color="#9C9591" strokeWidth={1.25} />
+          <div style={{
+            display: 'flex', border: '0.5px solid rgba(0,0,0,0.15)', overflow: 'hidden',
+          }}>
+            {[
+              { value: 'day', label: 'Jours' },
+              { value: 'week', label: 'Semaines' },
+              { value: 'month', label: 'Mois' },
+            ].map((opt, idx) => (
+              <button
+                key={opt.value}
+                onClick={() => onViewModeChange(opt.value)}
+                style={{
+                  padding: '5px 12px',
+                  fontSize: 12,
+                  border: 'none',
+                  borderRight: idx < 2 ? '0.5px solid rgba(0,0,0,0.15)' : 'none',
+                  background: viewMode === opt.value ? '#E8602C' : 'transparent',
+                  color: viewMode === opt.value ? 'white' : '#5E5854',
+                  cursor: 'pointer',
+                  fontWeight: viewMode === opt.value ? 500 : 400,
+                }}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Zoom vue semaine / mois */}
@@ -152,9 +155,26 @@ export function GanttToolbar({
         <button style={BTN} onClick={onOpenJalons}>
           <Flag size={13} /> Jalons
         </button>
-        <button style={BTN} onClick={onOpenLots}>
-          <Layers size={13} /> Lots
+        <button
+          onClick={onOpenPeriodesBloquees}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px',
+            fontSize: 12,
+            border: '0.5px solid rgba(0,0,0,0.15)',
+            background: periodes.length > 0 ? '#FEF2F2' : 'transparent',
+            color: periodes.length > 0 ? '#B8412C' : '#5E5854',
+            cursor: 'pointer',
+          }}
+          title="Gérer les périodes bloquées"
+        >
+          <Ban size={13} strokeWidth={1.25} />
+          {periodes.length > 0 ? `${periodes.length} période(s)` : 'Périodes bloquées'}
         </button>
+        {colorMode === 'lot' && (
+          <button style={BTN} onClick={onOpenLots}>
+            <Palette size={13} strokeWidth={1.25} /> Gérer les lots
+          </button>
+        )}
 
         {/* Mode de couleur : par lot / par zone */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

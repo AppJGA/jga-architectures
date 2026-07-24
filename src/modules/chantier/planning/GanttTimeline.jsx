@@ -38,6 +38,41 @@ function barWidthAt(startDate, workingDays, dateRef, dayPositions, dayWidth) {
   )
 }
 
+// ── Périodes bloquées (congés d'entreprises) ───────────────────────────────────
+
+function isDateInPeriodes(date, periodes) {
+  return periodes.some((p) => {
+    const debut = parseDate(p.date_debut)
+    const fin = parseDate(p.date_fin)
+    return date >= debut && date <= fin
+  })
+}
+
+// Comme addWorkingDays, mais saute aussi les jours tombant dans une période bloquée
+function addWorkingDaysBlocked(date, days, periodes) {
+  if (days === 0) return new Date(date)
+  const result = new Date(date)
+  let added = 0
+  while (added < days) {
+    result.setDate(result.getDate() + 1)
+    if (isWorkingDay(result) && !isDateInPeriodes(result, periodes)) added++
+  }
+  return result
+}
+
+// Largeur d'une barre en vue jour, en tenant compte des périodes bloquées
+// (la barre s'étend visuellement pour « sauter » les congés, comme les week-ends)
+function barWidthAtBlocked(startDate, workingDays, dateRef, dayPositions, dayWidth, periodes) {
+  if (workingDays <= 0) return dayWidth * WEEKEND_RATIO
+  const lastDay = addWorkingDaysBlocked(startDate, workingDays - 1, periodes)
+  const dayAfter = new Date(lastDay)
+  dayAfter.setDate(dayAfter.getDate() + 1)
+  return Math.max(
+    xAtDate(dayAfter, dateRef, dayPositions) - xAtDate(startDate, dateRef, dayPositions),
+    dayWidth * WEEKEND_RATIO
+  )
+}
+
 // ── Fonctions géométrie vue semaine ────────────────────────────────────────────
 
 function getISOWeek(date) {
@@ -135,7 +170,9 @@ function computeGeometry(startDate, duree, geo) {
   }
   return {
     left: xAtDate(startDate, geo.dateRef, geo.dayPositions),
-    width: barWidthAt(startDate, duree, geo.dateRef, geo.dayPositions, geo.dayWidth),
+    width: geo.periodes && geo.periodes.length > 0
+      ? barWidthAtBlocked(startDate, duree, geo.dateRef, geo.dayPositions, geo.dayWidth, geo.periodes)
+      : barWidthAt(startDate, duree, geo.dateRef, geo.dayPositions, geo.dayWidth),
   }
 }
 
@@ -188,12 +225,21 @@ function getBarColor(task, lot, zones, colorMode) {
   return lot?.couleur ?? '#94a3b8'
 }
 
+function hexToRgba(hex, alpha) {
+  const h = (hex || '#B8412C').replace('#', '')
+  const r = parseInt(h.substring(0, 2), 16)
+  const g = parseInt(h.substring(2, 4), 16)
+  const b = parseInt(h.substring(4, 6), 16)
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
+}
+
 export function GanttTimeline({
   tasks, lots, dayWidth, rowHeight, showConnections,
   jalons = [], onJalonClick,
   onTaskClick, onTaskUpdate, onDependencyCreate, onDependencyDelete,
   zones = [], colorMode = 'lot', viewMode = 'day', zoomLevel = 1,
   getSegmentsForTache, segments = [], updateSegment, updateSegmentLocal,
+  periodes = [], getNextWorkingDay,
 }) {
   // Drag/resize des tâches et segments fonctionnent dans tous les modes ;
   // seule la création de dépendances par points de connexion reste limitée à la vue jour.
@@ -304,8 +350,8 @@ export function GanttTimeline({
 
   // Contexte géométrique unifié, passé à computeGeometry/getTaskGeometry
   const geo = useMemo(() => ({
-    viewMode, dateRef, dayPositions, dayWidth, weekWidth, monthWidth, months,
-  }), [viewMode, dateRef, dayPositions, dayWidth, weekWidth, monthWidth, months])
+    viewMode, dateRef, dayPositions, dayWidth, weekWidth, monthWidth, months, periodes,
+  }), [viewMode, dateRef, dayPositions, dayWidth, weekWidth, monthWidth, months, periodes])
 
   const lotsWithTasks = useMemo(() =>
     lots.map((lot) => ({ lot, tasks: tasks.filter((t) => t.lot_id === lot.id) }))
@@ -401,7 +447,9 @@ export function GanttTimeline({
     const handleMouseUp = async () => {
       const seg = segments.find((s) => s.id === draggingSegment.segmentId)
       if (seg) {
-        const snapped = formatDateISO(snapToView(parseDate(seg.date_debut), viewMode))
+        let finalDate = snapToView(parseDate(seg.date_debut), viewMode)
+        if (getNextWorkingDay) finalDate = getNextWorkingDay(finalDate)
+        const snapped = formatDateISO(finalDate)
         if (snapped !== seg.date_debut) updateSegmentLocal?.(draggingSegment.segmentId, { date_debut: snapped })
         await updateSegment?.(draggingSegment.segmentId, { date_debut: snapped })
       }
@@ -414,7 +462,7 @@ export function GanttTimeline({
       window.removeEventListener('mousemove', handleMouseMove)
       window.removeEventListener('mouseup', handleMouseUp)
     }
-  }, [draggingSegment, segments, viewMode, pxToDays, updateSegmentLocal, updateSegment])
+  }, [draggingSegment, segments, viewMode, pxToDays, updateSegmentLocal, updateSegment, getNextWorkingDay])
 
   // ── Connexion chemin critique ──────────────────────────────────────────────────
   const [connectingFrom, setConnectingFrom] = useState(null)
@@ -493,6 +541,7 @@ export function GanttTimeline({
         let newDebut = origDebut, newDuree = origDuree
         if (type === 'move') {
           newDebut = snapToView(applyDeltaDays(origDebut, deltaDays, viewMode), viewMode)
+          if (getNextWorkingDay) newDebut = getNextWorkingDay(newDebut)
         } else if (type === 'resize-right') {
           newDuree = Math.max(minDuree, origDuree + deltaDays)
         } else if (type === 'resize-left') {
@@ -509,7 +558,7 @@ export function GanttTimeline({
       document.body.style.cursor = ''
     }
     if (connectingFrom && !hoveredPoint) setConnectingFrom(null)
-  }, [pxToDays, viewMode, onTaskUpdate, connectingFrom, hoveredPoint])
+  }, [pxToDays, viewMode, onTaskUpdate, connectingFrom, hoveredPoint, getNextWorkingDay])
 
   useEffect(() => {
     const h = (e) => { if (e.key === 'Escape') setConnectingFrom(null) }
@@ -596,7 +645,7 @@ export function GanttTimeline({
                   <div key={i} style={{
                     width: monthWidth, minWidth: monthWidth, flexShrink: 0,
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    borderRight: '1px solid rgba(0,0,0,0.12)',
+                    borderRight: '2px solid rgba(0,0,0,0.20)',
                     backgroundColor: isCurrentMonth ? '#FAF0EB' : 'transparent',
                   }}>
                     <span style={{
@@ -650,11 +699,14 @@ export function GanttTimeline({
             <div style={{ display: 'flex', height: 36, alignItems: 'center' }}>
               {weeks.map((weekStart, i) => {
                 const isCurrentWeek = i === currentWeekIndex
+                const isMonthStart = i === 0 || weekStart.getMonth() !== weeks[i - 1].getMonth()
                 return (
                   <div key={i} style={{
                     width: weekWidth, minWidth: weekWidth, flexShrink: 0,
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    borderRight: '1px solid rgba(0,0,0,0.12)',
+                    borderRight: isMonthStart
+                      ? '2px solid rgba(0,0,0,0.25)'
+                      : '0.5px solid rgba(0,0,0,0.08)',
                     backgroundColor: isCurrentWeek ? '#FAF0EB' : 'transparent',
                   }}>
                     <span style={{
@@ -699,10 +751,10 @@ export function GanttTimeline({
                 const isMonday = day.getDay() === 1
                 const isMonthStart = day.getDate() === 1
                 const borderRight = isMonthStart
-                  ? '1px solid rgba(0,0,0,0.4)'
+                  ? '2px solid rgba(0,0,0,0.25)'
                   : isMonday
-                    ? '1px solid rgba(0,0,0,0.25)'
-                    : '1px solid rgba(0,0,0,0.12)'
+                    ? '0.5px solid rgba(0,0,0,0.15)'
+                    : '0.5px solid rgba(0,0,0,0.08)'
                 return (
                   <div key={i} style={{
                     width: colWidth, minWidth: colWidth, flexShrink: 0,
@@ -750,29 +802,29 @@ export function GanttTimeline({
       {/* ── BODY ──────────────────────────────────────────────────────────────── */}
       <div style={{ position: 'relative' }}>
         {viewMode === 'month' ? (
-          /* Month grid lines (emphase au changement d'année) */
+          /* Month grid lines (toutes identiques : chaque colonne est déjà un mois) */
           months.map((m, i) => (
             <div key={`gl-${i}`} style={{
               position: 'absolute', top: 0, bottom: 0,
-              left: i * monthWidth, width: 1,
-              backgroundColor: (i === 0 || m.year !== months[i - 1].year)
-                ? 'rgba(0,0,0,0.4)'
-                : 'rgba(0,0,0,0.12)',
+              left: i * monthWidth, width: 2,
+              backgroundColor: 'rgba(0,0,0,0.20)',
               pointerEvents: 'none',
             }} />
           ))
         ) : viewMode === 'week' ? (
-          /* Week grid lines (emphase au changement d'année) */
-          weeks.map((weekStart, i) => (
-            <div key={`gl-${i}`} style={{
-              position: 'absolute', top: 0, bottom: 0,
-              left: i * weekWidth, width: 1,
-              backgroundColor: (i === 0 || weekStart.getFullYear() !== weeks[i - 1].getFullYear())
-                ? 'rgba(0,0,0,0.4)'
-                : 'rgba(0,0,0,0.12)',
-              pointerEvents: 'none',
-            }} />
-          ))
+          /* Week grid lines (emphase au début de mois) */
+          weeks.map((weekStart, i) => {
+            const isMonthStart = i === 0 || weekStart.getMonth() !== weeks[i - 1].getMonth()
+            return (
+              <div key={`gl-${i}`} style={{
+                position: 'absolute', top: 0, bottom: 0,
+                left: i * weekWidth,
+                width: isMonthStart ? 2 : 0.5,
+                backgroundColor: isMonthStart ? 'rgba(0,0,0,0.25)' : 'rgba(0,0,0,0.08)',
+                pointerEvents: 'none',
+              }} />
+            )
+          })
         ) : (
           <>
             {/* Weekend shading */}
@@ -795,18 +847,52 @@ export function GanttTimeline({
               return (
                 <div key={`gl-${i}`} style={{
                   position: 'absolute', top: 0, bottom: 0,
-                  left: dayPositions[i], width: 1,
+                  left: dayPositions[i],
+                  width: isMonthStart ? 2 : 0.5,
                   backgroundColor: isMonthStart
-                    ? 'rgba(0,0,0,0.4)'
+                    ? 'rgba(0,0,0,0.25)'
                     : isMonday
-                      ? 'rgba(0,0,0,0.25)'
-                      : 'rgba(0,0,0,0.12)',
+                      ? 'rgba(0,0,0,0.15)'
+                      : 'rgba(0,0,0,0.08)',
                   pointerEvents: 'none',
                 }} />
               )
             })}
           </>
         )}
+
+        {/* Périodes bloquées — zones hachurées */}
+        {periodes.map((periode) => {
+          const left = getX(parseDate(periode.date_debut))
+          const dayAfterFin = parseDate(periode.date_fin)
+          dayAfterFin.setDate(dayAfterFin.getDate() + 1)
+          const width = Math.max(getX(dayAfterFin) - left, 4)
+          const couleur = periode.couleur || '#B8412C'
+          return (
+            <div
+              key={periode.id}
+              title={`${periode.label} — période bloquée`}
+              style={{
+                position: 'absolute', left, width, top: 0, bottom: 0,
+                background: `repeating-linear-gradient(45deg, ${hexToRgba(couleur, 0.06)}, ${hexToRgba(couleur, 0.06)} 4px, ${hexToRgba(couleur, 0.12)} 4px, ${hexToRgba(couleur, 0.12)} 8px)`,
+                borderLeft: `1.5px solid ${hexToRgba(couleur, 0.3)}`,
+                borderRight: `1.5px solid ${hexToRgba(couleur, 0.3)}`,
+                pointerEvents: 'none',
+                zIndex: 1,
+              }}
+            >
+              <div style={{
+                position: 'absolute', top: 4, left: 4,
+                fontSize: 9, fontWeight: 500, color: hexToRgba(couleur, 0.7),
+                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                maxWidth: Math.max(width - 8, 0),
+                pointerEvents: 'none',
+              }}>
+                {periode.label}
+              </div>
+            </div>
+          )
+        })}
 
         {/* Jalons — lignes verticales */}
         {jalons.map(jalon => {
@@ -1242,43 +1328,41 @@ function TaskBarRow({
           : color
         const isDraggingThis = draggingSegmentId === seg.id
         return (
-          <div
-            key={seg.id}
-            title={`${task.nom} — segment`}
-            style={{
-              position: 'absolute',
-              left: segGeo.left, width: segGeo.width,
-              top: BAR_PAD, bottom: BAR_PAD,
-              backgroundColor: segColor,
-              opacity: isDraggingThis ? 0.7 : 0.85,
-              outline: '1.5px dashed rgba(255,255,255,0.5)',
-              outlineOffset: -2,
-              cursor: isDraggingThis ? 'grabbing' : 'grab',
-              zIndex: isDraggingThis ? 25 : 8,
-            }}
-            onMouseDown={(e) => onSegmentDragStart(e, seg)}
-            onClick={(e) => {
-              e.stopPropagation()
-              if (segmentDragMovedRef?.current?.moved) return
-              onBarClick(task)
-            }}
-          >
+          <div key={seg.id}>
+            <div
+              title={`${task.nom} — segment`}
+              style={{
+                position: 'absolute',
+                left: segGeo.left, width: segGeo.width,
+                top: BAR_PAD, bottom: BAR_PAD,
+                backgroundColor: segColor,
+                opacity: isDraggingThis ? 0.7 : 0.85,
+                outline: '1.5px dashed rgba(255,255,255,0.5)',
+                outlineOffset: -2,
+                cursor: isDraggingThis ? 'grabbing' : 'grab',
+                zIndex: isDraggingThis ? 25 : 8,
+              }}
+              onMouseDown={(e) => onSegmentDragStart(e, seg)}
+              onClick={(e) => {
+                e.stopPropagation()
+                if (segmentDragMovedRef?.current?.moved) return
+                onBarClick(task)
+              }}
+            />
             {seg.afficher_nom && (
               <div style={{
                 position: 'absolute',
-                left: 4,
-                top: 0, bottom: 0,
+                left: segGeo.left + segGeo.width + 4,
+                top: BAR_PAD, bottom: BAR_PAD,
                 display: 'flex',
                 alignItems: 'center',
                 whiteSpace: 'nowrap',
                 fontSize: 11,
                 fontWeight: 500,
-                color: 'white',
+                color: '#1F1B17',
                 pointerEvents: 'none',
                 userSelect: 'none',
-                overflow: 'visible',
-                zIndex: 5,
-                textShadow: '0 1px 2px rgba(0,0,0,0.4)',
+                zIndex: 10,
               }}>
                 {task.nom}
               </div>

@@ -13,10 +13,19 @@ function getBarColor(task, lotColor, zones, colorMode) {
 }
 
 export function GanttSidebar({
-  tasks, lots, rowHeight, headerHeight, onEdit, onAvancementChange, zones = [], colorMode = 'lot',
+  tasks, lots, rows = null, rowHeight, headerHeight, onEdit, onAvancementChange, zones = [], colorMode = 'lot',
   onReorderTask, dragOverTaskId = null, onDragOverTaskChange,
 }) {
   const [draggedTaskId, setDraggedTaskId] = useState(null)
+
+  if (rows) {
+    return (
+      <ZoneGroupedSidebar
+        rows={rows} lots={lots} rowHeight={rowHeight} headerHeight={headerHeight}
+        onEdit={onEdit} onAvancementChange={onAvancementChange}
+      />
+    )
+  }
 
   const lotsWithTasks = lots
     .map((lot) => ({ lot, tasks: tasks.filter((t) => t.lot_id === lot.id) }))
@@ -219,6 +228,123 @@ function TaskRow({
       >
         <Pencil size={12} />
       </button>
+    </div>
+  )
+}
+
+// ─── Groupement "Par zone" ──────────────────────────────────────────────────────
+//
+// Contrairement au groupement par lot (calculé ci-dessus depuis tasks+lots), les
+// lignes sont ici précalculées par le parent (une tâche peut apparaître plusieurs
+// fois — une fois par zone où elle a un segment). Pas de drag & drop de
+// réorganisation ici : l'ordre des lignes dans une zone reflète l'ordre par lot,
+// et une tâche peut apparaître sur plusieurs lignes, ce que la réorganisation
+// (au sein d'un seul lot) ne gère pas.
+function ZoneGroupedSidebar({ rows, lots, rowHeight, headerHeight, onEdit, onAvancementChange }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column' }}>
+      {/* Header */}
+      <div style={{
+        position: 'sticky', top: 0, zIndex: 10, flexShrink: 0,
+        display: 'flex', alignItems: 'center',
+        padding: '0 12px', height: headerHeight,
+        backgroundColor: 'rgba(245,242,240,0.8)',
+        borderBottom: '0.5px solid rgba(0,0,0,0.08)',
+        fontSize: 10, fontWeight: 700, textTransform: 'uppercase',
+        letterSpacing: '0.08em', color: '#9C9591',
+      }}>
+        <span style={{ width: 48, flexShrink: 0 }}>N°</span>
+        <span style={{ flex: 1, minWidth: 0 }}>Tâche</span>
+        <span style={{ width: 56, flexShrink: 0, textAlign: 'center' }}>Av. %</span>
+        <span style={{ width: 24, flexShrink: 0 }} />
+      </div>
+
+      {rows.map((row) => {
+        if (row.type === 'header-zone') {
+          return (
+            <div key={row.id} style={{
+              height: headerHeight,
+              display: 'flex', alignItems: 'center',
+              padding: '0 12px',
+              background: row.couleur ? `${row.couleur}18` : '#F5F2F0',
+              borderBottom: `2px solid ${row.couleur ?? '#C9C4C0'}`,
+              borderLeft: `3px solid ${row.couleur ?? '#C9C4C0'}`,
+            }}>
+              <span style={{
+                fontSize: 11, fontWeight: 700, textTransform: 'uppercase',
+                letterSpacing: '0.06em', color: row.couleur ?? '#5E5854',
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              }}>
+                {row.displayName}
+              </span>
+            </div>
+          )
+        }
+
+        const lot = lots.find((l) => l.id === row.lotId)
+        const isDuplicate = row.showMainBar === false
+
+        return (
+          <div
+            key={row.id}
+            className="group"
+            style={{
+              display: 'flex', alignItems: 'center', height: rowHeight,
+              padding: '0 12px', borderBottom: '0.5px solid rgba(0,0,0,0.06)', gap: 6,
+            }}
+            onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(155,143,133,0.06)'}
+            onMouseLeave={e => e.currentTarget.style.backgroundColor = ''}
+          >
+            {/* Color bar + numéro */}
+            <div style={{ display: 'flex', width: 48, flexShrink: 0, alignItems: 'center', gap: 6 }}>
+              <div style={{ width: 2, height: 16, borderRadius: 2, backgroundColor: lot?.couleur ?? '#C9C4C0' }} />
+              <span style={{ fontSize: 11, fontWeight: 600, color: '#9C9591', fontVariantNumeric: 'tabular-nums' }}>
+                {row.numero}
+              </span>
+            </div>
+
+            {/* Nom — italique sur une ligne dupliquée (segments seulement) */}
+            <button
+              style={{
+                flex: 1, minWidth: 0, textAlign: 'left', fontSize: 12, color: '#1F1B17',
+                fontStyle: isDuplicate ? 'italic' : 'normal',
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+              }}
+              onClick={() => onEdit(row.task)}
+              onMouseEnter={e => e.currentTarget.style.color = '#E8602C'}
+              onMouseLeave={e => e.currentTarget.style.color = '#1F1B17'}
+            >
+              {row.displayName}
+            </button>
+
+            {/* Avancement — seulement sur la ligne principale de la tâche */}
+            <div style={{ width: 56, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              {!isDuplicate && (
+                <input
+                  type="number" min={0} max={100} value={row.task.avancement}
+                  onChange={(e) => {
+                    const v = Math.max(0, Math.min(100, Number(e.target.value)))
+                    onAvancementChange(row.task.id, v)
+                  }}
+                  style={{
+                    width: 46, height: 24, borderRadius: 3, textAlign: 'center', fontSize: 11,
+                    border: '0.5px solid rgba(0,0,0,0.15)', backgroundColor: '#FAFAF9',
+                    padding: '0 4px', fontVariantNumeric: 'tabular-nums', outline: 'none',
+                  }}
+                  onFocus={e => { e.target.style.borderColor = '#E8602C'; e.target.style.boxShadow = '0 0 0 2px rgba(224,90,30,0.1)' }}
+                  onBlur={e => { e.target.style.borderColor = 'rgba(0,0,0,0.15)'; e.target.style.boxShadow = 'none' }}
+                />
+              )}
+            </div>
+
+            {/* Nom du lot en petit */}
+            <span style={{ fontSize: 9, color: '#9C9591', flexShrink: 0, maxWidth: 40, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {lot?.nom}
+            </span>
+          </div>
+        )
+      })}
     </div>
   )
 }

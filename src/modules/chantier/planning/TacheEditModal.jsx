@@ -519,7 +519,7 @@ export function TacheEditModal({
 
                 {segmentsDeTache.map((seg, idx) => (
                   <div key={seg.id} style={{
-                    display: 'grid', gridTemplateColumns: '1fr 80px 1fr auto 28px', gap: 8,
+                    display: 'grid', gridTemplateColumns: '1fr 1fr 80px 1fr auto 28px', gap: 8,
                     alignItems: 'center', padding: '8px 0',
                     borderBottom: '0.5px solid rgba(0,0,0,0.06)',
                   }}>
@@ -537,6 +537,25 @@ export function TacheEditModal({
                         style={{
                           width: '100%', padding: '6px 8px', fontSize: 12,
                           border: '0.5px solid rgba(0,0,0,0.12)', borderRadius: 2,
+                        }}
+                      />
+                    </div>
+
+                    {/* Nom (optionnel — sinon nom de la tâche parente) */}
+                    <div>
+                      {idx === 0 && (
+                        <label style={{ fontSize: 10, color: '#9C9591', display: 'block', marginBottom: 3 }}>
+                          NOM (optionnel)
+                        </label>
+                      )}
+                      <input
+                        type="text"
+                        value={seg.nom ?? ''}
+                        onChange={(e) => updateSegment(seg.id, { nom: e.target.value || null })}
+                        placeholder={task.nom}
+                        style={{
+                          width: '100%', padding: '6px 8px', fontSize: 12,
+                          border: '0.5px solid rgba(0,0,0,0.12)', borderRadius: 2, color: '#1F1B17',
                         }}
                       />
                     </div>

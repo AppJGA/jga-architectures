@@ -202,20 +202,25 @@ function getEntityDateDuree(point, tasks, segments) {
   return t ? { debut: t.debut, duree: t.duree } : null
 }
 
+// `rowIndexMap` est indexé par clés composites `task:<id>` / `segment:<id>` — en
+// mode "par lot" un segment partage la ligne de sa tâche parente, en mode "par
+// zone" une tâche et ses segments peuvent être répartis sur des lignes distinctes.
+function rowKey(type, id) { return `${type}:${id}` }
+
 // Géométrie + ligne d'une entité tâche/segment identifiée par (tacheId, segmentId)
 function resolveEntityGeometry(tacheId, segmentId, tasks, segments, rowIndexMap, geo) {
   if (segmentId != null) {
     const seg = segments.find((s) => s.id === segmentId)
     if (!seg) return null
     const segGeo = computeGeometry(parseDate(seg.date_debut), seg.duree_jours, geo)
-    const rowIdx = rowIndexMap[seg.tache_id]
+    const rowIdx = rowIndexMap[rowKey('segment', segmentId)]
     if (rowIdx === undefined) return null
     return { left: segGeo.left, width: segGeo.width, rowIdx }
   }
   const task = tasks.find((t) => t.id === tacheId)
   if (!task) return null
   const tGeo = getTaskGeometry(task, geo)
-  const rowIdx = rowIndexMap[task.id]
+  const rowIdx = rowIndexMap[rowKey('task', tacheId)]
   if (rowIdx === undefined) return null
   return { left: tGeo.left, width: tGeo.width, rowIdx }
 }
@@ -296,7 +301,7 @@ function hexToRgba(hex, alpha) {
 }
 
 export function GanttTimeline({
-  tasks, lots, dayWidth, rowHeight, showConnections,
+  tasks, lots, rows = null, dayWidth, rowHeight, showConnections,
   jalons = [], onJalonClick,
   onTaskClick, onTaskUpdate, onDependencyCreate, onDependencyDelete,
   zones = [], colorMode = 'lot', viewMode = 'day', zoomLevel = 1,
@@ -420,28 +425,74 @@ export function GanttTimeline({
 
   const unassigned = useMemo(() => tasks.filter((t) => t.lot_id == null), [tasks])
 
-  // Index de ligne (même ordre que sidebar)
-  const rowIndexMap = useMemo(() => {
+  // Index de ligne par lot (même ordre que sidebar), clés composites task:<id> /
+  // segment:<id> — un segment partage la ligne de sa tâche parente en mode lot.
+  const rowIndexMapLot = useMemo(() => {
     const map = {}
     let idx = 0
     lotsWithTasks.forEach(({ tasks: lt }) => {
       idx++
-      lt.forEach((t) => { map[t.id] = idx++ })
+      lt.forEach((t) => {
+        map[rowKey('task', t.id)] = idx
+        segments.filter((s) => s.tache_id === t.id).forEach((s) => { map[rowKey('segment', s.id)] = idx })
+        idx++
+      })
     })
     if (unassigned.length > 0) {
       idx++
-      unassigned.forEach((t) => { map[t.id] = idx++ })
+      unassigned.forEach((t) => {
+        map[rowKey('task', t.id)] = idx
+        segments.filter((s) => s.tache_id === t.id).forEach((s) => { map[rowKey('segment', s.id)] = idx })
+        idx++
+      })
     }
     return map
-  }, [lotsWithTasks, unassigned])
+  }, [lotsWithTasks, unassigned, segments])
 
-  const totalBodyRows = useMemo(() => {
+  const totalBodyRowsLot = useMemo(() => {
     let n = 0
     lotsWithTasks.forEach(({ tasks: lt }) => { n += 1 + lt.length })
     if (unassigned.length > 0) n += 1 + unassigned.length
     return n
   }, [lotsWithTasks, unassigned])
-  const totalBodyHeight = totalBodyRows * rowHeight
+
+  // ── Mode "par zone" : lignes précalculées par le parent (prop `rows`) ─────────
+  // Hauteur variable par ligne (header de zone = HEADER_HEIGHT, ligne tâche = rowHeight).
+  const rowOffsetsZone = useMemo(() => {
+    if (!rows) return null
+    const offsets = new Array(rows.length)
+    let y = 0
+    rows.forEach((r, i) => {
+      offsets[i] = y
+      y += r.type === 'header-zone' ? HEADER_HEIGHT : rowHeight
+    })
+    return offsets
+  }, [rows, rowHeight])
+
+  const rowIndexMapZone = useMemo(() => {
+    if (!rows) return null
+    const map = {}
+    rows.forEach((r, idx) => {
+      if (r.type !== 'task-row') return
+      if (r.showMainBar !== false) map[rowKey('task', r.task.id)] = idx
+      r.visibleSegmentIds.forEach((segId) => { map[rowKey('segment', segId)] = idx })
+    })
+    return map
+  }, [rows])
+
+  const rowIndexMap = rows ? rowIndexMapZone : rowIndexMapLot
+
+  // Position Y (haut de ligne) d'un index de ligne, quel que soit le mode
+  const rowY = useCallback(
+    (idx) => (rows ? rowOffsetsZone[idx] : idx * rowHeight),
+    [rows, rowOffsetsZone, rowHeight]
+  )
+
+  const totalBodyHeight = rows
+    ? (rows.length > 0
+        ? rowOffsetsZone[rows.length - 1] + (rows[rows.length - 1].type === 'header-zone' ? HEADER_HEIGHT : rowHeight)
+        : 0)
+    : totalBodyRowsLot * rowHeight
 
   // ── Drag barre ────────────────────────────────────────────────────────────────
   const barDragRef = useRef(null)
@@ -544,8 +595,8 @@ export function GanttTimeline({
         if (!fromTask) return null
         const fromGeo = getTaskGeometry(fromTask, geo)
         const toGeo = getTaskGeometry(t, geo)
-        const fromRowIdx = rowIndexMap[fromTask.id]
-        const toRowIdx = rowIndexMap[t.id]
+        const fromRowIdx = rowIndexMap[rowKey('task', fromTask.id)]
+        const toRowIdx = rowIndexMap[rowKey('task', t.id)]
         if (fromRowIdx === undefined || toRowIdx === undefined) return null
         return {
           id: `task-${fromTask.id}-${t.id}`,
@@ -555,9 +606,9 @@ export function GanttTimeline({
           fromLabel: `${fromTask.num_tache} – ${fromTask.nom}`,
           toLabel: `${t.num_tache} – ${t.nom}`,
           fromX: fromGeo.left + fromGeo.width,
-          fromY: fromRowIdx * rowHeight + (rowHeight - BAR_PAD),
+          fromY: rowY(fromRowIdx) + (rowHeight - BAR_PAD),
           toX: toGeo.left,
-          toY: toRowIdx * rowHeight + (rowHeight - BAR_PAD),
+          toY: rowY(toRowIdx) + (rowHeight - BAR_PAD),
         }
       })
       .filter(Boolean)
@@ -578,15 +629,15 @@ export function GanttTimeline({
             ? segmentLabel(dep.cible_segment_id, tasks, segments)
             : taskLabel(dep.cible_tache_id, tasks),
           fromX: from.left + from.width,
-          fromY: from.rowIdx * rowHeight + (rowHeight - BAR_PAD),
+          fromY: rowY(from.rowIdx) + (rowHeight - BAR_PAD),
           toX: to.left,
-          toY: to.rowIdx * rowHeight + (rowHeight - BAR_PAD),
+          toY: rowY(to.rowIdx) + (rowHeight - BAR_PAD),
         }
       })
       .filter(Boolean)
 
     return [...legacy, ...extended]
-  }, [tasks, segments, dependances, rowIndexMap, rowHeight, geo])
+  }, [tasks, segments, dependances, rowIndexMap, rowHeight, geo, rowY])
 
   // ── Mouse handlers ─────────────────────────────────────────────────────────────
   const handleMouseMove = useCallback((e) => {
@@ -1030,24 +1081,31 @@ export function GanttTimeline({
           )
         })}
 
-        {/* Lots */}
-        {lotsWithTasks.map(({ lot, tasks: lotTasks }) => (
-          <div key={lot.id}>
-            <div style={{
-              borderBottom: '0.5px solid rgba(0,0,0,0.06)',
-              height: rowHeight,
-              backgroundColor: `${lot.couleur}10`,
-            }} />
-            {lotTasks.map((task) => (
+        {rows ? (
+          /* ── Mode "par zone" : lignes précalculées par le parent ────────────── */
+          rows.map((row) => {
+            if (row.type === 'header-zone') {
+              return (
+                <div key={row.id} style={{
+                  height: HEADER_HEIGHT,
+                  backgroundColor: row.couleur ? `${row.couleur}10` : '#F5F2F0',
+                  borderBottom: `2px solid ${row.couleur ?? '#C9C4C0'}`,
+                }} />
+              )
+            }
+            const rowLot = lots.find((l) => l.id === row.lotId) ?? null
+            return (
               <TaskBarRow
-                key={task.id}
-                task={task} lot={lot}
-                barColor={getBarColor(task, lot, zones, colorMode)}
+                key={row.id}
+                task={row.task} lot={rowLot}
+                barColor={getBarColor(row.task, rowLot, zones, colorMode)}
                 rowHeight={rowHeight} geo={geo}
                 dragOverTaskId={dragOverTaskId}
-                segments={getSegmentsForTache ? getSegmentsForTache(task.id) : []}
+                segments={getSegmentsForTache ? getSegmentsForTache(row.task.id) : []}
+                visibleSegmentIds={row.visibleSegmentIds}
+                showMainBar={row.showMainBar !== false}
                 zones={zones}
-                isDragging={draggingBar === task.id}
+                isDragging={draggingBar === row.task.id}
                 draggingSegmentId={draggingSegment?.segmentId ?? null}
                 onSegmentDragStart={handleSegmentMouseDown}
                 segmentDragMovedRef={segmentDragRef}
@@ -1059,41 +1117,76 @@ export function GanttTimeline({
                 onConnectionPointClick={handleConnectionPointClick}
                 onConnectionPointHover={setHoveredPoint}
               />
+            )
+          })
+        ) : (
+          <>
+            {/* Lots */}
+            {lotsWithTasks.map(({ lot, tasks: lotTasks }) => (
+              <div key={lot.id}>
+                <div style={{
+                  borderBottom: '0.5px solid rgba(0,0,0,0.06)',
+                  height: rowHeight,
+                  backgroundColor: `${lot.couleur}10`,
+                }} />
+                {lotTasks.map((task) => (
+                  <TaskBarRow
+                    key={task.id}
+                    task={task} lot={lot}
+                    barColor={getBarColor(task, lot, zones, colorMode)}
+                    rowHeight={rowHeight} geo={geo}
+                    dragOverTaskId={dragOverTaskId}
+                    segments={getSegmentsForTache ? getSegmentsForTache(task.id) : []}
+                    zones={zones}
+                    isDragging={draggingBar === task.id}
+                    draggingSegmentId={draggingSegment?.segmentId ?? null}
+                    onSegmentDragStart={handleSegmentMouseDown}
+                    segmentDragMovedRef={segmentDragRef}
+                    isConnecting={!!connectingFrom}
+                    connectingFrom={connectingFrom}
+                    hoveredPoint={hoveredPoint}
+                    onBarDragStart={startBarDrag}
+                    onBarClick={onTaskClick}
+                    onConnectionPointClick={handleConnectionPointClick}
+                    onConnectionPointHover={setHoveredPoint}
+                  />
+                ))}
+              </div>
             ))}
-          </div>
-        ))}
 
-        {/* Sans lot */}
-        {unassigned.length > 0 && (
-          <div>
-            <div style={{
-              borderBottom: '0.5px solid rgba(0,0,0,0.06)',
-              height: rowHeight,
-              backgroundColor: 'rgba(155,143,133,0.06)',
-            }} />
-            {unassigned.map((task) => (
-              <TaskBarRow
-                key={task.id}
-                task={task} lot={null}
-                barColor={getBarColor(task, null, zones, colorMode)}
-                rowHeight={rowHeight} geo={geo}
-                dragOverTaskId={dragOverTaskId}
-                segments={getSegmentsForTache ? getSegmentsForTache(task.id) : []}
-                zones={zones}
-                isDragging={draggingBar === task.id}
-                draggingSegmentId={draggingSegment?.segmentId ?? null}
-                onSegmentDragStart={handleSegmentMouseDown}
-                segmentDragMovedRef={segmentDragRef}
-                isConnecting={!!connectingFrom}
-                connectingFrom={connectingFrom}
-                hoveredPoint={hoveredPoint}
-                onBarDragStart={startBarDrag}
-                onBarClick={onTaskClick}
-                onConnectionPointClick={handleConnectionPointClick}
-                onConnectionPointHover={setHoveredPoint}
-              />
-            ))}
-          </div>
+            {/* Sans lot */}
+            {unassigned.length > 0 && (
+              <div>
+                <div style={{
+                  borderBottom: '0.5px solid rgba(0,0,0,0.06)',
+                  height: rowHeight,
+                  backgroundColor: 'rgba(155,143,133,0.06)',
+                }} />
+                {unassigned.map((task) => (
+                  <TaskBarRow
+                    key={task.id}
+                    task={task} lot={null}
+                    barColor={getBarColor(task, null, zones, colorMode)}
+                    rowHeight={rowHeight} geo={geo}
+                    dragOverTaskId={dragOverTaskId}
+                    segments={getSegmentsForTache ? getSegmentsForTache(task.id) : []}
+                    zones={zones}
+                    isDragging={draggingBar === task.id}
+                    draggingSegmentId={draggingSegment?.segmentId ?? null}
+                    onSegmentDragStart={handleSegmentMouseDown}
+                    segmentDragMovedRef={segmentDragRef}
+                    isConnecting={!!connectingFrom}
+                    connectingFrom={connectingFrom}
+                    hoveredPoint={hoveredPoint}
+                    onBarDragStart={startBarDrag}
+                    onBarClick={onTaskClick}
+                    onConnectionPointClick={handleConnectionPointClick}
+                    onConnectionPointHover={setHoveredPoint}
+                  />
+                ))}
+              </div>
+            )}
+          </>
         )}
 
         {/* ── SVG : flèches permanentes + ligne en cours ───────────────────── */}
@@ -1273,6 +1366,7 @@ export function GanttTimeline({
 function TaskBarRow({
   task, lot, geo, rowHeight, barColor,
   segments = [], zones = [], dragOverTaskId = null,
+  visibleSegmentIds = null, showMainBar = true,
   isDragging, isConnecting, connectingFrom, hoveredPoint,
   draggingSegmentId, onSegmentDragStart, segmentDragMovedRef,
   onBarDragStart, onBarClick, onConnectionPointClick, onConnectionPointHover,
@@ -1320,7 +1414,7 @@ function TaskBarRow({
       onMouseLeave={() => setIsHovered(false)}
     >
       {/* ── Barre principale ─────────────────────────────────────── */}
-      <div
+      {showMainBar && <div
         data-taskid={task.id}
         title={barTitle}
         style={{
@@ -1406,10 +1500,10 @@ function TaskBarRow({
         >
           <div style={{ height: 12, width: 1, backgroundColor: 'rgba(255,255,255,0.4)', pointerEvents: 'none' }} />
         </div>
-      </div>
+      </div>}
 
       {/* Label à droite de la barre */}
-      {showLabel && <div style={{
+      {showMainBar && showLabel && <div style={{
         position: 'absolute',
         left: left + width + 4,
         top: 0,
@@ -1433,7 +1527,7 @@ function TaskBarRow({
       </div>}
 
       {/* ── Extension d'approvisionnement ────────────────────────── */}
-      {task.appro_actif && task.appro_duree > 0 && (
+      {showMainBar && task.appro_actif && task.appro_duree > 0 && (
         <ApproBar
           task={task} color={color} geo={geo}
           rowHeight={rowHeight} taskLeft={left} taskWidth={width}
@@ -1441,7 +1535,9 @@ function TaskBarRow({
       )}
 
       {/* ── Segments supplémentaires ────────────────────────────────── */}
-      {segments.map((seg) => {
+      {segments
+        .filter((seg) => !visibleSegmentIds || visibleSegmentIds.includes(seg.id))
+        .map((seg) => {
         const segGeo = computeGeometry(parseDate(seg.date_debut), seg.duree_jours, geo)
         const segColor = seg.zone_id
           ? zones.find((z) => z.id === seg.zone_id)?.couleur ?? color
@@ -1493,7 +1589,7 @@ function TaskBarRow({
                 userSelect: 'none',
                 zIndex: 10,
               }}>
-                {task.nom}
+                {seg.nom ?? task.nom}
               </div>
             )}
 
@@ -1536,43 +1632,47 @@ function TaskBarRow({
         )
       })}
 
-      {/* ── Point START ──────────────────────────────────────────────── */}
-      <div
-        style={{
-          position: 'absolute', zIndex: 40,
-          left: left - DOT_R, top: BAR_BOTTOM - DOT_R,
-          width: DOT_R * 2, height: DOT_R * 2,
-          borderRadius: '50%', border: '2px solid white', cursor: 'crosshair',
-          backgroundColor: isStartHovered ? '#E8602C' : color,
-          transform: isStartHovered ? 'scale(1.5)' : 'scale(1)',
-          boxShadow: isStartHovered ? '0 0 0 3px rgba(224,90,30,0.35)' : '0 1px 4px rgba(0,0,0,0.4)',
-          opacity: showStartDot ? 1 : 0,
-          transition: 'transform 0.15s, box-shadow 0.15s, opacity 0.15s, background-color 0.15s',
-          pointerEvents: showStartDot ? 'auto' : 'none',
-        }}
-        onClick={(e) => onConnectionPointClick(e, startPoint)}
-        onMouseEnter={() => onConnectionPointHover(startPoint)}
-        onMouseLeave={() => onConnectionPointHover(null)}
-      />
+      {showMainBar && (
+        <>
+          {/* ── Point START ──────────────────────────────────────────── */}
+          <div
+            style={{
+              position: 'absolute', zIndex: 40,
+              left: left - DOT_R, top: BAR_BOTTOM - DOT_R,
+              width: DOT_R * 2, height: DOT_R * 2,
+              borderRadius: '50%', border: '2px solid white', cursor: 'crosshair',
+              backgroundColor: isStartHovered ? '#E8602C' : color,
+              transform: isStartHovered ? 'scale(1.5)' : 'scale(1)',
+              boxShadow: isStartHovered ? '0 0 0 3px rgba(224,90,30,0.35)' : '0 1px 4px rgba(0,0,0,0.4)',
+              opacity: showStartDot ? 1 : 0,
+              transition: 'transform 0.15s, box-shadow 0.15s, opacity 0.15s, background-color 0.15s',
+              pointerEvents: showStartDot ? 'auto' : 'none',
+            }}
+            onClick={(e) => onConnectionPointClick(e, startPoint)}
+            onMouseEnter={() => onConnectionPointHover(startPoint)}
+            onMouseLeave={() => onConnectionPointHover(null)}
+          />
 
-      {/* ── Point END ────────────────────────────────────────────────── */}
-      <div
-        style={{
-          position: 'absolute', zIndex: 40,
-          left: left + width - DOT_R, top: BAR_BOTTOM - DOT_R,
-          width: DOT_R * 2, height: DOT_R * 2,
-          borderRadius: '50%', border: '2px solid white', cursor: 'crosshair',
-          backgroundColor: isSource || isEndHovered ? '#E8602C' : color,
-          transform: isEndHovered || isSource ? 'scale(1.5)' : 'scale(1)',
-          boxShadow: (isEndHovered || isSource) ? '0 0 0 3px rgba(224,90,30,0.35)' : '0 1px 4px rgba(0,0,0,0.4)',
-          opacity: showEndDot ? 1 : 0,
-          transition: 'transform 0.15s, box-shadow 0.15s, opacity 0.15s, background-color 0.15s',
-          pointerEvents: showEndDot ? 'auto' : 'none',
-        }}
-        onClick={(e) => onConnectionPointClick(e, endPoint)}
-        onMouseEnter={() => onConnectionPointHover(endPoint)}
-        onMouseLeave={() => onConnectionPointHover(null)}
-      />
+          {/* ── Point END ────────────────────────────────────────────── */}
+          <div
+            style={{
+              position: 'absolute', zIndex: 40,
+              left: left + width - DOT_R, top: BAR_BOTTOM - DOT_R,
+              width: DOT_R * 2, height: DOT_R * 2,
+              borderRadius: '50%', border: '2px solid white', cursor: 'crosshair',
+              backgroundColor: isSource || isEndHovered ? '#E8602C' : color,
+              transform: isEndHovered || isSource ? 'scale(1.5)' : 'scale(1)',
+              boxShadow: (isEndHovered || isSource) ? '0 0 0 3px rgba(224,90,30,0.35)' : '0 1px 4px rgba(0,0,0,0.4)',
+              opacity: showEndDot ? 1 : 0,
+              transition: 'transform 0.15s, box-shadow 0.15s, opacity 0.15s, background-color 0.15s',
+              pointerEvents: showEndDot ? 'auto' : 'none',
+            }}
+            onClick={(e) => onConnectionPointClick(e, endPoint)}
+            onMouseEnter={() => onConnectionPointHover(endPoint)}
+            onMouseLeave={() => onConnectionPointHover(null)}
+          />
+        </>
+      )}
     </div>
   )
 }

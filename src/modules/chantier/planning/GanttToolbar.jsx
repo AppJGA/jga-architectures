@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import {
   ZoomIn, ZoomOut, Plus, CalendarDays, Calendar, GitBranch, Flag, Palette, Eye, Ban,
-  Download, ChevronDown, FileText, TableProperties,
+  Download, ChevronDown, FileText, TableProperties, Layers,
 } from 'lucide-react'
 
 const BTN = {
@@ -22,7 +22,8 @@ export function GanttToolbar({
   onZoomIn, onZoomOut, onResetDayWidth, onOpenLots, onExportPdf, onExportExcel, onAddTask,
   onToggleConnections, showConnections, onOpenJalons, dayWidth,
   dayWidthMin = 15, dayWidthMax = 100, zoomLevelMin = 0.5, zoomLevelMax = 2,
-  colorMode, onColorModeChange, onOpenZones,
+  colorMode, onColorModeChange, onOpenZones, zones = [],
+  groupMode = 'lot', onGroupModeChange,
   viewMode, onViewModeChange, zoomLevel = 1, onZoomLevelChange,
   periodes = [], onOpenPeriodesBloquees,
 }) {
@@ -37,7 +38,7 @@ export function GanttToolbar({
       borderBottom: '0.5px solid rgba(0,0,0,0.08)', flexShrink: 0,
     }} data-print="hidden">
       {/* Zoom controls */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1 }}>
         {/* Zoom vue jour — masqué hors vue jour, sinon deux paires de loupes
             coexistent et celle-ci n'a aucun effet visuel (dayWidth n'est pas
             utilisé pour la géométrie en vue semaine/mois). */}
@@ -158,8 +159,48 @@ export function GanttToolbar({
         )}
       </div>
 
+      {/* Mode de couleur : par lot / par zone — position fixe et centrée,
+          jamais affectée par les boutons conditionnels des groupes voisins */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+        <Eye size={14} color="#9C9591" strokeWidth={1.25} />
+
+        <span style={{
+          fontSize: 11,
+          color: colorMode === 'lot' ? '#1F1B17' : '#9C9591',
+          fontWeight: colorMode === 'lot' ? 500 : 400,
+          transition: 'color 0.2s',
+        }}>
+          Par lot
+        </span>
+
+        <div
+          onClick={() => onColorModeChange(colorMode === 'lot' ? 'zone' : 'lot')}
+          style={{
+            width: 40, height: 22, borderRadius: 11,
+            background: colorMode === 'zone' ? '#E8602C' : '#C9C4C0',
+            position: 'relative', cursor: 'pointer',
+            transition: 'background 0.2s', flexShrink: 0,
+          }}
+        >
+          <div style={{
+            position: 'absolute', top: 3, left: colorMode === 'zone' ? 21 : 3,
+            width: 16, height: 16, borderRadius: '50%', background: 'white',
+            transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+          }} />
+        </div>
+
+        <span style={{
+          fontSize: 11,
+          color: colorMode === 'zone' ? '#E8602C' : '#9C9591',
+          fontWeight: colorMode === 'zone' ? 500 : 400,
+          transition: 'color 0.2s',
+        }}>
+          Par zone
+        </span>
+      </div>
+
       {/* Actions */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, justifyContent: 'flex-end' }}>
         <button
           style={{
             ...BTN,
@@ -195,61 +236,44 @@ export function GanttToolbar({
             <Palette size={13} strokeWidth={1.25} /> Gérer les lots
           </button>
         )}
+        {colorMode === 'zone' && (
+          <button style={BTN} onClick={onOpenZones}>
+            <Palette size={13} strokeWidth={1.25} /> Gérer les zones
+          </button>
+        )}
 
-        {/* Mode de couleur : par lot / par zone */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Eye size={14} color="#9C9591" strokeWidth={1.25} />
-
-          <span style={{
-            fontSize: 11,
-            color: colorMode === 'lot' ? '#1F1B17' : '#9C9591',
-            fontWeight: colorMode === 'lot' ? 500 : 400,
-            transition: 'color 0.2s',
-          }}>
-            Par lot
-          </span>
-
-          <div
-            onClick={() => onColorModeChange(colorMode === 'lot' ? 'zone' : 'lot')}
-            style={{
-              width: 40, height: 22, borderRadius: 11,
-              background: colorMode === 'zone' ? '#E8602C' : '#C9C4C0',
-              position: 'relative', cursor: 'pointer',
-              transition: 'background 0.2s', flexShrink: 0,
-            }}
-          >
+        {/* Grouper par : lot / zone — indépendant de la coloration des barres */}
+        {zones.length > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Layers size={14} color="#9C9591" strokeWidth={1.25} />
             <div style={{
-              position: 'absolute', top: 3, left: colorMode === 'zone' ? 21 : 3,
-              width: 16, height: 16, borderRadius: '50%', background: 'white',
-              transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
-            }} />
+              display: 'flex', border: '0.5px solid rgba(0,0,0,0.15)', overflow: 'hidden',
+            }}>
+              {[
+                { value: 'lot', label: 'Par lot' },
+                { value: 'zone', label: 'Par zone' },
+              ].map((opt, idx) => (
+                <button
+                  key={opt.value}
+                  onClick={() => onGroupModeChange(opt.value)}
+                  style={{
+                    padding: '5px 10px',
+                    fontSize: 11,
+                    border: 'none',
+                    borderRight: idx === 0 ? '0.5px solid rgba(0,0,0,0.15)' : 'none',
+                    background: groupMode === opt.value ? '#1F1B17' : 'transparent',
+                    color: groupMode === opt.value ? 'white' : '#5E5854',
+                    cursor: 'pointer',
+                    fontWeight: groupMode === opt.value ? 500 : 400,
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
           </div>
+        )}
 
-          <span style={{
-            fontSize: 11,
-            color: colorMode === 'zone' ? '#E8602C' : '#9C9591',
-            fontWeight: colorMode === 'zone' ? 500 : 400,
-            transition: 'color 0.2s',
-          }}>
-            Par zone
-          </span>
-
-          {colorMode === 'zone' && (
-            <button
-              onClick={onOpenZones}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px',
-                fontSize: 12,
-                border: '0.5px solid rgba(0,0,0,0.15)',
-                background: 'transparent', color: '#5E5854', cursor: 'pointer',
-                marginLeft: 4,
-              }}
-            >
-              <Palette size={13} strokeWidth={1.25} />
-              Gérer les zones
-            </button>
-          )}
-        </div>
         <div style={{ position: 'relative' }}>
           <button
             onClick={() => setShowExportMenu((v) => !v)}

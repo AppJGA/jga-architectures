@@ -244,7 +244,11 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
 
     el.addEventListener('wheel', handleWheel, { passive: false })
     return () => el.removeEventListener('wheel', handleWheel)
-  }, [viewMode])
+  // `isLoading`/`error` : le composant retourne un spinner/écran d'erreur (sans le
+  // div scrollable) tant que ces états sont actifs, donc `timelineRef.current` vaut
+  // encore `null` lors du premier passage de cet effet — sans ces dépendances, il ne
+  // se relance jamais une fois le vrai DOM monté et le listener n'est jamais attaché.
+  }, [viewMode, isLoading, error])
 
   useEffect(() => () => clearTimeout(zoomToastTimer.current), [])
 

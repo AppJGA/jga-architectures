@@ -286,7 +286,7 @@ export function GanttTimeline({
   zones = [], colorMode = 'lot', viewMode = 'day', zoomLevel = 1,
   getSegmentsForTache, segments = [], updateSegmentLocal, onSegmentDateCommit,
   dependances = [], onSegmentDependencyCreate, onSegmentDependencyDelete,
-  periodes = [], getNextWorkingDay,
+  periodes = [], getNextWorkingDay, dragOverTaskId = null,
 }) {
   const weekWidth = WEEK_WIDTH_BASE * zoomLevel
   const monthWidth = MONTH_WIDTH_BASE * zoomLevel
@@ -442,6 +442,7 @@ export function GanttTimeline({
   }, [viewMode, weekWidth, monthWidth, avgDayWidth])
 
   const startBarDrag = useCallback((e, task, type) => {
+    if (e.button !== 0) return
     e.preventDefault(); e.stopPropagation()
     barDragRef.current = {
       type, taskId: task.id, startX: e.clientX,
@@ -619,6 +620,7 @@ export function GanttTimeline({
         } else if (type === 'resize-left') {
           const shift = Math.min(deltaDays, origDuree - minDuree)
           newDebut = applyDeltaDays(origDebut, shift, viewMode)
+          if (getNextWorkingDay) newDebut = getNextWorkingDay(newDebut)
           newDuree = Math.max(minDuree, origDuree - deltaDays)
         }
         if (formatDateISO(newDebut) !== formatDateISO(origDebut) || newDuree !== origDuree) {
@@ -1022,6 +1024,7 @@ export function GanttTimeline({
                 task={task} lot={lot}
                 barColor={getBarColor(task, lot, zones, colorMode)}
                 rowHeight={rowHeight} geo={geo}
+                dragOverTaskId={dragOverTaskId}
                 segments={getSegmentsForTache ? getSegmentsForTache(task.id) : []}
                 zones={zones}
                 isDragging={draggingBar === task.id}
@@ -1054,6 +1057,7 @@ export function GanttTimeline({
                 task={task} lot={null}
                 barColor={getBarColor(task, null, zones, colorMode)}
                 rowHeight={rowHeight} geo={geo}
+                dragOverTaskId={dragOverTaskId}
                 segments={getSegmentsForTache ? getSegmentsForTache(task.id) : []}
                 zones={zones}
                 isDragging={draggingBar === task.id}
@@ -1248,7 +1252,7 @@ export function GanttTimeline({
 
 function TaskBarRow({
   task, lot, geo, rowHeight, barColor,
-  segments = [], zones = [],
+  segments = [], zones = [], dragOverTaskId = null,
   isDragging, isConnecting, connectingFrom, hoveredPoint,
   draggingSegmentId, onSegmentDragStart, segmentDragMovedRef,
   onBarDragStart, onBarClick, onConnectionPointClick, onConnectionPointHover,
@@ -1282,7 +1286,10 @@ function TaskBarRow({
 
   return (
     <div
-      style={{ position: 'relative', height: rowHeight, borderBottom: '0.5px solid rgba(0,0,0,0.05)' }}
+      style={{
+        position: 'relative', height: rowHeight, borderBottom: '0.5px solid rgba(0,0,0,0.05)',
+        borderTop: dragOverTaskId === task.id ? '2px solid #E8602C' : '2px solid transparent',
+      }}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
@@ -1317,7 +1324,7 @@ function TaskBarRow({
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             borderRadius: 0,
           }}
-          onMouseDown={(e) => { e.stopPropagation(); onBarDragStart(e, task, 'resize-left') }}
+          onMouseDown={(e) => { if (e.button !== 0) return; e.stopPropagation(); onBarDragStart(e, task, 'resize-left') }}
           onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.2)'}
           onMouseLeave={e => e.currentTarget.style.backgroundColor = ''}
         >
@@ -1367,7 +1374,7 @@ function TaskBarRow({
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             borderRadius: 0,
           }}
-          onMouseDown={(e) => { e.stopPropagation(); onBarDragStart(e, task, 'resize-right') }}
+          onMouseDown={(e) => { if (e.button !== 0) return; e.stopPropagation(); onBarDragStart(e, task, 'resize-right') }}
           onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.2)'}
           onMouseLeave={e => e.currentTarget.style.backgroundColor = ''}
         >

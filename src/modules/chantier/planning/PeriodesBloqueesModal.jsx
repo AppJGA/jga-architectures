@@ -47,7 +47,6 @@ function PeriodeRow({ periode, onUpdate, onDelete, onPastilleClick, autoFocus })
   const [dateDebut, setDateDebut] = useState(periode.date_debut)
   const [dateFin, setDateFin] = useState(periode.date_fin)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
-  const debounceRef = useRef(null)
   const inputRef = useRef(null)
 
   useEffect(() => { setLabel(periode.label) }, [periode.label])
@@ -63,30 +62,30 @@ function PeriodeRow({ periode, onUpdate, onDelete, onPastilleClick, autoFocus })
       ? 'La date de fin doit être postérieure ou égale à la date de début'
       : null
 
-  // N'auto-sauve que si la ligne, une fois les changements appliqués, est valide.
-  const commit = (changes) => {
-    const next = { label, date_debut: dateDebut, date_fin: dateFin, ...changes }
-    if (!next.label.trim() || !next.date_debut || !next.date_fin || next.date_fin < next.date_debut) return
-    onUpdate(periode.id, changes)
+  // Persiste au blur uniquement (pas à chaque onChange) : des commits concurrents
+  // par frappe pouvaient se résoudre dans le désordre et écraser une saisie plus
+  // récente par une valeur plus ancienne, donnant l'impression que la date « revient »
+  // toujours à la même valeur.
+  const commit = () => {
+    if (!label.trim() || !dateDebut || !dateFin || dateFin < dateDebut) return
+    onUpdate(periode.id, { label, date_debut: dateDebut, date_fin: dateFin })
   }
 
-  const handleLabelChange = (e) => {
-    const value = e.target.value
-    setLabel(value)
-    clearTimeout(debounceRef.current)
-    debounceRef.current = setTimeout(() => commit({ label: value }), 500)
-  }
+  const handleLabelChange = (e) => setLabel(e.target.value)
 
   const handleDateDebutChange = (e) => {
     const value = e.target.value
     setDateDebut(value)
-    commit({ date_debut: value })
+    // Si le début dépasse la fin actuelle, la fin suit pour rester valide —
+    // sans ça, décaler le début d'une période nouvellement créée (où début = fin)
+    // était silencieusement bloqué par la validation.
+    if (dateFin && value > dateFin) setDateFin(value)
   }
 
   const handleDateFinChange = (e) => {
     const value = e.target.value
     setDateFin(value)
-    commit({ date_fin: value })
+    if (dateDebut && value < dateDebut) setDateDebut(value)
   }
 
   const handleDelete = () => {
@@ -110,7 +109,7 @@ function PeriodeRow({ periode, onUpdate, onDelete, onPastilleClick, autoFocus })
           ref={inputRef}
           value={label}
           onChange={handleLabelChange}
-          onBlur={(e) => { clearTimeout(debounceRef.current); commit({ label: e.target.value }) }}
+          onBlur={commit}
           placeholder="Ex : Congés été 2025"
           style={{
             flex: 1.4, height: 32, padding: '0 10px', borderRadius: 2, fontSize: 13,
@@ -123,7 +122,7 @@ function PeriodeRow({ periode, onUpdate, onDelete, onPastilleClick, autoFocus })
 
         <span style={{ fontSize: 11, color: '#9C9591', flexShrink: 0 }}>Du</span>
         <input
-          type="date" value={dateDebut ?? ''} onChange={handleDateDebutChange}
+          type="date" value={dateDebut ?? ''} onChange={handleDateDebutChange} onBlur={commit}
           style={{
             height: 32, padding: '0 8px', borderRadius: 2, fontSize: 12,
             border: '0.5px solid rgba(0,0,0,0.12)', backgroundColor: '#FAFAF9', flexShrink: 0,
@@ -131,7 +130,7 @@ function PeriodeRow({ periode, onUpdate, onDelete, onPastilleClick, autoFocus })
         />
         <span style={{ fontSize: 11, color: '#9C9591', flexShrink: 0 }}>au</span>
         <input
-          type="date" value={dateFin ?? ''} onChange={handleDateFinChange}
+          type="date" value={dateFin ?? ''} min={dateDebut ?? undefined} onChange={handleDateFinChange} onBlur={commit}
           style={{
             height: 32, padding: '0 8px', borderRadius: 2, fontSize: 12,
             border: '0.5px solid rgba(0,0,0,0.12)', backgroundColor: '#FAFAF9', flexShrink: 0,

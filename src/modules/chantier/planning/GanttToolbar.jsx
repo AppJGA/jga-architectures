@@ -19,7 +19,7 @@ const BTN_PRIMARY = {
 }
 
 export function GanttToolbar({
-  onZoomIn, onZoomOut, onOpenLots, onExportPdf, onExportExcel, onAddTask,
+  onZoomIn, onZoomOut, onResetDayWidth, onOpenLots, onExportPdf, onExportExcel, onAddTask,
   onToggleConnections, showConnections, onOpenJalons, dayWidth,
   colorMode, onColorModeChange, onOpenZones,
   viewMode, onViewModeChange, zoomLevel = 1, onZoomLevelChange,
@@ -40,13 +40,19 @@ export function GanttToolbar({
         <button
           style={{ ...BTN_ICON, opacity: canZoomOut ? 1 : 0.4, cursor: canZoomOut ? 'pointer' : 'default' }}
           onClick={onZoomOut} disabled={!canZoomOut} aria-label="Zoom arrière"
+          title="Zoom arrière (⌘ + molette)"
         >
           <ZoomOut size={14} />
         </button>
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 4, height: 32, padding: '0 8px',
-          border: '0.5px solid rgba(0,0,0,0.12)', borderRadius: 2, backgroundColor: '#FAFAF9',
-        }}>
+        <div
+          onDoubleClick={onResetDayWidth}
+          title="Double-clic pour réinitialiser"
+          style={{
+            display: 'flex', alignItems: 'center', gap: 4, height: 32, padding: '0 8px',
+            border: '0.5px solid rgba(0,0,0,0.12)', borderRadius: 2, backgroundColor: '#FAFAF9',
+            cursor: 'pointer',
+          }}
+        >
           <CalendarDays size={11} style={{ color: '#9C9591' }} />
           <span style={{ fontSize: 11, fontWeight: 500, color: '#9C9591', minWidth: 30, textAlign: 'center' }}>
             {dayWidth} px/j
@@ -55,6 +61,7 @@ export function GanttToolbar({
         <button
           style={{ ...BTN_ICON, opacity: canZoomIn ? 1 : 0.4, cursor: canZoomIn ? 'pointer' : 'default' }}
           onClick={onZoomIn} disabled={!canZoomIn} aria-label="Zoom avant"
+          title="Zoom avant (⌘ + molette)"
         >
           <ZoomIn size={14} />
         </button>
@@ -96,7 +103,7 @@ export function GanttToolbar({
             <button
               onClick={() => onZoomLevelChange((z) => Math.max(0.5, z - 0.25))}
               disabled={zoomLevel <= 0.5}
-              title="Dézoomer"
+              title="Dézoomer (⌘ + molette)"
               style={{
                 width: 28, height: 28,
                 border: '0.5px solid rgba(0,0,0,0.15)',
@@ -110,18 +117,23 @@ export function GanttToolbar({
               <ZoomOut size={13} />
             </button>
 
-            <span style={{
-              fontSize: 11, color: '#9C9591',
-              minWidth: 32, textAlign: 'center',
-              fontVariantNumeric: 'tabular-nums',
-            }}>
+            <span
+              onDoubleClick={() => onZoomLevelChange(1)}
+              title="Double-clic pour réinitialiser"
+              style={{
+                fontSize: 11, color: '#9C9591',
+                minWidth: 32, textAlign: 'center',
+                fontVariantNumeric: 'tabular-nums',
+                cursor: 'pointer',
+              }}
+            >
               {Math.round(zoomLevel * 100)}%
             </span>
 
             <button
               onClick={() => onZoomLevelChange((z) => Math.min(2, z + 0.25))}
               disabled={zoomLevel >= 2}
-              title="Zoomer"
+              title="Zoomer (⌘ + molette)"
               style={{
                 width: 28, height: 28,
                 border: '0.5px solid rgba(0,0,0,0.15)',

@@ -14,10 +14,9 @@ function getBarColor(task, lotColor, zones, colorMode) {
 
 export function GanttSidebar({
   tasks, lots, rowHeight, headerHeight, onEdit, onAvancementChange, zones = [], colorMode = 'lot',
-  onReorderTask,
+  onReorderTask, dragOverTaskId = null, onDragOverTaskChange,
 }) {
   const [draggedTaskId, setDraggedTaskId] = useState(null)
-  const [dragOverTaskId, setDragOverTaskId] = useState(null)
 
   const lotsWithTasks = lots
     .map((lot) => ({ lot, tasks: tasks.filter((t) => t.lot_id === lot.id) }))
@@ -34,12 +33,12 @@ export function GanttSidebar({
   const handleTaskDragEnd = (e) => {
     e.currentTarget.style.opacity = '1'
     setDraggedTaskId(null)
-    setDragOverTaskId(null)
+    onDragOverTaskChange?.(null)
   }
 
   const handleTaskDragOver = (e, taskId) => {
     e.preventDefault()
-    if (taskId !== draggedTaskId) setDragOverTaskId(taskId)
+    if (taskId !== draggedTaskId) onDragOverTaskChange?.(taskId)
   }
 
   const handleTaskDrop = (e, targetTaskId) => {
@@ -48,7 +47,7 @@ export function GanttSidebar({
       onReorderTask?.(draggedTaskId, targetTaskId)
     }
     setDraggedTaskId(null)
-    setDragOverTaskId(null)
+    onDragOverTaskChange?.(null)
   }
 
   const dragHandlers = { draggedTaskId, dragOverTaskId, handleTaskDragStart, handleTaskDragEnd, handleTaskDragOver, handleTaskDrop }

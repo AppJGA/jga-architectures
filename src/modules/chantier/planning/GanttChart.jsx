@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react'
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { Trash2 } from 'lucide-react'
 import * as XLSX from 'xlsx-js-style'
 import { parseDate, formatDateISO, applyLag, computeLag, addWorkingDays } from './types'
@@ -109,10 +109,12 @@ function getNextAvailableDate(tasks) {
 
 // ──────────────────────────────────────────────────────────────────────────────
 
+const DEFAULT_DAY_WIDTH = 40
+
 export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', affaire = {} }) {
   const [tasks, setTasks] = useState([])
   const [lots, setLots] = useState([])
-  const [dayWidth, setDayWidth] = useState(40)
+  const [dayWidth, setDayWidth] = useState(DEFAULT_DAY_WIDTH)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState(null)
 
@@ -130,6 +132,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
   const [newTaskDebut, setNewTaskDebut] = useState(null)
   const [lastUsedLotId, setLastUsedLotId] = useState(null)
   const [deletingTask, setDeletingTask] = useState(null)
+  const [dragOverTaskId, setDragOverTaskId] = useState(null)
   const savedScrollRef = useRef(0)
 
   const [colorMode, setColorMode] = useState(
@@ -164,6 +167,20 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
 
   const ROW_HEIGHT = 40
 
+  // ── Ordre d'affichage (lot puis `ordre` au sein du lot) ─────────────────────────
+  // La sidebar et la timeline doivent itérer les tâches dans le même ordre pour
+  // que leurs lignes restent alignées ; `tasks` brut (ordre de fetch) reste utilisé
+  // pour les opérations CRUD (find/filter/update).
+  const sortedTasks = useMemo(() => {
+    const lotOrder = lots.map((l) => l.id)
+    return [...tasks].sort((a, b) => {
+      const lotA = lotOrder.indexOf(a.lot_id)
+      const lotB = lotOrder.indexOf(b.lot_id)
+      if (lotA !== lotB) return lotA - lotB
+      return (a.ordre ?? 0) - (b.ordre ?? 0)
+    })
+  }, [tasks, lots])
+
   // ── Scroll sync ───────────────────────────────────────────────────────────────
   const sidebarRef = useRef(null)
   const timelineRef = useRef(null)
@@ -179,6 +196,82 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
     }
     requestAnimationFrame(() => { isScrolling.current = null })
   }, [])
+
+  // ── Zoom molette (⌘/Ctrl + molette), centré sur le curseur ─────────────────────
+  // En vue jour, la géométrie dépend de `dayWidth` ; en vue semaine/mois, de `zoomLevel`.
+  const [showZoomToast, setShowZoomToast] = useState(false)
+  const zoomToastTimer = useRef(null)
+
+  useEffect(() => {
+    const el = timelineRef.current
+    if (!el) return
+
+    const handleWheel = (e) => {
+      if (!e.metaKey && !e.ctrlKey) return
+      e.preventDefault()
+      e.stopPropagation()
+
+      const rect = el.getBoundingClientRect()
+      const cursorX = e.clientX - rect.left
+      const scrollRatio = el.scrollWidth > 0 ? (el.scrollLeft + cursorX) / el.scrollWidth : 0
+      const delta = e.deltaY > 0 ? -1 : 1
+
+      if (viewMode === 'day') {
+        setDayWidth((w) => Math.min(100, Math.max(15, w + delta * 3)))
+      } else {
+        setZoomLevel((z) => Math.min(2, Math.max(0.5, Math.round((z + delta * 0.15) * 100) / 100)))
+      }
+
+      requestAnimationFrame(() => {
+        if (timelineRef.current) {
+          const newScrollLeft = scrollRatio * timelineRef.current.scrollWidth - cursorX
+          timelineRef.current.scrollLeft = Math.max(0, newScrollLeft)
+        }
+      })
+
+      setShowZoomToast(true)
+      clearTimeout(zoomToastTimer.current)
+      zoomToastTimer.current = setTimeout(() => setShowZoomToast(false), 1500)
+    }
+
+    el.addEventListener('wheel', handleWheel, { passive: false })
+    return () => el.removeEventListener('wheel', handleWheel)
+  }, [viewMode])
+
+  useEffect(() => () => clearTimeout(zoomToastTimer.current), [])
+
+  // ── Pan (clic molette + glisser) ────────────────────────────────────────────────
+  const [isPanning, setIsPanning] = useState(false)
+  const panStartRef = useRef({ x: 0, scrollLeft: 0 })
+
+  const handleTimelineMouseDown = useCallback((e) => {
+    if (e.button !== 1) return
+    e.preventDefault()
+    if (!timelineRef.current) return
+    panStartRef.current = { x: e.clientX, scrollLeft: timelineRef.current.scrollLeft }
+    setIsPanning(true)
+  }, [])
+
+  useEffect(() => {
+    if (!isPanning) return
+
+    const handleMouseMove = (e) => {
+      if (!timelineRef.current) return
+      const dx = e.clientX - panStartRef.current.x
+      timelineRef.current.scrollLeft = panStartRef.current.scrollLeft - dx
+    }
+    const handleMouseUp = (e) => {
+      if (e.button !== 1) return
+      setIsPanning(false)
+    }
+
+    window.addEventListener('mousemove', handleMouseMove)
+    window.addEventListener('mouseup', handleMouseUp)
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove)
+      window.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [isPanning])
 
   // ── Data fetching ──────────────────────────────────────────────────────────────
   const fetchAllData = useCallback(async () => {
@@ -239,7 +332,9 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
       appro_materiau: taskData.appro_actif ? (taskData.appro_materiau ?? null) : null,
     }
     if (taskModalMode === 'create') {
-      const { error } = await supabase.from('planning').insert([payload])
+      // Ajoute la tâche à la fin de son lot (même convention que le num_tache auto-incrémenté)
+      const ordre = tasks.filter((t) => t.lot_id === payload.lot_id).length
+      const { error } = await supabase.from('planning').insert([{ ...payload, ordre }])
       if (error) throw new Error(error.message)
     } else {
       const { error } = await supabase.from('planning').update(payload).eq('id', taskData.id)
@@ -485,6 +580,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
     const merges = []
     let rowIdx = 0
     const FIXED_COLS = 3 // N°, Tâche, Av.%
+    const BLOCKED_FILL = 'FFE8E0' // rouge très pâle — périodes bloquées
 
     const setCell = (col, row, value, style) => {
       const addr = XLSX.utils.encode_cell({ c: col, r: row })
@@ -713,6 +809,16 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
       return overlaps(unit, debut, fin)
     }
 
+    // date_fin est incluse dans la période ; overlaps() attend une borne de fin
+    // exclusive (comme pour les tâches/segments), d'où le +1 jour.
+    const isInPeriode = (unit, periode) => {
+      if (!periode.date_debut || !periode.date_fin) return false
+      const debut = parseDate(periode.date_debut)
+      const finExclusive = parseDate(periode.date_fin)
+      finExclusive.setDate(finExclusive.getDate() + 1)
+      return overlaps(unit, debut, finExclusive)
+    }
+
     const getTaskColor = (task) => {
       if (colorMode === 'zone' && task.zone_id) {
         return zones.find((z) => z.id === task.zone_id)?.couleur ?? '#C9C4C0'
@@ -766,12 +872,14 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
             const inMain = isInTask(unit, task)
             const inSeg = segs.find((s) => isInSegment(unit, s))
             const active = inMain || inSeg
+            const isBlocked = periodes.some((p) => isInPeriode(unit, p))
 
             let fillHex = 'FFFFFF'
-            let borderRight = { style: 'thin', color: { rgb: 'F0EDE8' } }
 
             if (active) {
               fillHex = inSeg ? getSegColor(inSeg, task).replace('#', '') : taskHex
+            } else if (isBlocked) {
+              fillHex = BLOCKED_FILL
             } else if (viewMode === 'day') {
               const d = new Date(unit)
               if (d.getDay() === 0 || d.getDay() === 6) fillHex = 'F0EDE8'
@@ -783,7 +891,10 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
                 ? (i > 0 && unit.getMonth() !== timeUnits[i - 1]?.getMonth())
                 : false
 
-            if (isMonthStart) borderRight = { style: 'medium', color: { rgb: 'C9C4C0' } }
+            const borderRight = {
+              style: isMonthStart ? 'medium' : 'thin',
+              color: { rgb: isMonthStart ? 'C9C4C0' : isBlocked && !active ? 'F0C0B0' : 'F0EDE8' },
+            }
 
             setCell(FIXED_COLS + i, rowIdx, '', {
               fill: { fgColor: { rgb: fillHex } },
@@ -838,10 +949,29 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
       })
     }
 
+    // ── Légende ──
+    rowIdx += 2
+    const legendItems = [
+      { color: 'E8602C', label: 'Tâche (couleur du lot/zone)' },
+      { color: BLOCKED_FILL, label: 'Période bloquée (congés)' },
+      { color: 'F0EDE8', label: 'Week-end' },
+    ]
+    legendItems.forEach((item, i) => {
+      setCell(FIXED_COLS + i * 2, rowIdx, '', {
+        fill: { fgColor: { rgb: item.color } },
+        border: { right: { style: 'thin', color: { rgb: 'E9E2D6' } } },
+      })
+      setCell(FIXED_COLS + i * 2 + 1, rowIdx, item.label, {
+        font: { sz: 8, color: { rgb: '5E5854' } },
+        alignment: { vertical: 'center' },
+      })
+    })
+    rowIdx++
+
     // ── Finaliser la feuille ──
     ws['!ref'] = XLSX.utils.encode_range({
       s: { r: 0, c: 0 },
-      e: { r: rowIdx - 1, c: FIXED_COLS + timeUnits.length - 1 },
+      e: { r: rowIdx - 1, c: Math.max(FIXED_COLS + timeUnits.length - 1, FIXED_COLS + legendItems.length * 2 - 1) },
     })
     ws['!merges'] = merges
 
@@ -864,6 +994,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
   // ── Zoom ──────────────────────────────────────────────────────────────────────
   const handleZoomIn = () => setDayWidth((w) => Math.min(100, w + 5))
   const handleZoomOut = () => setDayWidth((w) => Math.max(15, w - 5))
+  const handleResetDayWidth = () => setDayWidth(DEFAULT_DAY_WIDTH)
 
   // ── Ouverture/fermeture de la modale tâche — préserve le scroll horizontal ─────
   const handleOpenTaskModal = useCallback((task, mode, defaultDebutOverride) => {
@@ -929,6 +1060,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
         <GanttToolbar
           onZoomIn={handleZoomIn}
           onZoomOut={handleZoomOut}
+          onResetDayWidth={handleResetDayWidth}
           onOpenLots={() => setShowLotsModal(true)}
           onExportPdf={() => setShowExportModal(true)}
           onExportExcel={handleExportExcel}
@@ -949,7 +1081,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
         />
       </div>
 
-      <div id="gantt-print-root" style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+      <div id="gantt-print-root" style={{ display: 'flex', flex: 1, overflow: 'hidden', position: 'relative' }}>
         <div
           ref={sidebarRef}
           onScroll={(e) => syncScroll('sidebar', e.target.scrollTop)}
@@ -960,7 +1092,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
           }}
         >
           <GanttSidebar
-            tasks={tasks}
+            tasks={sortedTasks}
             lots={lots}
             rowHeight={ROW_HEIGHT}
             headerHeight={HEADER_HEIGHT}
@@ -969,16 +1101,23 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
             onReorderTask={handleReorderTask}
             zones={zones}
             colorMode={colorMode}
+            dragOverTaskId={dragOverTaskId}
+            onDragOverTaskChange={setDragOverTaskId}
           />
         </div>
 
         <div
           ref={timelineRef}
           onScroll={(e) => syncScroll('timeline', e.target.scrollTop)}
-          style={{ flex: 1, overflow: 'auto' }}
+          onMouseDown={handleTimelineMouseDown}
+          style={{
+            flex: 1, overflow: 'auto',
+            cursor: isPanning ? 'grabbing' : 'default',
+            userSelect: isPanning ? 'none' : 'auto',
+          }}
         >
           <GanttTimeline
-            tasks={tasks}
+            tasks={sortedTasks}
             lots={lots}
             dayWidth={dayWidth}
             rowHeight={ROW_HEIGHT}
@@ -1002,8 +1141,23 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
             onSegmentDependencyDelete={deleteDependance}
             periodes={periodes}
             getNextWorkingDay={getNextWorkingDay}
+            dragOverTaskId={dragOverTaskId}
           />
         </div>
+
+        {/* Indicateur de zoom molette — apparaît brièvement puis disparaît */}
+        {showZoomToast && (
+          <div style={{
+            position: 'absolute', top: 16, right: 16,
+            background: 'rgba(31,27,23,0.85)', color: 'white',
+            padding: '6px 12px', fontSize: 13,
+            fontFamily: "'JetBrains Mono', monospace", fontWeight: 500,
+            pointerEvents: 'none', zIndex: 50,
+            transition: 'opacity 0.3s',
+          }}>
+            {viewMode === 'day' ? `${dayWidth} px/j` : `${Math.round(zoomLevel * 100)}%`}
+          </div>
+        )}
       </div>
 
       <div data-print="hidden" style={{

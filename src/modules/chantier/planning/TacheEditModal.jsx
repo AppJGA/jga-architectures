@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { Trash2, Save, X, Plus } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { Trash2, Save, X, Plus, Minimize2, Maximize2 } from 'lucide-react'
 import { parseDate, formatDateISO, computeLag, addWorkingDays } from './types'
 
 const LABEL = {
@@ -23,14 +23,18 @@ const BTN_DANGER = {
   ...BTN, color: '#B8412C', borderColor: 'rgba(220,38,38,0.3)',
 }
 
-function emptyForm(lots, defaultDebut) {
+const MODAL_WIDTH = 460
+const MODAL_MINIMIZED_HEIGHT = 44
+
+function emptyForm(lots, defaultDebut, lastUsedLotId) {
+  const validLastUsed = lastUsedLotId && lots.some((l) => l.id === lastUsedLotId) ? lastUsedLotId : null
   return {
     num_tache: '',
     nom: '',
     debut: defaultDebut ?? formatDateISO(new Date()),
     duree: 5,
     avancement: 0,
-    lot_id: lots.length > 0 ? lots[0].id : null,
+    lot_id: validLastUsed ?? (lots.length > 0 ? lots[0].id : null),
     zone_id: null,
     depends_on: null,
     lag_days: null,
@@ -49,12 +53,27 @@ function getNextNumero(lotId, tasks) {
 }
 
 export function TacheEditModal({
-  open, onClose, task, tasks, lots, onSave, onDelete, mode, zones = [], colorMode = 'lot', defaultDebut = null,
+  open, onClose, task, tasks, lots, onSave, onRequestDelete, mode, zones = [], colorMode = 'lot', defaultDebut = null,
+  lastUsedLotId = null,
   getSegmentsForTache, addSegment, updateSegment, deleteSegment,
 }) {
   const [form, setForm] = useState(emptyForm(lots))
   const [saving, setSaving] = useState(false)
-  const [deleting, setDeleting] = useState(false)
+
+  // ── Modale flottante : position, minimisation, drag ────────────────────────────
+  const [position, setPosition] = useState(() => ({
+    x: window.innerWidth - MODAL_WIDTH - 24,
+    y: window.innerHeight - 600 - 24,
+  }))
+  const [minimized, setMinimized] = useState(false)
+  const [isDraggingModal, setIsDraggingModal] = useState(false)
+  const dragStartRef = useRef(null)
+  const modalRef = useRef(null)
+
+  // Toujours repartir sur le formulaire visible quand on ouvre ou change de tâche
+  useEffect(() => {
+    if (open) setMinimized(false)
+  }, [open, task?.id])
 
   useEffect(() => {
     if (!open) return
@@ -66,10 +85,18 @@ export function TacheEditModal({
           : formatDateISO(parseDate(task.debut)),
       })
     } else {
-      const base = emptyForm(lots, defaultDebut)
+      const base = emptyForm(lots, defaultDebut, lastUsedLotId)
       setForm({ ...base, num_tache: base.lot_id ? getNextNumero(base.lot_id, tasks) : '' })
     }
-  }, [task, open, lots, defaultDebut, tasks])
+  }, [task, open, lots, defaultDebut, lastUsedLotId, tasks])
+
+  // Si le dernier lot utilisé change pendant que la modale de création est déjà
+  // ouverte, ne patcher que le champ lot (sans écraser le reste du formulaire).
+  useEffect(() => {
+    if (mode === 'create' && lastUsedLotId) {
+      setForm((f) => ({ ...f, lot_id: lastUsedLotId }))
+    }
+  }, [lastUsedLotId, mode])
 
   const set = (key, value) => setForm((f) => ({ ...f, [key]: value }))
 
@@ -138,406 +165,479 @@ export function TacheEditModal({
     }
   }
 
-  const handleDelete = async () => {
-    if (!task?.id || !onDelete) return
-    if (!confirm(`Supprimer la tâche "${task.nom}" ?`)) return
-    setDeleting(true)
-    try {
-      await onDelete(task.id)
-      onClose()
-    } finally {
-      setDeleting(false)
+  const handleDelete = () => {
+    if (!task?.id || !onRequestDelete) return
+    onRequestDelete(task)
+  }
+
+  // ── Drag de la modale (header) ──────────────────────────────────────────────────
+  const handleModalDragStart = (e) => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return
+    setIsDraggingModal(true)
+    dragStartRef.current = {
+      mouseX: e.clientX, mouseY: e.clientY,
+      modalX: position.x, modalY: position.y,
     }
   }
+
+  useEffect(() => {
+    if (!isDraggingModal) return
+
+    const handleMove = (e) => {
+      const dx = e.clientX - dragStartRef.current.mouseX
+      const dy = e.clientY - dragStartRef.current.mouseY
+      setPosition({
+        x: Math.max(0, Math.min(window.innerWidth - MODAL_WIDTH, dragStartRef.current.modalX + dx)),
+        y: Math.max(0, Math.min(window.innerHeight - MODAL_MINIMIZED_HEIGHT, dragStartRef.current.modalY + dy)),
+      })
+    }
+
+    const handleUp = () => setIsDraggingModal(false)
+
+    window.addEventListener('mousemove', handleMove)
+    window.addEventListener('mouseup', handleUp)
+    return () => {
+      window.removeEventListener('mousemove', handleMove)
+      window.removeEventListener('mouseup', handleUp)
+    }
+  }, [isDraggingModal])
 
   const dependencyOptions = tasks.filter((t) => t.id !== task?.id)
 
   if (!open) return null
 
   return (
-    <div style={{
-      position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100,
-    }}>
-      <div style={{
-        backgroundColor: 'white', borderRadius: 0, padding: 28,
-        width: '100%', maxWidth: 480, maxHeight: '90vh', overflowY: 'auto',
-      }}>
+    <div
+      ref={modalRef}
+      style={{
+        position: 'fixed',
+        left: position.x,
+        top: position.y,
+        width: MODAL_WIDTH,
+        height: minimized ? MODAL_MINIMIZED_HEIGHT : 'auto',
+        maxHeight: minimized ? MODAL_MINIMIZED_HEIGHT : '80vh',
+        overflow: minimized ? 'hidden' : 'auto',
+        background: 'white',
+        border: '0.5px solid #E9E2D6',
+        boxShadow: '0 8px 32px rgba(0,0,0,0.15)',
+        zIndex: 100,
+        display: 'flex',
+        flexDirection: 'column',
+      }}
+    >
+      {/* Header — déplaçable */}
+      <div
+        onMouseDown={handleModalDragStart}
+        style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '10px 14px', background: '#F5F2F0',
+          borderBottom: minimized ? 'none' : '0.5px solid #E9E2D6',
+          cursor: isDraggingModal ? 'grabbing' : 'grab',
+          userSelect: 'none', flexShrink: 0,
+        }}
+      >
+        <span style={{
+          fontSize: 12, fontWeight: 500, color: '#1F1B17',
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}>
+          {mode === 'create' ? 'Nouvelle tâche' : task?.nom ?? 'Modifier la tâche'}
+        </span>
 
-        {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-          <div>
-            <h2 style={{ fontSize: 15, fontWeight: 500, color: '#1F1B17' }}>
-              {mode === 'edit' ? 'Modifier la tâche' : 'Nouvelle tâche'}
-            </h2>
-            <p style={{ fontSize: 11, color: '#9C9591', marginTop: 2 }}>
-              Les durées sont calculées en jours ouvrés (lun.–ven.).
-            </p>
-          </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9C9591' }}>
-            <X size={18} />
+        <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+          <button
+            type="button"
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={() => setMinimized((v) => !v)}
+            style={{
+              width: 24, height: 24, border: 'none', background: 'transparent', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9C9591',
+            }}
+            title={minimized ? 'Agrandir' : 'Réduire'}
+          >
+            {minimized ? <Maximize2 size={13} /> : <Minimize2 size={13} />}
+          </button>
+
+          <button
+            type="button"
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={onClose}
+            style={{
+              width: 24, height: 24, border: 'none', background: 'transparent', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9C9591',
+            }}
+          >
+            <X size={13} />
           </button>
         </div>
+      </div>
 
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          {/* N° + Nom */}
-          <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr', gap: 10 }}>
-            <div>
-              <label style={LABEL}>N°</label>
-              <input
-                value={form.num_tache ?? ''} onChange={(e) => set('num_tache', e.target.value)}
-                placeholder="01" required style={INPUT}
-                onFocus={e => { e.target.style.borderColor = '#E8602C'; e.target.style.boxShadow = '0 0 0 3px rgba(232,96,44,0.12)' }}
-                onBlur={e => { e.target.style.borderColor = 'rgba(0,0,0,0.12)'; e.target.style.boxShadow = 'none' }}
-              />
-            </div>
-            <div>
-              <label style={LABEL}>Nom de la tâche</label>
-              <input
-                value={form.nom ?? ''} onChange={(e) => set('nom', e.target.value)}
-                placeholder="Terrassement général" required style={INPUT}
-                onFocus={e => { e.target.style.borderColor = '#E8602C'; e.target.style.boxShadow = '0 0 0 3px rgba(232,96,44,0.12)' }}
-                onBlur={e => { e.target.style.borderColor = 'rgba(0,0,0,0.12)'; e.target.style.boxShadow = 'none' }}
-              />
-            </div>
-          </div>
+      {/* Contenu — masqué si minimisé */}
+      {!minimized && (
+        <div style={{ padding: '16px 20px', overflowY: 'auto', flex: 1 }}>
+          <p style={{ fontSize: 11, color: '#9C9591', marginBottom: 14 }}>
+            Les durées sont calculées en jours ouvrés (lun.–ven.).
+          </p>
 
-          {/* Début + Durée */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            <div>
-              <label style={LABEL}>Date de début</label>
-              <input type="date" value={form.debut ?? ''} onChange={(e) => set('debut', e.target.value)}
-                required style={INPUT}
-                onFocus={e => { e.target.style.borderColor = '#E8602C'; e.target.style.boxShadow = '0 0 0 3px rgba(232,96,44,0.12)' }}
-                onBlur={e => { e.target.style.borderColor = 'rgba(0,0,0,0.12)'; e.target.style.boxShadow = 'none' }}
-              />
-            </div>
-            <div>
-              <label style={LABEL}>Durée (j. ouvrés)</label>
-              <input type="number" min={1} value={form.duree ?? 1}
-                onChange={(e) => set('duree', Math.max(1, Number(e.target.value)))}
-                required style={INPUT}
-                onFocus={e => { e.target.style.borderColor = '#E8602C'; e.target.style.boxShadow = '0 0 0 3px rgba(232,96,44,0.12)' }}
-                onBlur={e => { e.target.style.borderColor = 'rgba(0,0,0,0.12)'; e.target.style.boxShadow = 'none' }}
-              />
-            </div>
-          </div>
-
-          {/* Lot */}
-          <div>
-            <label style={LABEL}>Lot</label>
-            <select
-              value={form.lot_id != null ? String(form.lot_id) : 'none'}
-              onChange={(e) => handleLotChange(e.target.value === 'none' ? null : e.target.value)}
-              style={{ ...INPUT, cursor: 'pointer' }}
-              onFocus={e => { e.target.style.borderColor = '#E8602C'; e.target.style.boxShadow = '0 0 0 3px rgba(232,96,44,0.12)' }}
-              onBlur={e => { e.target.style.borderColor = 'rgba(0,0,0,0.12)'; e.target.style.boxShadow = 'none' }}
-            >
-              <option value="none">Sans lot</option>
-              {lots.map((lot) => (
-                <option key={lot.id} value={String(lot.id)}>
-                  {lot.num_lot} – {lot.nom}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Zone */}
-          {colorMode === 'zone' && zones.length > 0 && (
-            <div>
-              <label style={LABEL}>Zone</label>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
-                <button
-                  type="button"
-                  onClick={() => set('zone_id', null)}
-                  style={{
-                    padding: '4px 10px', fontSize: 12,
-                    border: '0.5px solid rgba(0,0,0,0.15)',
-                    borderRadius: 2,
-                    background: !form.zone_id ? '#1F1B17' : 'transparent',
-                    color: !form.zone_id ? 'white' : '#5E5854',
-                    cursor: 'pointer',
-                  }}
-                >
-                  Aucune
-                </button>
-                {zones.map((zone) => (
-                  <button
-                    key={zone.id}
-                    type="button"
-                    onClick={() => set('zone_id', zone.id)}
-                    style={{
-                      padding: '4px 10px', fontSize: 12,
-                      border: `0.5px solid ${zone.couleur}`,
-                      borderRadius: 2,
-                      background: form.zone_id === zone.id ? zone.couleur : 'transparent',
-                      color: form.zone_id === zone.id ? 'white' : zone.couleur,
-                      cursor: 'pointer',
-                      fontWeight: 500,
-                    }}
-                  >
-                    {zone.nom}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Dépendance */}
-          <div>
-            <label style={LABEL}>Dépend de (chemin critique)</label>
-            <select
-              value={form.depends_on != null ? String(form.depends_on) : 'none'}
-              onChange={(e) => handleDependencyChange(e.target.value)}
-              style={{ ...INPUT, cursor: 'pointer' }}
-              onFocus={e => { e.target.style.borderColor = '#E8602C'; e.target.style.boxShadow = '0 0 0 3px rgba(232,96,44,0.12)' }}
-              onBlur={e => { e.target.style.borderColor = 'rgba(0,0,0,0.12)'; e.target.style.boxShadow = 'none' }}
-            >
-              <option value="none">Aucune dépendance</option>
-              {dependencyOptions.map((t) => (
-                <option key={t.id} value={String(t.id)}>
-                  {t.num_tache} – {t.nom}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Lag */}
-          {form.depends_on != null && (
-            <div>
-              <label style={LABEL}>Délai après fin de la tâche précédente (j. ouvrés)</label>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {/* N° + Nom */}
+            <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr', gap: 10 }}>
+              <div>
+                <label style={LABEL}>N°</label>
                 <input
-                  type="number" min={-30} value={form.lag_days ?? 0}
-                  onChange={(e) => set('lag_days', Number(e.target.value))}
-                  style={{ ...INPUT, width: 96, fontVariantNumeric: 'tabular-nums' }}
+                  value={form.num_tache ?? ''} onChange={(e) => set('num_tache', e.target.value)}
+                  placeholder="01" required style={INPUT}
                   onFocus={e => { e.target.style.borderColor = '#E8602C'; e.target.style.boxShadow = '0 0 0 3px rgba(232,96,44,0.12)' }}
                   onBlur={e => { e.target.style.borderColor = 'rgba(0,0,0,0.12)'; e.target.style.boxShadow = 'none' }}
                 />
-                <span style={{ fontSize: 11, color: '#9C9591' }}>
-                  {(form.lag_days ?? 0) === 0 && 'Collée (commence le jour même de la fin)'}
-                  {(form.lag_days ?? 0) === 1 && 'Collée (commence le lendemain ouvré)'}
-                  {(form.lag_days ?? 0) > 1 && `${(form.lag_days ?? 0) - 1} jour(s) de battement`}
-                  {(form.lag_days ?? 0) < 0 && `Chevauchement de ${Math.abs(form.lag_days ?? 0)} jour(s)`}
-                </span>
+              </div>
+              <div>
+                <label style={LABEL}>Nom de la tâche</label>
+                <input
+                  value={form.nom ?? ''} onChange={(e) => set('nom', e.target.value)}
+                  placeholder="Terrassement général" required style={INPUT}
+                  onFocus={e => { e.target.style.borderColor = '#E8602C'; e.target.style.boxShadow = '0 0 0 3px rgba(232,96,44,0.12)' }}
+                  onBlur={e => { e.target.style.borderColor = 'rgba(0,0,0,0.12)'; e.target.style.boxShadow = 'none' }}
+                />
               </div>
             </div>
-          )}
 
-          {/* Avancement */}
-          <div>
-            <label style={LABEL}>Avancement : {form.avancement ?? 0}%</label>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <input
-                type="range" min={0} max={100} step={5} value={form.avancement ?? 0}
-                onChange={(e) => set('avancement', Number(e.target.value))}
-                style={{ flex: 1, accentColor: '#2A8A4E' }}
-              />
-              <input
-                type="number" min={0} max={100} value={form.avancement ?? 0}
-                onChange={(e) => set('avancement', Math.max(0, Math.min(100, Number(e.target.value))))}
-                style={{ ...INPUT, width: 64, textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}
+            {/* Début + Durée */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <div>
+                <label style={LABEL}>Date de début</label>
+                <input type="date" value={form.debut ?? ''} onChange={(e) => set('debut', e.target.value)}
+                  required style={INPUT}
+                  onFocus={e => { e.target.style.borderColor = '#E8602C'; e.target.style.boxShadow = '0 0 0 3px rgba(232,96,44,0.12)' }}
+                  onBlur={e => { e.target.style.borderColor = 'rgba(0,0,0,0.12)'; e.target.style.boxShadow = 'none' }}
+                />
+              </div>
+              <div>
+                <label style={LABEL}>Durée (j. ouvrés)</label>
+                <input type="number" min={1} value={form.duree ?? 1}
+                  onChange={(e) => set('duree', Math.max(1, Number(e.target.value)))}
+                  required style={INPUT}
+                  onFocus={e => { e.target.style.borderColor = '#E8602C'; e.target.style.boxShadow = '0 0 0 3px rgba(232,96,44,0.12)' }}
+                  onBlur={e => { e.target.style.borderColor = 'rgba(0,0,0,0.12)'; e.target.style.boxShadow = 'none' }}
+                />
+              </div>
+            </div>
+
+            {/* Lot */}
+            <div>
+              <label style={LABEL}>Lot</label>
+              <select
+                value={form.lot_id != null ? String(form.lot_id) : 'none'}
+                onChange={(e) => handleLotChange(e.target.value === 'none' ? null : e.target.value)}
+                style={{ ...INPUT, cursor: 'pointer' }}
                 onFocus={e => { e.target.style.borderColor = '#E8602C'; e.target.style.boxShadow = '0 0 0 3px rgba(232,96,44,0.12)' }}
                 onBlur={e => { e.target.style.borderColor = 'rgba(0,0,0,0.12)'; e.target.style.boxShadow = 'none' }}
-              />
+              >
+                <option value="none">Sans lot</option>
+                {lots.map((lot) => (
+                  <option key={lot.id} value={String(lot.id)}>
+                    {lot.num_lot} – {lot.nom}
+                  </option>
+                ))}
+              </select>
             </div>
-          </div>
 
-          {/* Approvisionnement */}
-          <div style={{ borderTop: '0.5px solid rgba(0,0,0,0.08)', paddingTop: 14 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: form.appro_actif ? 12 : 0 }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-                <input
-                  type="checkbox" checked={!!form.appro_actif}
-                  onChange={(e) => set('appro_actif', e.target.checked)}
-                  style={{ accentColor: '#E8602C', width: 14, height: 14, cursor: 'pointer' }}
-                />
-                <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#9C9591' }}>
-                  Délai d'approvisionnement
-                </span>
-              </label>
-            </div>
-            {form.appro_actif && (
-              <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: 10, alignItems: 'end' }}>
-                <div>
-                  <label style={LABEL}>Durée (j. ouvrés)</label>
-                  <input
-                    type="number" min={1} value={form.appro_duree ?? ''}
-                    onChange={(e) => set('appro_duree', e.target.value === '' ? null : Math.max(1, Number(e.target.value)))}
-                    placeholder="10" style={INPUT}
-                    onFocus={e => { e.target.style.borderColor = '#E8602C'; e.target.style.boxShadow = '0 0 0 3px rgba(232,96,44,0.12)' }}
-                    onBlur={e => { e.target.style.borderColor = 'rgba(0,0,0,0.12)'; e.target.style.boxShadow = 'none' }}
-                  />
-                </div>
-                <div>
-                  <label style={LABEL}>Matériau / fourniture</label>
-                  <input
-                    value={form.appro_materiau ?? ''}
-                    onChange={(e) => set('appro_materiau', e.target.value || null)}
-                    placeholder="Charpente bois lamellé-collé" style={INPUT}
-                    onFocus={e => { e.target.style.borderColor = '#E8602C'; e.target.style.boxShadow = '0 0 0 3px rgba(232,96,44,0.12)' }}
-                    onBlur={e => { e.target.style.borderColor = 'rgba(0,0,0,0.12)'; e.target.style.boxShadow = 'none' }}
-                  />
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Segments supplémentaires */}
-          {mode === 'edit' && task?.id && (
-            <div style={{ marginTop: 6, borderTop: '0.5px solid rgba(0,0,0,0.08)', paddingTop: 14 }}>
-              <div style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10,
-              }}>
-                <span style={{
-                  fontSize: 11, fontWeight: 500, color: '#9C9591',
-                  textTransform: 'uppercase', letterSpacing: '0.05em',
-                }}>
-                  Segments supplémentaires
-                  {segmentsDeTache.length > 0 && ` (${segmentsDeTache.length})`}
-                </span>
-                <button
-                  type="button"
-                  onClick={handleAddSegment}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px',
-                    fontSize: 11, borderRadius: 2,
-                    border: '0.5px solid #E8602C',
-                    background: 'transparent', color: '#E8602C', cursor: 'pointer',
-                  }}
-                >
-                  <Plus size={12} />
-                  Ajouter un segment
-                </button>
-              </div>
-
-              {segmentsDeTache.length === 0 && (
-                <p style={{ fontSize: 11, color: '#9C9591', fontStyle: 'italic', padding: '8px 0' }}>
-                  Ajoutez des segments pour représenter cette tâche à d'autres périodes ou zones
-                  (ex : dallage Zone 1 puis Zone 2).
-                </p>
-              )}
-
-              {segmentsDeTache.map((seg, idx) => (
-                <div key={seg.id} style={{
-                  display: 'grid', gridTemplateColumns: '1fr 80px 1fr auto 28px', gap: 8,
-                  alignItems: 'center', padding: '8px 0',
-                  borderBottom: '0.5px solid rgba(0,0,0,0.06)',
-                }}>
-                  {/* Date début */}
-                  <div>
-                    {idx === 0 && (
-                      <label style={{ fontSize: 10, color: '#9C9591', display: 'block', marginBottom: 3 }}>
-                        DÉBUT
-                      </label>
-                    )}
-                    <input
-                      type="date"
-                      value={seg.date_debut}
-                      onChange={(e) => updateSegment(seg.id, { date_debut: e.target.value })}
-                      style={{
-                        width: '100%', padding: '6px 8px', fontSize: 12,
-                        border: '0.5px solid rgba(0,0,0,0.12)', borderRadius: 2,
-                      }}
-                    />
-                  </div>
-
-                  {/* Durée */}
-                  <div>
-                    {idx === 0 && (
-                      <label style={{ fontSize: 10, color: '#9C9591', display: 'block', marginBottom: 3 }}>
-                        DURÉE (j)
-                      </label>
-                    )}
-                    <input
-                      type="number"
-                      min={1}
-                      value={seg.duree_jours}
-                      onChange={(e) => updateSegment(seg.id, { duree_jours: Math.max(1, parseInt(e.target.value, 10) || 1) })}
-                      style={{
-                        width: '100%', padding: '6px 8px', fontSize: 12,
-                        border: '0.5px solid rgba(0,0,0,0.12)', borderRadius: 2,
-                      }}
-                    />
-                  </div>
-
-                  {/* Zone */}
-                  <div>
-                    {idx === 0 && (
-                      <label style={{ fontSize: 10, color: '#9C9591', display: 'block', marginBottom: 3 }}>
-                        ZONE
-                      </label>
-                    )}
-                    <select
-                      value={seg.zone_id ?? ''}
-                      onChange={(e) => updateSegment(seg.id, { zone_id: e.target.value || null })}
-                      style={{
-                        width: '100%', padding: '6px 8px', fontSize: 12,
-                        border: '0.5px solid rgba(0,0,0,0.12)', borderRadius: 2,
-                      }}
-                    >
-                      <option value="">— Même zone</option>
-                      {zones.map((z) => (
-                        <option key={z.id} value={z.id}>{z.nom}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* Afficher le nom */}
-                  <label style={{
-                    display: 'flex', alignItems: 'center',
-                    gap: 6, fontSize: 11, color: '#5E5854',
-                    cursor: 'pointer',
-                    whiteSpace: 'nowrap',
-                    marginTop: idx === 0 ? 16 : 0,
-                  }}>
-                    <input
-                      type="checkbox"
-                      checked={seg.afficher_nom ?? false}
-                      onChange={(e) => updateSegment(seg.id, { afficher_nom: e.target.checked })}
-                      style={{ cursor: 'pointer' }}
-                    />
-                    Nom
-                  </label>
-
-                  {/* Supprimer */}
+            {/* Zone */}
+            {colorMode === 'zone' && zones.length > 0 && (
+              <div>
+                <label style={LABEL}>Zone</label>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
                   <button
                     type="button"
-                    onClick={() => deleteSegment(seg.id)}
+                    onClick={() => set('zone_id', null)}
                     style={{
-                      width: 28, height: 28,
-                      border: '0.5px solid rgba(220,38,38,0.3)',
-                      background: '#FEF2F2', color: '#DC2626', cursor: 'pointer',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      marginTop: idx === 0 ? 16 : 0,
+                      padding: '4px 10px', fontSize: 12,
+                      border: '0.5px solid rgba(0,0,0,0.15)',
+                      borderRadius: 2,
+                      background: !form.zone_id ? '#1F1B17' : 'transparent',
+                      color: !form.zone_id ? 'white' : '#5E5854',
+                      cursor: 'pointer',
                     }}
                   >
-                    <Trash2 size={11} />
+                    Aucune
+                  </button>
+                  {zones.map((zone) => (
+                    <button
+                      key={zone.id}
+                      type="button"
+                      onClick={() => set('zone_id', zone.id)}
+                      style={{
+                        padding: '4px 10px', fontSize: 12,
+                        border: `0.5px solid ${zone.couleur}`,
+                        borderRadius: 2,
+                        background: form.zone_id === zone.id ? zone.couleur : 'transparent',
+                        color: form.zone_id === zone.id ? 'white' : zone.couleur,
+                        cursor: 'pointer',
+                        fontWeight: 500,
+                      }}
+                    >
+                      {zone.nom}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Dépendance */}
+            <div>
+              <label style={LABEL}>Dépend de (chemin critique)</label>
+              <select
+                value={form.depends_on != null ? String(form.depends_on) : 'none'}
+                onChange={(e) => handleDependencyChange(e.target.value)}
+                style={{ ...INPUT, cursor: 'pointer' }}
+                onFocus={e => { e.target.style.borderColor = '#E8602C'; e.target.style.boxShadow = '0 0 0 3px rgba(232,96,44,0.12)' }}
+                onBlur={e => { e.target.style.borderColor = 'rgba(0,0,0,0.12)'; e.target.style.boxShadow = 'none' }}
+              >
+                <option value="none">Aucune dépendance</option>
+                {dependencyOptions.map((t) => (
+                  <option key={t.id} value={String(t.id)}>
+                    {t.num_tache} – {t.nom}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Lag */}
+            {form.depends_on != null && (
+              <div>
+                <label style={LABEL}>Délai après fin de la tâche précédente (j. ouvrés)</label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <input
+                    type="number" min={-30} value={form.lag_days ?? 0}
+                    onChange={(e) => set('lag_days', Number(e.target.value))}
+                    style={{ ...INPUT, width: 96, fontVariantNumeric: 'tabular-nums' }}
+                    onFocus={e => { e.target.style.borderColor = '#E8602C'; e.target.style.boxShadow = '0 0 0 3px rgba(232,96,44,0.12)' }}
+                    onBlur={e => { e.target.style.borderColor = 'rgba(0,0,0,0.12)'; e.target.style.boxShadow = 'none' }}
+                  />
+                  <span style={{ fontSize: 11, color: '#9C9591' }}>
+                    {(form.lag_days ?? 0) === 0 && 'Collée (commence le jour même de la fin)'}
+                    {(form.lag_days ?? 0) === 1 && 'Collée (commence le lendemain ouvré)'}
+                    {(form.lag_days ?? 0) > 1 && `${(form.lag_days ?? 0) - 1} jour(s) de battement`}
+                    {(form.lag_days ?? 0) < 0 && `Chevauchement de ${Math.abs(form.lag_days ?? 0)} jour(s)`}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Avancement */}
+            <div>
+              <label style={LABEL}>Avancement : {form.avancement ?? 0}%</label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <input
+                  type="range" min={0} max={100} step={5} value={form.avancement ?? 0}
+                  onChange={(e) => set('avancement', Number(e.target.value))}
+                  style={{ flex: 1, accentColor: '#2A8A4E' }}
+                />
+                <input
+                  type="number" min={0} max={100} value={form.avancement ?? 0}
+                  onChange={(e) => set('avancement', Math.max(0, Math.min(100, Number(e.target.value))))}
+                  style={{ ...INPUT, width: 64, textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}
+                  onFocus={e => { e.target.style.borderColor = '#E8602C'; e.target.style.boxShadow = '0 0 0 3px rgba(232,96,44,0.12)' }}
+                  onBlur={e => { e.target.style.borderColor = 'rgba(0,0,0,0.12)'; e.target.style.boxShadow = 'none' }}
+                />
+              </div>
+            </div>
+
+            {/* Approvisionnement */}
+            <div style={{ borderTop: '0.5px solid rgba(0,0,0,0.08)', paddingTop: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: form.appro_actif ? 12 : 0 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                  <input
+                    type="checkbox" checked={!!form.appro_actif}
+                    onChange={(e) => set('appro_actif', e.target.checked)}
+                    style={{ accentColor: '#E8602C', width: 14, height: 14, cursor: 'pointer' }}
+                  />
+                  <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#9C9591' }}>
+                    Délai d'approvisionnement
+                  </span>
+                </label>
+              </div>
+              {form.appro_actif && (
+                <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: 10, alignItems: 'end' }}>
+                  <div>
+                    <label style={LABEL}>Durée (j. ouvrés)</label>
+                    <input
+                      type="number" min={1} value={form.appro_duree ?? ''}
+                      onChange={(e) => set('appro_duree', e.target.value === '' ? null : Math.max(1, Number(e.target.value)))}
+                      placeholder="10" style={INPUT}
+                      onFocus={e => { e.target.style.borderColor = '#E8602C'; e.target.style.boxShadow = '0 0 0 3px rgba(232,96,44,0.12)' }}
+                      onBlur={e => { e.target.style.borderColor = 'rgba(0,0,0,0.12)'; e.target.style.boxShadow = 'none' }}
+                    />
+                  </div>
+                  <div>
+                    <label style={LABEL}>Matériau / fourniture</label>
+                    <input
+                      value={form.appro_materiau ?? ''}
+                      onChange={(e) => set('appro_materiau', e.target.value || null)}
+                      placeholder="Charpente bois lamellé-collé" style={INPUT}
+                      onFocus={e => { e.target.style.borderColor = '#E8602C'; e.target.style.boxShadow = '0 0 0 3px rgba(232,96,44,0.12)' }}
+                      onBlur={e => { e.target.style.borderColor = 'rgba(0,0,0,0.12)'; e.target.style.boxShadow = 'none' }}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Segments supplémentaires */}
+            {mode === 'edit' && task?.id && (
+              <div style={{ marginTop: 6, borderTop: '0.5px solid rgba(0,0,0,0.08)', paddingTop: 14 }}>
+                <div style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10,
+                }}>
+                  <span style={{
+                    fontSize: 11, fontWeight: 500, color: '#9C9591',
+                    textTransform: 'uppercase', letterSpacing: '0.05em',
+                  }}>
+                    Segments supplémentaires
+                    {segmentsDeTache.length > 0 && ` (${segmentsDeTache.length})`}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleAddSegment}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px',
+                      fontSize: 11, borderRadius: 2,
+                      border: '0.5px solid #E8602C',
+                      background: 'transparent', color: '#E8602C', cursor: 'pointer',
+                    }}
+                  >
+                    <Plus size={12} />
+                    Ajouter un segment
                   </button>
                 </div>
-              ))}
-            </div>
-          )}
 
-          {/* Footer */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, paddingTop: 8, borderTop: '0.5px solid rgba(0,0,0,0.08)' }}>
-            {mode === 'edit' && onDelete && (
-              <button type="button" style={{ ...BTN_DANGER, marginRight: 'auto' }}
-                onClick={handleDelete} disabled={deleting}>
-                <Trash2 size={13} />
-                {deleting ? 'Suppression…' : 'Supprimer'}
-              </button>
+                {segmentsDeTache.length === 0 && (
+                  <p style={{ fontSize: 11, color: '#9C9591', fontStyle: 'italic', padding: '8px 0' }}>
+                    Ajoutez des segments pour représenter cette tâche à d'autres périodes ou zones
+                    (ex : dallage Zone 1 puis Zone 2).
+                  </p>
+                )}
+
+                {segmentsDeTache.map((seg, idx) => (
+                  <div key={seg.id} style={{
+                    display: 'grid', gridTemplateColumns: '1fr 80px 1fr auto 28px', gap: 8,
+                    alignItems: 'center', padding: '8px 0',
+                    borderBottom: '0.5px solid rgba(0,0,0,0.06)',
+                  }}>
+                    {/* Date début */}
+                    <div>
+                      {idx === 0 && (
+                        <label style={{ fontSize: 10, color: '#9C9591', display: 'block', marginBottom: 3 }}>
+                          DÉBUT
+                        </label>
+                      )}
+                      <input
+                        type="date"
+                        value={seg.date_debut}
+                        onChange={(e) => updateSegment(seg.id, { date_debut: e.target.value })}
+                        style={{
+                          width: '100%', padding: '6px 8px', fontSize: 12,
+                          border: '0.5px solid rgba(0,0,0,0.12)', borderRadius: 2,
+                        }}
+                      />
+                    </div>
+
+                    {/* Durée */}
+                    <div>
+                      {idx === 0 && (
+                        <label style={{ fontSize: 10, color: '#9C9591', display: 'block', marginBottom: 3 }}>
+                          DURÉE (j)
+                        </label>
+                      )}
+                      <input
+                        type="number"
+                        min={1}
+                        value={seg.duree_jours}
+                        onChange={(e) => updateSegment(seg.id, { duree_jours: Math.max(1, parseInt(e.target.value, 10) || 1) })}
+                        style={{
+                          width: '100%', padding: '6px 8px', fontSize: 12,
+                          border: '0.5px solid rgba(0,0,0,0.12)', borderRadius: 2,
+                        }}
+                      />
+                    </div>
+
+                    {/* Zone */}
+                    <div>
+                      {idx === 0 && (
+                        <label style={{ fontSize: 10, color: '#9C9591', display: 'block', marginBottom: 3 }}>
+                          ZONE
+                        </label>
+                      )}
+                      <select
+                        value={seg.zone_id ?? ''}
+                        onChange={(e) => updateSegment(seg.id, { zone_id: e.target.value || null })}
+                        style={{
+                          width: '100%', padding: '6px 8px', fontSize: 12,
+                          border: '0.5px solid rgba(0,0,0,0.12)', borderRadius: 2,
+                        }}
+                      >
+                        <option value="">— Même zone</option>
+                        {zones.map((z) => (
+                          <option key={z.id} value={z.id}>{z.nom}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Afficher le nom */}
+                    <label style={{
+                      display: 'flex', alignItems: 'center',
+                      gap: 6, fontSize: 11, color: '#5E5854',
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap',
+                      marginTop: idx === 0 ? 16 : 0,
+                    }}>
+                      <input
+                        type="checkbox"
+                        checked={seg.afficher_nom ?? false}
+                        onChange={(e) => updateSegment(seg.id, { afficher_nom: e.target.checked })}
+                        style={{ cursor: 'pointer' }}
+                      />
+                      Nom
+                    </label>
+
+                    {/* Supprimer */}
+                    <button
+                      type="button"
+                      onClick={() => deleteSegment(seg.id)}
+                      style={{
+                        width: 28, height: 28,
+                        border: '0.5px solid rgba(220,38,38,0.3)',
+                        background: '#FEF2F2', color: '#DC2626', cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        marginTop: idx === 0 ? 16 : 0,
+                      }}
+                    >
+                      <Trash2 size={11} />
+                    </button>
+                  </div>
+                ))}
+              </div>
             )}
-            <button type="button" style={BTN} onClick={onClose} disabled={saving}>
-              <X size={13} /> Annuler
-            </button>
-            <button type="submit" style={{ ...BTN_PRIMARY, opacity: saving ? 0.7 : 1 }} disabled={saving}>
-              <Save size={13} />
-              {saving ? 'Enregistrement…' : 'Enregistrer'}
-            </button>
-          </div>
-        </form>
-      </div>
+
+            {/* Footer */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, paddingTop: 8, borderTop: '0.5px solid rgba(0,0,0,0.08)' }}>
+              {mode === 'edit' && onRequestDelete && (
+                <button type="button" style={{ ...BTN_DANGER, marginRight: 'auto' }}
+                  onClick={handleDelete}>
+                  <Trash2 size={13} />
+                  Supprimer
+                </button>
+              )}
+              <button type="button" style={BTN} onClick={onClose} disabled={saving}>
+                <X size={13} /> Annuler
+              </button>
+              <button type="submit" style={{ ...BTN_PRIMARY, opacity: saving ? 0.7 : 1 }} disabled={saving}>
+                <Save size={13} />
+                {saving ? 'Enregistrement…' : 'Enregistrer'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   )
 }

@@ -180,6 +180,52 @@ function getTaskGeometry(task, geo) {
   return computeGeometry(parseDate(task.debut), task.duree, geo)
 }
 
+// ── Résolution générique tâche / segment (points de connexion, flèches) ───────
+
+function sameEndpoint(a, b) {
+  if (!a || !b || a.type !== b.type) return false
+  return a.type === 'segment' ? a.segmentId === b.segmentId : a.taskId === b.taskId
+}
+
+function getEntityDateDuree(point, tasks, segments) {
+  if (point.type === 'segment') {
+    const seg = segments.find((s) => s.id === point.segmentId)
+    return seg ? { debut: seg.date_debut, duree: seg.duree_jours } : null
+  }
+  const t = tasks.find((x) => x.id === point.taskId)
+  return t ? { debut: t.debut, duree: t.duree } : null
+}
+
+// Géométrie + ligne d'une entité tâche/segment identifiée par (tacheId, segmentId)
+function resolveEntityGeometry(tacheId, segmentId, tasks, segments, rowIndexMap, geo) {
+  if (segmentId != null) {
+    const seg = segments.find((s) => s.id === segmentId)
+    if (!seg) return null
+    const segGeo = computeGeometry(parseDate(seg.date_debut), seg.duree_jours, geo)
+    const rowIdx = rowIndexMap[seg.tache_id]
+    if (rowIdx === undefined) return null
+    return { left: segGeo.left, width: segGeo.width, rowIdx }
+  }
+  const task = tasks.find((t) => t.id === tacheId)
+  if (!task) return null
+  const tGeo = getTaskGeometry(task, geo)
+  const rowIdx = rowIndexMap[task.id]
+  if (rowIdx === undefined) return null
+  return { left: tGeo.left, width: tGeo.width, rowIdx }
+}
+
+function taskLabel(taskId, tasks) {
+  const t = tasks.find((x) => x.id === taskId)
+  return t ? `${t.num_tache} – ${t.nom}` : '?'
+}
+
+function segmentLabel(segmentId, tasks, segments) {
+  const seg = segments.find((s) => s.id === segmentId)
+  if (!seg) return '?'
+  const t = tasks.find((x) => x.id === seg.tache_id)
+  return t ? `${t.num_tache} – ${t.nom} (segment)` : 'Segment'
+}
+
 // Décale une date de N jours ; en vue jour uniquement, on évite les week-ends
 // (les vues semaine/mois traitent déjà les durées en jours calendaires simples)
 function applyDeltaDays(origDate, deltaDays, viewMode) {
@@ -238,12 +284,10 @@ export function GanttTimeline({
   jalons = [], onJalonClick,
   onTaskClick, onTaskUpdate, onDependencyCreate, onDependencyDelete,
   zones = [], colorMode = 'lot', viewMode = 'day', zoomLevel = 1,
-  getSegmentsForTache, segments = [], updateSegment, updateSegmentLocal,
+  getSegmentsForTache, segments = [], updateSegmentLocal, onSegmentDateCommit,
+  dependances = [], onSegmentDependencyCreate, onSegmentDependencyDelete,
   periodes = [], getNextWorkingDay,
 }) {
-  // Drag/resize des tâches et segments fonctionnent dans tous les modes ;
-  // seule la création de dépendances par points de connexion reste limitée à la vue jour.
-  const canConnect = viewMode === 'day'
   const weekWidth = WEEK_WIDTH_BASE * zoomLevel
   const monthWidth = MONTH_WIDTH_BASE * zoomLevel
   // ── Date référence ────────────────────────────────────────────────────────────
@@ -451,7 +495,7 @@ export function GanttTimeline({
         if (getNextWorkingDay) finalDate = getNextWorkingDay(finalDate)
         const snapped = formatDateISO(finalDate)
         if (snapped !== seg.date_debut) updateSegmentLocal?.(draggingSegment.segmentId, { date_debut: snapped })
-        await updateSegment?.(draggingSegment.segmentId, { date_debut: snapped })
+        await onSegmentDateCommit?.(draggingSegment.segmentId, snapped)
       }
       setDraggingSegment(null)
     }
@@ -462,7 +506,7 @@ export function GanttTimeline({
       window.removeEventListener('mousemove', handleMouseMove)
       window.removeEventListener('mouseup', handleMouseUp)
     }
-  }, [draggingSegment, segments, viewMode, pxToDays, updateSegmentLocal, updateSegment, getNextWorkingDay])
+  }, [draggingSegment, segments, viewMode, pxToDays, updateSegmentLocal, onSegmentDateCommit, getNextWorkingDay])
 
   // ── Connexion chemin critique ──────────────────────────────────────────────────
   const [connectingFrom, setConnectingFrom] = useState(null)
@@ -473,8 +517,10 @@ export function GanttTimeline({
   const svgRef = useRef(null)
 
   // ── Flèches permanentes ───────────────────────────────────────────────────────
+  // Deux sources : les dépendances tâche→tâche historiques (`depends_on`/`lag_days`)
+  // et les dépendances étendues (`planning_dependances`), qui peuvent impliquer des segments.
   const arrows = useMemo(() => {
-    return tasks
+    const legacy = tasks
       .filter((t) => t.depends_on != null)
       .map((t) => {
         const fromTask = tasks.find((x) => x.id === t.depends_on)
@@ -485,11 +531,12 @@ export function GanttTimeline({
         const toRowIdx = rowIndexMap[t.id]
         if (fromRowIdx === undefined || toRowIdx === undefined) return null
         return {
-          id: `${fromTask.id}-${t.id}`,
+          id: `task-${fromTask.id}-${t.id}`,
+          kind: 'legacy',
           fromTaskId: fromTask.id,
           toTaskId: t.id,
-          fromTaskName: `${fromTask.num_tache} – ${fromTask.nom}`,
-          toTaskName: `${t.num_tache} – ${t.nom}`,
+          fromLabel: `${fromTask.num_tache} – ${fromTask.nom}`,
+          toLabel: `${t.num_tache} – ${t.nom}`,
           fromX: fromGeo.left + fromGeo.width,
           fromY: fromRowIdx * rowHeight + (rowHeight - BAR_PAD),
           toX: toGeo.left,
@@ -497,7 +544,32 @@ export function GanttTimeline({
         }
       })
       .filter(Boolean)
-  }, [tasks, rowIndexMap, rowHeight, geo])
+
+    const extended = dependances
+      .map((dep) => {
+        const from = resolveEntityGeometry(dep.source_tache_id, dep.source_segment_id, tasks, segments, rowIndexMap, geo)
+        const to = resolveEntityGeometry(dep.cible_tache_id, dep.cible_segment_id, tasks, segments, rowIndexMap, geo)
+        if (!from || !to) return null
+        return {
+          id: `dep-${dep.id}`,
+          kind: 'dependance',
+          dependanceId: dep.id,
+          fromLabel: dep.source_segment_id
+            ? segmentLabel(dep.source_segment_id, tasks, segments)
+            : taskLabel(dep.source_tache_id, tasks),
+          toLabel: dep.cible_segment_id
+            ? segmentLabel(dep.cible_segment_id, tasks, segments)
+            : taskLabel(dep.cible_tache_id, tasks),
+          fromX: from.left + from.width,
+          fromY: from.rowIdx * rowHeight + (rowHeight - BAR_PAD),
+          toX: to.left,
+          toY: to.rowIdx * rowHeight + (rowHeight - BAR_PAD),
+        }
+      })
+      .filter(Boolean)
+
+    return [...legacy, ...extended]
+  }, [tasks, segments, dependances, rowIndexMap, rowHeight, geo])
 
   // ── Mouse handlers ─────────────────────────────────────────────────────────────
   const handleMouseMove = useCallback((e) => {
@@ -577,20 +649,29 @@ export function GanttTimeline({
         }
       }
     } else {
-      if (point.side === 'start' && point.taskId !== connectingFrom.taskId) {
-        const exists = tasks.find((t) => t.id === point.taskId && t.depends_on === connectingFrom.taskId)
-        if (!exists) {
-          const fromTask = tasks.find((t) => t.id === connectingFrom.taskId)
-          const toTask = tasks.find((t) => t.id === point.taskId)
-          const lag = (fromTask && toTask)
-            ? computeLag(parseDate(fromTask.debut), fromTask.duree, parseDate(toTask.debut))
-            : 1
-          onDependencyCreate(connectingFrom.taskId, point.taskId, lag)
+      if (point.side === 'start' && !sameEndpoint(connectingFrom, point)) {
+        const fromInfo = getEntityDateDuree(connectingFrom, tasks, segments)
+        const toInfo = getEntityDateDuree(point, tasks, segments)
+        const lag = (fromInfo && toInfo)
+          ? computeLag(parseDate(fromInfo.debut), fromInfo.duree, parseDate(toInfo.debut))
+          : 1
+
+        if (connectingFrom.type === 'task' && point.type === 'task') {
+          const exists = tasks.find((t) => t.id === point.taskId && t.depends_on === connectingFrom.taskId)
+          if (!exists) onDependencyCreate(connectingFrom.taskId, point.taskId, lag)
+        } else {
+          onSegmentDependencyCreate?.({
+            sourceTacheId: connectingFrom.type === 'task' ? connectingFrom.taskId : null,
+            sourceSegmentId: connectingFrom.type === 'segment' ? connectingFrom.segmentId : null,
+            cibleTacheId: point.type === 'task' ? point.taskId : null,
+            cibleSegmentId: point.type === 'segment' ? point.segmentId : null,
+            lagJours: lag,
+          })
         }
       }
       setConnectingFrom(null)
     }
-  }, [connectingFrom, tasks, onDependencyCreate])
+  }, [connectingFrom, tasks, segments, onDependencyCreate, onSegmentDependencyCreate])
 
   // Position d'une date, quel que soit le mode d'affichage (jour / semaine / mois)
   const getX = useCallback((date) => {
@@ -941,7 +1022,6 @@ export function GanttTimeline({
                 task={task} lot={lot}
                 barColor={getBarColor(task, lot, zones, colorMode)}
                 rowHeight={rowHeight} geo={geo}
-                canConnect={canConnect}
                 segments={getSegmentsForTache ? getSegmentsForTache(task.id) : []}
                 zones={zones}
                 isDragging={draggingBar === task.id}
@@ -949,7 +1029,7 @@ export function GanttTimeline({
                 onSegmentDragStart={handleSegmentMouseDown}
                 segmentDragMovedRef={segmentDragRef}
                 isConnecting={!!connectingFrom}
-                connectingFromId={connectingFrom?.taskId ?? null}
+                connectingFrom={connectingFrom}
                 hoveredPoint={hoveredPoint}
                 onBarDragStart={startBarDrag}
                 onBarClick={onTaskClick}
@@ -974,7 +1054,6 @@ export function GanttTimeline({
                 task={task} lot={null}
                 barColor={getBarColor(task, null, zones, colorMode)}
                 rowHeight={rowHeight} geo={geo}
-                canConnect={canConnect}
                 segments={getSegmentsForTache ? getSegmentsForTache(task.id) : []}
                 zones={zones}
                 isDragging={draggingBar === task.id}
@@ -982,7 +1061,7 @@ export function GanttTimeline({
                 onSegmentDragStart={handleSegmentMouseDown}
                 segmentDragMovedRef={segmentDragRef}
                 isConnecting={!!connectingFrom}
-                connectingFromId={connectingFrom?.taskId ?? null}
+                connectingFrom={connectingFrom}
                 hoveredPoint={hoveredPoint}
                 onBarDragStart={startBarDrag}
                 onBarClick={onTaskClick}
@@ -1028,10 +1107,12 @@ export function GanttTimeline({
                 onClick={(e) => {
                   e.stopPropagation()
                   setDeletingArrow({
+                    kind: arrow.kind,
                     fromTaskId: arrow.fromTaskId,
                     toTaskId: arrow.toTaskId,
-                    fromTaskName: arrow.fromTaskName,
-                    toTaskName: arrow.toTaskName,
+                    dependanceId: arrow.dependanceId,
+                    fromLabel: arrow.fromLabel,
+                    toLabel: arrow.toLabel,
                   })
                 }}
               >
@@ -1126,9 +1207,9 @@ export function GanttTimeline({
             </div>
             <p style={{ fontSize: 13, color: '#5E5854', lineHeight: 1.6, marginBottom: 20 }}>
               La liaison entre{' '}
-              <strong style={{ color: '#1F1B17' }}>{deletingArrow.fromTaskName}</strong>
+              <strong style={{ color: '#1F1B17' }}>{deletingArrow.fromLabel}</strong>
               {' '}et{' '}
-              <strong style={{ color: '#1F1B17' }}>{deletingArrow.toTaskName}</strong>
+              <strong style={{ color: '#1F1B17' }}>{deletingArrow.toLabel}</strong>
               {' '}sera supprimée. Les dates ne seront pas modifiées.
             </p>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
@@ -1142,7 +1223,11 @@ export function GanttTimeline({
               </button>
               <button
                 onClick={() => {
-                  onDependencyDelete(deletingArrow.fromTaskId, deletingArrow.toTaskId)
+                  if (deletingArrow.kind === 'dependance') {
+                    onSegmentDependencyDelete?.(deletingArrow.dependanceId)
+                  } else {
+                    onDependencyDelete(deletingArrow.fromTaskId, deletingArrow.toTaskId)
+                  }
                   setDeletingArrow(null)
                 }}
                 style={{
@@ -1163,8 +1248,8 @@ export function GanttTimeline({
 
 function TaskBarRow({
   task, lot, geo, rowHeight, barColor,
-  canConnect = false, segments = [], zones = [],
-  isDragging, isConnecting, connectingFromId, hoveredPoint,
+  segments = [], zones = [],
+  isDragging, isConnecting, connectingFrom, hoveredPoint,
   draggingSegmentId, onSegmentDragStart, segmentDragMovedRef,
   onBarDragStart, onBarClick, onConnectionPointClick, onConnectionPointHover,
 }) {
@@ -1174,19 +1259,21 @@ function TaskBarRow({
   const { left, width } = computeGeometry(debut, task.duree, geo)
   const unitWidth = geo.viewMode === 'month' ? geo.monthWidth : geo.viewMode === 'week' ? geo.weekWidth : geo.dayWidth
   const HANDLE_W = Math.max(6, Math.min(10, unitWidth * 0.25))
-  const DOT_R = 6
+  const connectionPointSize = geo.viewMode === 'day' ? 8 : 10
+  const DOT_R = connectionPointSize / 2
   const BAR_BOTTOM = rowHeight - BAR_PAD
 
-  const isSource = connectingFromId === task.id
-  const isStartHovered = hoveredPoint?.taskId === task.id && hoveredPoint?.side === 'start'
-  const isEndHovered = hoveredPoint?.taskId === task.id && hoveredPoint?.side === 'end'
+  const isOwnSource = sameEndpoint(connectingFrom, { type: 'task', taskId: task.id })
+  const isSource = isOwnSource
+  const isStartHovered = hoveredPoint?.type === 'task' && hoveredPoint?.taskId === task.id && hoveredPoint?.side === 'start'
+  const isEndHovered = hoveredPoint?.type === 'task' && hoveredPoint?.taskId === task.id && hoveredPoint?.side === 'end'
 
-  const startPoint = { taskId: task.id, side: 'start', x: left, y: BAR_BOTTOM }
-  const endPoint = { taskId: task.id, side: 'end', x: left + width, y: BAR_BOTTOM }
+  const startPoint = { type: 'task', taskId: task.id, side: 'start', x: left, y: BAR_BOTTOM }
+  const endPoint = { type: 'task', taskId: task.id, side: 'end', x: left + width, y: BAR_BOTTOM }
 
   const PENCIL_SIZE = Math.min(14, rowHeight * 0.35)
 
-  const showStartDot = isConnecting && connectingFromId !== task.id ? true : isHovered
+  const showStartDot = isConnecting && !isOwnSource ? true : isHovered
   const showEndDot = isConnecting ? false : isHovered
 
   const barTitle = task.appro_actif && task.appro_duree
@@ -1327,6 +1414,15 @@ function TaskBarRow({
           ? zones.find((z) => z.id === seg.zone_id)?.couleur ?? color
           : color
         const isDraggingThis = draggingSegmentId === seg.id
+
+        const segIsOwnSource = sameEndpoint(connectingFrom, { type: 'segment', segmentId: seg.id })
+        const segStartHovered = hoveredPoint?.type === 'segment' && hoveredPoint?.segmentId === seg.id && hoveredPoint?.side === 'start'
+        const segEndHovered = hoveredPoint?.type === 'segment' && hoveredPoint?.segmentId === seg.id && hoveredPoint?.side === 'end'
+        const segStartPoint = { type: 'segment', segmentId: seg.id, tacheId: seg.tache_id, side: 'start', x: segGeo.left, y: BAR_BOTTOM }
+        const segEndPoint = { type: 'segment', segmentId: seg.id, tacheId: seg.tache_id, side: 'end', x: segGeo.left + segGeo.width, y: BAR_BOTTOM }
+        const segShowStartDot = isConnecting && !segIsOwnSource ? true : isHovered
+        const segShowEndDot = isConnecting ? false : isHovered
+
         return (
           <div key={seg.id}>
             <div
@@ -1367,51 +1463,83 @@ function TaskBarRow({
                 {task.nom}
               </div>
             )}
+
+            {/* Points de connexion du segment */}
+            <div
+              style={{
+                position: 'absolute', zIndex: 40,
+                left: segGeo.left - DOT_R, top: BAR_BOTTOM - DOT_R,
+                width: DOT_R * 2, height: DOT_R * 2,
+                borderRadius: '50%', border: '2px solid white', cursor: 'crosshair',
+                backgroundColor: segStartHovered ? '#E8602C' : segColor,
+                transform: segStartHovered ? 'scale(1.5)' : 'scale(1)',
+                boxShadow: segStartHovered ? '0 0 0 3px rgba(224,90,30,0.35)' : '0 1px 4px rgba(0,0,0,0.4)',
+                opacity: segShowStartDot ? 1 : 0,
+                transition: 'transform 0.15s, box-shadow 0.15s, opacity 0.15s, background-color 0.15s',
+                pointerEvents: segShowStartDot ? 'auto' : 'none',
+              }}
+              onClick={(e) => onConnectionPointClick(e, segStartPoint)}
+              onMouseEnter={() => onConnectionPointHover(segStartPoint)}
+              onMouseLeave={() => onConnectionPointHover(null)}
+            />
+            <div
+              style={{
+                position: 'absolute', zIndex: 40,
+                left: segGeo.left + segGeo.width - DOT_R, top: BAR_BOTTOM - DOT_R,
+                width: DOT_R * 2, height: DOT_R * 2,
+                borderRadius: '50%', border: '2px solid white', cursor: 'crosshair',
+                backgroundColor: segIsOwnSource || segEndHovered ? '#E8602C' : segColor,
+                transform: segEndHovered || segIsOwnSource ? 'scale(1.5)' : 'scale(1)',
+                boxShadow: (segEndHovered || segIsOwnSource) ? '0 0 0 3px rgba(224,90,30,0.35)' : '0 1px 4px rgba(0,0,0,0.4)',
+                opacity: segShowEndDot ? 1 : 0,
+                transition: 'transform 0.15s, box-shadow 0.15s, opacity 0.15s, background-color 0.15s',
+                pointerEvents: segShowEndDot ? 'auto' : 'none',
+              }}
+              onClick={(e) => onConnectionPointClick(e, segEndPoint)}
+              onMouseEnter={() => onConnectionPointHover(segEndPoint)}
+              onMouseLeave={() => onConnectionPointHover(null)}
+            />
           </div>
         )
       })}
 
-      {canConnect && (
-        <>
-          {/* ── Point START ──────────────────────────────────────────── */}
-          <div
-            style={{
-              position: 'absolute', zIndex: 40,
-              left: left - DOT_R, top: BAR_BOTTOM - DOT_R,
-              width: DOT_R * 2, height: DOT_R * 2,
-              borderRadius: '50%', border: '2px solid white', cursor: 'crosshair',
-              backgroundColor: isStartHovered ? '#E8602C' : color,
-              transform: isStartHovered ? 'scale(1.5)' : 'scale(1)',
-              boxShadow: isStartHovered ? '0 0 0 3px rgba(224,90,30,0.35)' : '0 1px 4px rgba(0,0,0,0.4)',
-              opacity: showStartDot ? 1 : 0,
-              transition: 'transform 0.15s, box-shadow 0.15s, opacity 0.15s, background-color 0.15s',
-              pointerEvents: showStartDot ? 'auto' : 'none',
-            }}
-            onClick={(e) => onConnectionPointClick(e, startPoint)}
-            onMouseEnter={() => onConnectionPointHover(startPoint)}
-            onMouseLeave={() => onConnectionPointHover(null)}
-          />
+      {/* ── Point START ──────────────────────────────────────────────── */}
+      <div
+        style={{
+          position: 'absolute', zIndex: 40,
+          left: left - DOT_R, top: BAR_BOTTOM - DOT_R,
+          width: DOT_R * 2, height: DOT_R * 2,
+          borderRadius: '50%', border: '2px solid white', cursor: 'crosshair',
+          backgroundColor: isStartHovered ? '#E8602C' : color,
+          transform: isStartHovered ? 'scale(1.5)' : 'scale(1)',
+          boxShadow: isStartHovered ? '0 0 0 3px rgba(224,90,30,0.35)' : '0 1px 4px rgba(0,0,0,0.4)',
+          opacity: showStartDot ? 1 : 0,
+          transition: 'transform 0.15s, box-shadow 0.15s, opacity 0.15s, background-color 0.15s',
+          pointerEvents: showStartDot ? 'auto' : 'none',
+        }}
+        onClick={(e) => onConnectionPointClick(e, startPoint)}
+        onMouseEnter={() => onConnectionPointHover(startPoint)}
+        onMouseLeave={() => onConnectionPointHover(null)}
+      />
 
-          {/* ── Point END ────────────────────────────────────────────── */}
-          <div
-            style={{
-              position: 'absolute', zIndex: 40,
-              left: left + width - DOT_R, top: BAR_BOTTOM - DOT_R,
-              width: DOT_R * 2, height: DOT_R * 2,
-              borderRadius: '50%', border: '2px solid white', cursor: 'crosshair',
-              backgroundColor: isSource || isEndHovered ? '#E8602C' : color,
-              transform: isEndHovered || isSource ? 'scale(1.5)' : 'scale(1)',
-              boxShadow: (isEndHovered || isSource) ? '0 0 0 3px rgba(224,90,30,0.35)' : '0 1px 4px rgba(0,0,0,0.4)',
-              opacity: showEndDot ? 1 : 0,
-              transition: 'transform 0.15s, box-shadow 0.15s, opacity 0.15s, background-color 0.15s',
-              pointerEvents: showEndDot ? 'auto' : 'none',
-            }}
-            onClick={(e) => onConnectionPointClick(e, endPoint)}
-            onMouseEnter={() => onConnectionPointHover(endPoint)}
-            onMouseLeave={() => onConnectionPointHover(null)}
-          />
-        </>
-      )}
+      {/* ── Point END ────────────────────────────────────────────────── */}
+      <div
+        style={{
+          position: 'absolute', zIndex: 40,
+          left: left + width - DOT_R, top: BAR_BOTTOM - DOT_R,
+          width: DOT_R * 2, height: DOT_R * 2,
+          borderRadius: '50%', border: '2px solid white', cursor: 'crosshair',
+          backgroundColor: isSource || isEndHovered ? '#E8602C' : color,
+          transform: isEndHovered || isSource ? 'scale(1.5)' : 'scale(1)',
+          boxShadow: (isEndHovered || isSource) ? '0 0 0 3px rgba(224,90,30,0.35)' : '0 1px 4px rgba(0,0,0,0.4)',
+          opacity: showEndDot ? 1 : 0,
+          transition: 'transform 0.15s, box-shadow 0.15s, opacity 0.15s, background-color 0.15s',
+          pointerEvents: showEndDot ? 'auto' : 'none',
+        }}
+        onClick={(e) => onConnectionPointClick(e, endPoint)}
+        onMouseEnter={() => onConnectionPointHover(endPoint)}
+        onMouseLeave={() => onConnectionPointHover(null)}
+      />
     </div>
   )
 }

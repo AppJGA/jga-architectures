@@ -1,9 +1,11 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
-import * as XLSX from 'xlsx'
+import { Trash2 } from 'lucide-react'
+import * as XLSX from 'xlsx-js-style'
 import { parseDate, formatDateISO, applyLag, computeLag, addWorkingDays } from './types'
 import { supabase } from '../../../core/supabase/client'
 import { usePlanningZones } from '../../../shared/hooks/usePlanningZones'
 import { usePlanningSegments } from '../../../shared/hooks/usePlanningSegments'
+import { usePlanningDependances } from '../../../shared/hooks/usePlanningDependances'
 import { usePeriodesBloquees } from '../../../shared/hooks/usePeriodesBloquees'
 import { GanttToolbar } from './GanttToolbar'
 import { GanttSidebar } from './GanttSidebar'
@@ -17,38 +19,69 @@ import { PeriodesBloqueesModal } from './PeriodesBloqueesModal'
 
 // ─── Propagation en cascade avec conservation du lag ─────────────────────────
 //
-// Règle : debut(enfant) = fin(parent) + lag_days(enfant)
-//   - lag_days est calculé une seule fois à la création du lien
+// Règle : debut(enfant) = fin(parent) + lag(enfant)
+//   - le lag est calculé une seule fois à la création du lien
 //   - il est conservé à chaque propagation ultérieure
 //
-function propagateDependencies(allTasks, changedTaskId, newDebut, newDuree) {
+// Deux graphes de dépendances sont fusionnés :
+//   - historique : `planning.depends_on` / `planning.lag_days` (tâche → tâche)
+//   - étendu : table `planning_dependances` (tâche/segment → tâche/segment)
+//
+function entityKey(type, id) { return `${type}:${id}` }
+
+function propagateAllDependencies({ tasks, segments, dependances, changedType, changedId, newDebut, newDuree }) {
   const snapshot = new Map()
-  allTasks.forEach((t) => snapshot.set(t.id, { ...t }))
-  snapshot.set(changedTaskId, {
-    ...snapshot.get(changedTaskId),
-    debut: newDebut,
-    duree: newDuree,
+  tasks.forEach((t) => snapshot.set(entityKey('task', t.id), { type: 'task', id: t.id, debut: t.debut, duree: t.duree }))
+  segments.forEach((s) => snapshot.set(entityKey('segment', s.id), { type: 'segment', id: s.id, debut: s.date_debut, duree: s.duree_jours }))
+
+  const changedKey = entityKey(changedType, changedId)
+  snapshot.set(changedKey, { ...snapshot.get(changedKey), debut: newDebut, duree: newDuree })
+
+  const edges = new Map()
+  const addEdge = (parentKey, childKey, lag) => {
+    if (!edges.has(parentKey)) edges.set(parentKey, [])
+    edges.get(parentKey).push({ childKey, lag })
+  }
+
+  tasks.forEach((t) => {
+    if (t.depends_on != null) {
+      addEdge(entityKey('task', t.depends_on), entityKey('task', t.id), t.lag_days ?? 0)
+    }
+  })
+
+  dependances.forEach((dep) => {
+    const sourceKey = dep.source_segment_id
+      ? entityKey('segment', dep.source_segment_id)
+      : entityKey('task', dep.source_tache_id)
+    const cibleKey = dep.cible_segment_id
+      ? entityKey('segment', dep.cible_segment_id)
+      : entityKey('task', dep.cible_tache_id)
+    addEdge(sourceKey, cibleKey, dep.lag_jours ?? 0)
   })
 
   const updates = []
-  const queue = [changedTaskId]
+  const queue = [changedKey]
   const visited = new Set()
 
   while (queue.length > 0) {
-    const parentId = queue.shift()
-    if (visited.has(parentId)) continue
-    visited.add(parentId)
+    const parentKey = queue.shift()
+    if (visited.has(parentKey)) continue
+    visited.add(parentKey)
 
-    const parent = snapshot.get(parentId)
-    snapshot.forEach((child) => {
-      if (child.depends_on !== parentId) return
-      const lag = child.lag_days ?? 0
+    const parent = snapshot.get(parentKey)
+    if (!parent) continue
+
+    const children = edges.get(parentKey) ?? []
+    children.forEach(({ childKey, lag }) => {
+      const child = snapshot.get(childKey)
+      if (!child) return
       const newChildDebut = formatDateISO(applyLag(parseDate(parent.debut), parent.duree, lag))
 
       if (newChildDebut !== child.debut) {
-        snapshot.set(child.id, { ...child, debut: newChildDebut })
-        updates.push({ id: child.id, debut: newChildDebut })
-        queue.push(child.id)
+        const updatedChild = { ...child, debut: newChildDebut }
+        snapshot.set(childKey, updatedChild)
+        updates.push(updatedChild)
+        queue.push(childKey)
       }
     })
   }
@@ -95,6 +128,9 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
   const [showPeriodesModal, setShowPeriodesModal] = useState(false)
   const [showConnections, setShowConnections] = useState(true)
   const [newTaskDebut, setNewTaskDebut] = useState(null)
+  const [lastUsedLotId, setLastUsedLotId] = useState(null)
+  const [deletingTask, setDeletingTask] = useState(null)
+  const savedScrollRef = useRef(0)
 
   const [colorMode, setColorMode] = useState(
     () => localStorage.getItem(`planning-color-mode-${affaireId}`) ?? 'lot'
@@ -121,8 +157,9 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
   const {
     segments, addSegment, updateSegment, updateSegmentLocal, deleteSegment, getSegmentsForTache,
   } = usePlanningSegments(affaireId)
+  const { dependances, addDependance, deleteDependance } = usePlanningDependances(affaireId)
   const {
-    periodes, addPeriode, updatePeriode, deletePeriode, getNextWorkingDay,
+    periodes, addPeriode, updatePeriode, deletePeriode, getNextWorkingDay, addWorkingDaysWithBlocked,
   } = usePeriodesBloquees(affaireId)
 
   const ROW_HEIGHT = 40
@@ -209,13 +246,20 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
       if (error) throw new Error(error.message)
 
       // Propager le chemin critique si la date/durée a changé depuis la modale
-      const cascadeUpdates = propagateDependencies(tasks, taskData.id, payload.debut, payload.duree)
+      const cascadeUpdates = propagateAllDependencies({
+        tasks, segments, dependances,
+        changedType: 'task', changedId: taskData.id,
+        newDebut: payload.debut, newDuree: payload.duree,
+      })
       if (cascadeUpdates.length > 0) {
-        await Promise.all(
-          cascadeUpdates.map((u) => supabase.from('planning').update({ debut: u.debut }).eq('id', u.id))
-        )
+        await Promise.all(cascadeUpdates.map((u) =>
+          u.type === 'segment'
+            ? updateSegment(u.id, { date_debut: u.debut })
+            : supabase.from('planning').update({ debut: u.debut }).eq('id', u.id)
+        ))
       }
     }
+    if (taskData.lot_id) setLastUsedLotId(taskData.lot_id)
     await fetchAllData()
   }
 
@@ -224,6 +268,13 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
     const { error } = await supabase.from('planning').delete().eq('id', taskId)
     if (error) throw new Error(error.message)
     await fetchAllData()
+  }
+
+  const handleConfirmDeleteTask = async () => {
+    if (!deletingTask) return
+    await handleDeleteTask(deletingTask.id)
+    setDeletingTask(null)
+    handleCloseTaskModal()
   }
 
   // ── Dépendances ────────────────────────────────────────────────────────────────
@@ -271,10 +322,15 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
         }
       }
 
-      const cascadeUpdates = propagateDependencies(prevTasks, taskId, newDebut, newDuree)
+      const cascadeUpdates = propagateAllDependencies({
+        tasks: prevTasks, segments, dependances,
+        changedType: 'task', changedId: taskId, newDebut, newDuree,
+      })
+      const taskCascades = cascadeUpdates.filter((u) => u.type === 'task')
+      const segmentCascades = cascadeUpdates.filter((u) => u.type === 'segment')
 
       const updatedMap = new Map([[taskId, newDebut]])
-      cascadeUpdates.forEach((u) => updatedMap.set(u.id, u.debut))
+      taskCascades.forEach((u) => updatedMap.set(u.id, u.debut))
 
       const nextTasks = prevTasks.map((t) => {
         if (t.id === taskId) return { ...t, debut: newDebut, duree: newDuree, lag_days: finalChanges.lag_days ?? t.lag_days }
@@ -283,32 +339,92 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
         return t
       })
 
-      persistCascadeUpdates(taskId, finalChanges, cascadeUpdates)
+      segmentCascades.forEach((u) => updateSegmentLocal(u.id, { date_debut: u.debut }))
+      persistCascadeUpdates(taskId, finalChanges, taskCascades, segmentCascades)
       return nextTasks
     })
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fetchAllData])
+  }, [segments, dependances, updateSegmentLocal])
 
-  const persistCascadeUpdates = useCallback(async (taskId, changes, cascadeUpdates) => {
+  const persistCascadeUpdates = useCallback(async (taskId, changes, taskCascades, segmentCascades) => {
     const { error: mainErr } = await supabase.from('planning').update(changes).eq('id', taskId)
     if (mainErr) { console.error('Task update failed:', mainErr.message); await fetchAllData(); return }
 
-    if (cascadeUpdates.length > 0) {
-      const results = await Promise.all(
-        cascadeUpdates.map((u) =>
-          supabase.from('planning').update({ debut: u.debut }).eq('id', u.id)
-        )
-      )
-      const failed = results.find((r) => r.error)
-      if (failed?.error) { console.error('Cascade update failed:', failed.error.message); await fetchAllData() }
-    }
-  }, [fetchAllData])
+    const results = await Promise.all([
+      ...taskCascades.map((u) => supabase.from('planning').update({ debut: u.debut }).eq('id', u.id)),
+      ...segmentCascades.map((u) => updateSegment(u.id, { date_debut: u.debut })),
+    ])
+    const failed = results.find((r) => r.error)
+    if (failed?.error) { console.error('Cascade update failed:', failed.error.message); await fetchAllData() }
+  }, [fetchAllData, updateSegment])
+
+  // ── Déplacement d'un segment avec propagation en cascade ───────────────────────
+  const handleSegmentDateCommit = useCallback(async (segmentId, newDateDebut) => {
+    const seg = segments.find((s) => s.id === segmentId)
+    if (!seg) return
+    await updateSegment(segmentId, { date_debut: newDateDebut })
+
+    const cascadeUpdates = propagateAllDependencies({
+      tasks, segments, dependances,
+      changedType: 'segment', changedId: segmentId,
+      newDebut: newDateDebut, newDuree: seg.duree_jours,
+    })
+
+    const results = await Promise.all(cascadeUpdates.map((u) => {
+      if (u.type === 'segment') return updateSegment(u.id, { date_debut: u.debut })
+      setTasks((prev) => prev.map((t) => (t.id === u.id ? { ...t, debut: u.debut } : t)))
+      return supabase.from('planning').update({ debut: u.debut }).eq('id', u.id)
+    }))
+    const failed = results.find((r) => r?.error)
+    if (failed?.error) { console.error('Cascade update failed:', failed.error.message); await fetchAllData() }
+  }, [tasks, segments, dependances, updateSegment, fetchAllData])
 
   // ── Avancement inline ─────────────────────────────────────────────────────────
   const handleAvancementChange = useCallback(async (taskId, value) => {
     setTasks((prev) => prev.map((t) => t.id === taskId ? { ...t, avancement: value } : t))
     await supabase.from('planning').update({ avancement: value }).eq('id', taskId)
   }, [])
+
+  // ── Réorganisation des tâches par drag & drop (au sein d'un même lot) ──────────
+  const handleReorderTask = useCallback(async (draggedTaskId, targetTaskId) => {
+    if (!draggedTaskId || draggedTaskId === targetTaskId) return
+
+    const dragged = tasks.find((t) => t.id === draggedTaskId)
+    const target = tasks.find((t) => t.id === targetTaskId)
+    if (!dragged || !target || dragged.lot_id !== target.lot_id) return
+
+    const lotTasks = tasks
+      .filter((t) => t.lot_id === dragged.lot_id)
+      .sort((a, b) => (a.ordre ?? 0) - (b.ordre ?? 0))
+
+    const dragIdx = lotTasks.findIndex((t) => t.id === draggedTaskId)
+    const targetIdx = lotTasks.findIndex((t) => t.id === targetTaskId)
+    if (dragIdx === -1 || targetIdx === -1) return
+
+    const reordered = [...lotTasks]
+    const [removed] = reordered.splice(dragIdx, 1)
+    reordered.splice(targetIdx, 0, removed)
+
+    // Réassigne l'ordre et renumérote les tâches ("01", "02", ...)
+    const updates = reordered.map((t, i) => ({
+      id: t.id,
+      ordre: i,
+      num_tache: String(i + 1).padStart(2, '0'),
+    }))
+
+    setTasks((prev) => prev.map((t) => {
+      const u = updates.find((x) => x.id === t.id)
+      return u ? { ...t, ...u } : t
+    }))
+
+    const results = await Promise.all(
+      updates.map((u) =>
+        supabase.from('planning').update({ ordre: u.ordre, num_tache: u.num_tache }).eq('id', u.id)
+      )
+    )
+    const failed = results.find((r) => r.error)
+    if (failed?.error) { console.error('Reorder failed:', failed.error.message); await fetchAllData() }
+  }, [tasks, fetchAllData])
 
   // ── Lots save (couleurs uniquement) ──────────────────────────────────────────
   const handleSaveLots = async (colorDrafts) => {
@@ -322,82 +438,422 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
 
   // ── Export Excel ──────────────────────────────────────────────────────────────
   const handleExportExcel = () => {
-    const wb = XLSX.utils.book_new()
+    // ── 1. Déterminer la plage de dates et les unités de temps (jour/semaine/mois) ──
+    let minDate = null
+    let maxDate = null
 
-    const rows = [[
-      'Lot', 'N°', 'Tâche', 'Date début', 'Durée (j)', 'Date fin',
-      'Avancement (%)', 'Zone', 'Dépend de', 'Statut',
-    ]]
-
-    const sorted = [...tasks].sort((a, b) => {
-      const lotA = lots.find((l) => l.id === a.lot_id)?.numero ?? 0
-      const lotB = lots.find((l) => l.id === b.lot_id)?.numero ?? 0
-      if (lotA !== lotB) return lotA - lotB
-      return (a.num_tache ?? '').localeCompare(b.num_tache ?? '')
+    tasks.forEach((task) => {
+      if (!task.debut) return
+      const debut = parseDate(task.debut)
+      if (!minDate || debut < minDate) minDate = new Date(debut)
+      const fin = addWorkingDaysWithBlocked
+        ? addWorkingDaysWithBlocked(debut, task.duree ?? 0)
+        : addWorkingDays(debut, task.duree ?? 0)
+      if (!maxDate || fin > maxDate) maxDate = new Date(fin)
     })
 
-    sorted.forEach((task) => {
-      const lot = lots.find((l) => l.id === task.lot_id)
-      const zone = zones.find((z) => z.id === task.zone_id)
-      const dependDe = tasks.find((t) => t.id === task.depends_on)
-      const fin = addWorkingDays(parseDate(task.debut), task.duree ?? 0)
-      const statut = task.avancement >= 100 ? 'Terminé' : task.avancement > 0 ? 'En cours' : 'À venir'
+    if (!minDate || !maxDate) return
 
-      rows.push([
-        lot?.nom ?? '',
-        task.num_tache ?? '',
-        task.nom ?? '',
-        task.debut ?? '',
-        task.duree ?? 0,
-        formatDateISO(fin),
-        task.avancement ?? 0,
-        zone?.nom ?? '',
-        dependDe?.nom ?? '',
-        statut,
-      ])
+    minDate.setDate(minDate.getDate() - 3)
+    maxDate.setDate(maxDate.getDate() + 5)
 
-      const segs = getSegmentsForTache ? getSegmentsForTache(task.id) : []
-      segs.forEach((seg, idx) => {
-        const segZone = zones.find((z) => z.id === seg.zone_id)
-        const segFin = addWorkingDays(parseDate(seg.date_debut), seg.duree_jours ?? 0)
-        rows.push([
-          '',
-          `${task.num_tache ?? ''}.${idx + 1}`,
-          `↳ ${task.nom} (segment)`,
-          seg.date_debut,
-          seg.duree_jours,
-          formatDateISO(segFin),
-          '',
-          segZone?.nom ?? '',
-          '',
-          '',
-        ])
+    const timeUnits = []
+    if (viewMode === 'day') {
+      const cur = new Date(minDate)
+      while (cur <= maxDate) {
+        timeUnits.push(new Date(cur))
+        cur.setDate(cur.getDate() + 1)
+      }
+    } else if (viewMode === 'week') {
+      const cur = new Date(minDate)
+      const day = cur.getDay()
+      cur.setDate(cur.getDate() - (day === 0 ? 6 : day - 1))
+      while (cur <= maxDate) {
+        timeUnits.push(new Date(cur))
+        cur.setDate(cur.getDate() + 7)
+      }
+    } else {
+      const cur = new Date(minDate.getFullYear(), minDate.getMonth(), 1)
+      while (cur <= maxDate) {
+        timeUnits.push(new Date(cur))
+        cur.setMonth(cur.getMonth() + 1)
+      }
+    }
+
+    // ── 2. Construire la feuille cellule par cellule ──
+    const ws = {}
+    const merges = []
+    let rowIdx = 0
+    const FIXED_COLS = 3 // N°, Tâche, Av.%
+
+    const setCell = (col, row, value, style) => {
+      const addr = XLSX.utils.encode_cell({ c: col, r: row })
+      ws[addr] = { v: value, s: style ?? {} }
+      if (typeof value === 'string') ws[addr].t = 's'
+      else if (typeof value === 'number') ws[addr].t = 'n'
+    }
+
+    const styleHeader = {
+      font: { bold: true, sz: 9, color: { rgb: 'FFFFFF' } },
+      fill: { fgColor: { rgb: '1F1B17' } },
+      alignment: { horizontal: 'center', vertical: 'center' },
+      border: {
+        right: { style: 'thin', color: { rgb: 'E9E2D6' } },
+        bottom: { style: 'thin', color: { rgb: 'E9E2D6' } },
+      },
+    }
+
+    const styleMonthHeader = (isCurrentMonth) => ({
+      font: { bold: true, sz: 9, color: { rgb: isCurrentMonth ? 'E8602C' : '1F1B17' } },
+      fill: { fgColor: { rgb: isCurrentMonth ? 'FAF0EB' : 'F5F2F0' } },
+      alignment: { horizontal: 'center', vertical: 'center' },
+      border: {
+        right: { style: 'medium', color: { rgb: 'C9C4C0' } },
+        bottom: { style: 'thin', color: { rgb: 'E9E2D6' } },
+      },
+    })
+
+    const styleLotHeader = (couleur) => {
+      const hex = couleur?.replace('#', '') ?? 'E8602C'
+      return {
+        font: { bold: true, sz: 9, color: { rgb: hex } },
+        fill: { fgColor: { rgb: 'FAF7F2' } },
+        border: { bottom: { style: 'thin', color: { rgb: hex } } },
+      }
+    }
+
+    const styleSidebar = (bold) => ({
+      font: { bold: bold ?? false, sz: 9, color: { rgb: '1F1B17' } },
+      fill: { fgColor: { rgb: 'FFFFFF' } },
+      alignment: { vertical: 'center' },
+      border: {
+        right: { style: 'medium', color: { rgb: 'E9E2D6' } },
+        bottom: { style: 'thin', color: { rgb: 'F5F2F0' } },
+      },
+    })
+
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+
+    // ── Headers selon viewMode ──
+    if (viewMode === 'day') {
+      const monthGroups = []
+      timeUnits.forEach((d) => {
+        const key = `${d.getFullYear()}-${d.getMonth()}`
+        const last = monthGroups[monthGroups.length - 1]
+        if (last && last.key === key) {
+          last.count++
+        } else {
+          monthGroups.push({
+            key,
+            label: d.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' }),
+            count: 1,
+            month: d.getMonth(),
+            year: d.getFullYear(),
+          })
+        }
       })
+
+      setCell(0, 0, '', styleHeader)
+      setCell(1, 0, '', styleHeader)
+      setCell(2, 0, '', styleHeader)
+      merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: 2 } })
+
+      let colOff = FIXED_COLS
+      monthGroups.forEach((mg) => {
+        const isCur = mg.month === today.getMonth() && mg.year === today.getFullYear()
+        setCell(colOff, 0, mg.label.charAt(0).toUpperCase() + mg.label.slice(1), styleMonthHeader(isCur))
+        if (mg.count > 1) merges.push({ s: { r: 0, c: colOff }, e: { r: 0, c: colOff + mg.count - 1 } })
+        colOff += mg.count
+      })
+      rowIdx = 1
+
+      setCell(0, rowIdx, 'N°', styleHeader)
+      setCell(1, rowIdx, 'Tâche', styleHeader)
+      setCell(2, rowIdx, 'Av.%', styleHeader)
+
+      timeUnits.forEach((d, i) => {
+        const isWE = d.getDay() === 0 || d.getDay() === 6
+        const isTod = d.getTime() === today.getTime()
+        const isMonthStart = d.getDate() === 1
+        setCell(FIXED_COLS + i, rowIdx, d.getDate(), {
+          font: {
+            bold: isTod, sz: 8,
+            color: { rgb: isTod ? 'E8602C' : isWE ? '9C9591' : '5E5854' },
+          },
+          fill: { fgColor: { rgb: isTod ? 'FAF0EB' : isWE ? 'F0EDE8' : 'FAFAF9' } },
+          alignment: { horizontal: 'center' },
+          border: {
+            right: {
+              style: isMonthStart ? 'medium' : 'thin',
+              color: { rgb: isMonthStart ? 'C9C4C0' : 'F0EDE8' },
+            },
+            bottom: { style: 'thin', color: { rgb: 'E9E2D6' } },
+          },
+        })
+      })
+      rowIdx = 2
+    } else if (viewMode === 'week') {
+      setCell(0, 0, '', styleHeader)
+      setCell(1, 0, '', styleHeader)
+      setCell(2, 0, '', styleHeader)
+      merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: 2 } })
+
+      const monthGroups = []
+      timeUnits.forEach((monday) => {
+        const m = monday.getMonth()
+        const y = monday.getFullYear()
+        const key = `${y}-${m}`
+        const last = monthGroups[monthGroups.length - 1]
+        if (last && last.key === key) {
+          last.count++
+        } else {
+          monthGroups.push({
+            key, count: 1,
+            label: monday.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' }),
+            month: m, year: y,
+          })
+        }
+      })
+
+      let colOff = FIXED_COLS
+      monthGroups.forEach((mg) => {
+        const isCur = mg.month === today.getMonth() && mg.year === today.getFullYear()
+        setCell(colOff, 0, mg.label.charAt(0).toUpperCase() + mg.label.slice(1), styleMonthHeader(isCur))
+        if (mg.count > 1) merges.push({ s: { r: 0, c: colOff }, e: { r: 0, c: colOff + mg.count - 1 } })
+        colOff += mg.count
+      })
+
+      setCell(0, 1, 'N°', styleHeader)
+      setCell(1, 1, 'Tâche', styleHeader)
+      setCell(2, 1, 'Av.%', styleHeader)
+
+      timeUnits.forEach((monday, i) => {
+        const d = new Date(monday)
+        d.setHours(0, 0, 0, 0)
+        d.setDate(d.getDate() + 3 - (d.getDay() + 6) % 7)
+        const w1 = new Date(d.getFullYear(), 0, 4)
+        const wNum = 1 + Math.round(((d - w1) / 86400000 - 3 + (w1.getDay() + 6) % 7) / 7)
+
+        const isMonthStart = i > 0 && monday.getMonth() !== timeUnits[i - 1].getMonth()
+        const isCurWeek = monday <= today && today < new Date(monday.getTime() + 7 * 24 * 3600 * 1000)
+
+        setCell(FIXED_COLS + i, 1, `S${wNum}`, {
+          font: { bold: isCurWeek, sz: 8, color: { rgb: isCurWeek ? 'E8602C' : '5E5854' } },
+          fill: { fgColor: { rgb: isCurWeek ? 'FAF0EB' : 'FAFAF9' } },
+          alignment: { horizontal: 'center' },
+          border: {
+            right: {
+              style: isMonthStart ? 'medium' : 'thin',
+              color: { rgb: isMonthStart ? 'C9C4C0' : 'F0EDE8' },
+            },
+            bottom: { style: 'thin', color: { rgb: 'E9E2D6' } },
+          },
+        })
+      })
+      rowIdx = 2
+    } else {
+      setCell(0, 0, 'N°', styleHeader)
+      setCell(1, 0, 'Tâche', styleHeader)
+      setCell(2, 0, 'Av.%', styleHeader)
+
+      timeUnits.forEach((d, i) => {
+        const isCur = d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear()
+        const label = d.toLocaleDateString('fr-FR', { month: 'short' })
+        setCell(FIXED_COLS + i, 0, label.charAt(0).toUpperCase() + label.slice(1), styleMonthHeader(isCur))
+      })
+      rowIdx = 1
+    }
+
+    // ── Lignes de données, groupées par lot ──
+    const tasksByLot = {}
+    const lotOrder = []
+    tasks.forEach((task) => {
+      const lotId = task.lot_id ?? '__no_lot__'
+      if (!tasksByLot[lotId]) {
+        tasksByLot[lotId] = []
+        lotOrder.push(lotId)
+      }
+      tasksByLot[lotId].push(task)
     })
 
-    const ws = XLSX.utils.aoa_to_sheet(rows)
-    ws['!cols'] = [
-      { wch: 20 }, // Lot
-      { wch: 8 },  // N°
-      { wch: 35 }, // Tâche
-      { wch: 12 }, // Date début
-      { wch: 10 }, // Durée
-      { wch: 12 }, // Date fin
-      { wch: 14 }, // Avancement
-      { wch: 15 }, // Zone
-      { wch: 20 }, // Dépend de
-      { wch: 12 }, // Statut
-    ]
+    // Une unité de temps chevauche-t-elle [début, fin[ ? (fin exclusive, jours ouvrés
+    // hors périodes bloquées comme dans la timeline)
+    const overlaps = (unit, debut, fin) => {
+      if (viewMode === 'day') {
+        const d = new Date(unit); d.setHours(0, 0, 0, 0)
+        const s = new Date(debut); s.setHours(0, 0, 0, 0)
+        const e = new Date(fin); e.setHours(0, 0, 0, 0)
+        return d >= s && d < e
+      }
+      if (viewMode === 'week') {
+        const wEnd = new Date(unit)
+        wEnd.setDate(wEnd.getDate() + 7)
+        return unit < fin && wEnd > debut
+      }
+      const mEnd = new Date(unit.getFullYear(), unit.getMonth() + 1, 1)
+      return unit < fin && mEnd > debut
+    }
 
-    const jalonsRows = [['Jalon', 'Date', 'Couleur']]
-    jalons.forEach((j) => {
-      jalonsRows.push([j.label ?? '', j.date ?? '', j.couleur ?? ''])
+    const isInTask = (unit, task) => {
+      if (!task.debut) return false
+      const debut = parseDate(task.debut)
+      const fin = addWorkingDaysWithBlocked
+        ? addWorkingDaysWithBlocked(debut, task.duree ?? 0)
+        : addWorkingDays(debut, task.duree ?? 0)
+      return overlaps(unit, debut, fin)
+    }
+
+    const isInSegment = (unit, seg) => {
+      if (!seg.date_debut) return false
+      const debut = parseDate(seg.date_debut)
+      const fin = addWorkingDaysWithBlocked
+        ? addWorkingDaysWithBlocked(debut, seg.duree_jours ?? 0)
+        : addWorkingDays(debut, seg.duree_jours ?? 0)
+      return overlaps(unit, debut, fin)
+    }
+
+    const getTaskColor = (task) => {
+      if (colorMode === 'zone' && task.zone_id) {
+        return zones.find((z) => z.id === task.zone_id)?.couleur ?? '#C9C4C0'
+      }
+      return lots.find((l) => l.id === task.lot_id)?.couleur ?? '#C9C4C0'
+    }
+
+    const getSegColor = (seg, task) => {
+      if (seg.zone_id) {
+        return zones.find((z) => z.id === seg.zone_id)?.couleur ?? getTaskColor(task)
+      }
+      return getTaskColor(task)
+    }
+
+    lotOrder.forEach((lotId) => {
+      const lot = lots.find((l) => l.id === lotId)
+      const lotTasks = tasksByLot[lotId]
+      const lotColor = lot?.couleur ?? '#E8602C'
+      const lotHex = lotColor.replace('#', '')
+
+      setCell(0, rowIdx, '', styleLotHeader(lotColor))
+      setCell(1, rowIdx,
+        `${lot?.numero ? String(lot.numero).padStart(2, '0') : ''} – ${lot?.nom ?? 'Sans lot'}`.trim(),
+        { ...styleLotHeader(lotColor), font: { bold: true, sz: 9, color: { rgb: lotHex } } }
+      )
+      setCell(2, rowIdx, '', styleLotHeader(lotColor))
+
+      timeUnits.forEach((_, i) => {
+        setCell(FIXED_COLS + i, rowIdx, '', {
+          fill: { fgColor: { rgb: 'FAF7F2' } },
+          border: {
+            right: { style: 'thin', color: { rgb: 'F0EDE8' } },
+            bottom: { style: 'medium', color: { rgb: lotHex } },
+          },
+        })
+      })
+      rowIdx++
+
+      lotTasks
+        .sort((a, b) => (a.num_tache ?? '').localeCompare(b.num_tache ?? ''))
+        .forEach((task) => {
+          const taskColor = getTaskColor(task)
+          const taskHex = taskColor.replace('#', '')
+          const segs = getSegmentsForTache ? getSegmentsForTache(task.id) : []
+
+          setCell(0, rowIdx, task.num_tache ?? '', styleSidebar(false))
+          setCell(1, rowIdx, task.nom ?? '', styleSidebar(false))
+          setCell(2, rowIdx, task.avancement ?? 0, { ...styleSidebar(false), alignment: { horizontal: 'center' } })
+
+          timeUnits.forEach((unit, i) => {
+            const inMain = isInTask(unit, task)
+            const inSeg = segs.find((s) => isInSegment(unit, s))
+            const active = inMain || inSeg
+
+            let fillHex = 'FFFFFF'
+            let borderRight = { style: 'thin', color: { rgb: 'F0EDE8' } }
+
+            if (active) {
+              fillHex = inSeg ? getSegColor(inSeg, task).replace('#', '') : taskHex
+            } else if (viewMode === 'day') {
+              const d = new Date(unit)
+              if (d.getDay() === 0 || d.getDay() === 6) fillHex = 'F0EDE8'
+            }
+
+            const isMonthStart = viewMode === 'day'
+              ? unit.getDate() === 1
+              : viewMode === 'week'
+                ? (i > 0 && unit.getMonth() !== timeUnits[i - 1]?.getMonth())
+                : false
+
+            if (isMonthStart) borderRight = { style: 'medium', color: { rgb: 'C9C4C0' } }
+
+            setCell(FIXED_COLS + i, rowIdx, '', {
+              fill: { fgColor: { rgb: fillHex } },
+              border: {
+                right: borderRight,
+                bottom: { style: 'thin', color: { rgb: 'F5F2F0' } },
+              },
+            })
+          })
+
+          rowIdx++
+        })
     })
-    const wsJalons = XLSX.utils.aoa_to_sheet(jalonsRows)
-    wsJalons['!cols'] = [{ wch: 30 }, { wch: 12 }, { wch: 10 }]
 
+    // ── Jalons ──
+    if (jalons && jalons.length > 0) {
+      setCell(0, rowIdx, '', {})
+      setCell(1, rowIdx, 'JALONS', { font: { bold: true, sz: 9 } })
+      rowIdx++
+
+      jalons.forEach((jalon) => {
+        setCell(0, rowIdx, '', styleSidebar())
+        setCell(1, rowIdx, jalon.label ?? '', styleSidebar(true))
+        setCell(2, rowIdx, '', styleSidebar())
+
+        const jalonDate = jalon.date ? parseDate(jalon.date) : null
+
+        timeUnits.forEach((unit, i) => {
+          let isJalon = false
+          if (jalonDate) {
+            if (viewMode === 'day') {
+              isJalon = unit.toDateString() === jalonDate.toDateString()
+            } else if (viewMode === 'week') {
+              const wEnd = new Date(unit)
+              wEnd.setDate(wEnd.getDate() + 7)
+              isJalon = jalonDate >= unit && jalonDate < wEnd
+            } else {
+              isJalon = unit.getMonth() === jalonDate.getMonth() && unit.getFullYear() === jalonDate.getFullYear()
+            }
+          }
+
+          const jHex = jalon.couleur?.replace('#', '') ?? 'E8602C'
+
+          setCell(FIXED_COLS + i, rowIdx, isJalon ? '▼' : '', {
+            fill: { fgColor: { rgb: isJalon ? jHex : 'FFFFFF' } },
+            font: { color: { rgb: 'FFFFFF' }, sz: 8 },
+            alignment: { horizontal: 'center' },
+            border: { right: { style: 'thin', color: { rgb: 'F0EDE8' } } },
+          })
+        })
+        rowIdx++
+      })
+    }
+
+    // ── Finaliser la feuille ──
+    ws['!ref'] = XLSX.utils.encode_range({
+      s: { r: 0, c: 0 },
+      e: { r: rowIdx - 1, c: FIXED_COLS + timeUnits.length - 1 },
+    })
+    ws['!merges'] = merges
+
+    const colWidths = [{ wch: 6 }, { wch: 22 }, { wch: 5 }]
+    timeUnits.forEach(() => {
+      colWidths.push({ wch: viewMode === 'day' ? 3.5 : viewMode === 'week' ? 6 : 10 })
+    })
+    ws['!cols'] = colWidths
+    ws['!rows'] = Array(rowIdx).fill({ hpt: 16 })
+
+    const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, 'Planning')
-    XLSX.utils.book_append_sheet(wb, wsJalons, 'Jalons')
 
     const nomAffaire = affaire?.nom ?? affaire?.code_affaire ?? 'planning'
     const date = formatDateISO(new Date())
@@ -408,6 +864,23 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
   // ── Zoom ──────────────────────────────────────────────────────────────────────
   const handleZoomIn = () => setDayWidth((w) => Math.min(100, w + 5))
   const handleZoomOut = () => setDayWidth((w) => Math.max(15, w - 5))
+
+  // ── Ouverture/fermeture de la modale tâche — préserve le scroll horizontal ─────
+  const handleOpenTaskModal = useCallback((task, mode, defaultDebutOverride) => {
+    if (timelineRef.current) savedScrollRef.current = timelineRef.current.scrollLeft
+    setEditingTask(task)
+    setTaskModalMode(mode)
+    if (defaultDebutOverride !== undefined) setNewTaskDebut(defaultDebutOverride)
+    setShowTaskModal(true)
+  }, [])
+
+  const handleCloseTaskModal = useCallback(() => {
+    setShowTaskModal(false)
+    setEditingTask(null)
+    requestAnimationFrame(() => {
+      if (timelineRef.current) timelineRef.current.scrollLeft = savedScrollRef.current
+    })
+  }, [])
 
   // ── Render ────────────────────────────────────────────────────────────────────
   if (isLoading) {
@@ -459,12 +932,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
           onOpenLots={() => setShowLotsModal(true)}
           onExportPdf={() => setShowExportModal(true)}
           onExportExcel={handleExportExcel}
-          onAddTask={() => {
-            setEditingTask(null)
-            setTaskModalMode('create')
-            setNewTaskDebut(formatDateISO(getNextAvailableDate(tasks)))
-            setShowTaskModal(true)
-          }}
+          onAddTask={() => handleOpenTaskModal(null, 'create', formatDateISO(getNextAvailableDate(tasks)))}
           onToggleConnections={() => setShowConnections((v) => !v)}
           showConnections={showConnections}
           onOpenJalons={() => setShowJalonsModal(true)}
@@ -496,12 +964,9 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
             lots={lots}
             rowHeight={ROW_HEIGHT}
             headerHeight={HEADER_HEIGHT}
-            onEdit={(t) => {
-              setEditingTask(t)
-              setTaskModalMode('edit')
-              setShowTaskModal(true)
-            }}
+            onEdit={(t) => handleOpenTaskModal(t, 'edit')}
             onAvancementChange={handleAvancementChange}
+            onReorderTask={handleReorderTask}
             zones={zones}
             colorMode={colorMode}
           />
@@ -520,11 +985,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
             showConnections={showConnections}
             jalons={jalons}
             onJalonClick={() => setShowJalonsModal(true)}
-            onTaskClick={(t) => {
-              setEditingTask(t)
-              setTaskModalMode('edit')
-              setShowTaskModal(true)
-            }}
+            onTaskClick={(t) => handleOpenTaskModal(t, 'edit')}
             onTaskUpdate={handleTaskUpdate}
             onDependencyCreate={handleDependencyCreate}
             onDependencyDelete={handleDependencyDelete}
@@ -534,8 +995,11 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
             zoomLevel={zoomLevel}
             getSegmentsForTache={getSegmentsForTache}
             segments={segments}
-            updateSegment={updateSegment}
             updateSegmentLocal={updateSegmentLocal}
+            onSegmentDateCommit={handleSegmentDateCommit}
+            dependances={dependances}
+            onSegmentDependencyCreate={addDependance}
+            onSegmentDependencyDelete={deleteDependance}
             periodes={periodes}
             getNextWorkingDay={getNextWorkingDay}
           />
@@ -570,16 +1034,17 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
 
       <TacheEditModal
         open={showTaskModal}
-        onClose={() => setShowTaskModal(false)}
+        onClose={handleCloseTaskModal}
         task={editingTask}
         tasks={tasks}
         lots={lots}
         onSave={handleSaveTask}
-        onDelete={handleDeleteTask}
+        onRequestDelete={(t) => setDeletingTask(t)}
         mode={taskModalMode}
         zones={zones}
         colorMode={colorMode}
         defaultDebut={newTaskDebut}
+        lastUsedLotId={lastUsedLotId}
         getSegmentsForTache={getSegmentsForTache}
         addSegment={addSegment}
         updateSegment={updateSegment}
@@ -630,6 +1095,58 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
         updatePeriode={updatePeriode}
         deletePeriode={deletePeriode}
       />
+
+      {/* Modale confirmation suppression tâche */}
+      {deletingTask && (
+        <div style={{
+          position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)',
+          zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <div style={{
+            backgroundColor: 'white', borderRadius: 0, padding: '28px 32px',
+            maxWidth: 420, width: '100%', border: '0.5px solid rgba(0,0,0,0.08)',
+            boxShadow: '0 8px 40px rgba(0,0,0,0.12)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+              <div style={{
+                width: 36, height: 36, borderRadius: 2, backgroundColor: '#FEF2F2',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+              }}>
+                <Trash2 size={18} style={{ color: '#B8412C' }} />
+              </div>
+              <span style={{ fontSize: 15, fontWeight: 500, color: '#1F1B17' }}>
+                Supprimer la tâche
+              </span>
+            </div>
+            <p style={{ fontSize: 13, color: '#5E5854', lineHeight: 1.6, marginBottom: 20 }}>
+              La tâche{' '}
+              <strong style={{ color: '#1F1B17' }}>
+                {deletingTask.num_tache} – {deletingTask.nom}
+              </strong>
+              {' '}va être supprimée. Cette action est irréversible. Les segments et dépendances
+              associés seront aussi supprimés.
+            </p>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setDeletingTask(null)}
+                style={{
+                  padding: '8px 16px', borderRadius: 2, fontSize: 13, cursor: 'pointer',
+                  border: '0.5px solid rgba(0,0,0,0.15)', backgroundColor: 'transparent', color: '#374151',
+                }}>
+                Annuler
+              </button>
+              <button
+                onClick={handleConfirmDeleteTask}
+                style={{
+                  padding: '8px 16px', borderRadius: 2, fontSize: 13, fontWeight: 500,
+                  border: 'none', backgroundColor: '#B8412C', color: 'white', cursor: 'pointer',
+                }}>
+                Supprimer définitivement
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

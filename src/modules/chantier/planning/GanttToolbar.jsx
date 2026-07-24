@@ -38,34 +38,41 @@ export function GanttToolbar({
     }} data-print="hidden">
       {/* Zoom controls */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <button
-          style={{ ...BTN_ICON, opacity: canZoomOut ? 1 : 0.4, cursor: canZoomOut ? 'pointer' : 'default' }}
-          onClick={onZoomOut} disabled={!canZoomOut} aria-label="Zoom arrière"
-          title="Zoom arrière (⌘ + molette)"
-        >
-          <ZoomOut size={14} />
-        </button>
-        <div
-          onDoubleClick={onResetDayWidth}
-          title="Double-clic pour réinitialiser"
-          style={{
-            display: 'flex', alignItems: 'center', gap: 4, height: 32, padding: '0 8px',
-            border: '0.5px solid rgba(0,0,0,0.12)', borderRadius: 2, backgroundColor: '#FAFAF9',
-            cursor: 'pointer',
-          }}
-        >
-          <CalendarDays size={11} style={{ color: '#9C9591' }} />
-          <span style={{ fontSize: 11, fontWeight: 500, color: '#9C9591', minWidth: 30, textAlign: 'center' }}>
-            {dayWidth} px/j
-          </span>
-        </div>
-        <button
-          style={{ ...BTN_ICON, opacity: canZoomIn ? 1 : 0.4, cursor: canZoomIn ? 'pointer' : 'default' }}
-          onClick={onZoomIn} disabled={!canZoomIn} aria-label="Zoom avant"
-          title="Zoom avant (⌘ + molette)"
-        >
-          <ZoomIn size={14} />
-        </button>
+        {/* Zoom vue jour — masqué hors vue jour, sinon deux paires de loupes
+            coexistent et celle-ci n'a aucun effet visuel (dayWidth n'est pas
+            utilisé pour la géométrie en vue semaine/mois). */}
+        {viewMode === 'day' && (
+          <>
+            <button
+              style={{ ...BTN_ICON, opacity: canZoomOut ? 1 : 0.4, cursor: canZoomOut ? 'pointer' : 'default' }}
+              onClick={onZoomOut} disabled={!canZoomOut} aria-label="Zoom arrière"
+              title="Zoom arrière (⌘ + molette)"
+            >
+              <ZoomOut size={14} />
+            </button>
+            <div
+              onDoubleClick={onResetDayWidth}
+              title="Double-clic pour réinitialiser"
+              style={{
+                display: 'flex', alignItems: 'center', gap: 4, height: 32, padding: '0 8px',
+                border: '0.5px solid rgba(0,0,0,0.12)', borderRadius: 2, backgroundColor: '#FAFAF9',
+                cursor: 'pointer',
+              }}
+            >
+              <CalendarDays size={11} style={{ color: '#9C9591' }} />
+              <span style={{ fontSize: 11, fontWeight: 500, color: '#9C9591', minWidth: 30, textAlign: 'center' }}>
+                {dayWidth} px/j
+              </span>
+            </div>
+            <button
+              style={{ ...BTN_ICON, opacity: canZoomIn ? 1 : 0.4, cursor: canZoomIn ? 'pointer' : 'default' }}
+              onClick={onZoomIn} disabled={!canZoomIn} aria-label="Zoom avant"
+              title="Zoom avant (⌘ + molette)"
+            >
+              <ZoomIn size={14} />
+            </button>
+          </>
+        )}
 
         {/* Mode d'affichage : jours / semaines / mois */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 4 }}>

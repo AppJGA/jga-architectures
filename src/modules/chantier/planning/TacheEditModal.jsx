@@ -31,6 +31,7 @@ function emptyForm(lots) {
     duree: 5,
     avancement: 0,
     lot_id: lots.length > 0 ? lots[0].id : null,
+    zone_id: null,
     depends_on: null,
     lag_days: null,
     appro_actif: false,
@@ -39,7 +40,7 @@ function emptyForm(lots) {
   }
 }
 
-export function TacheEditModal({ open, onClose, task, tasks, lots, onSave, onDelete, mode }) {
+export function TacheEditModal({ open, onClose, task, tasks, lots, onSave, onDelete, mode, zones = [], colorMode = 'lot' }) {
   const [form, setForm] = useState(emptyForm(lots))
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -193,6 +194,47 @@ export function TacheEditModal({ open, onClose, task, tasks, lots, onSave, onDel
               ))}
             </select>
           </div>
+
+          {/* Zone */}
+          {colorMode === 'zone' && zones.length > 0 && (
+            <div>
+              <label style={LABEL}>Zone</label>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+                <button
+                  type="button"
+                  onClick={() => set('zone_id', null)}
+                  style={{
+                    padding: '4px 10px', fontSize: 12,
+                    border: '0.5px solid rgba(0,0,0,0.15)',
+                    borderRadius: 2,
+                    background: !form.zone_id ? '#1F1B17' : 'transparent',
+                    color: !form.zone_id ? 'white' : '#5E5854',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Aucune
+                </button>
+                {zones.map((zone) => (
+                  <button
+                    key={zone.id}
+                    type="button"
+                    onClick={() => set('zone_id', zone.id)}
+                    style={{
+                      padding: '4px 10px', fontSize: 12,
+                      border: `0.5px solid ${zone.couleur}`,
+                      borderRadius: 2,
+                      background: form.zone_id === zone.id ? zone.couleur : 'transparent',
+                      color: form.zone_id === zone.id ? 'white' : zone.couleur,
+                      cursor: 'pointer',
+                      fontWeight: 500,
+                    }}
+                  >
+                    {zone.nom}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Dépendance */}
           <div>

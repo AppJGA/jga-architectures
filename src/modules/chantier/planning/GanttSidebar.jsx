@@ -1,6 +1,17 @@
 import { Pencil } from 'lucide-react'
 
-export function GanttSidebar({ tasks, lots, rowHeight, headerHeight, onEdit, onAvancementChange }) {
+function getBarColor(task, lotColor, zones, colorMode) {
+  if (colorMode === 'zone') {
+    if (task.zone_id) {
+      const zone = zones.find((z) => z.id === task.zone_id)
+      return zone?.couleur ?? '#C9C4C0'
+    }
+    return '#C9C4C0'
+  }
+  return lotColor
+}
+
+export function GanttSidebar({ tasks, lots, rowHeight, headerHeight, onEdit, onAvancementChange, zones = [], colorMode = 'lot' }) {
   const lotsWithTasks = lots
     .map((lot) => ({ lot, tasks: tasks.filter((t) => t.lot_id === lot.id) }))
     .filter(({ tasks }) => tasks.length > 0)
@@ -47,7 +58,7 @@ export function GanttSidebar({ tasks, lots, rowHeight, headerHeight, onEdit, onA
             </span>
           </div>
           {lotTasks.map((task) => (
-            <TaskRow key={task.id} task={task} lotColor={lot.couleur} rowHeight={rowHeight}
+            <TaskRow key={task.id} task={task} lotColor={getBarColor(task, lot.couleur, zones, colorMode)} rowHeight={rowHeight}
               onEdit={onEdit} onAvancementChange={onAvancementChange} />
           ))}
         </div>
@@ -67,7 +78,7 @@ export function GanttSidebar({ tasks, lots, rowHeight, headerHeight, onEdit, onA
             </span>
           </div>
           {unassigned.map((task) => (
-            <TaskRow key={task.id} task={task} lotColor="#94a3b8" rowHeight={rowHeight}
+            <TaskRow key={task.id} task={task} lotColor={getBarColor(task, '#94a3b8', zones, colorMode)} rowHeight={rowHeight}
               onEdit={onEdit} onAvancementChange={onAvancementChange} />
           ))}
         </div>

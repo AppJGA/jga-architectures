@@ -40,10 +40,22 @@ function getTaskGeometry(task, dateRef, dayPositions, dayWidth) {
   return { left, width }
 }
 
+function getBarColor(task, lot, zones, colorMode) {
+  if (colorMode === 'zone') {
+    if (task.zone_id) {
+      const zone = zones.find((z) => z.id === task.zone_id)
+      return zone?.couleur ?? '#C9C4C0'
+    }
+    return '#C9C4C0'
+  }
+  return lot?.couleur ?? '#94a3b8'
+}
+
 export function GanttTimeline({
   tasks, lots, dayWidth, rowHeight, showConnections,
   jalons = [], onJalonClick,
   onTaskClick, onTaskUpdate, onDependencyCreate, onDependencyDelete,
+  zones = [], colorMode = 'lot',
 }) {
   // ── Date référence ────────────────────────────────────────────────────────────
   const dateRef = useMemo(() => {
@@ -434,6 +446,7 @@ export function GanttTimeline({
               <TaskBarRow
                 key={task.id}
                 task={task} lot={lot} dateRef={dateRef}
+                barColor={getBarColor(task, lot, zones, colorMode)}
                 dayWidth={dayWidth} dayPositions={dayPositions} rowHeight={rowHeight}
                 isDragging={draggingBar === task.id}
                 isConnecting={!!connectingFrom}
@@ -460,6 +473,7 @@ export function GanttTimeline({
               <TaskBarRow
                 key={task.id}
                 task={task} lot={null} dateRef={dateRef}
+                barColor={getBarColor(task, null, zones, colorMode)}
                 dayWidth={dayWidth} dayPositions={dayPositions} rowHeight={rowHeight}
                 isDragging={draggingBar === task.id}
                 isConnecting={!!connectingFrom}
@@ -643,12 +657,12 @@ export function GanttTimeline({
 // ─── TaskBarRow ───────────────────────────────────────────────────────────────
 
 function TaskBarRow({
-  task, lot, dateRef, dayWidth, dayPositions, rowHeight,
+  task, lot, dateRef, dayWidth, dayPositions, rowHeight, barColor,
   isDragging, isConnecting, connectingFromId, hoveredPoint,
   onBarDragStart, onBarClick, onConnectionPointClick, onConnectionPointHover,
 }) {
   const [isHovered, setIsHovered] = useState(false)
-  const color = lot?.couleur ?? '#94a3b8'
+  const color = barColor ?? lot?.couleur ?? '#94a3b8'
   const debut = parseDate(task.debut)
   const left = xAtDate(debut, dateRef, dayPositions)
   const width = barWidthAt(debut, task.duree, dateRef, dayPositions, dayWidth)

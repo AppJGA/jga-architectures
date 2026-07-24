@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { parseDate, formatDateISO, applyLag, computeLag } from './types'
 import { supabase } from '../../../core/supabase/client'
+import { usePlanningZones } from '../../../shared/hooks/usePlanningZones'
 import { GanttToolbar } from './GanttToolbar'
 import { GanttSidebar } from './GanttSidebar'
 import { GanttTimeline, HEADER_HEIGHT } from './GanttTimeline'
@@ -8,6 +9,7 @@ import { TacheEditModal } from './TacheEditModal'
 import { LotsColorModal } from './LotsColorModal'
 import { ExportPdfModal } from './ExportPdfModal'
 import { JalonModal } from './JalonModal'
+import { ZonesModal } from './ZonesModal'
 
 // ─── Propagation en cascade avec conservation du lag ─────────────────────────
 //
@@ -67,7 +69,17 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
   const [showLotsModal, setShowLotsModal] = useState(false)
   const [showExportModal, setShowExportModal] = useState(false)
   const [showJalonsModal, setShowJalonsModal] = useState(false)
+  const [showZonesModal, setShowZonesModal] = useState(false)
   const [showConnections, setShowConnections] = useState(true)
+
+  const [colorMode, setColorMode] = useState(
+    () => localStorage.getItem(`planning-color-mode-${affaireId}`) ?? 'lot'
+  )
+  useEffect(() => {
+    localStorage.setItem(`planning-color-mode-${affaireId}`, colorMode)
+  }, [colorMode, affaireId])
+
+  const { zones, createZone, updateZone, deleteZone } = usePlanningZones(affaireId)
 
   const ROW_HEIGHT = 40
 
@@ -137,6 +149,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
       duree: taskData.duree,
       avancement: taskData.avancement ?? 0,
       lot_id: taskData.lot_id ?? null,
+      zone_id: taskData.zone_id ?? null,
       depends_on: taskData.depends_on ?? null,
       lag_days: taskData.lag_days ?? 0,
       affaire_id: affaireId,
@@ -317,6 +330,9 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
           showConnections={showConnections}
           onOpenJalons={() => setShowJalonsModal(true)}
           dayWidth={dayWidth}
+          colorMode={colorMode}
+          onColorModeChange={setColorMode}
+          onOpenZones={() => setShowZonesModal(true)}
         />
       </div>
 
@@ -341,6 +357,8 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
               setShowTaskModal(true)
             }}
             onAvancementChange={handleAvancementChange}
+            zones={zones}
+            colorMode={colorMode}
           />
         </div>
 
@@ -365,8 +383,36 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
             onTaskUpdate={handleTaskUpdate}
             onDependencyCreate={handleDependencyCreate}
             onDependencyDelete={handleDependencyDelete}
+            zones={zones}
+            colorMode={colorMode}
           />
         </div>
+      </div>
+
+      <div data-print="hidden" style={{
+        display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 16,
+        padding: '8px 16px', backgroundColor: 'white',
+        borderTop: '0.5px solid rgba(0,0,0,0.08)', flexShrink: 0,
+      }}>
+        {colorMode === 'lot'
+          ? lots.map((lot) => (
+              <div key={lot.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#5E5854' }}>
+                <div style={{ width: 16, height: 10, background: lot.couleur }} />
+                {lot.num_lot} – {lot.nom}
+              </div>
+            ))
+          : [
+              ...zones.map((zone) => (
+                <div key={zone.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#5E5854' }}>
+                  <div style={{ width: 16, height: 10, background: zone.couleur }} />
+                  {zone.nom}
+                </div>
+              )),
+              <div key="no-zone" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#9C9591' }}>
+                <div style={{ width: 16, height: 10, background: '#C9C4C0' }} />
+                Sans zone
+              </div>,
+            ]}
       </div>
 
       <TacheEditModal
@@ -378,6 +424,17 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
         onSave={handleSaveTask}
         onDelete={handleDeleteTask}
         mode={taskModalMode}
+        zones={zones}
+        colorMode={colorMode}
+      />
+
+      <ZonesModal
+        open={showZonesModal}
+        onClose={() => setShowZonesModal(false)}
+        zones={zones}
+        createZone={createZone}
+        updateZone={updateZone}
+        deleteZone={deleteZone}
       />
 
       <LotsColorModal

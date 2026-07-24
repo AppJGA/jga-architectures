@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
-import { Trash2, Save, X } from 'lucide-react'
-import { parseDate, formatDateISO, computeLag } from './types'
+import { Trash2, Save, X, Plus } from 'lucide-react'
+import { parseDate, formatDateISO, computeLag, addWorkingDays } from './types'
 
 const LABEL = {
   display: 'block', fontSize: 10, fontWeight: 700, textTransform: 'uppercase',
@@ -23,11 +23,11 @@ const BTN_DANGER = {
   ...BTN, color: '#B8412C', borderColor: 'rgba(220,38,38,0.3)',
 }
 
-function emptyForm(lots) {
+function emptyForm(lots, defaultDebut) {
   return {
     num_tache: '',
     nom: '',
-    debut: formatDateISO(new Date()),
+    debut: defaultDebut ?? formatDateISO(new Date()),
     duree: 5,
     avancement: 0,
     lot_id: lots.length > 0 ? lots[0].id : null,
@@ -40,7 +40,18 @@ function emptyForm(lots) {
   }
 }
 
-export function TacheEditModal({ open, onClose, task, tasks, lots, onSave, onDelete, mode, zones = [], colorMode = 'lot' }) {
+// Prochain numéro disponible pour un lot donné (ex : "01" → "02")
+function getNextNumero(lotId, tasks) {
+  const tasksDuLot = tasks.filter((t) => t.lot_id === lotId)
+  if (tasksDuLot.length === 0) return '01'
+  const maxNum = Math.max(...tasksDuLot.map((t) => parseInt(t.num_tache, 10) || 0))
+  return String(maxNum + 1).padStart(2, '0')
+}
+
+export function TacheEditModal({
+  open, onClose, task, tasks, lots, onSave, onDelete, mode, zones = [], colorMode = 'lot', defaultDebut = null,
+  getSegmentsForTache, addSegment, updateSegment, deleteSegment,
+}) {
   const [form, setForm] = useState(emptyForm(lots))
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -55,11 +66,47 @@ export function TacheEditModal({ open, onClose, task, tasks, lots, onSave, onDel
           : formatDateISO(parseDate(task.debut)),
       })
     } else {
-      setForm(emptyForm(lots))
+      const base = emptyForm(lots, defaultDebut)
+      setForm({ ...base, num_tache: base.lot_id ? getNextNumero(base.lot_id, tasks) : '' })
     }
-  }, [task, open, lots])
+  }, [task, open, lots, defaultDebut, tasks])
 
   const set = (key, value) => setForm((f) => ({ ...f, [key]: value }))
+
+  const segmentsDeTache = task?.id && getSegmentsForTache ? getSegmentsForTache(task.id) : []
+
+  const handleAddSegment = async () => {
+    if (!task?.id || !addSegment) return
+
+    // Lendemain ouvré de la fin de la tâche principale
+    let defaultDate = addWorkingDays(
+      addWorkingDays(parseDate(form.debut), (form.duree ?? 5) - 1),
+      1
+    )
+
+    if (segmentsDeTache.length > 0) {
+      const last = segmentsDeTache[segmentsDeTache.length - 1]
+      const lastNext = addWorkingDays(
+        addWorkingDays(parseDate(last.date_debut), (last.duree_jours ?? 5) - 1),
+        1
+      )
+      if (lastNext > defaultDate) defaultDate = lastNext
+    }
+
+    await addSegment(task.id, {
+      date_debut: formatDateISO(defaultDate),
+      duree_jours: form.duree ?? 5,
+      zone_id: form.zone_id ?? null,
+    })
+  }
+
+  const handleLotChange = (lotId) => {
+    if (mode === 'create') {
+      setForm((f) => ({ ...f, lot_id: lotId, num_tache: getNextNumero(lotId, tasks) }))
+    } else {
+      set('lot_id', lotId)
+    }
+  }
 
   const handleDependencyChange = (v) => {
     const newDependsOn = v === 'none' ? null : Number(v)
@@ -181,7 +228,7 @@ export function TacheEditModal({ open, onClose, task, tasks, lots, onSave, onDel
             <label style={LABEL}>Lot</label>
             <select
               value={form.lot_id != null ? String(form.lot_id) : 'none'}
-              onChange={(e) => set('lot_id', e.target.value === 'none' ? null : e.target.value)}
+              onChange={(e) => handleLotChange(e.target.value === 'none' ? null : e.target.value)}
               style={{ ...INPUT, cursor: 'pointer' }}
               onFocus={e => { e.target.style.borderColor = '#E8602C'; e.target.style.boxShadow = '0 0 0 3px rgba(232,96,44,0.12)' }}
               onBlur={e => { e.target.style.borderColor = 'rgba(0,0,0,0.12)'; e.target.style.boxShadow = 'none' }}
@@ -335,6 +382,125 @@ export function TacheEditModal({ open, onClose, task, tasks, lots, onSave, onDel
               </div>
             )}
           </div>
+
+          {/* Segments supplémentaires */}
+          {mode === 'edit' && task?.id && (
+            <div style={{ marginTop: 6, borderTop: '0.5px solid rgba(0,0,0,0.08)', paddingTop: 14 }}>
+              <div style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10,
+              }}>
+                <span style={{
+                  fontSize: 11, fontWeight: 500, color: '#9C9591',
+                  textTransform: 'uppercase', letterSpacing: '0.05em',
+                }}>
+                  Segments supplémentaires
+                  {segmentsDeTache.length > 0 && ` (${segmentsDeTache.length})`}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleAddSegment}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px',
+                    fontSize: 11, borderRadius: 2,
+                    border: '0.5px solid #E8602C',
+                    background: 'transparent', color: '#E8602C', cursor: 'pointer',
+                  }}
+                >
+                  <Plus size={12} />
+                  Ajouter un segment
+                </button>
+              </div>
+
+              {segmentsDeTache.length === 0 && (
+                <p style={{ fontSize: 11, color: '#9C9591', fontStyle: 'italic', padding: '8px 0' }}>
+                  Ajoutez des segments pour représenter cette tâche à d'autres périodes ou zones
+                  (ex : dallage Zone 1 puis Zone 2).
+                </p>
+              )}
+
+              {segmentsDeTache.map((seg, idx) => (
+                <div key={seg.id} style={{
+                  display: 'grid', gridTemplateColumns: '1fr 80px 1fr 28px', gap: 8,
+                  alignItems: 'center', padding: '8px 0',
+                  borderBottom: '0.5px solid rgba(0,0,0,0.06)',
+                }}>
+                  {/* Date début */}
+                  <div>
+                    {idx === 0 && (
+                      <label style={{ fontSize: 10, color: '#9C9591', display: 'block', marginBottom: 3 }}>
+                        DÉBUT
+                      </label>
+                    )}
+                    <input
+                      type="date"
+                      value={seg.date_debut}
+                      onChange={(e) => updateSegment(seg.id, { date_debut: e.target.value })}
+                      style={{
+                        width: '100%', padding: '6px 8px', fontSize: 12,
+                        border: '0.5px solid rgba(0,0,0,0.12)', borderRadius: 2,
+                      }}
+                    />
+                  </div>
+
+                  {/* Durée */}
+                  <div>
+                    {idx === 0 && (
+                      <label style={{ fontSize: 10, color: '#9C9591', display: 'block', marginBottom: 3 }}>
+                        DURÉE (j)
+                      </label>
+                    )}
+                    <input
+                      type="number"
+                      min={1}
+                      value={seg.duree_jours}
+                      onChange={(e) => updateSegment(seg.id, { duree_jours: Math.max(1, parseInt(e.target.value, 10) || 1) })}
+                      style={{
+                        width: '100%', padding: '6px 8px', fontSize: 12,
+                        border: '0.5px solid rgba(0,0,0,0.12)', borderRadius: 2,
+                      }}
+                    />
+                  </div>
+
+                  {/* Zone */}
+                  <div>
+                    {idx === 0 && (
+                      <label style={{ fontSize: 10, color: '#9C9591', display: 'block', marginBottom: 3 }}>
+                        ZONE
+                      </label>
+                    )}
+                    <select
+                      value={seg.zone_id ?? ''}
+                      onChange={(e) => updateSegment(seg.id, { zone_id: e.target.value || null })}
+                      style={{
+                        width: '100%', padding: '6px 8px', fontSize: 12,
+                        border: '0.5px solid rgba(0,0,0,0.12)', borderRadius: 2,
+                      }}
+                    >
+                      <option value="">— Même zone</option>
+                      {zones.map((z) => (
+                        <option key={z.id} value={z.id}>{z.nom}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Supprimer */}
+                  <button
+                    type="button"
+                    onClick={() => deleteSegment(seg.id)}
+                    style={{
+                      width: 28, height: 28,
+                      border: '0.5px solid rgba(220,38,38,0.3)',
+                      background: '#FEF2F2', color: '#DC2626', cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      marginTop: idx === 0 ? 16 : 0,
+                    }}
+                  >
+                    <Trash2 size={11} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* Footer */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, paddingTop: 8, borderTop: '0.5px solid rgba(0,0,0,0.08)' }}>

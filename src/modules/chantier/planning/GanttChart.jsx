@@ -1,7 +1,8 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { parseDate, formatDateISO, applyLag, computeLag } from './types'
+import { parseDate, formatDateISO, applyLag, computeLag, addWorkingDays } from './types'
 import { supabase } from '../../../core/supabase/client'
 import { usePlanningZones } from '../../../shared/hooks/usePlanningZones'
+import { usePlanningSegments } from '../../../shared/hooks/usePlanningSegments'
 import { GanttToolbar } from './GanttToolbar'
 import { GanttSidebar } from './GanttSidebar'
 import { GanttTimeline, HEADER_HEIGHT } from './GanttTimeline'
@@ -52,6 +53,24 @@ function propagateDependencies(allTasks, changedTaskId, newDebut, newDuree) {
   return updates
 }
 
+// ─── Prochaine date disponible (pour la création d'une nouvelle tâche) ────────
+//
+// Lendemain ouvré de la fin de la tâche qui se termine le plus tard.
+//
+function getNextAvailableDate(tasks) {
+  if (!tasks || tasks.length === 0) return new Date()
+
+  let maxEnd = null
+  tasks.forEach((task) => {
+    if (!task.debut) return
+    const fin = addWorkingDays(parseDate(task.debut), (task.duree ?? 1) - 1)
+    if (!maxEnd || fin > maxEnd) maxEnd = fin
+  })
+
+  if (!maxEnd) return new Date()
+  return addWorkingDays(maxEnd, 1)
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 
 export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', affaire = {} }) {
@@ -71,6 +90,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
   const [showJalonsModal, setShowJalonsModal] = useState(false)
   const [showZonesModal, setShowZonesModal] = useState(false)
   const [showConnections, setShowConnections] = useState(true)
+  const [newTaskDebut, setNewTaskDebut] = useState(null)
 
   const [colorMode, setColorMode] = useState(
     () => localStorage.getItem(`planning-color-mode-${affaireId}`) ?? 'lot'
@@ -79,7 +99,15 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
     localStorage.setItem(`planning-color-mode-${affaireId}`, colorMode)
   }, [colorMode, affaireId])
 
+  const [viewMode, setViewMode] = useState(
+    () => localStorage.getItem(`planning-view-mode-${affaireId}`) ?? 'day'
+  )
+  useEffect(() => {
+    localStorage.setItem(`planning-view-mode-${affaireId}`, viewMode)
+  }, [viewMode, affaireId])
+
   const { zones, createZone, updateZone, deleteZone } = usePlanningZones(affaireId)
+  const { addSegment, updateSegment, deleteSegment, getSegmentsForTache } = usePlanningSegments(affaireId)
 
   const ROW_HEIGHT = 40
 
@@ -163,6 +191,14 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
     } else {
       const { error } = await supabase.from('planning').update(payload).eq('id', taskData.id)
       if (error) throw new Error(error.message)
+
+      // Propager le chemin critique si la date/durée a changé depuis la modale
+      const cascadeUpdates = propagateDependencies(tasks, taskData.id, payload.debut, payload.duree)
+      if (cascadeUpdates.length > 0) {
+        await Promise.all(
+          cascadeUpdates.map((u) => supabase.from('planning').update({ debut: u.debut }).eq('id', u.id))
+        )
+      }
     }
     await fetchAllData()
   }
@@ -324,6 +360,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
           onAddTask={() => {
             setEditingTask(null)
             setTaskModalMode('create')
+            setNewTaskDebut(formatDateISO(getNextAvailableDate(tasks)))
             setShowTaskModal(true)
           }}
           onToggleConnections={() => setShowConnections((v) => !v)}
@@ -333,6 +370,8 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
           colorMode={colorMode}
           onColorModeChange={setColorMode}
           onOpenZones={() => setShowZonesModal(true)}
+          viewMode={viewMode}
+          onViewModeChange={setViewMode}
         />
       </div>
 
@@ -385,6 +424,8 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
             onDependencyDelete={handleDependencyDelete}
             zones={zones}
             colorMode={colorMode}
+            viewMode={viewMode}
+            getSegmentsForTache={getSegmentsForTache}
           />
         </div>
       </div>
@@ -426,6 +467,11 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
         mode={taskModalMode}
         zones={zones}
         colorMode={colorMode}
+        defaultDebut={newTaskDebut}
+        getSegmentsForTache={getSegmentsForTache}
+        addSegment={addSegment}
+        updateSegment={updateSegment}
+        deleteSegment={deleteSegment}
       />
 
       <ZonesModal

@@ -18,6 +18,7 @@ export function GanttToolbar({
   onZoomIn, onZoomOut, onOpenLots, onExportPdf, onAddTask,
   onToggleConnections, showConnections, onOpenJalons, dayWidth,
   colorMode, onColorModeChange, onOpenZones,
+  viewMode, onViewModeChange,
 }) {
   const canZoomOut = dayWidth > 15
   const canZoomIn = dayWidth < 100
@@ -51,6 +52,34 @@ export function GanttToolbar({
         >
           <ZoomIn size={14} />
         </button>
+
+        {/* Mode d'affichage : jours / semaines */}
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 0, marginLeft: 4,
+          border: '0.5px solid rgba(0,0,0,0.15)', borderRadius: 2, overflow: 'hidden',
+        }}>
+          {[
+            { value: 'day', label: 'Jours' },
+            { value: 'week', label: 'Semaines' },
+          ].map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => onViewModeChange(opt.value)}
+              style={{
+                padding: '5px 12px',
+                fontSize: 12,
+                border: 'none',
+                borderRight: opt.value === 'day' ? '0.5px solid rgba(0,0,0,0.15)' : 'none',
+                background: viewMode === opt.value ? '#E8602C' : 'transparent',
+                color: viewMode === opt.value ? 'white' : '#5E5854',
+                cursor: 'pointer',
+                fontWeight: viewMode === opt.value ? 500 : 400,
+              }}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Actions */}

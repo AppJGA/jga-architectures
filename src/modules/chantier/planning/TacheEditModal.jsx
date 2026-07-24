@@ -158,11 +158,11 @@ export function TacheEditModal({
     <div style={{
       position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)',
       display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100,
-    }} onClick={onClose}>
+    }}>
       <div style={{
         backgroundColor: 'white', borderRadius: 0, padding: 28,
         width: '100%', maxWidth: 480, maxHeight: '90vh', overflowY: 'auto',
-      }} onClick={e => e.stopPropagation()}>
+      }}>
 
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
@@ -420,7 +420,7 @@ export function TacheEditModal({
 
               {segmentsDeTache.map((seg, idx) => (
                 <div key={seg.id} style={{
-                  display: 'grid', gridTemplateColumns: '1fr 80px 1fr 28px', gap: 8,
+                  display: 'grid', gridTemplateColumns: '1fr 80px 1fr auto 28px', gap: 8,
                   alignItems: 'center', padding: '8px 0',
                   borderBottom: '0.5px solid rgba(0,0,0,0.06)',
                 }}>
@@ -482,6 +482,23 @@ export function TacheEditModal({
                       ))}
                     </select>
                   </div>
+
+                  {/* Afficher le nom */}
+                  <label style={{
+                    display: 'flex', alignItems: 'center',
+                    gap: 6, fontSize: 11, color: '#5E5854',
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                    marginTop: idx === 0 ? 16 : 0,
+                  }}>
+                    <input
+                      type="checkbox"
+                      checked={seg.afficher_nom ?? false}
+                      onChange={(e) => updateSegment(seg.id, { afficher_nom: e.target.checked })}
+                      style={{ cursor: 'pointer' }}
+                    />
+                    Nom
+                  </label>
 
                   {/* Supprimer */}
                   <button

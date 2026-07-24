@@ -55,6 +55,11 @@ export function usePlanningSegments(affaireId) {
     return { error }
   }
 
+  // Mise à jour du state local uniquement (pas d'appel Supabase) — utilisé pendant le drag
+  const updateSegmentLocal = (id, changes) => {
+    setSegments((prev) => prev.map((s) => (s.id === id ? { ...s, ...changes } : s)))
+  }
+
   const getSegmentsForTache = (tacheId) =>
     segments
       .filter((s) => s.tache_id === tacheId)
@@ -65,6 +70,7 @@ export function usePlanningSegments(affaireId) {
     loading,
     addSegment,
     updateSegment,
+    updateSegmentLocal,
     deleteSegment,
     getSegmentsForTache,
     refetch: fetch,

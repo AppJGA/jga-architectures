@@ -50,12 +50,12 @@ export function LotsColorModal({ open, onClose, lots, onSave }) {
     <div style={{
       position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)',
       display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100,
-    }} onClick={onClose}>
+    }}>
       <div style={{
         backgroundColor: 'white', borderRadius: 0, padding: 28,
         width: '100%', maxWidth: 520, maxHeight: '85vh',
         display: 'flex', flexDirection: 'column',
-      }} onClick={e => e.stopPropagation()}>
+      }}>
 
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, flexShrink: 0 }}>

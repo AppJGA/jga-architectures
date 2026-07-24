@@ -30,12 +30,26 @@ function buildDaysList(dateDebut, dateFin) {
   return days
 }
 
-function computeDayWidths(days, contentMm) {
+function computeDayWidths(days, contentMm, viewMode = 'day') {
+  // En vue semaine/mois, le détail jour par jour n'est pas affiché : largeur uniforme
+  // (pas de rétrécissement des week-ends, qui n'aurait plus de sens sans le repère des jours).
+  if (viewMode !== 'day') {
+    const uniformMm = days.length > 0 ? contentMm / days.length : 3
+    return days.map(() => uniformMm)
+  }
   const workingCount = days.filter(d => !isWeekend(d)).length
   const weekendCount = days.length - workingCount
   const totalUnits = workingCount + weekendCount * WEEKEND_RATIO
   const normalMm = totalUnits > 0 ? contentMm / totalUnits : 3
   return days.map(d => isWeekend(d) ? normalMm * WEEKEND_RATIO : normalMm)
+}
+
+function getBarColor(task, lot, zones, colorMode) {
+  if (colorMode === 'zone') {
+    const zone = zones.find(z => z.id === task.zone_id)
+    return zone?.couleur ?? '#C9C4C0'
+  }
+  return lot?.couleur ?? '#94a3b8'
 }
 
 function buildMonthHeaders(days, dayWidths) {
@@ -150,13 +164,13 @@ function buildTaskRow(task, color, days, dayWidths, jalons, todayStr) {
   </tr>`
 }
 
-function buildHtml({ tasks, lots, jalons, affaire, dateDebut, dateFin, largeurMm, hauteurMm }) {
+function buildHtml({ tasks, lots, jalons, affaire, dateDebut, dateFin, largeurMm, hauteurMm, zones = [], colorMode = 'lot', viewMode = 'day' }) {
   const dStart = parseDate(dateDebut)
   const dEnd = parseDate(dateFin)
   const days = buildDaysList(dStart, dEnd)
 
   const contentMm = largeurMm - 20 - LABEL_COL_MM
-  const dayWidths = computeDayWidths(days, contentMm)
+  const dayWidths = computeDayWidths(days, contentMm, viewMode)
   const todayStr = formatDateISO(new Date())
 
   const logoUrl = window.location.origin + '/Logo_JGA_Archi.jpg'
@@ -166,9 +180,13 @@ function buildHtml({ tasks, lots, jalons, affaire, dateDebut, dateFin, largeurMm
   const dateStr = new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })
   const periodeStr = `${dStart.toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })} → ${dEnd.toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })}`
 
+  // Granularité : la vue jour affiche les 3 niveaux d'en-tête, la vue semaine masque
+  // le détail jour, la vue mois ne garde que le niveau mois (qui inclut déjà l'année).
+  const showWeekRow = viewMode !== 'month'
+  const showDayRow = viewMode === 'day'
   const monthHeaders = buildMonthHeaders(days, dayWidths)
-  const weekHeaders  = buildWeekHeaders(days, dayWidths)
-  const dayHeaders   = buildDayHeaders(days, dayWidths, todayStr)
+  const weekHeaders  = showWeekRow ? buildWeekHeaders(days, dayWidths) : ''
+  const dayHeaders   = showDayRow ? buildDayHeaders(days, dayWidths, todayStr) : ''
 
   const sortedLots = [...lots].sort((a, b) => (a.ordre ?? 0) - (b.ordre ?? 0))
   let lotsRows = ''
@@ -180,12 +198,12 @@ function buildHtml({ tasks, lots, jalons, affaire, dateDebut, dateFin, largeurMm
         ${lot.num_lot ?? ''} – ${lot.nom}
       </td>
     </tr>`
-    lotTasks.forEach(t => { lotsRows += buildTaskRow(t, lot.couleur, days, dayWidths, jalons, todayStr) })
+    lotTasks.forEach(t => { lotsRows += buildTaskRow(t, getBarColor(t, lot, zones, colorMode), days, dayWidths, jalons, todayStr) })
   })
   const unassigned = tasks.filter(t => t.lot_id == null)
   if (unassigned.length > 0) {
     lotsRows += `<tr><td colspan="${1 + days.length}" style="color:#9C9591;font-weight:bold;font-size:7pt;padding:0 2mm;height:5.5mm;border-bottom:0.5px solid rgba(0,0,0,0.08)">Sans lot</td></tr>`
-    unassigned.forEach(t => { lotsRows += buildTaskRow(t, '#94a3b8', days, dayWidths, jalons, todayStr) })
+    unassigned.forEach(t => { lotsRows += buildTaskRow(t, getBarColor(t, null, zones, colorMode), days, dayWidths, jalons, todayStr) })
   }
 
   return `<!DOCTYPE html>
@@ -253,14 +271,14 @@ function buildHtml({ tasks, lots, jalons, affaire, dateDebut, dateFin, largeurMm
         <th class="plabel" style="background:#FAF7F2;font-size:6pt;color:#9C9591;text-align:center">Tâches</th>
         ${monthHeaders}
       </tr>
-      <tr>
+      ${showWeekRow ? `<tr>
         <th class="plabel" style="background:#FAF7F2"></th>
         ${weekHeaders}
-      </tr>
-      <tr>
+      </tr>` : ''}
+      ${showDayRow ? `<tr>
         <th class="plabel" style="background:#FAFAF9"></th>
         ${dayHeaders}
-      </tr>
+      </tr>` : ''}
     </thead>
     <tbody>${lotsRows}</tbody>
   </table>

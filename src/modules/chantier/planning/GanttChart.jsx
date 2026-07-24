@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
+import * as XLSX from 'xlsx'
 import { parseDate, formatDateISO, applyLag, computeLag, addWorkingDays } from './types'
 import { supabase } from '../../../core/supabase/client'
 import { usePlanningZones } from '../../../shared/hooks/usePlanningZones'
@@ -106,8 +107,17 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
     localStorage.setItem(`planning-view-mode-${affaireId}`, viewMode)
   }, [viewMode, affaireId])
 
+  const [zoomLevel, setZoomLevel] = useState(
+    () => parseFloat(localStorage.getItem(`planning-zoom-${affaireId}`) ?? '1')
+  )
+  useEffect(() => {
+    localStorage.setItem(`planning-zoom-${affaireId}`, zoomLevel.toString())
+  }, [zoomLevel, affaireId])
+
   const { zones, createZone, updateZone, deleteZone } = usePlanningZones(affaireId)
-  const { addSegment, updateSegment, deleteSegment, getSegmentsForTache } = usePlanningSegments(affaireId)
+  const {
+    segments, addSegment, updateSegment, updateSegmentLocal, deleteSegment, getSegmentsForTache,
+  } = usePlanningSegments(affaireId)
 
   const ROW_HEIGHT = 40
 
@@ -304,6 +314,91 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
     await fetchAllData()
   }
 
+  // ── Export Excel ──────────────────────────────────────────────────────────────
+  const handleExportExcel = () => {
+    const wb = XLSX.utils.book_new()
+
+    const rows = [[
+      'Lot', 'N°', 'Tâche', 'Date début', 'Durée (j)', 'Date fin',
+      'Avancement (%)', 'Zone', 'Dépend de', 'Statut',
+    ]]
+
+    const sorted = [...tasks].sort((a, b) => {
+      const lotA = lots.find((l) => l.id === a.lot_id)?.numero ?? 0
+      const lotB = lots.find((l) => l.id === b.lot_id)?.numero ?? 0
+      if (lotA !== lotB) return lotA - lotB
+      return (a.num_tache ?? '').localeCompare(b.num_tache ?? '')
+    })
+
+    sorted.forEach((task) => {
+      const lot = lots.find((l) => l.id === task.lot_id)
+      const zone = zones.find((z) => z.id === task.zone_id)
+      const dependDe = tasks.find((t) => t.id === task.depends_on)
+      const fin = addWorkingDays(parseDate(task.debut), task.duree ?? 0)
+      const statut = task.avancement >= 100 ? 'Terminé' : task.avancement > 0 ? 'En cours' : 'À venir'
+
+      rows.push([
+        lot?.nom ?? '',
+        task.num_tache ?? '',
+        task.nom ?? '',
+        task.debut ?? '',
+        task.duree ?? 0,
+        formatDateISO(fin),
+        task.avancement ?? 0,
+        zone?.nom ?? '',
+        dependDe?.nom ?? '',
+        statut,
+      ])
+
+      const segs = getSegmentsForTache ? getSegmentsForTache(task.id) : []
+      segs.forEach((seg, idx) => {
+        const segZone = zones.find((z) => z.id === seg.zone_id)
+        const segFin = addWorkingDays(parseDate(seg.date_debut), seg.duree_jours ?? 0)
+        rows.push([
+          '',
+          `${task.num_tache ?? ''}.${idx + 1}`,
+          `↳ ${task.nom} (segment)`,
+          seg.date_debut,
+          seg.duree_jours,
+          formatDateISO(segFin),
+          '',
+          segZone?.nom ?? '',
+          '',
+          '',
+        ])
+      })
+    })
+
+    const ws = XLSX.utils.aoa_to_sheet(rows)
+    ws['!cols'] = [
+      { wch: 20 }, // Lot
+      { wch: 8 },  // N°
+      { wch: 35 }, // Tâche
+      { wch: 12 }, // Date début
+      { wch: 10 }, // Durée
+      { wch: 12 }, // Date fin
+      { wch: 14 }, // Avancement
+      { wch: 15 }, // Zone
+      { wch: 20 }, // Dépend de
+      { wch: 12 }, // Statut
+    ]
+
+    const jalonsRows = [['Jalon', 'Date', 'Couleur']]
+    jalons.forEach((j) => {
+      jalonsRows.push([j.label ?? '', j.date ?? '', j.couleur ?? ''])
+    })
+    const wsJalons = XLSX.utils.aoa_to_sheet(jalonsRows)
+    wsJalons['!cols'] = [{ wch: 30 }, { wch: 12 }, { wch: 10 }]
+
+    XLSX.utils.book_append_sheet(wb, ws, 'Planning')
+    XLSX.utils.book_append_sheet(wb, wsJalons, 'Jalons')
+
+    const nomAffaire = affaire?.nom ?? affaire?.code_affaire ?? 'planning'
+    const date = formatDateISO(new Date())
+
+    XLSX.writeFile(wb, `Planning_${nomAffaire}_${date}.xlsx`)
+  }
+
   // ── Zoom ──────────────────────────────────────────────────────────────────────
   const handleZoomIn = () => setDayWidth((w) => Math.min(100, w + 5))
   const handleZoomOut = () => setDayWidth((w) => Math.max(15, w - 5))
@@ -357,6 +452,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
           onZoomOut={handleZoomOut}
           onOpenLots={() => setShowLotsModal(true)}
           onExportPdf={() => setShowExportModal(true)}
+          onExportExcel={handleExportExcel}
           onAddTask={() => {
             setEditingTask(null)
             setTaskModalMode('create')
@@ -372,6 +468,8 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
           onOpenZones={() => setShowZonesModal(true)}
           viewMode={viewMode}
           onViewModeChange={setViewMode}
+          zoomLevel={zoomLevel}
+          onZoomLevelChange={setZoomLevel}
         />
       </div>
 
@@ -425,7 +523,11 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
             zones={zones}
             colorMode={colorMode}
             viewMode={viewMode}
+            zoomLevel={zoomLevel}
             getSegmentsForTache={getSegmentsForTache}
+            segments={segments}
+            updateSegment={updateSegment}
+            updateSegmentLocal={updateSegmentLocal}
           />
         </div>
       </div>
@@ -497,6 +599,9 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
         tasks={tasks}
         jalons={jalons}
         affaire={affaire}
+        zones={zones}
+        colorMode={colorMode}
+        viewMode={viewMode}
       />
 
       <JalonModal

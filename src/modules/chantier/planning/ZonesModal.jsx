@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { X, Plus, Trash2 } from 'lucide-react'
 
 const COULEURS_PRESET = [
@@ -9,55 +10,32 @@ const COULEURS_PRESET = [
   '#64748B', '#0F172A', '#166534',
 ]
 
-function ColorPickerPopover({ value, onChange, onClose }) {
-  const ref = useRef(null)
+// Champ hex avec brouillon local — évite que la saisie « saute » tant que
+// le texte tapé ne correspond pas encore à un hex valide (#RRGGBB).
+function HexInput({ value, onCommit }) {
+  const [draft, setDraft] = useState(value)
 
-  useEffect(() => {
-    const handleClick = (e) => { if (ref.current && !ref.current.contains(e.target)) onClose() }
-    document.addEventListener('mousedown', handleClick)
-    return () => document.removeEventListener('mousedown', handleClick)
-  }, [onClose])
+  useEffect(() => { setDraft(value) }, [value])
 
   return (
-    <div
-      ref={ref}
-      style={{
-        position: 'absolute', top: '100%', left: 0, marginTop: 6, zIndex: 50,
-        backgroundColor: 'white', border: '0.5px solid rgba(0,0,0,0.15)',
-        borderRadius: 2, padding: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
-        width: 168,
+    <input
+      type="text" value={draft}
+      onChange={(e) => {
+        const v = e.target.value
+        setDraft(v)
+        if (/^#[0-9A-Fa-f]{6}$/.test(v)) onCommit(v)
       }}
-    >
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 6, marginBottom: 8 }}>
-        {COULEURS_PRESET.map((c) => (
-          <button
-            key={c} type="button" onClick={() => { onChange(c); onClose() }}
-            style={{
-              width: 22, height: 22, borderRadius: '50%', backgroundColor: c,
-              border: 'none', cursor: 'pointer', padding: 0,
-              outline: value.toLowerCase() === c.toLowerCase() ? '2px solid #1F1B17' : 'none',
-              outlineOffset: 2,
-            }}
-          />
-        ))}
-      </div>
-      <input
-        type="text" value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder="#RRGGBB"
-        style={{
-          width: '100%', height: 28, padding: '0 8px', borderRadius: 2, fontSize: 11,
-          border: '0.5px solid rgba(0,0,0,0.15)', backgroundColor: '#FAFAF9', outline: 'none',
-          boxSizing: 'border-box', color: '#1F1B17', fontVariantNumeric: 'tabular-nums',
-        }}
-      />
-    </div>
+      placeholder="#E8602C"
+      style={{
+        width: 80, fontSize: 12, padding: '4px 8px', borderRadius: 2,
+        border: '0.5px solid rgba(0,0,0,0.12)', fontVariantNumeric: 'tabular-nums',
+      }}
+    />
   )
 }
 
-function ZoneRow({ zone, onUpdate, onDelete, autoFocus }) {
+function ZoneRow({ zone, onUpdate, onDelete, onPastilleClick, autoFocus }) {
   const [nom, setNom] = useState(zone.nom)
-  const [pickerOpen, setPickerOpen] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const debounceRef = useRef(null)
   const inputRef = useRef(null)
@@ -79,10 +57,6 @@ function ZoneRow({ zone, onUpdate, onDelete, autoFocus }) {
     debounceRef.current = setTimeout(() => commitNom(value), 500)
   }
 
-  const handleColorChange = (couleur) => {
-    onUpdate(zone.id, { couleur })
-  }
-
   const handleDelete = () => {
     if (!confirmingDelete) { setConfirmingDelete(true); return }
     onDelete(zone.id)
@@ -93,23 +67,14 @@ function ZoneRow({ zone, onUpdate, onDelete, autoFocus }) {
       display: 'flex', alignItems: 'center', gap: 8,
       padding: '6px 0', borderBottom: '0.5px solid rgba(0,0,0,0.06)',
     }}>
-      <div style={{ position: 'relative' }}>
-        <button
-          type="button" onClick={() => setPickerOpen((v) => !v)}
-          title="Changer la couleur"
-          style={{
-            width: 22, height: 22, borderRadius: '50%', backgroundColor: zone.couleur,
-            border: '0.5px solid rgba(0,0,0,0.15)', cursor: 'pointer', padding: 0, flexShrink: 0,
-          }}
-        />
-        {pickerOpen && (
-          <ColorPickerPopover
-            value={zone.couleur}
-            onChange={handleColorChange}
-            onClose={() => setPickerOpen(false)}
-          />
-        )}
-      </div>
+      <button
+        type="button" onClick={(e) => onPastilleClick(e, zone)}
+        title="Changer la couleur"
+        style={{
+          width: 22, height: 22, borderRadius: '50%', backgroundColor: zone.couleur,
+          border: '0.5px solid rgba(0,0,0,0.15)', cursor: 'pointer', padding: 0, flexShrink: 0,
+        }}
+      />
 
       <input
         ref={inputRef}
@@ -147,6 +112,9 @@ function ZoneRow({ zone, onUpdate, onDelete, autoFocus }) {
 
 export function ZonesModal({ open, onClose, zones, createZone, updateZone, deleteZone }) {
   const [focusNewId, setFocusNewId] = useState(null)
+  const [pickerState, setPickerState] = useState(null)
+
+  useEffect(() => { if (!open) setPickerState(null) }, [open])
 
   if (!open) return null
 
@@ -155,17 +123,24 @@ export function ZonesModal({ open, onClose, zones, createZone, updateZone, delet
     if (data) setFocusNewId(data.id)
   }
 
+  const handlePastilleClick = (e, zone) => {
+    const rect = e.currentTarget.getBoundingClientRect()
+    setPickerState({ zoneId: zone.id, x: rect.left, y: rect.bottom + 8 })
+  }
+
+  const pickerZone = pickerState ? zones.find((z) => z.id === pickerState.zoneId) : null
+
   return (
     <div style={{
       position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)',
       display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100,
-    }} onClick={onClose}>
+    }}>
       <div style={{
         backgroundColor: 'white', borderRadius: 0, padding: 28,
         width: '100%', maxWidth: 500, maxHeight: '80vh',
         display: 'flex', flexDirection: 'column',
         boxShadow: '0 8px 40px rgba(0,0,0,0.12)',
-      }} onClick={e => e.stopPropagation()}>
+      }}>
 
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, flexShrink: 0 }}>
@@ -191,6 +166,7 @@ export function ZonesModal({ open, onClose, zones, createZone, updateZone, delet
                 zone={zone}
                 onUpdate={updateZone}
                 onDelete={deleteZone}
+                onPastilleClick={handlePastilleClick}
                 autoFocus={zone.id === focusNewId}
               />
             ))
@@ -211,6 +187,52 @@ export function ZonesModal({ open, onClose, zones, createZone, updateZone, delet
           </button>
         </div>
       </div>
+
+      {pickerState && pickerZone && createPortal(
+        <>
+          <div
+            onClick={() => setPickerState(null)}
+            style={{ position: 'fixed', inset: 0, zIndex: 1000 }}
+          />
+          <div style={{
+            position: 'fixed', left: pickerState.x, top: pickerState.y, zIndex: 1001,
+            background: 'white', border: '0.5px solid #E9E2D6', borderRadius: 2,
+            padding: 12, boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
+          }}>
+            {/* Grille preset 5×3 */}
+            <div style={{
+              display: 'grid', gridTemplateColumns: 'repeat(5, 24px)', gap: 6, marginBottom: 10,
+            }}>
+              {COULEURS_PRESET.map((couleur) => (
+                <div
+                  key={couleur}
+                  onClick={() => { updateZone(pickerState.zoneId, { couleur }); setPickerState(null) }}
+                  style={{
+                    width: 24, height: 24, borderRadius: '50%', background: couleur, cursor: 'pointer',
+                    border: pickerZone.couleur.toLowerCase() === couleur.toLowerCase()
+                      ? '2px solid #1F1B17' : '2px solid transparent',
+                  }}
+                />
+              ))}
+            </div>
+
+            {/* Input couleur libre */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input
+                type="color"
+                value={pickerZone.couleur ?? '#9C9591'}
+                onChange={(e) => updateZone(pickerState.zoneId, { couleur: e.target.value })}
+                style={{ width: 32, height: 32, border: 'none', padding: 0, cursor: 'pointer' }}
+              />
+              <HexInput
+                value={pickerZone.couleur ?? '#9C9591'}
+                onCommit={(couleur) => updateZone(pickerState.zoneId, { couleur })}
+              />
+            </div>
+          </div>
+        </>,
+        document.body
+      )}
     </div>
   )
 }

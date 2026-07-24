@@ -55,7 +55,10 @@ function computeRange(tasks) {
   }
 }
 
-export function ExportPdfModal({ open, onClose, lots = [], tasks = [], jalons = [], affaire = {} }) {
+export function ExportPdfModal({
+  open, onClose, lots = [], tasks = [], jalons = [], affaire = {},
+  zones = [], colorMode = 'lot', viewMode = 'day',
+}) {
   const computed = useMemo(() => computeRange(tasks), [tasks])
 
   const [dateDebut,   setDateDebut]   = useState(computed.debut)
@@ -65,12 +68,16 @@ export function ExportPdfModal({ open, onClose, lots = [], tasks = [], jalons = 
   const [customW,     setCustomW]     = useState(420)
   const [customH,     setCustomH]     = useState(297)
   const [isLandscape, setIsLandscape] = useState(true)
+  const [exportColorMode, setExportColorMode] = useState(colorMode ?? 'lot')
+  const [exportViewMode,  setExportViewMode]  = useState(viewMode ?? 'day')
 
   useEffect(() => {
     if (!open) return
     setDateDebut(computed.debut)
     setDateFin(computed.fin)
-  }, [open, computed])
+    setExportColorMode(colorMode ?? 'lot')
+    setExportViewMode(viewMode ?? 'day')
+  }, [open, computed, colorMode, viewMode])
 
   const { totalDays, totalWeeks } = useMemo(() => {
     if (!dateDebut || !dateFin) return { totalDays: 0, totalWeeks: 0 }
@@ -114,6 +121,9 @@ export function ExportPdfModal({ open, onClose, lots = [], tasks = [], jalons = 
       dateFin,
       largeurMm: finalFormat.w,
       hauteurMm: finalFormat.h,
+      zones,
+      colorMode: exportColorMode,
+      viewMode: exportViewMode,
     })
     onClose()
   }
@@ -123,11 +133,9 @@ export function ExportPdfModal({ open, onClose, lots = [], tasks = [], jalons = 
   return (
     <div
       style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}
-      onClick={onClose}
     >
       <div
         style={{ backgroundColor: 'white', borderRadius: 0, padding: 28, width: '100%', maxWidth: 520, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 8px 40px rgba(0,0,0,0.12)' }}
-        onClick={e => e.stopPropagation()}
       >
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 22 }}>
@@ -237,6 +245,83 @@ export function ExportPdfModal({ open, onClose, lots = [], tasks = [], jalons = 
             )}
             <p style={{ fontSize: 11, color: '#9C9591', marginTop: 8 }}>
               Page : {finalFormat.w} mm × {finalFormat.h} mm
+            </p>
+          </div>
+
+          {/* ── B2) COULEURS ── */}
+          <div style={{ marginBottom: 20 }}>
+            <label style={{
+              fontSize: 11, fontWeight: 500, color: '#9C9591',
+              textTransform: 'uppercase', letterSpacing: '0.05em',
+              display: 'block', marginBottom: 8,
+            }}>
+              Couleurs des barres
+            </label>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {[
+                { value: 'lot', label: 'Par lot' },
+                { value: 'zone', label: 'Par zone' },
+              ].map(opt => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setExportColorMode(opt.value)}
+                  style={{
+                    padding: '6px 14px',
+                    fontSize: 12,
+                    border: exportColorMode === opt.value ? '1.5px solid #E8602C' : '0.5px solid rgba(0,0,0,0.15)',
+                    background: exportColorMode === opt.value ? '#FAF0EB' : 'transparent',
+                    color: exportColorMode === opt.value ? '#E8602C' : '#5E5854',
+                    cursor: 'pointer',
+                    fontWeight: exportColorMode === opt.value ? 500 : 400,
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            {exportColorMode === 'zone' && zones.length === 0 && (
+              <p style={{ fontSize: 11, color: '#B8412C', marginTop: 6 }}>
+                Aucune zone définie — les barres seront affichées en gris.
+              </p>
+            )}
+          </div>
+
+          {/* ── B3) GRANULARITÉ ── */}
+          <div style={{ marginBottom: 20 }}>
+            <label style={{
+              fontSize: 11, fontWeight: 500, color: '#9C9591',
+              textTransform: 'uppercase', letterSpacing: '0.05em',
+              display: 'block', marginBottom: 8,
+            }}>
+              Granularité du planning
+            </label>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {[
+                { value: 'day', label: 'Jours' },
+                { value: 'week', label: 'Semaines' },
+                { value: 'month', label: 'Mois' },
+              ].map(opt => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setExportViewMode(opt.value)}
+                  style={{
+                    padding: '6px 14px',
+                    fontSize: 12,
+                    border: exportViewMode === opt.value ? '1.5px solid #E8602C' : '0.5px solid rgba(0,0,0,0.15)',
+                    background: exportViewMode === opt.value ? '#FAF0EB' : 'transparent',
+                    color: exportViewMode === opt.value ? '#E8602C' : '#5E5854',
+                    cursor: 'pointer',
+                    fontWeight: exportViewMode === opt.value ? 500 : 400,
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            <p style={{ fontSize: 11, color: '#9C9591', marginTop: 6, fontStyle: 'italic' }}>
+              Pré-sélectionné selon la vue active.
             </p>
           </div>
 

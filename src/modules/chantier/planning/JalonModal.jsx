@@ -204,7 +204,6 @@ export function JalonModal({ open, onClose, jalons, affaireId, onRefetch }) {
         position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)',
         display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100,
       }}
-      onClick={onClose}
     >
       <div
         style={{
@@ -213,7 +212,6 @@ export function JalonModal({ open, onClose, jalons, affaireId, onRefetch }) {
           display: 'flex', flexDirection: 'column',
           boxShadow: '0 8px 40px rgba(0,0,0,0.12)',
         }}
-        onClick={e => e.stopPropagation()}
       >
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, flexShrink: 0 }}>

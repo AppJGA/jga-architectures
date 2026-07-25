@@ -54,7 +54,7 @@ function getNextNumero(lotId, tasks) {
 
 export function TacheEditModal({
   open, onClose, task, tasks, lots, onSave, onRequestDelete, mode, zones = [], colorMode = 'lot', defaultDebut = null,
-  lastUsedLotId = null,
+  lastUsedLotId = null, createDefaults = null,
   getSegmentsForTache, addSegment, updateSegment, deleteSegment,
 }) {
   const [form, setForm] = useState(emptyForm(lots))
@@ -86,9 +86,12 @@ export function TacheEditModal({
       })
     } else {
       const base = emptyForm(lots, defaultDebut, lastUsedLotId)
-      setForm({ ...base, num_tache: base.lot_id ? getNextNumero(base.lot_id, tasks) : '' })
+      // Valeurs issues d'un dessin cliquer-glisser dans la timeline (debut/duree/
+      // lot_id/zone_id) — remplacent les valeurs par défaut correspondantes.
+      const merged = createDefaults ? { ...base, ...createDefaults } : base
+      setForm({ ...merged, num_tache: merged.lot_id ? getNextNumero(merged.lot_id, tasks) : '' })
     }
-  }, [task, open, lots, defaultDebut, lastUsedLotId, tasks])
+  }, [task, open, lots, defaultDebut, lastUsedLotId, tasks, createDefaults])
 
   // Si le dernier lot utilisé change pendant que la modale de création est déjà
   // ouverte, ne patcher que le champ lot (sans écraser le reste du formulaire).

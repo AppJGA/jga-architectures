@@ -220,6 +220,71 @@ function periodeGeometry(dateDebut, dateFinInclusive, geo) {
   return { left, width: Math.max(4, xAtDate(dateFinInclusive, geo.dateRef, geo.dayPositions) - left) }
 }
 
+// ── Création de tâche par cliquer-glisser ──────────────────────────────────────
+
+// Inverse de xAtDate/xAtDateWeekSnapped/xAtDateMonth : convertit une position en
+// pixels (dans le référentiel du contenu de la timeline, pas de la fenêtre) en
+// date, selon le mode de vue actif.
+function dateForX(x, geo) {
+  if (geo.viewMode === 'month') {
+    const idx = Math.floor(x / geo.monthWidth)
+    const m0 = geo.months[0]
+    if (!m0) return new Date(geo.dateRef)
+    return new Date(m0.year, m0.month + idx, 1)
+  }
+  if (geo.viewMode === 'week') {
+    const idx = Math.floor(x / geo.weekWidth)
+    const d = new Date(geo.dateRef)
+    d.setDate(d.getDate() + idx * 7)
+    return d
+  }
+  // Vue jour : recherche dans dayPositions (paliers cumulés, colonnes week-end réduites)
+  const { dayPositions, dateRef } = geo
+  let idx = 0
+  while (idx < dayPositions.length - 1 && dayPositions[idx + 1] <= x) idx++
+  const d = new Date(dateRef)
+  d.setDate(d.getDate() + idx)
+  return d
+}
+
+// Retrouve le lot/zone et le haut de ligne (en px) sous un Y donné, pour amorcer
+// un dessin de tâche. Un clic sur un header (lot ou zone) ou hors de toute ligne
+// ne démarre rien (retourne null).
+function findDrawContext(y, { rows, lotsWithTasks, unassigned, rowHeight }) {
+  if (y < 0) return null
+
+  if (rows) {
+    let cumY = 0
+    for (const row of rows) {
+      const h = row.type === 'header-zone' ? HEADER_HEIGHT : rowHeight
+      if (y < cumY + h) {
+        if (row.type !== 'task-row') return null
+        return { lotId: row.lotId, zoneId: row.zoneId, rowTop: cumY }
+      }
+      cumY += h
+    }
+    return null
+  }
+
+  let cumY = 0
+  for (const { lot, tasks: lotTasks } of lotsWithTasks) {
+    if (y < cumY + rowHeight) return null // header du lot
+    cumY += rowHeight
+    if (y < cumY + lotTasks.length * rowHeight) {
+      return { lotId: lot.id, zoneId: null, rowTop: cumY + Math.floor((y - cumY) / rowHeight) * rowHeight }
+    }
+    cumY += lotTasks.length * rowHeight
+  }
+  if (unassigned.length > 0) {
+    if (y < cumY + rowHeight) return null // header "Sans lot"
+    cumY += rowHeight
+    if (y < cumY + unassigned.length * rowHeight) {
+      return { lotId: null, zoneId: null, rowTop: cumY + Math.floor((y - cumY) / rowHeight) * rowHeight }
+    }
+  }
+  return null
+}
+
 // ── Résolution générique tâche / segment (points de connexion, flèches) ───────
 
 function sameEndpoint(a, b) {
@@ -342,6 +407,7 @@ export function GanttTimeline({
   getSegmentsForTache, segments = [], updateSegmentLocal, onSegmentDateCommit,
   dependances = [], onSegmentDependencyCreate, onSegmentDependencyDelete,
   periodes = [], getNextWorkingDay, dragOverTaskId = null,
+  drawMode = false, onDrawCreate,
 }) {
   const weekWidth = WEEK_WIDTH_BASE * zoomLevel
   const monthWidth = MONTH_WIDTH_BASE * zoomLevel
@@ -543,6 +609,7 @@ export function GanttTimeline({
   }, [viewMode, weekWidth, monthWidth, avgDayWidth])
 
   const startBarDrag = useCallback((e, task, type) => {
+    if (drawMode) return
     if (e.button !== 0) return
     e.preventDefault(); e.stopPropagation()
     barDragRef.current = {
@@ -552,7 +619,7 @@ export function GanttTimeline({
     }
     setDraggingBar(task.id)
     document.body.style.cursor = type === 'move' ? 'grabbing' : 'ew-resize'
-  }, [])
+  }, [drawMode])
 
   // ── Drag segment ──────────────────────────────────────────────────────────────
   const [draggingSegment, setDraggingSegment] = useState(null)
@@ -560,6 +627,7 @@ export function GanttTimeline({
   const segmentDragRef = useRef({ moved: false })
 
   const handleSegmentMouseDown = useCallback((e, segment) => {
+    if (drawMode) return
     if (e.button !== 0) return
     e.stopPropagation()
     e.preventDefault()
@@ -571,7 +639,7 @@ export function GanttTimeline({
       startX: e.clientX,
       originalDateDebut: segment.date_debut,
     })
-  }, [])
+  }, [drawMode])
 
   useEffect(() => {
     if (!draggingSegment) return
@@ -617,6 +685,76 @@ export function GanttTimeline({
   const [hoveredArrowId, setHoveredArrowId] = useState(null)
   const [deletingArrow, setDeletingArrow] = useState(null)
   const svgRef = useRef(null)
+
+  // ── Création de tâche par cliquer-glisser ──────────────────────────────────────
+  // { startDate, currentDate, lotId, zoneId, rowTop } — état local, propre au geste
+  // en cours ; seul le résultat final (au mouseup) remonte au parent via onDrawCreate.
+  const [drawState, setDrawState] = useState(null)
+  const containerRef = useRef(null)
+
+  // Un changement de mode (activation/désactivation) doit annuler tout geste ou
+  // toute connexion de dépendance en cours, pour éviter des états ambigus.
+  useEffect(() => {
+    if (drawMode) setConnectingFrom(null)
+    else setDrawState(null)
+  }, [drawMode])
+
+  const handleDrawMouseDown = useCallback((e) => {
+    if (!drawMode || e.button !== 0) return
+    const container = containerRef.current
+    if (!container) return
+    const rect = container.getBoundingClientRect()
+    const x = e.clientX - rect.left
+    const y = e.clientY - rect.top - HEADER_HEIGHT
+
+    const ctx = findDrawContext(y, { rows, lotsWithTasks, unassigned, rowHeight })
+    if (!ctx) return // clic sur un header ou hors de toute ligne
+    e.preventDefault()
+
+    const startDate = formatDateISO(dateForX(x, geo))
+    setDrawState({ startDate, currentDate: startDate, lotId: ctx.lotId, zoneId: ctx.zoneId, rowTop: ctx.rowTop })
+  }, [drawMode, rows, lotsWithTasks, unassigned, rowHeight, geo])
+
+  useEffect(() => {
+    if (!drawState) return
+
+    const handleMouseMove = (e) => {
+      const container = containerRef.current
+      if (!container) return
+      const rect = container.getBoundingClientRect()
+      const x = e.clientX - rect.left
+      const currentDate = formatDateISO(dateForX(x, geo))
+      setDrawState((prev) => (prev ? { ...prev, currentDate } : prev))
+    }
+
+    const handleMouseUp = () => {
+      setDrawState((prev) => {
+        if (prev) {
+          const d1 = parseDate(prev.startDate)
+          const d2 = parseDate(prev.currentDate)
+          const debutDate = d1 <= d2 ? d1 : d2
+          const finDate = d1 <= d2 ? d2 : d1
+          let duree = workingDaysBetween(debutDate, finDate) + (isWorkingDay(debutDate) ? 1 : 0)
+          if (duree < 1) duree = 1
+          const finalDebut = getNextWorkingDay ? getNextWorkingDay(debutDate) : debutDate
+          onDrawCreate?.({
+            debut: formatDateISO(finalDebut),
+            duree,
+            lot_id: prev.lotId,
+            zone_id: prev.zoneId,
+          })
+        }
+        return null
+      })
+    }
+
+    window.addEventListener('mousemove', handleMouseMove)
+    window.addEventListener('mouseup', handleMouseUp)
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove)
+      window.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [drawState, geo, getNextWorkingDay, onDrawCreate])
 
   // ── Flèches permanentes ───────────────────────────────────────────────────────
   // Deux sources : les dépendances tâche→tâche historiques (`depends_on`/`lag_days`)
@@ -794,7 +932,12 @@ export function GanttTimeline({
 
   return (
     <div
-      style={{ position: 'relative', userSelect: 'none', width: totalWidth, minWidth: totalWidth }}
+      ref={containerRef}
+      style={{
+        position: 'relative', userSelect: 'none', width: totalWidth, minWidth: totalWidth,
+        cursor: drawMode ? 'crosshair' : 'default',
+      }}
+      onMouseDown={handleDrawMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
@@ -1082,6 +1225,43 @@ export function GanttTimeline({
           )
         })}
 
+        {/* Prévisualisation du dessin en cours (création de tâche) */}
+        {drawState && (() => {
+          const d1 = parseDate(drawState.startDate)
+          const d2 = parseDate(drawState.currentDate)
+          const startDate = d1 <= d2 ? d1 : d2
+          const endDate = d1 <= d2 ? d2 : d1
+
+          const endInclusive = new Date(endDate)
+          if (viewMode === 'day') endInclusive.setDate(endInclusive.getDate() + 1)
+          else if (viewMode === 'week') endInclusive.setDate(endInclusive.getDate() + 7)
+          else endInclusive.setMonth(endInclusive.getMonth() + 1)
+
+          const left = getX(startDate)
+          const width = Math.max(8, getX(endInclusive) - left)
+          const lot = lots.find((l) => l.id === drawState.lotId)
+          const zone = zones.find((z) => z.id === drawState.zoneId)
+          const couleur = zone?.couleur ?? lot?.couleur ?? '#E8602C'
+          const dureeAffichee = Math.max(1, workingDaysBetween(startDate, endDate) + (isWorkingDay(startDate) ? 1 : 0))
+
+          return (
+            <div style={{
+              position: 'absolute', left, width,
+              top: drawState.rowTop + BAR_PAD, height: rowHeight - BAR_PAD * 2,
+              background: couleur, opacity: 0.35,
+              border: `2px solid ${couleur}`,
+              pointerEvents: 'none', zIndex: 35,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              {width > 40 && (
+                <span style={{ fontSize: 10, fontWeight: 500, color: 'white', textShadow: '0 1px 2px rgba(0,0,0,0.4)' }}>
+                  {dureeAffichee}j
+                </span>
+              )}
+            </div>
+          )
+        })()}
+
         {/* Jalons — lignes verticales */}
         {jalons.map(jalon => {
           const x = getX(parseDate(jalon.date))
@@ -1134,7 +1314,7 @@ export function GanttTimeline({
                 task={row.task} lot={rowLot}
                 barColor={getBarColor(row.task, rowLot, zones, colorMode)}
                 rowHeight={rowHeight} geo={geo}
-                dragOverTaskId={dragOverTaskId}
+                dragOverTaskId={dragOverTaskId} drawMode={drawMode}
                 segments={getSegmentsForTache ? getSegmentsForTache(row.task.id) : []}
                 visibleSegmentIds={row.visibleSegmentIds}
                 showMainBar={row.showMainBar !== false}
@@ -1169,7 +1349,7 @@ export function GanttTimeline({
                     task={task} lot={lot}
                     barColor={getBarColor(task, lot, zones, colorMode)}
                     rowHeight={rowHeight} geo={geo}
-                    dragOverTaskId={dragOverTaskId}
+                    dragOverTaskId={dragOverTaskId} drawMode={drawMode}
                     segments={getSegmentsForTache ? getSegmentsForTache(task.id) : []}
                     zones={zones}
                     isDragging={draggingBar === task.id}
@@ -1202,7 +1382,7 @@ export function GanttTimeline({
                     task={task} lot={null}
                     barColor={getBarColor(task, null, zones, colorMode)}
                     rowHeight={rowHeight} geo={geo}
-                    dragOverTaskId={dragOverTaskId}
+                    dragOverTaskId={dragOverTaskId} drawMode={drawMode}
                     segments={getSegmentsForTache ? getSegmentsForTache(task.id) : []}
                     zones={zones}
                     isDragging={draggingBar === task.id}
@@ -1256,6 +1436,7 @@ export function GanttTimeline({
                 onMouseEnter={() => setHoveredArrowId(arrow.id)}
                 onMouseLeave={() => setHoveredArrowId(null)}
                 onClick={(e) => {
+                  if (drawMode) return
                   e.stopPropagation()
                   setDeletingArrow({
                     kind: arrow.kind,
@@ -1334,6 +1515,20 @@ export function GanttTimeline({
         </div>
       )}
 
+      {/* Toast mode dessin */}
+      {drawMode && (
+        <div style={{
+          position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)',
+          zIndex: 50, backgroundColor: '#1F1B17', color: 'white',
+          fontSize: 12, fontWeight: 700, padding: '10px 20px', borderRadius: 2,
+          boxShadow: '0 4px 20px rgba(0,0,0,0.25)',
+          display: 'flex', alignItems: 'center', gap: 10,
+        }}>
+          <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: '#E8602C', display: 'inline-block' }} />
+          Cliquez-glissez sur une ligne pour créer une tâche · Échap pour quitter
+        </div>
+      )}
+
       {/* Modale confirmation suppression dépendance */}
       {deletingArrow && (
         <div style={{
@@ -1399,7 +1594,7 @@ export function GanttTimeline({
 
 function TaskBarRow({
   task, lot, geo, rowHeight, barColor,
-  segments = [], zones = [], dragOverTaskId = null,
+  segments = [], zones = [], dragOverTaskId = null, drawMode = false,
   visibleSegmentIds = null, showMainBar = true,
   isDragging, isConnecting, connectingFrom, hoveredPoint,
   draggingSegmentId, onSegmentDragStart, segmentDragMovedRef,
@@ -1459,10 +1654,11 @@ function TaskBarRow({
           boxShadow: isDragging ? '0 8px 24px rgba(0,0,0,0.2)' : '0 1px 3px rgba(0,0,0,0.15)',
           zIndex: isDragging ? 30 : 10,
           opacity: isDragging ? 0.9 : 1,
-          cursor: isConnecting && !isSource ? 'crosshair' : 'grab',
+          cursor: drawMode ? 'crosshair' : isConnecting && !isSource ? 'crosshair' : 'grab',
           outline: isDragging ? '2px solid rgba(255,255,255,0.3)' : 'none',
         }}
         onMouseDown={(e) => {
+          if (drawMode) return
           if (e.target.dataset.handle) return
           if (e.target.dataset.editbtn) return
           if (isConnecting) return
@@ -1478,7 +1674,7 @@ function TaskBarRow({
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             borderRadius: 0,
           }}
-          onMouseDown={(e) => { if (e.button !== 0) return; e.stopPropagation(); onBarDragStart(e, task, 'resize-left') }}
+          onMouseDown={(e) => { if (drawMode || e.button !== 0) return; e.stopPropagation(); onBarDragStart(e, task, 'resize-left') }}
           onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.2)'}
           onMouseLeave={e => e.currentTarget.style.backgroundColor = ''}
         >
@@ -1528,7 +1724,7 @@ function TaskBarRow({
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             borderRadius: 0,
           }}
-          onMouseDown={(e) => { if (e.button !== 0) return; e.stopPropagation(); onBarDragStart(e, task, 'resize-right') }}
+          onMouseDown={(e) => { if (drawMode || e.button !== 0) return; e.stopPropagation(); onBarDragStart(e, task, 'resize-right') }}
           onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.2)'}
           onMouseLeave={e => e.currentTarget.style.backgroundColor = ''}
         >

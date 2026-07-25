@@ -249,6 +249,8 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
   const [deletingTask, setDeletingTask] = useState(null)
   const [dragOverTaskId, setDragOverTaskId] = useState(null)
   const [showOptionsPanel, setShowOptionsPanel] = useState(false)
+  const [drawMode, setDrawMode] = useState(false)
+  const [createDefaults, setCreateDefaults] = useState(null)
   const savedScrollRef = useRef(0)
 
   const [colorMode, setColorMode] = useState(
@@ -406,6 +408,14 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
       window.removeEventListener('mouseup', handleMouseUp)
     }
   }, [isPanning])
+
+  // ── Mode dessin (créer une tâche par cliquer-glisser) — quitter avec Échap ─────
+  useEffect(() => {
+    if (!drawMode) return
+    const handleKey = (e) => { if (e.key === 'Escape') setDrawMode(false) }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [drawMode])
 
   // ── Data fetching ──────────────────────────────────────────────────────────────
   const fetchAllData = useCallback(async () => {
@@ -1160,10 +1170,19 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
   const handleCloseTaskModal = useCallback(() => {
     setShowTaskModal(false)
     setEditingTask(null)
+    setCreateDefaults(null)
     requestAnimationFrame(() => {
       if (timelineRef.current) timelineRef.current.scrollLeft = savedScrollRef.current
     })
   }, [])
+
+  // Appelé par GanttTimeline une fois le geste de dessin terminé (mouseup) —
+  // ouvre la modale de création pré-remplie ; drawMode reste actif pour
+  // enchaîner plusieurs créations.
+  const handleDrawCreate = useCallback((payload) => {
+    setCreateDefaults(payload)
+    handleOpenTaskModal(null, 'create', payload.debut)
+  }, [handleOpenTaskModal])
 
   // ── Render ────────────────────────────────────────────────────────────────────
   if (isLoading) {
@@ -1218,6 +1237,8 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
           onToggleConnections={() => setShowConnections((v) => !v)}
           showConnections={showConnections}
           onOpenJalons={() => setShowJalonsModal(true)}
+          drawMode={drawMode}
+          onSetDrawMode={setDrawMode}
           showOptionsPanel={showOptionsPanel}
           onToggleOptionsPanel={() => setShowOptionsPanel((v) => !v)}
         />
@@ -1255,7 +1276,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
           onMouseDown={handleTimelineMouseDown}
           style={{
             flex: 1, overflow: 'auto',
-            cursor: isPanning ? 'grabbing' : 'default',
+            cursor: drawMode ? 'crosshair' : isPanning ? 'grabbing' : 'default',
             userSelect: isPanning ? 'none' : 'auto',
           }}
         >
@@ -1264,6 +1285,8 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
             lots={lots}
             rows={rows}
             dayWidth={dayWidth}
+            drawMode={drawMode}
+            onDrawCreate={handleDrawCreate}
             rowHeight={ROW_HEIGHT}
             showConnections={showConnections}
             jalons={jalons}
@@ -1589,6 +1612,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
         colorMode={colorMode}
         defaultDebut={newTaskDebut}
         lastUsedLotId={lastUsedLotId}
+        createDefaults={createDefaults}
         getSegmentsForTache={getSegmentsForTache}
         addSegment={addSegment}
         updateSegment={updateSegment}

@@ -120,16 +120,6 @@ function isBlockedDay(day, periodes) {
   })
 }
 
-function taskHasIncomingDependency(task, dependances) {
-  return task.depends_on != null || dependances.some(d => d.cible_tache_id === task.id)
-}
-
-function segmentHasIncomingDependency(seg, dependances) {
-  return dependances.some(d => d.cible_segment_id === seg.id)
-}
-
-const DEP_MARKER_HTML = `<div style="position:absolute;left:-1.8mm;top:50%;transform:translateY(-50%);width:0;height:0;border-top:1.4mm solid transparent;border-bottom:1.4mm solid transparent;border-left:1.8mm solid #E8602C;z-index:6;pointer-events:none"></div>`
-
 // Position + largeur (en mm) d'une barre tâche/segment, exprimées relativement à la
 // cellule <td> de son propre jour de début — cf. buildTaskRow : la barre est un enfant
 // de ce <td> positionné en left:0 et déborde vers la droite grâce à overflow:visible,
@@ -162,7 +152,7 @@ function buildDayHeaders(days, dayWidths, todayStr) {
 }
 
 function buildTaskRow(task, color, days, dayWidths, jalons, todayStr, ctx) {
-  const { segments = [], dependances = [], periodes = [], zones = [] } = ctx ?? {}
+  const { segments = [], periodes = [], zones = [] } = ctx ?? {}
 
   const taskStartStr = typeof task.debut === 'string' ? task.debut.split('T')[0] : formatDateISO(parseDate(task.debut))
   const mainGeo = computeBarGeometry(days, dayWidths, taskStartStr, task.duree)
@@ -183,8 +173,6 @@ function buildTaskRow(task, color, days, dayWidths, jalons, todayStr, ctx) {
       </div>`
     }
   }
-
-  const taskDepHtml = taskHasIncomingDependency(task, dependances) ? DEP_MARKER_HTML : ''
 
   // Segments supplémentaires de la tâche : chacun est rendu comme sa propre barre,
   // enfant du <td> de son propre jour de début (même technique que la barre principale
@@ -220,8 +208,8 @@ function buildTaskRow(task, color, days, dayWidths, jalons, todayStr, ctx) {
       const labelAvancement = task.avancement > 0 && task.avancement < 100
         ? `<span style="margin-left:1.5mm;font-size:5.5pt;color:#9C9591">${task.avancement}%</span>`
         : ''
-      barContent = `${approHtml}${taskDepHtml}
-        <div style="position:absolute;left:0;width:${barWidthMm.toFixed(2)}mm;top:1mm;bottom:1mm;background:${color};z-index:4;overflow:hidden">${progressBar}</div>
+      barContent = `${approHtml}
+        <div data-task-id="${task.id}" data-type="task" style="position:absolute;left:0;width:${barWidthMm.toFixed(2)}mm;top:1mm;bottom:1mm;background:${color};z-index:4;overflow:hidden">${progressBar}</div>
         <div style="position:absolute;left:${barWidthMm.toFixed(2)}mm;padding-left:3px;top:0;bottom:0;display:flex;align-items:center;white-space:nowrap;font-size:6.5pt;color:#1F1B17;z-index:10">${task.nom}${labelAvancement}</div>`
     }
 
@@ -229,10 +217,8 @@ function buildTaskRow(task, color, days, dayWidths, jalons, todayStr, ctx) {
     segGeoms.forEach(({ seg, startIdx: segStartIdx, widthMm: segWidthMm }) => {
       if (segStartIdx !== idx || segWidthMm <= 0) return
       const segColor = getSegColor(seg, color, zones)
-      const segDepHtml = segmentHasIncomingDependency(seg, dependances) ? DEP_MARKER_HTML : ''
       const segLabel = seg.nom ? `<span style="margin-left:1.5mm;font-size:5.5pt;color:#1F1B17">${seg.nom}</span>` : ''
-      segContent += `${segDepHtml}
-        <div style="position:absolute;left:0;width:${segWidthMm.toFixed(2)}mm;top:1mm;bottom:1mm;background:${segColor};outline:1px dashed rgba(255,255,255,0.6);outline-offset:-1px;z-index:3;overflow:hidden;display:flex;align-items:center">${segLabel}</div>`
+      segContent += `<div data-segment-id="${seg.id}" data-task-id="${task.id}" data-type="segment" style="position:absolute;left:0;width:${segWidthMm.toFixed(2)}mm;top:1mm;bottom:1mm;background:${segColor};outline:1px dashed rgba(255,255,255,0.6);outline-offset:-1px;z-index:3;overflow:hidden;display:flex;align-items:center">${segLabel}</div>`
     })
 
     const dayStr = formatDateISO(d)
@@ -264,7 +250,19 @@ function buildHtml({
   const contentMm = largeurMm - 20 - LABEL_COL_MM
   const dayWidths = computeDayWidths(days, contentMm, viewMode)
   const todayStr = formatDateISO(new Date())
-  const rowCtx = { segments, dependances, periodes, zones }
+  const rowCtx = { segments, periodes, zones }
+
+  // Chemins critiques : deux sources, comme dans la timeline interactive — les
+  // dépendances tâche→tâche historiques (`depends_on`) et la table étendue
+  // `planning_dependances` (qui peut impliquer des segments). Fusionnées ici pour
+  // que le script de rendu des flèches n'ait qu'une seule liste à parcourir.
+  const legacyDeps = tasks
+    .filter(t => t.depends_on != null)
+    .map(t => ({ source_tache_id: t.depends_on, cible_tache_id: t.id }))
+  const allDeps = [...legacyDeps, ...dependances]
+  // Échappe "</" pour ne pas fermer prématurément le <script> hôte si un champ
+  // texte venait à contenir cette séquence.
+  const depsJson = JSON.stringify(allDeps).replace(/</g, '\\u003c')
 
   const logoUrl = window.location.origin + '/Logo_JGA_Archi.jpg'
   const nomAffaire  = affaire?.nom ?? ''
@@ -320,7 +318,7 @@ function buildHtml({
   .header-sub { font-size: 7.5pt; color: #5E5854; line-height: 1.6; }
   .header-period { font-size: 7.5pt; color: #E8602C; font-weight: bold; margin-top: 1mm; }
 
-  .gantt-wrap { width: 100%; transform-origin: top left; border: 1px solid #1F1B17; }
+  .gantt-wrap { position: relative; width: 100%; transform-origin: top left; border: 1px solid #1F1B17; }
   .gantt-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
   .gantt-table thead tr:first-child th:first-child { border-top: none; border-left: none; }
   .gantt-table thead tr:first-child th:last-child  { border-top: none; border-right: none; }
@@ -359,7 +357,7 @@ function buildHtml({
 </div>
 
 <div class="gantt-wrap" id="gw">
-  <table class="gantt-table">
+  <table class="gantt-table" id="gantt-table">
     <colgroup>
       <col class="col-label">
       ${days.map((_, i) => `<col style="width:${dayWidths[i].toFixed(2)}mm">`).join('')}
@@ -384,7 +382,14 @@ function buildHtml({
     </thead>
     <tbody>${lotsRows}</tbody>
   </table>
+
+  <!-- Overlay SVG des flèches de chemin critique — positionné/dimensionné en JS
+       une fois le tableau rendu (cf. window.onload), exactement comme dans la
+       timeline interactive (mêmes courbes de Bézier, mêmes marqueurs). -->
+  <svg id="arrows-svg" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;overflow:visible"></svg>
 </div>
+
+<script id="deps-data" type="application/json">${depsJson}</script>
 
 <div class="legend">
   <span class="leg-title">Légende</span>
@@ -409,8 +414,11 @@ function buildHtml({
     Période bloquée
   </div>
   <div class="leg-item">
-    <div style="width:0;height:0;border-top:1.4mm solid transparent;border-bottom:1.4mm solid transparent;border-left:1.8mm solid #E8602C"></div>
-    Dépendance
+    <svg width="10mm" height="4mm" viewBox="0 0 38 16" style="overflow:visible">
+      <path d="M 0 8 C 15 8, 23 8, 34 8" fill="none" stroke="#e4702a" stroke-width="2" stroke-dasharray="6 3" stroke-opacity="0.85" />
+      <path d="M34,8 L28,4 L28,12 z" fill="#e4702a" />
+    </svg>
+    Dépendance (chemin critique)
   </div>
   <div style="border-left:0.5px solid #ddd;height:8px;margin:0 2mm"></div>
   <div class="leg-item">
@@ -426,6 +434,89 @@ function buildHtml({
 
 <script>
 window.onload = function() {
+  // ── 1. Flèches de chemin critique ──────────────────────────────────────────
+  // Mesurées dans le repère naturel (non mis à l'échelle) du tableau : la mise
+  // à l'échelle qui suit (étape 2) s'applique à #gw dans son ensemble (tableau
+  // + overlay SVG), donc les tracés restent alignés une fois transform:scale()
+  // appliqué — pas besoin de recalculer après coup.
+  var table = document.getElementById('gantt-table');
+  var svg = document.getElementById('arrows-svg');
+  var tableRect = table.getBoundingClientRect();
+
+  var geoMap = {};
+  var barEls = document.querySelectorAll('[data-task-id], [data-segment-id]');
+  for (var i = 0; i < barEls.length; i++) {
+    var el = barEls[i];
+    var rect = el.getBoundingClientRect();
+    var key = el.dataset.segmentId ? el.dataset.segmentId : ('task:' + el.dataset.taskId);
+    // Ne garder que la barre principale (type=task) pour les clés tâche —
+    // les segments ont leur propre clé (segmentId), donc pas de collision.
+    if (!geoMap[key] || el.dataset.type === 'task') {
+      geoMap[key] = {
+        left: rect.left - tableRect.left,
+        right: rect.right - tableRect.left,
+        centerY: rect.top - tableRect.top + rect.height / 2,
+      };
+    }
+  }
+
+  var depsDataEl = document.getElementById('deps-data');
+  var deps = depsDataEl ? JSON.parse(depsDataEl.textContent) : [];
+  var NS = 'http://www.w3.org/2000/svg';
+
+  var defs = document.createElementNS(NS, 'defs');
+  var marker = document.createElementNS(NS, 'marker');
+  marker.setAttribute('id', 'pdf-dep-arrow');
+  marker.setAttribute('markerWidth', '8');
+  marker.setAttribute('markerHeight', '8');
+  marker.setAttribute('refX', '7');
+  marker.setAttribute('refY', '4');
+  marker.setAttribute('orient', 'auto');
+  var markerPath = document.createElementNS(NS, 'path');
+  markerPath.setAttribute('d', 'M0,0 L0,8 L8,4 z');
+  markerPath.setAttribute('fill', '#e4702a');
+  marker.appendChild(markerPath);
+  defs.appendChild(marker);
+  svg.appendChild(defs);
+
+  for (var j = 0; j < deps.length; j++) {
+    var dep = deps[j];
+    var srcKey = dep.source_segment_id ? dep.source_segment_id : ('task:' + dep.source_tache_id);
+    var tgtKey = dep.cible_segment_id ? dep.cible_segment_id : ('task:' + dep.cible_tache_id);
+    var src = geoMap[srcKey];
+    var tgt = geoMap[tgtKey];
+    if (!src || !tgt) continue;
+
+    var x1 = src.right, y1 = src.centerY;
+    var x2 = tgt.left, y2 = tgt.centerY;
+    var span = Math.abs(x2 - x1);
+    var ctrl = Math.max(50, span * 0.45);
+    var d = 'M ' + x1 + ' ' + y1 + ' C ' + (x1 + ctrl) + ' ' + y1 + ', ' + (x2 - ctrl) + ' ' + y2 + ', ' + x2 + ' ' + y2;
+
+    var path = document.createElementNS(NS, 'path');
+    path.setAttribute('d', d);
+    path.setAttribute('fill', 'none');
+    path.setAttribute('stroke', '#e4702a');
+    path.setAttribute('stroke-width', '2');
+    path.setAttribute('stroke-dasharray', '6 3');
+    path.setAttribute('stroke-opacity', '0.85');
+    path.setAttribute('marker-end', 'url(#pdf-dep-arrow)');
+    svg.appendChild(path);
+
+    var circle = document.createElementNS(NS, 'circle');
+    circle.setAttribute('cx', x1);
+    circle.setAttribute('cy', y1);
+    circle.setAttribute('r', '3.5');
+    circle.setAttribute('fill', '#e4702a');
+    circle.setAttribute('fill-opacity', '0.85');
+    svg.appendChild(circle);
+  }
+
+  // Hauteur du SVG alignée sur celle du tableau, pour ne couper aucune flèche.
+  svg.setAttribute('height', table.offsetHeight);
+  svg.style.height = table.offsetHeight + 'px';
+
+  // ── 2. Mise à l'échelle pour tenir sur une page + impression ────────────────
   var gw = document.getElementById('gw');
   var pw = document.body.clientWidth;
   var tw = gw.scrollWidth;

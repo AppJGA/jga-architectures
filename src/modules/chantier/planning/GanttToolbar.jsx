@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import {
   Plus, Pencil, GitBranch, Flag, Ban, SlidersHorizontal,
   Download, ChevronDown, FileText, TableProperties,
@@ -19,8 +20,15 @@ export function GanttToolbar({
   showOptionsPanel, onToggleOptionsPanel,
   drawMode = false, onSetDrawMode,
 }) {
-  const [showExportMenu, setShowExportMenu] = useState(false)
-  const [showCreateMenu, setShowCreateMenu] = useState(false)
+  // Dropdowns rendus via portail (document.body) : la toolbar a overflowX: 'auto',
+  // ce qui force implicitement overflowY à cliper (règle CSS : dès qu'un axe
+  // overflow n'est pas 'visible', l'autre, s'il l'était, devient 'auto') — un
+  // dropdown positionné en absolute à l'intérieur se retrouvait donc rogné/caché
+  // dès qu'il dépassait les 44px de hauteur de la toolbar.
+  const [createMenuPos, setCreateMenuPos] = useState(null)
+  const [exportMenuPos, setExportMenuPos] = useState(null)
+  const createGroupRef = useRef(null)
+  const exportBtnRef = useRef(null)
 
   return (
     <header style={{
@@ -32,7 +40,7 @@ export function GanttToolbar({
 
       {/* Actions principales */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-        <div style={{ display: 'flex', flexShrink: 0 }}>
+        <div ref={createGroupRef} style={{ display: 'flex', flexShrink: 0 }}>
           {/* Bouton principal — hors mode dessin : ouvre la modale. En mode
               dessin : le reclic désactive le mode (le dessin se fait dans
               la timeline, ce bouton ne sert alors qu'à en sortir). */}
@@ -50,69 +58,22 @@ export function GanttToolbar({
           </button>
 
           {/* Flèche pour choisir le mode de création */}
-          <div style={{ position: 'relative' }}>
-            <button
-              onClick={(e) => { e.stopPropagation(); setShowCreateMenu((v) => !v) }}
-              style={{
-                width: 26, height: '100%', border: 'none',
-                borderLeft: '0.5px solid rgba(255,255,255,0.25)',
-                background: drawMode ? '#C44A1B' : '#1F6B3A', color: 'white', cursor: 'pointer',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-              }}
-            >
-              <ChevronDown size={11} />
-            </button>
-
-            {showCreateMenu && (
-              <>
-                <div
-                  onClick={() => setShowCreateMenu(false)}
-                  style={{ position: 'fixed', inset: 0, zIndex: 40 }}
-                />
-                <div style={{
-                  position: 'absolute', top: '100%', left: 0, marginTop: 4,
-                  background: 'white', border: '0.5px solid #E9E2D6', zIndex: 50,
-                  minWidth: 210, boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
-                }}>
-                  <button
-                    onClick={() => { onSetDrawMode(false); setShowCreateMenu(false); onAddTask() }}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 8, width: '100%',
-                      padding: '10px 14px', fontSize: 12, border: 'none',
-                      background: 'transparent', textAlign: 'left', cursor: 'pointer',
-                    }}
-                    onMouseEnter={e => { e.currentTarget.style.background = '#FAF7F2' }}
-                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
-                  >
-                    <Plus size={13} color="#1F1B17" />
-                    <div>
-                      <div style={{ fontWeight: 500, color: '#1F1B17' }}>Via la modale</div>
-                      <div style={{ fontSize: 10, color: '#9C9591' }}>Remplir le formulaire</div>
-                    </div>
-                  </button>
-
-                  <div style={{ height: '0.5px', background: '#E9E2D6' }} />
-
-                  <button
-                    onClick={() => { onSetDrawMode(true); setShowCreateMenu(false) }}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 8, width: '100%',
-                      padding: '10px 14px', fontSize: 12, border: 'none',
-                      background: 'transparent', textAlign: 'left', cursor: 'pointer',
-                    }}
-                    onMouseEnter={e => { e.currentTarget.style.background = '#FAF7F2' }}
-                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
-                  >
-                    <Pencil size={13} color="#E8602C" />
-                    <div>
-                      <div style={{ fontWeight: 500, color: '#1F1B17' }}>Dessiner dans le planning</div>
-                      <div style={{ fontSize: 10, color: '#9C9591' }}>Cliquer-glisser sur une ligne</div>
-                    </div>
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              if (createMenuPos) { setCreateMenuPos(null); return }
+              const rect = createGroupRef.current.getBoundingClientRect()
+              setCreateMenuPos({ top: rect.bottom + 4, left: rect.left })
+            }}
+            style={{
+              width: 26, height: '100%', border: 'none',
+              borderLeft: '0.5px solid rgba(255,255,255,0.25)',
+              background: drawMode ? '#C44A1B' : '#1F6B3A', color: 'white', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+            }}
+          >
+            <ChevronDown size={11} />
+          </button>
         </div>
         <button
           onClick={onOpenPeriodesBloquees}
@@ -130,68 +91,25 @@ export function GanttToolbar({
           {periodes.length > 0 ? `${periodes.length} période(s)` : 'Périodes bloquées'}
         </button>
 
-        <div style={{ position: 'relative', flexShrink: 0 }}>
-          <button
-            onClick={() => setShowExportMenu((v) => !v)}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 6, padding: '5px 12px',
-              fontSize: 12, fontWeight: 500,
-              border: '0.5px solid rgba(0,0,0,0.15)',
-              background: 'transparent', color: '#5E5854', cursor: 'pointer',
-            }}
-          >
-            <Download size={13} />
-            Exporter
-            <ChevronDown size={11} />
-          </button>
-
-          {showExportMenu && (
-            <>
-              {/* Overlay pour fermer le menu */}
-              <div
-                onClick={() => setShowExportMenu(false)}
-                style={{ position: 'fixed', inset: 0, zIndex: 40 }}
-              />
-              <div style={{
-                position: 'absolute', top: '100%', left: 0, marginTop: 4,
-                background: 'white', border: '0.5px solid #E9E2D6', zIndex: 50,
-                minWidth: 160, boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
-              }}>
-                <button
-                  onClick={() => { setShowExportMenu(false); onExportPdf() }}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 8, width: '100%',
-                    padding: '10px 14px', fontSize: 12, border: 'none',
-                    background: 'transparent', textAlign: 'left', cursor: 'pointer',
-                    color: '#1F1B17',
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.background = '#FAF7F2' }}
-                  onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
-                >
-                  <FileText size={13} color="#E8602C" />
-                  Exporter en PDF
-                </button>
-
-                <div style={{ height: '0.5px', background: '#E9E2D6' }} />
-
-                <button
-                  onClick={() => { setShowExportMenu(false); onExportExcel() }}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 8, width: '100%',
-                    padding: '10px 14px', fontSize: 12, border: 'none',
-                    background: 'transparent', textAlign: 'left', cursor: 'pointer',
-                    color: '#1F1B17',
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.background = '#FAF7F2' }}
-                  onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
-                >
-                  <TableProperties size={13} color="#2A8A4E" />
-                  Exporter en Excel
-                </button>
-              </div>
-            </>
-          )}
-        </div>
+        <button
+          ref={exportBtnRef}
+          onClick={() => {
+            if (exportMenuPos) { setExportMenuPos(null); return }
+            const rect = exportBtnRef.current.getBoundingClientRect()
+            setExportMenuPos({ top: rect.bottom + 4, left: rect.left })
+          }}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 6, padding: '5px 12px',
+            fontSize: 12, fontWeight: 500,
+            border: '0.5px solid rgba(0,0,0,0.15)',
+            background: 'transparent', color: '#5E5854', cursor: 'pointer',
+            flexShrink: 0,
+          }}
+        >
+          <Download size={13} />
+          Exporter
+          <ChevronDown size={11} />
+        </button>
       </div>
 
       <div style={SEPARATOR} />
@@ -234,6 +152,104 @@ export function GanttToolbar({
         <SlidersHorizontal size={13} strokeWidth={1.25} />
         Affichage
       </button>
+
+      {createMenuPos && createPortal(
+        <>
+          <div
+            onClick={() => setCreateMenuPos(null)}
+            style={{ position: 'fixed', inset: 0, zIndex: 998 }}
+          />
+          <div style={{
+            position: 'fixed', top: createMenuPos.top, left: createMenuPos.left,
+            background: 'white', border: '0.5px solid #E9E2D6', zIndex: 999,
+            minWidth: 210, boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+          }}>
+            <button
+              onClick={() => { onSetDrawMode(false); setCreateMenuPos(null); onAddTask() }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+                padding: '10px 14px', fontSize: 12, border: 'none',
+                background: 'transparent', textAlign: 'left', cursor: 'pointer',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = '#FAF7F2' }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
+            >
+              <Plus size={13} color="#1F1B17" />
+              <div>
+                <div style={{ fontWeight: 500, color: '#1F1B17' }}>Via la modale</div>
+                <div style={{ fontSize: 10, color: '#9C9591' }}>Remplir le formulaire</div>
+              </div>
+            </button>
+
+            <div style={{ height: '0.5px', background: '#E9E2D6' }} />
+
+            <button
+              onClick={() => { onSetDrawMode(true); setCreateMenuPos(null) }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+                padding: '10px 14px', fontSize: 12, border: 'none',
+                background: 'transparent', textAlign: 'left', cursor: 'pointer',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = '#FAF7F2' }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
+            >
+              <Pencil size={13} color="#E8602C" />
+              <div>
+                <div style={{ fontWeight: 500, color: '#1F1B17' }}>Dessiner dans le planning</div>
+                <div style={{ fontSize: 10, color: '#9C9591' }}>Cliquer-glisser sur une ligne</div>
+              </div>
+            </button>
+          </div>
+        </>,
+        document.body
+      )}
+
+      {exportMenuPos && createPortal(
+        <>
+          <div
+            onClick={() => setExportMenuPos(null)}
+            style={{ position: 'fixed', inset: 0, zIndex: 998 }}
+          />
+          <div style={{
+            position: 'fixed', top: exportMenuPos.top, left: exportMenuPos.left,
+            background: 'white', border: '0.5px solid #E9E2D6', zIndex: 999,
+            minWidth: 160, boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+          }}>
+            <button
+              onClick={() => { setExportMenuPos(null); onExportPdf() }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+                padding: '10px 14px', fontSize: 12, border: 'none',
+                background: 'transparent', textAlign: 'left', cursor: 'pointer',
+                color: '#1F1B17',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = '#FAF7F2' }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
+            >
+              <FileText size={13} color="#E8602C" />
+              Exporter en PDF
+            </button>
+
+            <div style={{ height: '0.5px', background: '#E9E2D6' }} />
+
+            <button
+              onClick={() => { setExportMenuPos(null); onExportExcel() }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+                padding: '10px 14px', fontSize: 12, border: 'none',
+                background: 'transparent', textAlign: 'left', cursor: 'pointer',
+                color: '#1F1B17',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = '#FAF7F2' }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
+            >
+              <TableProperties size={13} color="#2A8A4E" />
+              Exporter en Excel
+            </button>
+          </div>
+        </>,
+        document.body
+      )}
     </header>
   )
 }

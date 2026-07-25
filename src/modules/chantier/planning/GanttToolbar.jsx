@@ -40,7 +40,7 @@ export function GanttToolbar({
 
       {/* Actions principales */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-        <div ref={createGroupRef} style={{ display: 'flex', flexShrink: 0 }}>
+        <div ref={createGroupRef} style={{ display: 'flex', alignItems: 'stretch', flexShrink: 0 }}>
           {/* Bouton principal — hors mode dessin : ouvre la modale. En mode
               dessin : le reclic désactive le mode (le dessin se fait dans
               la timeline, ce bouton ne sert alors qu'à en sortir). */}
@@ -66,7 +66,7 @@ export function GanttToolbar({
               setCreateMenuPos({ top: rect.bottom + 4, left: rect.left })
             }}
             style={{
-              width: 26, height: '100%', border: 'none',
+              width: 26, border: 'none',
               borderLeft: '0.5px solid rgba(255,255,255,0.25)',
               background: drawMode ? '#C44A1B' : '#1F6B3A', color: 'white', cursor: 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,

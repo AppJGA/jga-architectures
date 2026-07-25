@@ -39,24 +39,25 @@ export function GanttToolbar({
           <button
             onClick={() => { if (drawMode) onSetDrawMode(false); else onAddTask() }}
             style={{
-              display: 'flex', alignItems: 'center', gap: 6, padding: '5px 12px',
+              display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px',
               fontSize: 12, fontWeight: 500, border: 'none',
-              background: drawMode ? '#E8602C' : '#1F1B17', color: 'white', cursor: 'pointer',
+              background: drawMode ? '#E8602C' : '#2A8A4E', color: 'white', cursor: 'pointer',
+              whiteSpace: 'nowrap',
             }}
           >
             {drawMode ? <Pencil size={13} /> : <Plus size={13} />}
-            {drawMode ? 'Dessiner…' : 'Tâche'}
+            {drawMode ? 'Dessiner…' : 'Nouvelle tâche'}
           </button>
 
           {/* Flèche pour choisir le mode de création */}
           <div style={{ position: 'relative' }}>
             <button
-              onClick={() => setShowCreateMenu((v) => !v)}
+              onClick={(e) => { e.stopPropagation(); setShowCreateMenu((v) => !v) }}
               style={{
-                width: 24, height: '100%', border: 'none',
-                borderLeft: '0.5px solid rgba(255,255,255,0.3)',
-                background: drawMode ? '#C44A1B' : '#3D3935', color: 'white', cursor: 'pointer',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                width: 26, height: '100%', border: 'none',
+                borderLeft: '0.5px solid rgba(255,255,255,0.25)',
+                background: drawMode ? '#C44A1B' : '#1F6B3A', color: 'white', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
               }}
             >
               <ChevronDown size={11} />

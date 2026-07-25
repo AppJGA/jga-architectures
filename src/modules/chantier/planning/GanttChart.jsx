@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
-import { Trash2 } from 'lucide-react'
+import { Trash2, X, ZoomIn, ZoomOut, Calendar, Eye, Layers, Palette } from 'lucide-react'
 import * as XLSX from 'xlsx-js-style'
 import { parseDate, formatDateISO, applyLag, computeLag, addWorkingDays } from './types'
 import { supabase } from '../../../core/supabase/client'
@@ -248,6 +248,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
   const [lastUsedLotId, setLastUsedLotId] = useState(null)
   const [deletingTask, setDeletingTask] = useState(null)
   const [dragOverTaskId, setDragOverTaskId] = useState(null)
+  const [showOptionsPanel, setShowOptionsPanel] = useState(false)
   const savedScrollRef = useRef(0)
 
   const [colorMode, setColorMode] = useState(
@@ -1124,10 +1125,28 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
     XLSX.writeFile(wb, `Planning_${nomAffaire}_${date}.xlsx`)
   }
 
-  // ── Zoom ──────────────────────────────────────────────────────────────────────
-  const handleZoomIn = () => setDayWidth((w) => Math.min(DAY_WIDTH_MAX, w + 5))
-  const handleZoomOut = () => setDayWidth((w) => Math.max(DAY_WIDTH_MIN, w - 5))
-  const handleResetDayWidth = () => setDayWidth(DEFAULT_DAY_WIDTH)
+  // ── Zoom (panneau d'options) — un seul contrôle +/- dont l'effet dépend de la
+  // vue active : dayWidth en vue jour, zoomLevel en vue semaine/mois ────────────
+  const handleZoomOut = () => {
+    if (viewMode === 'day') setDayWidth((w) => Math.max(DAY_WIDTH_MIN, w - 2))
+    else setZoomLevel((z) => Math.max(ZOOM_LEVEL_MIN, Math.round((z - 0.1) * 100) / 100))
+  }
+  const handleZoomIn = () => {
+    if (viewMode === 'day') setDayWidth((w) => Math.min(DAY_WIDTH_MAX, w + 2))
+    else setZoomLevel((z) => Math.min(ZOOM_LEVEL_MAX, Math.round((z + 0.1) * 100) / 100))
+  }
+  const handleResetZoom = () => {
+    if (viewMode === 'day') setDayWidth(DEFAULT_DAY_WIDTH)
+    else setZoomLevel(1)
+  }
+  const handleZoomSeek = (ratio) => {
+    const clamped = Math.max(0, Math.min(1, ratio))
+    if (viewMode === 'day') {
+      setDayWidth(Math.round(DAY_WIDTH_MIN + clamped * (DAY_WIDTH_MAX - DAY_WIDTH_MIN)))
+    } else {
+      setZoomLevel(Math.round((ZOOM_LEVEL_MIN + clamped * (ZOOM_LEVEL_MAX - ZOOM_LEVEL_MIN)) * 100) / 100)
+    }
+  }
 
   // ── Ouverture/fermeture de la modale tâche — préserve le scroll horizontal ─────
   const handleOpenTaskModal = useCallback((task, mode, defaultDebutOverride) => {
@@ -1191,33 +1210,16 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
     }}>
       <div data-print="hidden">
         <GanttToolbar
-          onZoomIn={handleZoomIn}
-          onZoomOut={handleZoomOut}
-          onResetDayWidth={handleResetDayWidth}
-          onOpenLots={() => setShowLotsModal(true)}
+          onAddTask={() => handleOpenTaskModal(null, 'create', formatDateISO(getNextAvailableDate(tasks)))}
+          onOpenPeriodesBloquees={() => setShowPeriodesModal(true)}
+          periodes={periodes}
           onExportPdf={() => setShowExportModal(true)}
           onExportExcel={handleExportExcel}
-          onAddTask={() => handleOpenTaskModal(null, 'create', formatDateISO(getNextAvailableDate(tasks)))}
           onToggleConnections={() => setShowConnections((v) => !v)}
           showConnections={showConnections}
           onOpenJalons={() => setShowJalonsModal(true)}
-          dayWidth={dayWidth}
-          dayWidthMin={DAY_WIDTH_MIN}
-          dayWidthMax={DAY_WIDTH_MAX}
-          colorMode={colorMode}
-          onColorModeChange={setColorMode}
-          onOpenZones={() => setShowZonesModal(true)}
-          zones={zones}
-          groupMode={groupMode}
-          onGroupModeChange={setGroupMode}
-          viewMode={viewMode}
-          onViewModeChange={setViewMode}
-          zoomLevel={zoomLevel}
-          onZoomLevelChange={setZoomLevel}
-          zoomLevelMin={ZOOM_LEVEL_MIN}
-          zoomLevelMax={ZOOM_LEVEL_MAX}
-          periodes={periodes}
-          onOpenPeriodesBloquees={() => setShowPeriodesModal(true)}
+          showOptionsPanel={showOptionsPanel}
+          onToggleOptionsPanel={() => setShowOptionsPanel((v) => !v)}
         />
       </div>
 
@@ -1300,6 +1302,252 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
             {viewMode === 'day' ? `${dayWidth} px/j` : `${Math.round(zoomLevel * 100)}%`}
           </div>
         )}
+
+        {/* Panneau latéral d'options — glisse depuis la droite par-dessus la
+            timeline (le conteneur #gantt-print-root est déjà position: relative) */}
+        <div style={{
+          position: 'absolute', top: 0, right: 0, bottom: 0, width: 280,
+          backgroundColor: 'white',
+          borderLeft: '0.5px solid #E9E2D6',
+          boxShadow: '-4px 0 16px rgba(0,0,0,0.08)',
+          zIndex: 60,
+          transform: showOptionsPanel ? 'translateX(0)' : 'translateX(100%)',
+          transition: 'transform 0.25s ease',
+          display: 'flex', flexDirection: 'column', overflow: 'hidden',
+        }}>
+          {/* En-tête du panneau */}
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '12px 16px', borderBottom: '0.5px solid #E9E2D6', flexShrink: 0,
+          }}>
+            <span style={{ fontSize: 13, fontWeight: 500, color: '#1F1B17' }}>
+              Options d'affichage
+            </span>
+            <button
+              onClick={() => setShowOptionsPanel(false)}
+              style={{
+                width: 24, height: 24, border: 'none', background: 'transparent', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9C9591',
+              }}
+            >
+              <X size={14} />
+            </button>
+          </div>
+
+          {/* Contenu scrollable */}
+          <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
+
+            {/* ── Granularité ── */}
+            <div style={{ marginBottom: 24 }}>
+              <p style={{
+                fontSize: 10, fontWeight: 500, color: '#9C9591',
+                textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10,
+              }}>
+                Granularité
+              </p>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12 }}>
+                <Calendar size={13} color="#9C9591" strokeWidth={1.25} />
+                <div style={{ display: 'flex', border: '0.5px solid rgba(0,0,0,0.15)', overflow: 'hidden', flex: 1 }}>
+                  {[
+                    { value: 'day', label: 'Jours' },
+                    { value: 'week', label: 'Semaines' },
+                    { value: 'month', label: 'Mois' },
+                  ].map((opt, idx) => (
+                    <button
+                      key={opt.value}
+                      onClick={() => setViewMode(opt.value)}
+                      style={{
+                        flex: 1, padding: '7px 0', fontSize: 12,
+                        border: 'none',
+                        borderRight: idx < 2 ? '0.5px solid rgba(0,0,0,0.15)' : 'none',
+                        background: viewMode === opt.value ? '#E8602C' : 'transparent',
+                        color: viewMode === opt.value ? 'white' : '#5E5854',
+                        cursor: 'pointer',
+                        fontWeight: viewMode === opt.value ? 500 : 400,
+                      }}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Zoom */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <button
+                  onClick={handleZoomOut}
+                  style={{
+                    width: 28, height: 28, border: '0.5px solid rgba(0,0,0,0.15)',
+                    background: 'transparent', cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                  }}
+                >
+                  <ZoomOut size={13} />
+                </button>
+
+                <div
+                  style={{ flex: 1, height: 4, background: '#E9E2D6', borderRadius: 2, position: 'relative', cursor: 'pointer' }}
+                  onClick={(e) => {
+                    const rect = e.currentTarget.getBoundingClientRect()
+                    handleZoomSeek((e.clientX - rect.left) / rect.width)
+                  }}
+                >
+                  <div style={{
+                    position: 'absolute',
+                    left: viewMode === 'day'
+                      ? `${(dayWidth - DAY_WIDTH_MIN) / (DAY_WIDTH_MAX - DAY_WIDTH_MIN) * 100}%`
+                      : `${(zoomLevel - ZOOM_LEVEL_MIN) / (ZOOM_LEVEL_MAX - ZOOM_LEVEL_MIN) * 100}%`,
+                    top: '50%', transform: 'translate(-50%, -50%)',
+                    width: 14, height: 14, borderRadius: '50%',
+                    background: '#E8602C', border: '2px solid white',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                  }} />
+                </div>
+
+                <button
+                  onClick={handleZoomIn}
+                  style={{
+                    width: 28, height: 28, border: '0.5px solid rgba(0,0,0,0.15)',
+                    background: 'transparent', cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                  }}
+                >
+                  <ZoomIn size={13} />
+                </button>
+
+                <span
+                  onDoubleClick={handleResetZoom}
+                  title="Double-clic pour réinitialiser"
+                  style={{
+                    fontSize: 10, color: '#9C9591', minWidth: 32, textAlign: 'center',
+                    cursor: 'pointer', fontFamily: "'JetBrains Mono', monospace",
+                  }}
+                >
+                  {viewMode === 'day' ? `${dayWidth}px` : `${Math.round(zoomLevel * 100)}%`}
+                </span>
+              </div>
+            </div>
+
+            <div style={{ height: '0.5px', background: '#E9E2D6', marginBottom: 24 }} />
+
+            {/* ── Couleurs des barres ── */}
+            <div style={{ marginBottom: 24 }}>
+              <p style={{
+                fontSize: 10, fontWeight: 500, color: '#9C9591',
+                textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10,
+              }}>
+                Couleurs des barres
+              </p>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                <Eye size={14} color="#9C9591" strokeWidth={1.25} />
+                <span style={{
+                  fontSize: 12,
+                  color: colorMode === 'lot' ? '#1F1B17' : '#9C9591',
+                  fontWeight: colorMode === 'lot' ? 500 : 400,
+                }}>
+                  Par lot
+                </span>
+
+                <div
+                  onClick={() => setColorMode(colorMode === 'lot' ? 'zone' : 'lot')}
+                  style={{
+                    width: 40, height: 22, borderRadius: 11,
+                    background: colorMode === 'zone' ? '#E8602C' : '#C9C4C0',
+                    position: 'relative', cursor: 'pointer',
+                    transition: 'background 0.2s', flexShrink: 0,
+                  }}
+                >
+                  <div style={{
+                    position: 'absolute', top: 3, left: colorMode === 'zone' ? 21 : 3,
+                    width: 16, height: 16, borderRadius: '50%', background: 'white',
+                    transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                  }} />
+                </div>
+
+                <span style={{
+                  fontSize: 12,
+                  color: colorMode === 'zone' ? '#E8602C' : '#9C9591',
+                  fontWeight: colorMode === 'zone' ? 500 : 400,
+                }}>
+                  Par zone
+                </span>
+              </div>
+
+              {colorMode === 'lot' && (
+                <button
+                  onClick={() => { setShowLotsModal(true); setShowOptionsPanel(false) }}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 6, width: '100%',
+                    padding: '8px 12px', fontSize: 12,
+                    border: '0.5px solid rgba(0,0,0,0.12)',
+                    background: '#FAFAF9', cursor: 'pointer', color: '#5E5854',
+                  }}
+                >
+                  <Palette size={13} strokeWidth={1.25} />
+                  Gérer les couleurs des lots
+                </button>
+              )}
+              {colorMode === 'zone' && (
+                <button
+                  onClick={() => { setShowZonesModal(true); setShowOptionsPanel(false) }}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 6, width: '100%',
+                    padding: '8px 12px', fontSize: 12,
+                    border: '0.5px solid rgba(0,0,0,0.12)',
+                    background: '#FAFAF9', cursor: 'pointer', color: '#5E5854',
+                  }}
+                >
+                  <Palette size={13} strokeWidth={1.25} />
+                  Gérer les zones
+                </button>
+              )}
+            </div>
+
+            {zones.length > 0 && (
+              <>
+                <div style={{ height: '0.5px', background: '#E9E2D6', marginBottom: 24 }} />
+
+                {/* ── Groupement des tâches ── */}
+                <div style={{ marginBottom: 24 }}>
+                  <p style={{
+                    fontSize: 10, fontWeight: 500, color: '#9C9591',
+                    textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10,
+                  }}>
+                    Groupement des tâches
+                  </p>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Layers size={13} color="#9C9591" strokeWidth={1.25} />
+                    <div style={{ display: 'flex', border: '0.5px solid rgba(0,0,0,0.15)', overflow: 'hidden', flex: 1 }}>
+                      {[
+                        { value: 'lot', label: 'Par lot' },
+                        { value: 'zone', label: 'Par zone' },
+                      ].map((opt, idx) => (
+                        <button
+                          key={opt.value}
+                          onClick={() => setGroupMode(opt.value)}
+                          style={{
+                            flex: 1, padding: '7px 0', fontSize: 12,
+                            border: 'none',
+                            borderRight: idx === 0 ? '0.5px solid rgba(0,0,0,0.15)' : 'none',
+                            background: groupMode === opt.value ? '#1F1B17' : 'transparent',
+                            color: groupMode === opt.value ? 'white' : '#5E5854',
+                            cursor: 'pointer',
+                            fontWeight: groupMode === opt.value ? 500 : 400,
+                          }}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
       </div>
 
       <div data-print="hidden" style={{

@@ -186,6 +186,40 @@ function getTaskGeometry(task, geo) {
   return computeGeometry(parseDate(task.debut), task.duree, geo)
 }
 
+// Position/largeur d'une période bloquée. En vue jour, `xAtDate` est déjà précise
+// au jour près. En semaine/mois, les barres de tâches sont alignées sur des
+// colonnes entières (xAtDateWeekSnapped / mois) — une période bloquée doit suivre
+// la même convention, sinon elle se rend comme une bande continue plus étroite
+// que sa colonne et désalignée de la grille semaine/mois sous-jacente.
+function periodeGeometry(dateDebut, dateFinInclusive, geo) {
+  const WEEK_MS = 7 * 24 * 3600 * 1000
+  if (geo.viewMode === 'week') {
+    const leftIdx = Math.floor((dateDebut.getTime() - geo.dateRef.getTime()) / WEEK_MS)
+    const rightIdx = Math.ceil((dateFinInclusive.getTime() - geo.dateRef.getTime()) / WEEK_MS)
+    return {
+      left: leftIdx * geo.weekWidth,
+      width: Math.max(geo.weekWidth, (rightIdx - leftIdx) * geo.weekWidth),
+    }
+  }
+  if (geo.viewMode === 'month') {
+    const monthIndexOf = (d) => {
+      const m0 = geo.months[0]
+      if (!m0) return 0
+      return (d.getFullYear() - m0.year) * 12 + (d.getMonth() - m0.month)
+    }
+    const leftIdx = monthIndexOf(dateDebut)
+    const finMonthIdx = monthIndexOf(dateFinInclusive)
+    // dateFinInclusive tombant pile le 1er du mois ⇒ ce mois n'est pas couvert
+    const rightIdx = dateFinInclusive.getDate() === 1 ? finMonthIdx : finMonthIdx + 1
+    return {
+      left: leftIdx * geo.monthWidth,
+      width: Math.max(geo.monthWidth, (rightIdx - leftIdx) * geo.monthWidth),
+    }
+  }
+  const left = xAtDate(dateDebut, geo.dateRef, geo.dayPositions)
+  return { left, width: Math.max(4, xAtDate(dateFinInclusive, geo.dateRef, geo.dayPositions) - left) }
+}
+
 // ── Résolution générique tâche / segment (points de connexion, flèches) ───────
 
 function sameEndpoint(a, b) {
@@ -1017,10 +1051,10 @@ export function GanttTimeline({
 
         {/* Périodes bloquées — zones hachurées */}
         {periodes.map((periode) => {
-          const left = getX(parseDate(periode.date_debut))
-          const dayAfterFin = parseDate(periode.date_fin)
-          dayAfterFin.setDate(dayAfterFin.getDate() + 1)
-          const width = Math.max(getX(dayAfterFin) - left, 4)
+          const dateDebut = parseDate(periode.date_debut)
+          const dateFinInclusive = parseDate(periode.date_fin)
+          dateFinInclusive.setDate(dateFinInclusive.getDate() + 1)
+          const { left, width } = periodeGeometry(dateDebut, dateFinInclusive, geo)
           const couleur = periode.couleur || '#B8412C'
           return (
             <div

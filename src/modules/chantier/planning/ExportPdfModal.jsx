@@ -58,6 +58,7 @@ function computeRange(tasks) {
 export function ExportPdfModal({
   open, onClose, lots = [], tasks = [], jalons = [], affaire = {},
   zones = [], colorMode = 'lot', viewMode = 'day',
+  segments = [], dependances = [], periodes = [],
 }) {
   const computed = useMemo(() => computeRange(tasks), [tasks])
 
@@ -124,6 +125,9 @@ export function ExportPdfModal({
       zones,
       colorMode: exportColorMode,
       viewMode: exportViewMode,
+      segments,
+      dependances,
+      periodes,
     })
     onClose()
   }

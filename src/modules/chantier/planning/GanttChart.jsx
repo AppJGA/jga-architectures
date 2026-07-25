@@ -1645,6 +1645,9 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
         zones={zones}
         colorMode={colorMode}
         viewMode={viewMode}
+        segments={segments}
+        dependances={dependances}
+        periodes={periodes}
       />
 
       <JalonModal

@@ -52,35 +52,98 @@ function getBarColor(task, lot, zones, colorMode) {
   return lot?.couleur ?? '#94a3b8'
 }
 
-function buildMonthHeaders(days, dayWidths) {
-  const months = []
-  days.forEach((d, i) => {
-    const label = d.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })
-    if (!months.length || months[months.length - 1].label !== label) {
-      months.push({ label, widthMm: dayWidths[i] })
-    } else {
-      months[months.length - 1].widthMm += dayWidths[i]
-    }
+function getSegColor(seg, taskColor, zones) {
+  if (seg.zone_id) {
+    const zone = zones.find(z => z.id === seg.zone_id)
+    if (zone?.couleur) return zone.couleur
+  }
+  return taskColor
+}
+
+// Regroupe des jours consécutifs par année/mois/semaine et rend un <th colspan="N">
+// par groupe — un <th> par groupe SANS colspan ne mapperait qu'à une seule colonne
+// du tableau (une par <col> du colgroup), ce qui écrase tous les groupes suivants
+// dans les premières colonnes et laisse le reste de la ligne d'en-tête vide : c'est
+// la cause du rendu « semaines entassées en début de tableau ».
+function buildYearHeaders(days) {
+  const years = []
+  days.forEach((d) => {
+    const y = d.getFullYear()
+    const last = years[years.length - 1]
+    if (last && last.year === y) last.count++
+    else years.push({ year: y, count: 1 })
   })
-  return months.map(m =>
-    `<th class="hdr-month" style="width:${m.widthMm.toFixed(2)}mm">${m.label}</th>`
+  return years.map(y =>
+    `<th class="hdr-year" colspan="${y.count}">${y.year}</th>`
   ).join('')
 }
 
-function buildWeekHeaders(days, dayWidths) {
+function buildMonthHeaders(days, includeYear) {
+  const months = []
+  days.forEach((d) => {
+    const label = includeYear
+      ? d.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })
+      : d.toLocaleDateString('fr-FR', { month: 'long' })
+    const last = months[months.length - 1]
+    if (last && last.label === label) last.count++
+    else months.push({ label, count: 1 })
+  })
+  return months.map(m =>
+    `<th class="hdr-month" colspan="${m.count}">${m.label.charAt(0).toUpperCase() + m.label.slice(1)}</th>`
+  ).join('')
+}
+
+function buildWeekHeaders(days) {
   const weeks = []
-  days.forEach((d, i) => {
+  days.forEach((d) => {
     const wn = getISOWeek(d)
     const wKey = `${d.getFullYear()}-${wn}`
-    if (!weeks.length || weeks[weeks.length - 1].key !== wKey) {
-      weeks.push({ key: wKey, wn, widthMm: dayWidths[i] })
-    } else {
-      weeks[weeks.length - 1].widthMm += dayWidths[i]
-    }
+    const last = weeks[weeks.length - 1]
+    if (last && last.key === wKey) last.count++
+    else weeks.push({ key: wKey, wn, count: 1 })
   })
   return weeks.map(w =>
-    `<th class="hdr-week" style="width:${w.widthMm.toFixed(2)}mm">S${w.wn}</th>`
+    `<th class="hdr-week" colspan="${w.count}">S${w.wn}</th>`
   ).join('')
+}
+
+function isBlockedDay(day, periodes) {
+  return periodes.some(p => {
+    if (!p.date_debut || !p.date_fin) return false
+    const debut = parseDate(p.date_debut)
+    const fin = parseDate(p.date_fin)
+    debut.setHours(0, 0, 0, 0)
+    fin.setHours(23, 59, 59, 999)
+    const d = new Date(day)
+    d.setHours(12, 0, 0, 0)
+    return d >= debut && d <= fin
+  })
+}
+
+function taskHasIncomingDependency(task, dependances) {
+  return task.depends_on != null || dependances.some(d => d.cible_tache_id === task.id)
+}
+
+function segmentHasIncomingDependency(seg, dependances) {
+  return dependances.some(d => d.cible_segment_id === seg.id)
+}
+
+const DEP_MARKER_HTML = `<div style="position:absolute;left:-1.8mm;top:50%;transform:translateY(-50%);width:0;height:0;border-top:1.4mm solid transparent;border-bottom:1.4mm solid transparent;border-left:1.8mm solid #E8602C;z-index:6;pointer-events:none"></div>`
+
+// Position + largeur (en mm) d'une barre tâche/segment, exprimées relativement à la
+// cellule <td> de son propre jour de début — cf. buildTaskRow : la barre est un enfant
+// de ce <td> positionné en left:0 et déborde vers la droite grâce à overflow:visible,
+// donc aucun décalage absolu par rapport au début de la ligne n'est nécessaire.
+function computeBarGeometry(days, dayWidths, startStr, duree) {
+  const startIdx = days.findIndex(d => formatDateISO(d) === startStr)
+  if (startIdx < 0) return null
+  const endDate = addWorkingDays(parseDate(startStr), duree)
+  const endDateStr = formatDateISO(endDate)
+  const endIdx = days.findIndex(d => formatDateISO(d) === endDateStr)
+  const actualEnd = endIdx >= 0 ? endIdx : days.length
+  let widthMm = 0
+  for (let i = startIdx; i < actualEnd && i < days.length; i++) widthMm += dayWidths[i]
+  return { startIdx, widthMm }
 }
 
 function buildDayHeaders(days, dayWidths, todayStr) {
@@ -98,19 +161,13 @@ function buildDayHeaders(days, dayWidths, todayStr) {
   }).join('')
 }
 
-function buildTaskRow(task, color, days, dayWidths, jalons, todayStr) {
+function buildTaskRow(task, color, days, dayWidths, jalons, todayStr, ctx) {
+  const { segments = [], dependances = [], periodes = [], zones = [] } = ctx ?? {}
+
   const taskStartStr = typeof task.debut === 'string' ? task.debut.split('T')[0] : formatDateISO(parseDate(task.debut))
-  const startIdx = days.findIndex(d => formatDateISO(d) === taskStartStr)
-
-  const endDate = addWorkingDays(parseDate(taskStartStr), task.duree)
-  const endDateStr = formatDateISO(endDate)
-  const endIdx = days.findIndex(d => formatDateISO(d) === endDateStr)
-
-  const actualEnd = endIdx >= 0 ? endIdx : days.length
-  let barWidthMm = 0
-  if (startIdx >= 0) {
-    for (let i = startIdx; i < actualEnd && i < days.length; i++) barWidthMm += dayWidths[i]
-  }
+  const mainGeo = computeBarGeometry(days, dayWidths, taskStartStr, task.duree)
+  const startIdx = mainGeo?.startIdx ?? -1
+  const barWidthMm = mainGeo?.widthMm ?? 0
 
   let approHtml = ''
   if (task.appro_actif && task.appro_duree > 0 && startIdx >= 0) {
@@ -127,12 +184,33 @@ function buildTaskRow(task, color, days, dayWidths, jalons, todayStr) {
     }
   }
 
+  const taskDepHtml = taskHasIncomingDependency(task, dependances) ? DEP_MARKER_HTML : ''
+
+  // Segments supplémentaires de la tâche : chacun est rendu comme sa propre barre,
+  // enfant du <td> de son propre jour de début (même technique que la barre principale
+  // et l'extension d'appro ci-dessus).
+  const segGeoms = segments
+    .filter(s => s.tache_id === task.id)
+    .map(seg => {
+      const segStartStr = typeof seg.date_debut === 'string' ? seg.date_debut.split('T')[0] : formatDateISO(parseDate(seg.date_debut))
+      const geo = computeBarGeometry(days, dayWidths, segStartStr, seg.duree_jours ?? 0)
+      return geo ? { seg, ...geo } : null
+    })
+    .filter(Boolean)
+
   const cells = days.map((d, idx) => {
     const isWE = isWeekend(d)
     const isMonthStart = d.getDate() === 1
     const isMonday = d.getDay() === 1
     const borderLeft = isMonthStart ? '1.5px solid #ccc' : isMonday ? '1px solid rgba(0,0,0,0.15)' : '0.5px solid #f0f0f0'
-    const bg = isWE ? 'rgba(0,0,0,0.03)' : 'transparent'
+    // Priorité de fond de cellule : tâche/segment (barres, au-dessus) > période bloquée > week-end > vide.
+    // Comme les barres sont des <div> opaques positionnés par-dessus, il suffit d'appliquer
+    // le hachurage sur toutes les cellules bloquées : les barres le masquent naturellement
+    // là où elles passent.
+    const isBlocked = isBlockedDay(d, periodes)
+    const bg = isBlocked
+      ? 'repeating-linear-gradient(45deg, rgba(184,65,44,0.08), rgba(184,65,44,0.08) 3px, rgba(184,65,44,0.15) 3px, rgba(184,65,44,0.15) 6px)'
+      : isWE ? 'rgba(0,0,0,0.03)' : 'transparent'
 
     let barContent = ''
     if (idx === startIdx && startIdx >= 0 && barWidthMm > 0) {
@@ -142,10 +220,20 @@ function buildTaskRow(task, color, days, dayWidths, jalons, todayStr) {
       const labelAvancement = task.avancement > 0 && task.avancement < 100
         ? `<span style="margin-left:1.5mm;font-size:5.5pt;color:#9C9591">${task.avancement}%</span>`
         : ''
-      barContent = `${approHtml}
+      barContent = `${approHtml}${taskDepHtml}
         <div style="position:absolute;left:0;width:${barWidthMm.toFixed(2)}mm;top:1mm;bottom:1mm;background:${color};z-index:4;overflow:hidden">${progressBar}</div>
         <div style="position:absolute;left:${barWidthMm.toFixed(2)}mm;padding-left:3px;top:0;bottom:0;display:flex;align-items:center;white-space:nowrap;font-size:6.5pt;color:#1F1B17;z-index:10">${task.nom}${labelAvancement}</div>`
     }
+
+    let segContent = ''
+    segGeoms.forEach(({ seg, startIdx: segStartIdx, widthMm: segWidthMm }) => {
+      if (segStartIdx !== idx || segWidthMm <= 0) return
+      const segColor = getSegColor(seg, color, zones)
+      const segDepHtml = segmentHasIncomingDependency(seg, dependances) ? DEP_MARKER_HTML : ''
+      const segLabel = seg.nom ? `<span style="margin-left:1.5mm;font-size:5.5pt;color:#1F1B17">${seg.nom}</span>` : ''
+      segContent += `${segDepHtml}
+        <div style="position:absolute;left:0;width:${segWidthMm.toFixed(2)}mm;top:1mm;bottom:1mm;background:${segColor};outline:1px dashed rgba(255,255,255,0.6);outline-offset:-1px;z-index:3;overflow:hidden;display:flex;align-items:center">${segLabel}</div>`
+    })
 
     const dayStr = formatDateISO(d)
     const jalonLines = (jalons ?? [])
@@ -155,7 +243,7 @@ function buildTaskRow(task, color, days, dayWidths, jalons, todayStr) {
       </div>`)
       .join('')
 
-    return `<td style="width:${dayWidths[idx].toFixed(2)}mm;border-bottom:0.5px solid #f0f0f0;border-left:${borderLeft};height:6mm;padding:0;overflow:visible;position:relative;background:${bg}">${barContent}${jalonLines}</td>`
+    return `<td style="width:${dayWidths[idx].toFixed(2)}mm;border-bottom:0.5px solid #f0f0f0;border-left:${borderLeft};height:6mm;padding:0;overflow:visible;position:relative;background:${bg}">${barContent}${segContent}${jalonLines}</td>`
   }).join('')
 
   return `<tr>
@@ -164,7 +252,11 @@ function buildTaskRow(task, color, days, dayWidths, jalons, todayStr) {
   </tr>`
 }
 
-function buildHtml({ tasks, lots, jalons, affaire, dateDebut, dateFin, largeurMm, hauteurMm, zones = [], colorMode = 'lot', viewMode = 'day' }) {
+function buildHtml({
+  tasks, lots, jalons, affaire, dateDebut, dateFin, largeurMm, hauteurMm,
+  zones = [], colorMode = 'lot', viewMode = 'day',
+  segments = [], dependances = [], periodes = [],
+}) {
   const dStart = parseDate(dateDebut)
   const dEnd = parseDate(dateFin)
   const days = buildDaysList(dStart, dEnd)
@@ -172,6 +264,7 @@ function buildHtml({ tasks, lots, jalons, affaire, dateDebut, dateFin, largeurMm
   const contentMm = largeurMm - 20 - LABEL_COL_MM
   const dayWidths = computeDayWidths(days, contentMm, viewMode)
   const todayStr = formatDateISO(new Date())
+  const rowCtx = { segments, dependances, periodes, zones }
 
   const logoUrl = window.location.origin + '/Logo_JGA_Archi.jpg'
   const nomAffaire  = affaire?.nom ?? ''
@@ -180,12 +273,16 @@ function buildHtml({ tasks, lots, jalons, affaire, dateDebut, dateFin, largeurMm
   const dateStr = new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })
   const periodeStr = `${dStart.toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })} → ${dEnd.toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })}`
 
-  // Granularité : la vue jour affiche les 3 niveaux d'en-tête, la vue semaine masque
-  // le détail jour, la vue mois ne garde que le niveau mois (qui inclut déjà l'année).
+  // Granularité :
+  //  - vue jour   : Mois (avec année) / Semaine / Jours — 3 niveaux
+  //  - vue semaine: Année / Mois / Semaines — 3 niveaux
+  //  - vue mois   : Année / Mois — 2 niveaux
+  const showYearRow = viewMode !== 'day'
   const showWeekRow = viewMode !== 'month'
   const showDayRow = viewMode === 'day'
-  const monthHeaders = buildMonthHeaders(days, dayWidths)
-  const weekHeaders  = showWeekRow ? buildWeekHeaders(days, dayWidths) : ''
+  const yearHeaders  = showYearRow ? buildYearHeaders(days) : ''
+  const monthHeaders = buildMonthHeaders(days, !showYearRow)
+  const weekHeaders  = showWeekRow ? buildWeekHeaders(days) : ''
   const dayHeaders   = showDayRow ? buildDayHeaders(days, dayWidths, todayStr) : ''
 
   const sortedLots = [...lots].sort((a, b) => (a.ordre ?? 0) - (b.ordre ?? 0))
@@ -198,12 +295,12 @@ function buildHtml({ tasks, lots, jalons, affaire, dateDebut, dateFin, largeurMm
         ${lot.num_lot ?? ''} – ${lot.nom}
       </td>
     </tr>`
-    lotTasks.forEach(t => { lotsRows += buildTaskRow(t, getBarColor(t, lot, zones, colorMode), days, dayWidths, jalons, todayStr) })
+    lotTasks.forEach(t => { lotsRows += buildTaskRow(t, getBarColor(t, lot, zones, colorMode), days, dayWidths, jalons, todayStr, rowCtx) })
   })
   const unassigned = tasks.filter(t => t.lot_id == null)
   if (unassigned.length > 0) {
     lotsRows += `<tr><td colspan="${1 + days.length}" style="color:#9C9591;font-weight:bold;font-size:7pt;padding:0 2mm;height:5.5mm;border-bottom:0.5px solid rgba(0,0,0,0.08)">Sans lot</td></tr>`
-    unassigned.forEach(t => { lotsRows += buildTaskRow(t, getBarColor(t, null, zones, colorMode), days, dayWidths, jalons, todayStr) })
+    unassigned.forEach(t => { lotsRows += buildTaskRow(t, getBarColor(t, null, zones, colorMode), days, dayWidths, jalons, todayStr, rowCtx) })
   }
 
   return `<!DOCTYPE html>
@@ -232,6 +329,7 @@ function buildHtml({ tasks, lots, jalons, affaire, dateDebut, dateFin, largeurMm
 
   .col-label { width: ${LABEL_COL_MM}mm; min-width: ${LABEL_COL_MM}mm; }
 
+  .hdr-year  { background: #F5F2F0; font-size: 7pt; font-weight: bold; color: #1F1B17; text-align: center; border: 0.5px solid #ddd; padding: 1mm 0; }
   .hdr-month { background: #FAF7F2; font-size: 6.5pt; font-weight: bold; color: #E8602C; text-align: center; border: 0.5px solid #ddd; padding: 1mm 0; }
   .hdr-week  { background: #FAFAF9; font-size: 5.5pt; color: #9C9591; text-align: center; border: 0.5px solid #ddd; padding: 0.6mm 0; }
   .hdr-day   { font-size: 5pt; text-align: center; border-bottom: 0.5px solid #ddd; padding: 0.5mm 0; }
@@ -267,8 +365,12 @@ function buildHtml({ tasks, lots, jalons, affaire, dateDebut, dateFin, largeurMm
       ${days.map((_, i) => `<col style="width:${dayWidths[i].toFixed(2)}mm">`).join('')}
     </colgroup>
     <thead>
+      ${showYearRow ? `<tr>
+        <th class="plabel" style="background:#F5F2F0;font-size:6pt;color:#9C9591;text-align:center">Tâches</th>
+        ${yearHeaders}
+      </tr>` : ''}
       <tr>
-        <th class="plabel" style="background:#FAF7F2;font-size:6pt;color:#9C9591;text-align:center">Tâches</th>
+        <th class="plabel" style="background:#FAF7F2;font-size:6pt;color:#9C9591;text-align:center">${showYearRow ? '' : 'Tâches'}</th>
         ${monthHeaders}
       </tr>
       ${showWeekRow ? `<tr>
@@ -297,6 +399,18 @@ function buildHtml({ tasks, lots, jalons, affaire, dateDebut, dateFin, largeurMm
   <div class="leg-item">
     <div class="leg-swatch" style="background:transparent;border:1px dashed #E8602C;opacity:0.6"></div>
     Extension appro.
+  </div>
+  <div class="leg-item">
+    <div class="leg-swatch" style="background:#C9C4C0;outline:1px dashed rgba(255,255,255,0.6);outline-offset:-1px"></div>
+    Segment
+  </div>
+  <div class="leg-item">
+    <div class="leg-swatch" style="background:repeating-linear-gradient(45deg, rgba(184,65,44,0.15), rgba(184,65,44,0.15) 3px, rgba(184,65,44,0.28) 3px, rgba(184,65,44,0.28) 6px)"></div>
+    Période bloquée
+  </div>
+  <div class="leg-item">
+    <div style="width:0;height:0;border-top:1.4mm solid transparent;border-bottom:1.4mm solid transparent;border-left:1.8mm solid #E8602C"></div>
+    Dépendance
   </div>
   <div style="border-left:0.5px solid #ddd;height:8px;margin:0 2mm"></div>
   <div class="leg-item">

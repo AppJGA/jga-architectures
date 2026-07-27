@@ -1,7 +1,8 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { Trash2, X, ZoomIn, ZoomOut, Calendar, Eye, Layers, Palette } from 'lucide-react'
 import * as XLSX from 'xlsx-js-style'
-import { parseDate, formatDateISO, applyLag, computeLag, addWorkingDays } from './types'
+import { parseDate, formatDateISO, computeLag, addWorkingDays } from './types'
+import { propagateAllDependencies, endDateChanged, entityKey } from './propagation'
 import { supabase } from '../../../core/supabase/client'
 import { usePlanningZones } from '../../../shared/hooks/usePlanningZones'
 import { usePlanningSegments } from '../../../shared/hooks/usePlanningSegments'
@@ -16,78 +17,6 @@ import { ExportPdfModal } from './ExportPdfModal'
 import { JalonModal } from './JalonModal'
 import { ZonesModal } from './ZonesModal'
 import { PeriodesBloqueesModal } from './PeriodesBloqueesModal'
-
-// ─── Propagation en cascade avec conservation du lag ─────────────────────────
-//
-// Règle : debut(enfant) = fin(parent) + lag(enfant)
-//   - le lag est calculé une seule fois à la création du lien
-//   - il est conservé à chaque propagation ultérieure
-//
-// Deux graphes de dépendances sont fusionnés :
-//   - historique : `planning.depends_on` / `planning.lag_days` (tâche → tâche)
-//   - étendu : table `planning_dependances` (tâche/segment → tâche/segment)
-//
-function entityKey(type, id) { return `${type}:${id}` }
-
-function propagateAllDependencies({ tasks, segments, dependances, changedType, changedId, newDebut, newDuree }) {
-  const snapshot = new Map()
-  tasks.forEach((t) => snapshot.set(entityKey('task', t.id), { type: 'task', id: t.id, debut: t.debut, duree: t.duree }))
-  segments.forEach((s) => snapshot.set(entityKey('segment', s.id), { type: 'segment', id: s.id, debut: s.date_debut, duree: s.duree_jours }))
-
-  const changedKey = entityKey(changedType, changedId)
-  snapshot.set(changedKey, { ...snapshot.get(changedKey), debut: newDebut, duree: newDuree })
-
-  const edges = new Map()
-  const addEdge = (parentKey, childKey, lag) => {
-    if (!edges.has(parentKey)) edges.set(parentKey, [])
-    edges.get(parentKey).push({ childKey, lag })
-  }
-
-  tasks.forEach((t) => {
-    if (t.depends_on != null) {
-      addEdge(entityKey('task', t.depends_on), entityKey('task', t.id), t.lag_days ?? 0)
-    }
-  })
-
-  dependances.forEach((dep) => {
-    const sourceKey = dep.source_segment_id
-      ? entityKey('segment', dep.source_segment_id)
-      : entityKey('task', dep.source_tache_id)
-    const cibleKey = dep.cible_segment_id
-      ? entityKey('segment', dep.cible_segment_id)
-      : entityKey('task', dep.cible_tache_id)
-    addEdge(sourceKey, cibleKey, dep.lag_jours ?? 0)
-  })
-
-  const updates = []
-  const queue = [changedKey]
-  const visited = new Set()
-
-  while (queue.length > 0) {
-    const parentKey = queue.shift()
-    if (visited.has(parentKey)) continue
-    visited.add(parentKey)
-
-    const parent = snapshot.get(parentKey)
-    if (!parent) continue
-
-    const children = edges.get(parentKey) ?? []
-    children.forEach(({ childKey, lag }) => {
-      const child = snapshot.get(childKey)
-      if (!child) return
-      const newChildDebut = formatDateISO(applyLag(parseDate(parent.debut), parent.duree, lag))
-
-      if (newChildDebut !== child.debut) {
-        const updatedChild = { ...child, debut: newChildDebut }
-        snapshot.set(childKey, updatedChild)
-        updates.push(updatedChild)
-        queue.push(childKey)
-      }
-    })
-  }
-
-  return updates
-}
 
 // ─── Lignes d'affichage en groupement "Par zone" ──────────────────────────────
 //
@@ -458,6 +387,44 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
 
   useEffect(() => { fetchAllData() }, [fetchAllData])
 
+  // ── Application et persistance d'une cascade ───────────────────────────────────
+  //
+  // `cascades` est une Map<cléEntité, { type, id, debut }> : une seule entrée par
+  // entité, donc jamais deux écritures concurrentes sur la même ligne.
+
+  // Mise à jour optimiste du state — appliquée AVANT toute écriture Supabase, en
+  // un seul setTasks pour ne pas afficher d'état intermédiaire.
+  const applyCascadeLocally = useCallback((cascades, ownChanges) => {
+    setTasks((prev) => prev.map((t) => {
+      const own = ownChanges?.[t.id]
+      const cascade = cascades.get(entityKey('task', t.id))
+      if (!own && !cascade) return t
+      return { ...t, ...(own ?? {}), ...(cascade ? { debut: cascade.debut } : {}) }
+    }))
+    cascades.forEach((u) => {
+      if (u.type === 'segment') updateSegmentLocal(u.id, { date_debut: u.debut })
+    })
+  }, [updateSegmentLocal])
+
+  // Persistance : toutes les lignes en parallèle (lignes distinctes, pas de race)
+  const persistCascade = useCallback(async (cascades, ownWrites = []) => {
+    const results = await Promise.all([
+      ...ownWrites,
+      ...[...cascades.values()].map((u) =>
+        u.type === 'segment'
+          ? updateSegment(u.id, { date_debut: u.debut })
+          : supabase.from('planning').update({ debut: u.debut }).eq('id', u.id)
+      ),
+    ])
+    const failed = results.find((r) => r?.error)
+    if (failed?.error) {
+      console.error('Propagation : échec de persistance —', failed.error.message)
+      await fetchAllData()
+      return false
+    }
+    return true
+  }, [updateSegment, fetchAllData])
+
   // ── Task save ─────────────────────────────────────────────────────────────────
   const handleSaveTask = async (taskData) => {
     const payload = {
@@ -481,22 +448,25 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
       const { error } = await supabase.from('planning').insert([{ ...payload, ordre }])
       if (error) throw new Error(error.message)
     } else {
-      const { error } = await supabase.from('planning').update(payload).eq('id', taskData.id)
-      if (error) throw new Error(error.message)
+      // Même propagation que le drag : calculée en local depuis l'état courant
+      // AVANT toute écriture, puis persistée avec la tâche dans le même lot
+      // d'appels parallèles. Une modification qui ne déplace pas la fin de la
+      // tâche (renommage, avancement…) ne déclenche aucune cascade.
+      const ancienne = tasks.find((t) => t.id === taskData.id)
+      const cascades = (ancienne && endDateChanged(ancienne.debut, ancienne.duree, payload.debut, payload.duree))
+        ? propagateAllDependencies({
+            tasks, segments, dependances, periodes,
+            changedType: 'task', changedId: taskData.id,
+            newDebut: payload.debut, newDuree: payload.duree,
+          })
+        : new Map()
 
-      // Propager le chemin critique si la date/durée a changé depuis la modale
-      const cascadeUpdates = propagateAllDependencies({
-        tasks, segments, dependances,
-        changedType: 'task', changedId: taskData.id,
-        newDebut: payload.debut, newDuree: payload.duree,
-      })
-      if (cascadeUpdates.length > 0) {
-        await Promise.all(cascadeUpdates.map((u) =>
-          u.type === 'segment'
-            ? updateSegment(u.id, { date_debut: u.debut })
-            : supabase.from('planning').update({ debut: u.debut }).eq('id', u.id)
-        ))
-      }
+      applyCascadeLocally(cascades, { [taskData.id]: { debut: payload.debut, duree: payload.duree } })
+
+      const ok = await persistCascade(cascades, [
+        supabase.from('planning').update(payload).eq('id', taskData.id),
+      ])
+      if (!ok) throw new Error('Échec de l’enregistrement de la tâche')
     }
     if (taskData.lot_id) setLastUsedLotId(taskData.lot_id)
     await fetchAllData()
@@ -543,80 +513,58 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
 
   // ── Drag/resize avec propagation en cascade ────────────────────────────────────
   const handleTaskUpdate = useCallback(async (taskId, changes) => {
-    setTasks((prevTasks) => {
-      const movedTask = prevTasks.find((t) => t.id === taskId)
-      if (!movedTask) return prevTasks
+    const movedTask = tasks.find((t) => t.id === taskId)
+    if (!movedTask) return
 
-      const newDebut = changes.debut ?? movedTask.debut
-      const newDuree = changes.duree ?? movedTask.duree
+    const newDebut = changes.debut ?? movedTask.debut
+    const newDuree = changes.duree ?? movedTask.duree
 
-      // Si la tâche déplacée est un enfant (a une dépendance) et que son début change,
-      // recalculer le lag depuis la position actuelle de sa parente et le persister.
-      let finalChanges = changes
-      if (movedTask.depends_on && changes.debut) {
-        const parentTask = prevTasks.find((t) => t.id === movedTask.depends_on)
-        if (parentTask) {
-          const newLag = computeLag(parseDate(parentTask.debut), parentTask.duree, parseDate(newDebut))
-          finalChanges = { ...changes, lag_days: newLag }
-        }
+    // Si la tâche déplacée est un enfant (a une dépendance) et que son début change,
+    // recalculer le lag depuis la position actuelle de sa parente et le persister.
+    let finalChanges = changes
+    if (movedTask.depends_on && changes.debut) {
+      const parentTask = tasks.find((t) => t.id === movedTask.depends_on)
+      if (parentTask) {
+        const newLag = computeLag(parseDate(parentTask.debut), parentTask.duree, parseDate(newDebut))
+        finalChanges = { ...changes, lag_days: newLag }
       }
+    }
 
-      const cascadeUpdates = propagateAllDependencies({
-        tasks: prevTasks, segments, dependances,
-        changedType: 'task', changedId: taskId, newDebut, newDuree,
-      })
-      const taskCascades = cascadeUpdates.filter((u) => u.type === 'task')
-      const segmentCascades = cascadeUpdates.filter((u) => u.type === 'segment')
+    // Scénario resize gauche : le début recule et la durée augmente d'autant, donc
+    // la date de fin ne bouge pas — aucune dépendance n'est affectée.
+    const cascades = endDateChanged(movedTask.debut, movedTask.duree, newDebut, newDuree)
+      ? propagateAllDependencies({
+          tasks, segments, dependances, periodes,
+          changedType: 'task', changedId: taskId, newDebut, newDuree,
+        })
+      : new Map()
 
-      const updatedMap = new Map([[taskId, newDebut]])
-      taskCascades.forEach((u) => updatedMap.set(u.id, u.debut))
-
-      const nextTasks = prevTasks.map((t) => {
-        if (t.id === taskId) return { ...t, debut: newDebut, duree: newDuree, lag_days: finalChanges.lag_days ?? t.lag_days }
-        const cascadedDebut = updatedMap.get(t.id)
-        if (cascadedDebut) return { ...t, debut: cascadedDebut }
-        return t
-      })
-
-      segmentCascades.forEach((u) => updateSegmentLocal(u.id, { date_debut: u.debut }))
-      persistCascadeUpdates(taskId, finalChanges, taskCascades, segmentCascades)
-      return nextTasks
+    applyCascadeLocally(cascades, {
+      [taskId]: { debut: newDebut, duree: newDuree, ...(finalChanges.lag_days != null ? { lag_days: finalChanges.lag_days } : {}) },
     })
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [segments, dependances, updateSegmentLocal])
 
-  const persistCascadeUpdates = useCallback(async (taskId, changes, taskCascades, segmentCascades) => {
-    const { error: mainErr } = await supabase.from('planning').update(changes).eq('id', taskId)
-    if (mainErr) { console.error('Task update failed:', mainErr.message); await fetchAllData(); return }
-
-    const results = await Promise.all([
-      ...taskCascades.map((u) => supabase.from('planning').update({ debut: u.debut }).eq('id', u.id)),
-      ...segmentCascades.map((u) => updateSegment(u.id, { date_debut: u.debut })),
+    await persistCascade(cascades, [
+      supabase.from('planning').update(finalChanges).eq('id', taskId),
     ])
-    const failed = results.find((r) => r.error)
-    if (failed?.error) { console.error('Cascade update failed:', failed.error.message); await fetchAllData() }
-  }, [fetchAllData, updateSegment])
+  }, [tasks, segments, dependances, periodes, applyCascadeLocally, persistCascade])
 
   // ── Déplacement d'un segment avec propagation en cascade ───────────────────────
   const handleSegmentDateCommit = useCallback(async (segmentId, newDateDebut) => {
     const seg = segments.find((s) => s.id === segmentId)
     if (!seg) return
-    await updateSegment(segmentId, { date_debut: newDateDebut })
 
-    const cascadeUpdates = propagateAllDependencies({
-      tasks, segments, dependances,
+    const cascades = propagateAllDependencies({
+      tasks, segments, dependances, periodes,
       changedType: 'segment', changedId: segmentId,
       newDebut: newDateDebut, newDuree: seg.duree_jours,
     })
 
-    const results = await Promise.all(cascadeUpdates.map((u) => {
-      if (u.type === 'segment') return updateSegment(u.id, { date_debut: u.debut })
-      setTasks((prev) => prev.map((t) => (t.id === u.id ? { ...t, debut: u.debut } : t)))
-      return supabase.from('planning').update({ debut: u.debut }).eq('id', u.id)
-    }))
-    const failed = results.find((r) => r?.error)
-    if (failed?.error) { console.error('Cascade update failed:', failed.error.message); await fetchAllData() }
-  }, [tasks, segments, dependances, updateSegment, fetchAllData])
+    applyCascadeLocally(cascades)
+
+    await persistCascade(cascades, [
+      updateSegment(segmentId, { date_debut: newDateDebut }),
+    ])
+  }, [tasks, segments, dependances, periodes, updateSegment, applyCascadeLocally, persistCascade])
 
   // ── Avancement inline ─────────────────────────────────────────────────────────
   const handleAvancementChange = useCallback(async (taskId, value) => {
@@ -1284,6 +1232,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
             tasks={sortedTasks}
             lots={lots}
             rows={rows}
+            scrollRef={timelineRef}
             dayWidth={dayWidth}
             drawMode={drawMode}
             onDrawCreate={handleDrawCreate}

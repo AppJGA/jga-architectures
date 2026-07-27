@@ -338,10 +338,18 @@ function ZoneGroupedSidebar({ rows, lots, rowHeight, headerHeight, onEdit, onAva
               )}
             </div>
 
-            {/* Nom du lot en petit */}
-            <span style={{ fontSize: 9, color: '#9C9591', flexShrink: 0, maxWidth: 40, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {lot?.nom}
-            </span>
+            {/* Lot — fine bande de couleur (le nom complet reste en tooltip) :
+                la colonne est trop étroite pour un libellé lisible. */}
+            <div
+              title={lot?.nom ?? ''}
+              style={{
+                width: 4,
+                height: 20,
+                background: lot?.couleur ?? '#C9C4C0',
+                flexShrink: 0,
+                borderRadius: 1,
+              }}
+            />
           </div>
         )
       })}

@@ -25,6 +25,25 @@ const BTN_DANGER = {
 
 const MODAL_WIDTH = 460
 const MODAL_MINIMIZED_HEIGHT = 44
+// Hauteur de référence pour le centrage initial (la hauteur réelle est `auto`,
+// plafonnée à 80vh — cette valeur approche la taille du formulaire déplié).
+const MODAL_HEIGHT_REF = 600
+
+// Position centrée dans la fenêtre (jamais négative sur un petit écran)
+function centeredPosition() {
+  return {
+    x: Math.max(0, (window.innerWidth - MODAL_WIDTH) / 2),
+    y: Math.max(0, (window.innerHeight - MODAL_HEIGHT_REF) / 2),
+  }
+}
+
+// Maintient la modale dans les limites de la fenêtre pendant le drag
+function clampPosition(x, y) {
+  return {
+    x: Math.max(0, Math.min(window.innerWidth - MODAL_WIDTH, x)),
+    y: Math.max(0, Math.min(window.innerHeight - MODAL_MINIMIZED_HEIGHT, y)),
+  }
+}
 
 function emptyForm(lots, defaultDebut, lastUsedLotId) {
   const validLastUsed = lastUsedLotId && lots.some((l) => l.id === lastUsedLotId) ? lastUsedLotId : null
@@ -61,16 +80,22 @@ export function TacheEditModal({
   const [saving, setSaving] = useState(false)
 
   // ── Modale flottante : position, minimisation, drag ────────────────────────────
-  const [position, setPosition] = useState(() => ({
-    x: window.innerWidth - MODAL_WIDTH - 24,
-    y: window.innerHeight - 600 - 24,
-  }))
+  const [position, setPosition] = useState(centeredPosition)
   const [minimized, setMinimized] = useState(false)
   const [isDraggingModal, setIsDraggingModal] = useState(false)
   const dragStartRef = useRef(null)
   const modalRef = useRef(null)
 
-  // Toujours repartir sur le formulaire visible quand on ouvre ou change de tâche
+  // Recentrer à chaque ouverture — le composant reste monté entre deux ouvertures
+  // (`open` pilote seulement le rendu), d'où la dépendance sur `open` plutôt que
+  // sur le seul montage.
+  useEffect(() => {
+    if (!open) return
+    setPosition(centeredPosition())
+    setMinimized(false)
+  }, [open])
+
+  // Toujours repartir sur le formulaire visible quand on change de tâche
   useEffect(() => {
     if (open) setMinimized(false)
   }, [open, task?.id])
@@ -189,10 +214,10 @@ export function TacheEditModal({
     const handleMove = (e) => {
       const dx = e.clientX - dragStartRef.current.mouseX
       const dy = e.clientY - dragStartRef.current.mouseY
-      setPosition({
-        x: Math.max(0, Math.min(window.innerWidth - MODAL_WIDTH, dragStartRef.current.modalX + dx)),
-        y: Math.max(0, Math.min(window.innerHeight - MODAL_MINIMIZED_HEIGHT, dragStartRef.current.modalY + dy)),
-      })
+      setPosition(clampPosition(
+        dragStartRef.current.modalX + dx,
+        dragStartRef.current.modalY + dy,
+      ))
     }
 
     const handleUp = () => setIsDraggingModal(false)

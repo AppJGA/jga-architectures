@@ -9,8 +9,18 @@ import {
   computeLag,
 } from './types'
 
-const TIMELINE_DAYS = 365
-const TIMELINE_WEEKS = Math.ceil(TIMELINE_DAYS / 7)
+// Étendue minimale de la timeline, même sans tâche (la plage réelle est calculée
+// depuis la dernière tâche/segment + une large marge droite — voir `dayCount`).
+const TIMELINE_DAYS_MIN = 365
+const TIMELINE_WEEKS_MIN = Math.ceil(TIMELINE_DAYS_MIN / 7)
+
+// Marge toujours conservée après la dernière tâche, dans l'unité de chaque vue
+const MARGIN_RIGHT = { day: 60, week: 26, month: 18 }
+// Unités ajoutées à chaque extension automatique (scroll proche du bord droit)
+const EXTEND_STEP = { day: 30, week: 12, month: 6 }
+// Garde-fou : plafond d'extension cumulée, pour éviter un défilement sans fin
+const EXTEND_MAX = { day: 3650, week: 520, month: 120 }
+
 const WEEK_WIDTH_BASE = 40
 const MONTH_WIDTH_BASE = 80
 export const HEADER_HEIGHT = 84
@@ -106,8 +116,10 @@ function barWidthAtWeek(duree, weekWidth) {
 
 // ── Fonctions géométrie vue mois ───────────────────────────────────────────────
 
-// Détermine la liste des mois à afficher (bornée par les tâches + segments, avec marge)
-function buildMonthsList(tasks, segments) {
+// Détermine la liste des mois à afficher (bornée par les tâches + segments, avec
+// une marge droite de MARGIN_RIGHT.month mois, plus `extraMonths` si l'utilisateur
+// a fait défiler jusqu'au bord droit)
+function buildMonthsList(tasks, segments, extraMonths = 0) {
   let minDate = null, maxDate = null
   const items = [
     ...tasks.map((t) => ({ debut: t.debut, duree: t.duree })),
@@ -129,7 +141,11 @@ function buildMonthsList(tasks, segments) {
   }
 
   let cur = new Date(minDate.getFullYear(), minDate.getMonth() - 1, 1)
-  const limit = new Date(maxDate.getFullYear(), maxDate.getMonth() + 2, 1)
+  const limit = new Date(
+    maxDate.getFullYear(),
+    maxDate.getMonth() + 1 + MARGIN_RIGHT.month + extraMonths,
+    1
+  )
 
   const months = []
   while (cur < limit) {
@@ -407,7 +423,7 @@ export function GanttTimeline({
   getSegmentsForTache, segments = [], updateSegmentLocal, onSegmentDateCommit,
   dependances = [], onSegmentDependencyCreate, onSegmentDependencyDelete,
   periodes = [], getNextWorkingDay, dragOverTaskId = null,
-  drawMode = false, onDrawCreate,
+  drawMode = false, onDrawCreate, scrollRef = null,
 }) {
   const weekWidth = WEEK_WIDTH_BASE * zoomLevel
   const monthWidth = MONTH_WIDTH_BASE * zoomLevel
@@ -427,24 +443,65 @@ export function GanttTimeline({
     return minDate
   }, [tasks])
 
+  // ── Étendue de la timeline ────────────────────────────────────────────────────
+  //
+  // La plage n'est pas figée : elle est recalculée dès qu'une tâche ou un segment
+  // est ajouté/déplacé, et conserve toujours une large marge après la dernière
+  // date occupée (MARGIN_RIGHT). `extraUnitsRight` s'y ajoute quand l'utilisateur
+  // défile jusqu'au bord droit.
+  const [extraUnitsRight, setExtraUnitsRight] = useState(0)
+
+  useEffect(() => { setExtraUnitsRight(0) }, [viewMode])
+
+  // Date de fin la plus tardive parmi les tâches et les segments
+  const maxEndDate = useMemo(() => {
+    let maxEnd = new Date()
+    tasks.forEach((task) => {
+      if (!task.debut) return
+      const end = addWorkingDays(parseDate(task.debut), task.duree ?? 0)
+      if (end > maxEnd) maxEnd = new Date(end)
+    })
+    segments.forEach((seg) => {
+      if (!seg.date_debut) return
+      const end = parseDate(seg.date_debut)
+      end.setDate(end.getDate() + (seg.duree_jours ?? 0))
+      if (end > maxEnd) maxEnd = new Date(end)
+    })
+    return maxEnd
+  }, [tasks, segments])
+
+  const dayCount = useMemo(() => {
+    const end = new Date(maxEndDate)
+    end.setDate(end.getDate() + MARGIN_RIGHT.day)
+    const n = Math.ceil((end.getTime() - dateRef.getTime()) / 86400000)
+    return Math.max(TIMELINE_DAYS_MIN, n) + (viewMode === 'day' ? extraUnitsRight : 0)
+  }, [maxEndDate, dateRef, viewMode, extraUnitsRight])
+
+  const weekCount = useMemo(() => {
+    const end = new Date(maxEndDate)
+    end.setDate(end.getDate() + MARGIN_RIGHT.week * 7)
+    const n = Math.ceil((end.getTime() - dateRef.getTime()) / (7 * 86400000))
+    return Math.max(TIMELINE_WEEKS_MIN, n) + (viewMode === 'week' ? extraUnitsRight : 0)
+  }, [maxEndDate, dateRef, viewMode, extraUnitsRight])
+
   // ── Positions X précalculées pour chaque jour (colonnes variables) ────────────
   const dayPositions = useMemo(() => {
-    const pos = new Array(TIMELINE_DAYS + 1)
+    const pos = new Array(dayCount + 1)
     pos[0] = 0
-    for (let i = 0; i < TIMELINE_DAYS; i++) {
+    for (let i = 0; i < dayCount; i++) {
       const d = new Date(dateRef)
       d.setDate(d.getDate() + i)
       const isWE = d.getDay() === 0 || d.getDay() === 6
       pos[i + 1] = pos[i] + (isWE ? dayWidth * WEEKEND_RATIO : dayWidth)
     }
     return pos
-  }, [dateRef, dayWidth])
+  }, [dateRef, dayWidth, dayCount])
 
   // ── Semaines précalculées (vue semaine) ───────────────────────────────────────
   const weeks = useMemo(() =>
-    Array.from({ length: TIMELINE_WEEKS }, (_, i) => {
+    Array.from({ length: weekCount }, (_, i) => {
       const d = new Date(dateRef); d.setDate(d.getDate() + i * 7); return d
-    }), [dateRef])
+    }), [dateRef, weekCount])
 
   const yearSegments = useMemo(() => {
     const segs = []
@@ -482,7 +539,10 @@ export function GanttTimeline({
   }, [dateRef])
 
   // ── Mois précalculés (vue mois) ────────────────────────────────────────────────
-  const months = useMemo(() => buildMonthsList(tasks, segments), [tasks, segments])
+  const months = useMemo(
+    () => buildMonthsList(tasks, segments, viewMode === 'month' ? extraUnitsRight : 0),
+    [tasks, segments, viewMode, extraUnitsRight]
+  )
 
   const monthYearSegments = useMemo(() => {
     const segs = []
@@ -505,18 +565,65 @@ export function GanttTimeline({
   const totalWidth = viewMode === 'month'
     ? months.length * monthWidth
     : viewMode === 'week'
-      ? TIMELINE_WEEKS * weekWidth
-      : dayPositions[TIMELINE_DAYS]
+      ? weekCount * weekWidth
+      : dayPositions[dayCount]
 
   const days = useMemo(() =>
-    Array.from({ length: TIMELINE_DAYS }, (_, i) => {
+    Array.from({ length: dayCount }, (_, i) => {
       const d = new Date(dateRef); d.setDate(d.getDate() + i); return d
-    }), [dateRef])
+    }), [dateRef, dayCount])
+
+  // ── Extension automatique à l'approche du bord droit ──────────────────────────
+  // Le conteneur scrollable appartient au parent (GanttChart) et nous est passé
+  // via `scrollRef` ; on s'y branche pour étendre la plage de quelques unités dès
+  // que la fin du contenu est à moins de 3 colonnes.
+  const handleScroll = useCallback(() => {
+    const el = scrollRef?.current
+    if (!el) return
+    const distFromEnd = el.scrollWidth - el.scrollLeft - el.clientWidth
+    const colW = viewMode === 'day' ? dayWidth : viewMode === 'week' ? weekWidth : monthWidth
+    if (distFromEnd >= colW * 3) return
+    setExtraUnitsRight((prev) =>
+      prev >= EXTEND_MAX[viewMode] ? prev : prev + EXTEND_STEP[viewMode]
+    )
+  }, [scrollRef, viewMode, dayWidth, weekWidth, monthWidth])
+
+  useEffect(() => {
+    const el = scrollRef?.current
+    if (!el) return
+    el.addEventListener('scroll', handleScroll, { passive: true })
+    return () => el.removeEventListener('scroll', handleScroll)
+  }, [scrollRef, handleScroll])
 
   // Contexte géométrique unifié, passé à computeGeometry/getTaskGeometry
   const geo = useMemo(() => ({
     viewMode, dateRef, dayPositions, dayWidth, weekWidth, monthWidth, months, periodes,
   }), [viewMode, dateRef, dayPositions, dayWidth, weekWidth, monthWidth, months, periodes])
+
+  // ── Séparations de mois (trait épais) ─────────────────────────────────────────
+  //
+  // Une seule liste de positions X, partagée par le header et la grille de fond :
+  // les deux traits sont ainsi garantis au même pixel. Auparavant le header les
+  // dessinait en `border-right` (bord DROIT de la colonne de début de mois) alors
+  // que la grille les positionnait en absolu sur le bord GAUCHE de cette même
+  // colonne — d'où un décalage d'une colonne entière entre les deux.
+  const monthStartPositions = useMemo(() => {
+    const positions = []
+    if (viewMode === 'month') {
+      months.forEach((_, i) => { if (i > 0) positions.push(i * monthWidth) })
+    } else if (viewMode === 'week') {
+      weeks.forEach((weekStart, i) => {
+        if (i > 0 && weekStart.getMonth() !== weeks[i - 1].getMonth()) {
+          positions.push(i * weekWidth)
+        }
+      })
+    } else {
+      days.forEach((day, i) => {
+        if (i > 0 && day.getDate() === 1) positions.push(dayPositions[i])
+      })
+    }
+    return positions
+  }, [viewMode, months, monthWidth, weeks, weekWidth, days, dayPositions])
 
   const lotsWithTasks = useMemo(() =>
     lots.map((lot) => ({ lot, tasks: tasks.filter((t) => t.lot_id === lot.id) }))
@@ -976,7 +1083,9 @@ export function GanttTimeline({
                   <div key={i} style={{
                     width: monthWidth, minWidth: monthWidth, flexShrink: 0,
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    borderRight: '2px solid rgba(0,0,0,0.20)',
+                    // Le trait épais de séparation des mois est dessiné en overlay
+                    // (monthStartPositions), commun au header et à la grille.
+                    borderRight: '0.5px solid rgba(0,0,0,0.08)',
                     backgroundColor: isCurrentMonth ? '#FAF0EB' : 'transparent',
                   }}>
                     <span style={{
@@ -1030,14 +1139,11 @@ export function GanttTimeline({
             <div style={{ display: 'flex', height: 36, alignItems: 'center' }}>
               {weeks.map((weekStart, i) => {
                 const isCurrentWeek = i === currentWeekIndex
-                const isMonthStart = i === 0 || weekStart.getMonth() !== weeks[i - 1].getMonth()
                 return (
                   <div key={i} style={{
                     width: weekWidth, minWidth: weekWidth, flexShrink: 0,
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    borderRight: isMonthStart
-                      ? '2px solid rgba(0,0,0,0.25)'
-                      : '0.5px solid rgba(0,0,0,0.08)',
+                    borderRight: '0.5px solid rgba(0,0,0,0.08)',
                     backgroundColor: isCurrentWeek ? '#FAF0EB' : 'transparent',
                   }}>
                     <span style={{
@@ -1080,12 +1186,9 @@ export function GanttTimeline({
                 const isToday = day.toDateString() === new Date().toDateString()
                 const colWidth = isWeekend ? dayWidth * WEEKEND_RATIO : dayWidth
                 const isMonday = day.getDay() === 1
-                const isMonthStart = day.getDate() === 1
-                const borderRight = isMonthStart
-                  ? '2px solid rgba(0,0,0,0.25)'
-                  : isMonday
-                    ? '0.5px solid rgba(0,0,0,0.15)'
-                    : '0.5px solid rgba(0,0,0,0.08)'
+                const borderRight = isMonday
+                  ? '0.5px solid rgba(0,0,0,0.15)'
+                  : '0.5px solid rgba(0,0,0,0.08)'
                 return (
                   <div key={i} style={{
                     width: colWidth, minWidth: colWidth, flexShrink: 0,
@@ -1117,6 +1220,15 @@ export function GanttTimeline({
             </div>
           </>
         )}
+        {/* Séparations de mois — mêmes positions X que la grille du body */}
+        {monthStartPositions.map((x, i) => (
+          <div key={`ms-h-${i}`} style={{
+            position: 'absolute', left: x - 1, top: 0, bottom: 0,
+            width: 2, backgroundColor: 'rgba(0,0,0,0.25)',
+            pointerEvents: 'none', zIndex: 4,
+          }} />
+        ))}
+
         {/* Indicateurs jalons dans le header */}
         {jalons.map(jalon => {
           const x = getX(parseDate(jalon.date))
@@ -1133,29 +1245,26 @@ export function GanttTimeline({
       {/* ── BODY ──────────────────────────────────────────────────────────────── */}
       <div style={{ position: 'relative' }}>
         {viewMode === 'month' ? (
-          /* Month grid lines (toutes identiques : chaque colonne est déjà un mois) */
+          /* Month grid lines (chaque colonne est déjà un mois — le trait épais de
+             séparation vient de monthStartPositions ci-dessus) */
           months.map((m, i) => (
             <div key={`gl-${i}`} style={{
               position: 'absolute', top: 0, bottom: 0,
-              left: i * monthWidth, width: 2,
-              backgroundColor: 'rgba(0,0,0,0.20)',
+              left: i * monthWidth, width: 0.5,
+              backgroundColor: 'rgba(0,0,0,0.08)',
               pointerEvents: 'none',
             }} />
           ))
         ) : viewMode === 'week' ? (
-          /* Week grid lines (emphase au début de mois) */
-          weeks.map((weekStart, i) => {
-            const isMonthStart = i === 0 || weekStart.getMonth() !== weeks[i - 1].getMonth()
-            return (
-              <div key={`gl-${i}`} style={{
-                position: 'absolute', top: 0, bottom: 0,
-                left: i * weekWidth,
-                width: isMonthStart ? 2 : 0.5,
-                backgroundColor: isMonthStart ? 'rgba(0,0,0,0.25)' : 'rgba(0,0,0,0.08)',
-                pointerEvents: 'none',
-              }} />
-            )
-          })
+          /* Week grid lines */
+          weeks.map((weekStart, i) => (
+            <div key={`gl-${i}`} style={{
+              position: 'absolute', top: 0, bottom: 0,
+              left: i * weekWidth, width: 0.5,
+              backgroundColor: 'rgba(0,0,0,0.08)',
+              pointerEvents: 'none',
+            }} />
+          ))
         ) : (
           <>
             {/* Weekend shading */}
@@ -1171,26 +1280,33 @@ export function GanttTimeline({
               )
             })}
 
-            {/* Day grid lines */}
+            {/* Day grid lines (le trait épais de début de mois vient de
+                monthStartPositions, partagé avec le header) */}
             {days.map((day, i) => {
               const isMonday = day.getDay() === 1
-              const isMonthStart = day.getDate() === 1
               return (
                 <div key={`gl-${i}`} style={{
                   position: 'absolute', top: 0, bottom: 0,
                   left: dayPositions[i],
-                  width: isMonthStart ? 2 : 0.5,
-                  backgroundColor: isMonthStart
-                    ? 'rgba(0,0,0,0.25)'
-                    : isMonday
-                      ? 'rgba(0,0,0,0.15)'
-                      : 'rgba(0,0,0,0.08)',
+                  width: 0.5,
+                  backgroundColor: isMonday ? 'rgba(0,0,0,0.15)' : 'rgba(0,0,0,0.08)',
                   pointerEvents: 'none',
                 }} />
               )
             })}
           </>
         )}
+
+        {/* Séparations de mois — mêmes positions X que le header (rendues après la
+            grille fine pour ne pas être recouvertes par elle) */}
+        {monthStartPositions.map((x, i) => (
+          <div key={`ms-b-${i}`} style={{
+            position: 'absolute', top: 0, bottom: 0,
+            left: x - 1, width: 2,
+            backgroundColor: 'rgba(0,0,0,0.25)',
+            pointerEvents: 'none',
+          }} />
+        ))}
 
         {/* Périodes bloquées — zones hachurées */}
         {periodes.map((periode) => {

@@ -708,43 +708,68 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
       else if (typeof value === 'number') ws[addr].t = 'n'
     }
 
-    const styleHeader = {
+    // ── Bordures ────────────────────────────────────────────────────────────
+    // Toutes noires : fines par défaut, épaisses pour les séparateurs (mois,
+    // sidebar/timeline, groupes de lots), tiretées entre les lignes de tâches.
+    const B_THIN = { style: 'thin', color: { rgb: '000000' } }
+    const B_THICK = { style: 'medium', color: { rgb: '000000' } }
+    const B_DASH = { style: 'dashed', color: { rgb: '000000' } }
+
+    const borderThin = { top: B_THIN, bottom: B_THIN, left: B_THIN, right: B_THIN }
+
+    // En-têtes (mois / semaines / jours) : haut et bas épais
+    const borderHeader = (leftThick, rightThick) => ({
+      top: B_THICK, bottom: B_THICK,
+      left: leftThick ? B_THICK : B_THIN,
+      right: rightThick ? B_THICK : B_THIN,
+    })
+
+    // Lignes de tâches : séparateurs horizontaux tiretés
+    const borderTask = (leftThick, rightThick) => ({
+      top: B_DASH, bottom: B_DASH,
+      left: leftThick ? B_THICK : B_THIN,
+      right: rightThick ? B_THICK : B_THIN,
+    })
+
+    // En-tête de lot : bas épais pour détacher les groupes
+    const borderLot = (rightThick) => ({
+      top: B_THIN, bottom: B_THICK,
+      left: B_THIN,
+      right: rightThick ? B_THICK : B_THIN,
+    })
+
+    // Dernière colonne de la sidebar (Av.%) : séparation épaisse avec la timeline
+    const LAST_SIDEBAR_COL = 2
+
+    const styleHeader = (col) => ({
       font: { bold: true, sz: 9, color: { rgb: 'FFFFFF' } },
       fill: { fgColor: { rgb: '1F1B17' } },
       alignment: { horizontal: 'center', vertical: 'center' },
-      border: {
-        right: { style: 'thin', color: { rgb: 'E9E2D6' } },
-        bottom: { style: 'thin', color: { rgb: 'E9E2D6' } },
-      },
-    }
+      border: borderHeader(false, col === LAST_SIDEBAR_COL),
+    })
 
     const styleMonthHeader = (isCurrentMonth) => ({
       font: { bold: true, sz: 9, color: { rgb: isCurrentMonth ? 'E8602C' : '1F1B17' } },
       fill: { fgColor: { rgb: isCurrentMonth ? 'FAF0EB' : 'F5F2F0' } },
       alignment: { horizontal: 'center', vertical: 'center' },
-      border: {
-        right: { style: 'medium', color: { rgb: 'C9C4C0' } },
-        bottom: { style: 'thin', color: { rgb: 'E9E2D6' } },
-      },
+      // Chaque cellule de mois est un groupe fusionné : encadré épais des deux côtés
+      border: borderHeader(true, true),
     })
 
-    const styleLotHeader = (couleur) => {
+    const styleLotHeader = (couleur, col) => {
       const hex = couleur?.replace('#', '') ?? 'E8602C'
       return {
         font: { bold: true, sz: 9, color: { rgb: hex } },
         fill: { fgColor: { rgb: 'FAF7F2' } },
-        border: { bottom: { style: 'thin', color: { rgb: hex } } },
+        border: borderLot(col === LAST_SIDEBAR_COL),
       }
     }
 
-    const styleSidebar = (bold) => ({
+    const styleSidebar = (bold, col) => ({
       font: { bold: bold ?? false, sz: 9, color: { rgb: '1F1B17' } },
       fill: { fgColor: { rgb: 'FFFFFF' } },
       alignment: { vertical: 'center' },
-      border: {
-        right: { style: 'medium', color: { rgb: 'E9E2D6' } },
-        bottom: { style: 'thin', color: { rgb: 'F5F2F0' } },
-      },
+      border: borderTask(false, col === LAST_SIDEBAR_COL),
     })
 
     const today = new Date()
@@ -769,9 +794,9 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
         }
       })
 
-      setCell(0, 0, '', styleHeader)
-      setCell(1, 0, '', styleHeader)
-      setCell(2, 0, '', styleHeader)
+      setCell(0, 0, '', styleHeader(0))
+      setCell(1, 0, '', styleHeader(1))
+      setCell(2, 0, '', styleHeader(2))
       merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: 2 } })
 
       let colOff = FIXED_COLS
@@ -783,9 +808,9 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
       })
       rowIdx = 1
 
-      setCell(0, rowIdx, 'N°', styleHeader)
-      setCell(1, rowIdx, 'Tâche', styleHeader)
-      setCell(2, rowIdx, 'Av.%', styleHeader)
+      setCell(0, rowIdx, 'N°', styleHeader(0))
+      setCell(1, rowIdx, 'Tâche', styleHeader(1))
+      setCell(2, rowIdx, 'Av.%', styleHeader(2))
 
       timeUnits.forEach((d, i) => {
         const isWE = d.getDay() === 0 || d.getDay() === 6
@@ -798,20 +823,14 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
           },
           fill: { fgColor: { rgb: isTod ? 'FAF0EB' : isWE ? 'F0EDE8' : 'FAFAF9' } },
           alignment: { horizontal: 'center' },
-          border: {
-            right: {
-              style: isMonthStart ? 'medium' : 'thin',
-              color: { rgb: isMonthStart ? 'C9C4C0' : 'F0EDE8' },
-            },
-            bottom: { style: 'thin', color: { rgb: 'E9E2D6' } },
-          },
+          border: borderHeader(isMonthStart, false),
         })
       })
       rowIdx = 2
     } else if (viewMode === 'week') {
-      setCell(0, 0, '', styleHeader)
-      setCell(1, 0, '', styleHeader)
-      setCell(2, 0, '', styleHeader)
+      setCell(0, 0, '', styleHeader(0))
+      setCell(1, 0, '', styleHeader(1))
+      setCell(2, 0, '', styleHeader(2))
       merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: 2 } })
 
       const monthGroups = []
@@ -839,9 +858,9 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
         colOff += mg.count
       })
 
-      setCell(0, 1, 'N°', styleHeader)
-      setCell(1, 1, 'Tâche', styleHeader)
-      setCell(2, 1, 'Av.%', styleHeader)
+      setCell(0, 1, 'N°', styleHeader(0))
+      setCell(1, 1, 'Tâche', styleHeader(1))
+      setCell(2, 1, 'Av.%', styleHeader(2))
 
       timeUnits.forEach((monday, i) => {
         const d = new Date(monday)
@@ -857,20 +876,14 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
           font: { bold: isCurWeek, sz: 8, color: { rgb: isCurWeek ? 'E8602C' : '5E5854' } },
           fill: { fgColor: { rgb: isCurWeek ? 'FAF0EB' : 'FAFAF9' } },
           alignment: { horizontal: 'center' },
-          border: {
-            right: {
-              style: isMonthStart ? 'medium' : 'thin',
-              color: { rgb: isMonthStart ? 'C9C4C0' : 'F0EDE8' },
-            },
-            bottom: { style: 'thin', color: { rgb: 'E9E2D6' } },
-          },
+          border: borderHeader(isMonthStart, false),
         })
       })
       rowIdx = 2
     } else {
-      setCell(0, 0, 'N°', styleHeader)
-      setCell(1, 0, 'Tâche', styleHeader)
-      setCell(2, 0, 'Av.%', styleHeader)
+      setCell(0, 0, 'N°', styleHeader(0))
+      setCell(1, 0, 'Tâche', styleHeader(1))
+      setCell(2, 0, 'Av.%', styleHeader(2))
 
       timeUnits.forEach((d, i) => {
         const isCur = d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear()
@@ -928,6 +941,21 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
       return overlaps(unit, debut, fin)
     }
 
+    // Délais avant (appro) et après (séchage…) : mêmes bornes que les barres
+    // hachurées de la timeline, en jours ouvrés, fin exclusive.
+    const isInDelaiAvant = (unit, task) => {
+      if (!task.appro_actif || !(task.appro_duree > 0) || !task.debut) return false
+      const debut = parseDate(task.debut)
+      return overlaps(unit, addWorkingDays(debut, -task.appro_duree), debut)
+    }
+
+    const isInDelaiApres = (unit, task) => {
+      if (!(task.delai_apres > 0) || !task.debut) return false
+      const dernierJour = addWorkingDays(parseDate(task.debut), Math.max(1, task.duree) - 1)
+      const debut = addWorkingDays(dernierJour, 1)
+      return overlaps(unit, debut, addWorkingDays(debut, task.delai_apres))
+    }
+
     // date_fin est incluse dans la période ; overlaps() attend une borne de fin
     // exclusive (comme pour les tâches/segments), d'où le +1 jour.
     const isInPeriode = (unit, periode) => {
@@ -961,20 +989,17 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
       const lotColor = lot?.couleur ?? '#E8602C'
       const lotHex = lotColor.replace('#', '')
 
-      setCell(0, rowIdx, '', styleLotHeader(lotColor))
+      setCell(0, rowIdx, '', styleLotHeader(lotColor, 0))
       setCell(1, rowIdx,
         `${lot?.numero ? String(lot.numero).padStart(2, '0') : ''} – ${lot?.nom ?? 'Sans lot'}`.trim(),
-        { ...styleLotHeader(lotColor), font: { bold: true, sz: 9, color: { rgb: lotHex } } }
+        { ...styleLotHeader(lotColor, 1), font: { bold: true, sz: 9, color: { rgb: lotHex } } }
       )
-      setCell(2, rowIdx, '', styleLotHeader(lotColor))
+      setCell(2, rowIdx, '', styleLotHeader(lotColor, 2))
 
       timeUnits.forEach((_, i) => {
         setCell(FIXED_COLS + i, rowIdx, '', {
           fill: { fgColor: { rgb: 'FAF7F2' } },
-          border: {
-            right: { style: 'thin', color: { rgb: 'F0EDE8' } },
-            bottom: { style: 'medium', color: { rgb: lotHex } },
-          },
+          border: borderLot(false),
         })
       })
       rowIdx++
@@ -986,9 +1011,9 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
           const taskHex = taskColor.replace('#', '')
           const segs = getSegmentsForTache ? getSegmentsForTache(task.id) : []
 
-          setCell(0, rowIdx, task.num_tache ?? '', styleSidebar(false))
-          setCell(1, rowIdx, task.nom ?? '', styleSidebar(false))
-          setCell(2, rowIdx, task.avancement ?? 0, { ...styleSidebar(false), alignment: { horizontal: 'center' } })
+          setCell(0, rowIdx, task.num_tache ?? '', styleSidebar(false, 0))
+          setCell(1, rowIdx, task.nom ?? '', styleSidebar(false, 1))
+          setCell(2, rowIdx, task.avancement ?? 0, { ...styleSidebar(false, 2), alignment: { horizontal: 'center' } })
 
           timeUnits.forEach((unit, i) => {
             const inMain = isInTask(unit, task)
@@ -997,12 +1022,15 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
             // En cas de chevauchement, la période bloquante prime sur l'informative
             const couvrantes = periodes.filter((p) => isInPeriode(unit, p))
             const periode = couvrantes.find((p) => p.est_bloquante !== false) ?? couvrantes[0] ?? null
-            const isBlocked = !!periode
 
             let fillHex = 'FFFFFF'
 
             if (active) {
               fillHex = inSeg ? getSegColor(inSeg, task).replace('#', '') : taskHex
+            } else if (isInDelaiAvant(unit, task) || isInDelaiApres(unit, task)) {
+              // Délais : même couleur que la barre mais très atténuée, pour les
+              // distinguer de la tâche elle-même (Excel ne gère pas la transparence).
+              fillHex = pastel(taskColor, 0.4)
             } else if (periode) {
               // Teinte dérivée de la couleur de la période : plus soutenue si
               // elle est bloquante, très pâle si elle est informative.
@@ -1016,19 +1044,11 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
               ? unit.getDate() === 1
               : viewMode === 'week'
                 ? (i > 0 && unit.getMonth() !== timeUnits[i - 1]?.getMonth())
-                : false
-
-            const borderRight = {
-              style: isMonthStart ? 'medium' : 'thin',
-              color: { rgb: isMonthStart ? 'C9C4C0' : isBlocked && !active ? 'F0C0B0' : 'F0EDE8' },
-            }
+                : true // en vue mois, chaque colonne est un début de mois
 
             setCell(FIXED_COLS + i, rowIdx, '', {
               fill: { fgColor: { rgb: fillHex } },
-              border: {
-                right: borderRight,
-                bottom: { style: 'thin', color: { rgb: 'F5F2F0' } },
-              },
+              border: borderTask(isMonthStart, false),
             })
           })
 
@@ -1038,14 +1058,14 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
 
     // ── Jalons ──
     if (jalons && jalons.length > 0) {
-      setCell(0, rowIdx, '', {})
-      setCell(1, rowIdx, 'JALONS', { font: { bold: true, sz: 9 } })
+      setCell(0, rowIdx, '', { border: borderThin })
+      setCell(1, rowIdx, 'JALONS', { font: { bold: true, sz: 9 }, border: borderThin })
       rowIdx++
 
       jalons.forEach((jalon) => {
-        setCell(0, rowIdx, '', styleSidebar())
-        setCell(1, rowIdx, jalon.label ?? '', styleSidebar(true))
-        setCell(2, rowIdx, '', styleSidebar())
+        setCell(0, rowIdx, '', styleSidebar(false, 0))
+        setCell(1, rowIdx, jalon.label ?? '', styleSidebar(true, 1))
+        setCell(2, rowIdx, '', styleSidebar(false, 2))
 
         const jalonDate = jalon.date ? parseDate(jalon.date) : null
 
@@ -1069,7 +1089,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
             fill: { fgColor: { rgb: isJalon ? jHex : 'FFFFFF' } },
             font: { color: { rgb: 'FFFFFF' }, sz: 8 },
             alignment: { horizontal: 'center' },
-            border: { right: { style: 'thin', color: { rgb: 'F0EDE8' } } },
+            border: borderTask(false, false),
           })
         })
         rowIdx++
@@ -1080,6 +1100,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
     rowIdx += 2
     const legendItems = [
       { color: 'E8602C', label: 'Tâche (couleur du lot/zone)' },
+      { color: pastel('#E8602C', 0.4), label: 'Délai avant / après' },
       { color: BLOQUANTE_FILL, label: 'Période bloquante' },
       { color: INFORMATIVE_FILL, label: 'Période informative' },
       { color: 'F0EDE8', label: 'Week-end' },
@@ -1087,11 +1108,12 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
     legendItems.forEach((item, i) => {
       setCell(FIXED_COLS + i * 2, rowIdx, '', {
         fill: { fgColor: { rgb: item.color } },
-        border: { right: { style: 'thin', color: { rgb: 'E9E2D6' } } },
+        border: borderThin,
       })
       setCell(FIXED_COLS + i * 2 + 1, rowIdx, item.label, {
         font: { sz: 8, color: { rgb: '5E5854' } },
         alignment: { vertical: 'center' },
+        border: borderThin,
       })
     })
     rowIdx++

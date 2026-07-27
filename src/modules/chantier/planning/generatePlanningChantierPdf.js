@@ -225,6 +225,10 @@ function buildTaskRow(task, color, days, dayWidths, jalons, todayStr, ctx) {
   const startIdx = mainGeo?.startIdx ?? -1
   const barWidthMm = mainGeo?.widthMm ?? 0
 
+  // Délais avant / après : mêmes hachures à 45° et même hauteur que la barre de
+  // tâche (top/bottom 1mm), comme dans la timeline interactive.
+  const fondDelai = `repeating-linear-gradient(45deg, ${color}28, ${color}28 4px, ${color}55 4px, ${color}55 8px)`
+
   let approHtml = ''
   if (task.appro_actif && task.appro_duree > 0 && startIdx >= 0) {
     const approStart = addWorkingDays(parseDate(taskStartStr), -task.appro_duree)
@@ -233,22 +237,26 @@ function buildTaskRow(task, color, days, dayWidths, jalons, todayStr, ctx) {
     let approWidthMm = 0
     for (let i = (approIdx >= 0 ? approIdx : 0); i < startIdx && i < days.length; i++) approWidthMm += dayWidths[i]
     if (approWidthMm > 0) {
-      const lbl = task.appro_materiau ? `Délai avant – ${task.appro_materiau}` : `Délai avant – ${task.appro_duree}j`
-      approHtml = `<div style="position:absolute;left:-${approWidthMm.toFixed(2)}mm;width:${approWidthMm.toFixed(2)}mm;top:1mm;bottom:1mm;background:${color};opacity:0.28;border:1.5px dashed ${color};border-right:none;display:flex;align-items:center;overflow:hidden;z-index:3;pointer-events:none">
-        <span style="font-size:5pt;color:${color};filter:brightness(0.5);white-space:nowrap;overflow:hidden;padding:0 1mm">${lbl}</span>
+      // Motif à l'intérieur de la barre, aligné à gauche et tronqué si trop long
+      const lbl = task.appro_materiau || `Appro. ${task.appro_duree}j`
+      approHtml = `<div style="position:absolute;left:-${approWidthMm.toFixed(2)}mm;width:${approWidthMm.toFixed(2)}mm;top:1mm;bottom:1mm;background:${fondDelai};border:1px dashed ${color}80;display:flex;align-items:center;overflow:hidden;z-index:3;pointer-events:none">
+        <span style="font-size:5pt;font-style:italic;color:${color};filter:brightness(0.6);white-space:nowrap;overflow:hidden;padding:0 1mm">${lbl}</span>
       </div>`
     }
   }
 
-  // Délai après la tâche (séchage, livraison…) : prolongement hachuré à droite de
-  // la barre. Rendu ici aussi pour que l'export explique pourquoi les tâches
-  // suivantes démarrent plus tard que la fin apparente de celle-ci.
+  // Délai après la tâche (séchage, livraison…) : prolongement à droite de la
+  // barre, motif écrit à l'extérieur — même convention que le nom d'une tâche.
   let delaiApresHtml = ''
   if (task.delai_apres > 0 && startIdx >= 0 && barWidthMm > 0) {
     const lastDay = addWorkingDays(parseDate(taskStartStr), Math.max(1, task.duree) - 1)
     const geoDelai = computeBarGeometry(days, dayWidths, formatDateISO(addWorkingDays(lastDay, 1)), task.delai_apres)
     if (geoDelai && geoDelai.widthMm > 0) {
-      delaiApresHtml = `<div style="position:absolute;left:${barWidthMm.toFixed(2)}mm;width:${geoDelai.widthMm.toFixed(2)}mm;top:1.4mm;bottom:1.4mm;background:repeating-linear-gradient(-45deg, ${color}30, ${color}30 3px, ${color}60 3px, ${color}60 6px);border:1px dashed ${color}80;z-index:3;pointer-events:none"></div>`
+      const finDelaiMm = barWidthMm + geoDelai.widthMm
+      delaiApresHtml = `<div style="position:absolute;left:${barWidthMm.toFixed(2)}mm;width:${geoDelai.widthMm.toFixed(2)}mm;top:1mm;bottom:1mm;background:${fondDelai};border:1px dashed ${color}80;z-index:3;pointer-events:none"></div>`
+      if (task.label_apres) {
+        delaiApresHtml += `<div style="position:absolute;left:${finDelaiMm.toFixed(2)}mm;padding-left:3px;top:0;bottom:0;display:flex;align-items:center;white-space:nowrap;font-size:5.5pt;font-style:italic;color:#9C9591;z-index:10">${task.label_apres}</div>`
+      }
     }
   }
 
@@ -483,12 +491,8 @@ function buildHtml({
     Avancement
   </div>
   <div class="leg-item">
-    <div class="leg-swatch" style="background:transparent;border:1px dashed #E8602C;opacity:0.6"></div>
-    Délai avant (appro…)
-  </div>
-  <div class="leg-item">
-    <div class="leg-swatch" style="background:repeating-linear-gradient(-45deg, #E8602C30, #E8602C30 3px, #E8602C60 3px, #E8602C60 6px);border:1px dashed #E8602C80"></div>
-    Délai après (séchage…)
+    <div class="leg-swatch" style="background:repeating-linear-gradient(45deg, #E8602C28, #E8602C28 4px, #E8602C55 4px, #E8602C55 8px);border:1px dashed #E8602C80"></div>
+    Délai avant / après
   </div>
   <div class="leg-item">
     <div class="leg-swatch" style="background:#C9C4C0;outline:1px dashed rgba(255,255,255,0.6);outline-offset:-1px"></div>

@@ -2156,23 +2156,17 @@ function TaskBarRow({
 
 // ─── ApproBar ─────────────────────────────────────────────────────────────────
 
-// Hauteur réservée sous une barre de délai quand son motif est affiché
-const DELAI_LABEL_HEIGHT = 12
-
-// Motif d'un délai, en petit texte gris italique sous la barre correspondante
-function DelaiLabel({ label, left, width }) {
-  return (
-    <div style={{
-      position: 'absolute',
-      left, width, bottom: BAR_PAD - 2,
-      fontSize: 9, fontStyle: 'italic', color: '#9C9591',
-      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-      pointerEvents: 'none', userSelect: 'none',
-      zIndex: 6,
-    }}>
-      {label}
-    </div>
-  )
+// Remplissage commun aux deux barres de délai : mêmes hachures à 45°, même
+// hauteur que la barre de tâche — seule leur position (avant / après) diffère.
+function delaiBarStyle(color) {
+  return {
+    position: 'absolute',
+    top: BAR_PAD, bottom: BAR_PAD,
+    background: `repeating-linear-gradient(45deg, ${color}28, ${color}28 4px, ${color}55 4px, ${color}55 8px)`,
+    border: `1px dashed ${color}80`,
+    pointerEvents: 'none', userSelect: 'none',
+    zIndex: 5,
+  }
 }
 
 function ApproBar({ task, color, geo }) {
@@ -2180,26 +2174,27 @@ function ApproBar({ task, color, geo }) {
   const approStartDate = addWorkingDays(taskStartDate, -task.appro_duree)
   const { left: approLeft, width: approWidth } = computeGeometry(approStartDate, task.appro_duree, geo)
   const largeur = Math.max(approWidth, 4)
-  const motif = task.appro_materiau ?? ''
+  const motif = task.appro_materiau || `Appro. ${task.appro_duree}j`
 
   return (
     <>
       <div
-        title={`${task.nom} · Délai avant : ${task.appro_duree} j. ouvré(s)${motif ? ` — ${motif}` : ''}`}
-        style={{
-          position: 'absolute',
-          left: approLeft, width: largeur,
-          top: BAR_PAD,
-          bottom: BAR_PAD + (motif ? DELAI_LABEL_HEIGHT : 0),
-          backgroundColor: color, opacity: 0.28,
-          borderRadius: 0,
-          border: `1.5px dashed ${color}`, borderRight: 'none',
-          overflow: 'hidden',
-          pointerEvents: 'none', userSelect: 'none',
-          zIndex: 5,
-        }}
+        title={`${task.nom} · Délai avant : ${task.appro_duree} j. ouvré(s)${task.appro_materiau ? ` — ${task.appro_materiau}` : ''}`}
+        style={{ ...delaiBarStyle(color), left: approLeft, width: largeur }}
       />
-      {motif && <DelaiLabel label={motif} left={approLeft} width={largeur} />}
+      {/* Motif à l'intérieur de la barre, aligné à gauche et tronqué si besoin */}
+      <div style={{
+        position: 'absolute',
+        left: approLeft + 4, maxWidth: Math.max(largeur - 8, 0),
+        top: BAR_PAD, bottom: BAR_PAD,
+        display: 'flex', alignItems: 'center',
+        fontSize: 10, fontStyle: 'italic', color,
+        whiteSpace: 'nowrap', overflow: 'hidden',
+        pointerEvents: 'none', userSelect: 'none',
+        zIndex: 6,
+      }}>
+        {motif}
+      </div>
     </>
   )
 }
@@ -2222,18 +2217,23 @@ function DelaiApresBar({ task, color, geo }) {
     <>
       <div
         title={`${task.nom} · Délai après : ${task.delai_apres} j. ouvré(s)${motif ? ` — ${motif}` : ''}`}
-        style={{
-          position: 'absolute',
-          left, width: largeur,
-          top: BAR_PAD + 2,
-          bottom: BAR_PAD + 2 + (motif ? DELAI_LABEL_HEIGHT : 0),
-          background: `repeating-linear-gradient(-45deg, ${color}30, ${color}30 3px, ${color}60 3px, ${color}60 6px)`,
-          border: `1px dashed ${color}80`,
-          pointerEvents: 'none', userSelect: 'none',
-          zIndex: 5,
-        }}
+        style={{ ...delaiBarStyle(color), left, width: largeur }}
       />
-      {motif && <DelaiLabel label={motif} left={left} width={largeur} />}
+      {/* Motif à l'extérieur, à droite de la barre — comme le nom d'une tâche */}
+      {motif && (
+        <div style={{
+          position: 'absolute',
+          left: left + largeur + 4,
+          top: BAR_PAD, bottom: BAR_PAD,
+          display: 'flex', alignItems: 'center',
+          fontSize: 10, fontStyle: 'italic', color: '#9C9591',
+          whiteSpace: 'nowrap',
+          pointerEvents: 'none', userSelect: 'none',
+          zIndex: 10,
+        }}>
+          {motif}
+        </div>
+      )}
     </>
   )
 }

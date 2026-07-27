@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
-import { X, Trash2 } from 'lucide-react'
+import { X, Trash2, Plus } from 'lucide-react'
 import {
-  getWeekStart, getCurrentWeek, addWeeks,
+  getWeekStart, getCurrentWeek, addWeeks, weeksBetween,
   computeLagSemaines,
 } from './types'
 
@@ -50,7 +50,10 @@ function emptyForm() {
   }
 }
 
-export function PhaseEtudeModal({ open, onClose, phase, phases, onSave, onDelete, mode }) {
+export function PhaseEtudeModal({
+  open, onClose, phase, phases, onSave, onDelete, mode,
+  getSegmentsForPhase, addSegment, updateSegment, deleteSegment,
+}) {
   const [form, setForm] = useState(emptyForm())
   const [saving, setSaving] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -153,6 +156,24 @@ export function PhaseEtudeModal({ open, onClose, phase, phases, onSave, onDelete
   }
 
   const otherPhases = phases.filter(p => p.id !== phase?.id)
+
+  // ── Segments supplémentaires ────────────────────────────────────────────────
+  const segmentsDePhase = (phase?.id && getSegmentsForPhase) ? getSegmentsForPhase(phase.id) : []
+
+  // Nouveau segment : juste après la fin de la phase, ou du dernier segment
+  const handleAddSegment = async () => {
+    if (!phase?.id || !addSegment) return
+    let debut = addWeeks(form.semaine_debut, form.annee_debut, Number(form.duree_semaines) || 1)
+    segmentsDePhase.forEach((seg) => {
+      const fin = addWeeks(seg.semaine_debut, seg.annee_debut, seg.duree_semaines)
+      if (weeksBetween(debut.semaine, debut.annee, fin.semaine, fin.annee) > 0) debut = fin
+    })
+    await addSegment(phase.id, {
+      semaine_debut: debut.semaine,
+      annee_debut: debut.annee,
+      duree_semaines: 2,
+    })
+  }
 
   return (
     <div
@@ -341,6 +362,105 @@ export function PhaseEtudeModal({ open, onClose, phase, phases, onSave, onDelete
                     <p style={{ fontSize: 11, color: '#9C9591', marginTop: 4 }}>{lagText}</p>
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* ── Segments supplémentaires ─────────────────────────────────────
+                Une phase peut réapparaître à d'autres périodes du planning
+                (reprise après interruption, intervention ponctuelle…). */}
+            {mode === 'edit' && phase?.id && addSegment && (
+              <div style={{ borderTop: '0.5px solid rgba(0,0,0,0.08)', paddingTop: 14 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                  <span style={{
+                    fontSize: 11, fontWeight: 500, color: '#9C9591',
+                    textTransform: 'uppercase', letterSpacing: '0.05em',
+                  }}>
+                    Segments supplémentaires
+                    {segmentsDePhase.length > 0 && ` (${segmentsDePhase.length})`}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleAddSegment}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px',
+                      fontSize: 11, borderRadius: 2,
+                      border: '0.5px solid #E8602C',
+                      background: 'transparent', color: '#E8602C', cursor: 'pointer',
+                    }}
+                  >
+                    <Plus size={12} />
+                    Ajouter un segment
+                  </button>
+                </div>
+
+                {segmentsDePhase.length === 0 && (
+                  <p style={{ fontSize: 11, color: '#9C9591', fontStyle: 'italic', padding: '4px 0' }}>
+                    Aucun segment — la phase n'apparaît qu'à sa période principale.
+                  </p>
+                )}
+
+                {segmentsDePhase.map((seg, idx) => {
+                  const fin = addWeeks(seg.semaine_debut, seg.annee_debut, seg.duree_semaines)
+                  return (
+                    <div key={seg.id} style={{
+                      display: 'grid', gridTemplateColumns: '1fr 70px 80px 70px 28px', gap: 8,
+                      alignItems: 'end', padding: '8px 0',
+                      borderBottom: '0.5px solid rgba(0,0,0,0.06)',
+                    }}>
+                      <div>
+                        {idx === 0 && <label style={{ ...LABEL, marginBottom: 3 }}>Nom (optionnel)</label>}
+                        <input
+                          type="text"
+                          value={seg.nom ?? ''}
+                          onChange={e => updateSegment(seg.id, { nom: e.target.value || null })}
+                          placeholder={phase.nom}
+                          style={{ ...INPUT, height: 30, fontSize: 12 }}
+                        />
+                      </div>
+                      <div>
+                        {idx === 0 && <label style={{ ...LABEL, marginBottom: 3 }}>Semaine</label>}
+                        <input
+                          type="number" min={1} max={53}
+                          value={seg.semaine_debut}
+                          onChange={e => updateSegment(seg.id, { semaine_debut: Math.min(53, Math.max(1, Number(e.target.value) || 1)) })}
+                          style={{ ...INPUT, height: 30, fontSize: 12 }}
+                        />
+                      </div>
+                      <div>
+                        {idx === 0 && <label style={{ ...LABEL, marginBottom: 3 }}>Année</label>}
+                        <input
+                          type="number" min={2020} max={2040}
+                          value={seg.annee_debut}
+                          onChange={e => updateSegment(seg.id, { annee_debut: Number(e.target.value) || seg.annee_debut })}
+                          style={{ ...INPUT, height: 30, fontSize: 12 }}
+                        />
+                      </div>
+                      <div>
+                        {idx === 0 && <label style={{ ...LABEL, marginBottom: 3 }}>Durée</label>}
+                        <input
+                          type="number" min={1}
+                          value={seg.duree_semaines}
+                          onChange={e => updateSegment(seg.id, { duree_semaines: Math.max(1, Number(e.target.value) || 1) })}
+                          style={{ ...INPUT, height: 30, fontSize: 12 }}
+                          title="Durée en semaines"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => deleteSegment(seg.id)}
+                        title={`Supprimer ce segment (fin S${fin.semaine} ${fin.annee})`}
+                        style={{
+                          width: 28, height: 30,
+                          border: '0.5px solid rgba(220,38,38,0.3)',
+                          background: '#FEF2F2', color: '#DC2626', cursor: 'pointer',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        }}
+                      >
+                        <Trash2 size={11} />
+                      </button>
+                    </div>
+                  )
+                })}
               </div>
             )}
           </div>

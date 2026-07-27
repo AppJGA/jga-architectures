@@ -2,7 +2,16 @@ import { useMemo, useRef, useCallback, useState, useEffect } from 'react'
 import { Pencil, GitBranch } from 'lucide-react'
 import {
   TYPE_COLORS, getWeekStart, addWeeks, weeksBetween, getCurrentWeek, computeLagSemaines,
+  weekOfDate,
 } from './types'
+
+function hexToRgba(hex, alpha) {
+  const h = (hex || '#B8412C').replace('#', '')
+  const r = parseInt(h.substring(0, 2), 16)
+  const g = parseInt(h.substring(2, 4), 16)
+  const b = parseInt(h.substring(4, 6), 16)
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
+}
 
 const HEADER_HEIGHT = 56
 const DOT_R = 6
@@ -32,6 +41,8 @@ export function GanttEtudeTimeline({
   onDependencyCreate, onDependencyDelete,
   criticalIds,
   refSemaine, refAnnee,
+  segments = [], getSegmentsForPhase, updateSegmentLocal, onSegmentCommit,
+  periodes = [],
 }) {
   // ── Reference week — reçue depuis GanttEtude (dynamique, -4 sem de marge) ─────
   const refWeek = useMemo(
@@ -41,14 +52,19 @@ export function GanttEtudeTimeline({
 
   // ── Largeur dynamique : couvre toutes les phases + 8 sem de marge à droite ────
   const totalWeeks = useMemo(() => {
-    if (phases.length === 0) return 52
+    if (phases.length === 0 && segments.length === 0) return 52
     let maxEnd = 0
     phases.forEach(p => {
       const end = weeksBetween(refSemaine, refAnnee, p.semaine_debut, p.annee_debut) + p.duree_semaines
       if (end > maxEnd) maxEnd = end
     })
+    // Les segments peuvent se prolonger au-delà de la dernière phase
+    segments.forEach(s => {
+      const end = weeksBetween(refSemaine, refAnnee, s.semaine_debut, s.annee_debut) + s.duree_semaines
+      if (end > maxEnd) maxEnd = end
+    })
     return Math.max(maxEnd + 8, 52)
-  }, [phases, refSemaine, refAnnee])
+  }, [phases, segments, refSemaine, refAnnee])
 
   const weeks = useMemo(() =>
     Array.from({ length: totalWeeks }, (_, i) => addWeeks(refWeek.semaine, refWeek.annee, i)),
@@ -125,6 +141,66 @@ export function GanttEtudeTimeline({
     document.body.style.cursor = type === 'move' ? 'grabbing' : 'ew-resize'
   }, [refWeek, semWidth])
 
+  // ── Drag / resize des segments ────────────────────────────────────────────────
+  // Même mécanique que les barres de phase : aperçu en manipulant le DOM pendant
+  // le geste, aucune écriture avant le relâchement.
+  const segDragRef = useRef(null)
+  const [draggingSeg, setDraggingSeg] = useState(null)
+
+  const startSegDrag = useCallback((e, seg, type) => {
+    e.preventDefault(); e.stopPropagation()
+    dragState.moved = false
+    const origLeft = weeksBetween(refWeek.semaine, refWeek.annee, seg.semaine_debut, seg.annee_debut) * semWidth
+    segDragRef.current = {
+      type, segId: seg.id, startX: e.clientX,
+      origSemaine: seg.semaine_debut,
+      origAnnee: seg.annee_debut,
+      origDuree: seg.duree_semaines,
+      origLeft,
+    }
+    setDraggingSeg(seg.id)
+    document.body.style.cursor = type === 'move' ? 'grabbing' : 'ew-resize'
+  }, [refWeek, semWidth])
+
+  // Géométrie d'un segment après un déplacement de `delta` semaines
+  const segChangesFor = useCallback((drag, delta) => {
+    const { type, origSemaine, origAnnee, origDuree } = drag
+    if (type === 'resize-right') {
+      return { duree_semaines: Math.max(1, origDuree + delta) }
+    }
+    if (type === 'resize-left') {
+      const shift = Math.min(delta, origDuree - 1)
+      const ns = addWeeks(origSemaine, origAnnee, shift)
+      return {
+        semaine_debut: ns.semaine, annee_debut: ns.annee,
+        duree_semaines: Math.max(1, origDuree - shift),
+      }
+    }
+    const ns = addWeeks(origSemaine, origAnnee, delta)
+    return { semaine_debut: ns.semaine, annee_debut: ns.annee }
+  }, [])
+
+  // ── Périodes (congés, fermetures…) ────────────────────────────────────────────
+  // Les dates sont converties en semaines ISO : une période couvre toutes les
+  // semaines qu'elle touche, même partiellement.
+  const periodeBands = useMemo(() =>
+    periodes.map((p) => {
+      const wDebut = weekOfDate(p.date_debut)
+      const wFin = weekOfDate(p.date_fin)
+      if (!wDebut || !wFin) return null
+      const startIdx = weeksBetween(refWeek.semaine, refWeek.annee, wDebut.semaine, wDebut.annee)
+      const endIdx = weeksBetween(refWeek.semaine, refWeek.annee, wFin.semaine, wFin.annee) + 1
+      if (endIdx <= 0) return null
+      return {
+        ...p,
+        left: startIdx * semWidth,
+        width: Math.max(semWidth, (endIdx - startIdx) * semWidth),
+        bloquante: p.est_bloquante !== false,
+      }
+    }).filter(Boolean),
+    [periodes, refWeek, semWidth]
+  )
+
   // ── Connections ───────────────────────────────────────────────────────────────
   const [connectingFrom, setConnectingFrom] = useState(null)
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 })
@@ -180,11 +256,26 @@ export function GanttEtudeTimeline({
         el.style.width = `${Math.max(semWidth, (origDuree - delta) * semWidth)}px`
       }
     }
+    if (segDragRef.current) {
+      const drag = segDragRef.current
+      const dx = e.clientX - drag.startX
+      if (Math.abs(dx) > 4) dragState.moved = true
+      const delta = Math.round(dx / semWidth)
+      const el = document.querySelector(`[data-segid="${drag.segId}"]`)
+      if (el) {
+        const c = segChangesFor(drag, delta)
+        if (c.semaine_debut != null) {
+          const shift = weeksBetween(drag.origSemaine, drag.origAnnee, c.semaine_debut, c.annee_debut)
+          el.style.left = `${drag.origLeft + shift * semWidth}px`
+        }
+        if (c.duree_semaines != null) el.style.width = `${c.duree_semaines * semWidth}px`
+      }
+    }
     if (connectingFrom && svgRef.current) {
       const rect = svgRef.current.getBoundingClientRect()
       setMousePos({ x: e.clientX - rect.left, y: e.clientY - rect.top })
     }
-  }, [semWidth, connectingFrom])
+  }, [semWidth, connectingFrom, segChangesFor])
 
   const handleMouseUp = useCallback((e) => {
     if (barDragRef.current) {
@@ -213,8 +304,30 @@ export function GanttEtudeTimeline({
       setDraggingBar(null)
       document.body.style.cursor = ''
     }
+
+    if (segDragRef.current) {
+      const drag = segDragRef.current
+      if (dragState.moved) {
+        const delta = Math.round((e.clientX - drag.startX) / semWidth)
+        const changes = segChangesFor(drag, delta)
+        const bouge = (changes.semaine_debut != null && changes.semaine_debut !== drag.origSemaine)
+          || (changes.annee_debut != null && changes.annee_debut !== drag.origAnnee)
+          || (changes.duree_semaines != null && changes.duree_semaines !== drag.origDuree)
+        if (bouge) {
+          updateSegmentLocal?.(drag.segId, changes)
+          onSegmentCommit?.(drag.segId, changes)
+        }
+      }
+      segDragRef.current = null
+      // `dragState.moved` n'est PAS réinitialisé ici : le clic qui suit le
+      // mouseup doit encore pouvoir le lire pour ne pas rouvrir la modale.
+      // Le prochain début de geste le remet à false.
+      setDraggingSeg(null)
+      document.body.style.cursor = ''
+    }
+
     if (connectingFrom && !hoveredPoint) setConnectingFrom(null)
-  }, [semWidth, onPhaseUpdate, connectingFrom, hoveredPoint])
+  }, [semWidth, onPhaseUpdate, connectingFrom, hoveredPoint, segChangesFor, updateSegmentLocal, onSegmentCommit])
 
   useEffect(() => {
     const h = (e) => { if (e.key === 'Escape') setConnectingFrom(null) }
@@ -325,6 +438,35 @@ export function GanttEtudeTimeline({
           }} />
         )}
 
+        {/* Périodes — hachurées si bloquantes, fond uni si informatives */}
+        {periodeBands.map((p) => {
+          const couleur = p.couleur || '#B8412C'
+          return (
+            <div
+              key={p.id}
+              title={`${p.label} — période ${p.bloquante ? 'bloquante' : 'informative'}`}
+              style={{
+                position: 'absolute', left: p.left, width: p.width, top: 0, bottom: 0,
+                background: p.bloquante
+                  ? `repeating-linear-gradient(45deg, ${hexToRgba(couleur, 0.06)}, ${hexToRgba(couleur, 0.06)} 4px, ${hexToRgba(couleur, 0.12)} 4px, ${hexToRgba(couleur, 0.12)} 8px)`
+                  : hexToRgba(couleur, 0.06),
+                borderLeft: `${p.bloquante ? 1.5 : 1}px solid ${hexToRgba(couleur, p.bloquante ? 0.3 : 0.2)}`,
+                borderRight: `${p.bloquante ? 1.5 : 1}px solid ${hexToRgba(couleur, p.bloquante ? 0.3 : 0.2)}`,
+                pointerEvents: 'none', zIndex: 1,
+              }}
+            >
+              <div style={{
+                position: 'absolute', top: 4, left: 4,
+                fontSize: 9, fontWeight: 500, color: hexToRgba(couleur, 0.7),
+                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                maxWidth: Math.max(p.width - 8, 0),
+              }}>
+                {p.label}
+              </div>
+            </div>
+          )
+        })}
+
         {/* Week grid lines */}
         {weeks.map((w, i) => {
           const isMonthStart = isFirstWeekOfMonth(w.semaine, w.annee)
@@ -397,6 +539,9 @@ export function GanttEtudeTimeline({
             onConnectionPointClick={handleConnectionPointClick}
             onConnectionPointHover={setHoveredPoint}
             isCritical={criticalIds?.has(phase.id) ?? false}
+            segments={getSegmentsForPhase ? getSegmentsForPhase(phase.id) : []}
+            draggingSegId={draggingSeg}
+            onSegmentDragStart={startSegDrag}
           />
         ))}
 
@@ -529,6 +674,7 @@ function PhaseBarRow({
   isDragging, isConnecting, connectingFromId, hoveredPoint,
   onBarDragStart, onBarClick, onConnectionPointClick, onConnectionPointHover,
   isCritical,
+  segments = [], draggingSegId, onSegmentDragStart,
 }) {
   const [isHovered, setIsHovered] = useState(false)
 
@@ -685,6 +831,77 @@ function PhaseBarRow({
       }}>
         {phase.nom}
       </div>
+
+      {/* ── Segments supplémentaires ───────────────────────────────────────
+          Même couleur que la phase, contour tireté pour les distinguer de la
+          barre principale. Déplaçables et redimensionnables à la semaine. */}
+      {segments.map((seg) => {
+        const segLeft = weeksBetween(refSemaine, refAnnee, seg.semaine_debut, seg.annee_debut) * semWidth
+        const segWidth = Math.max(seg.duree_semaines, 1) * semWidth
+        const isDraggingSeg = draggingSegId === seg.id
+        return (
+          <div key={seg.id}>
+            <div
+              data-segid={seg.id}
+              title={`${seg.nom ?? phase.nom} — segment · S${seg.semaine_debut} ${seg.annee_debut}, ${seg.duree_semaines} sem.`}
+              style={{
+                position: 'absolute',
+                left: segLeft, width: segWidth,
+                top: barPad, bottom: barPad,
+                backgroundColor: color,
+                opacity: isDraggingSeg ? 0.7 : 0.85,
+                outline: '1.5px dashed rgba(255,255,255,0.5)',
+                outlineOffset: -2,
+                cursor: isDraggingSeg ? 'grabbing' : 'grab',
+                zIndex: isDraggingSeg ? 25 : 8,
+              }}
+              onMouseDown={(e) => {
+                if (e.target.dataset.seghandle) return
+                onSegmentDragStart?.(e, seg, 'move')
+              }}
+              onClick={(e) => {
+                e.stopPropagation()
+                if (dragState.moved) return
+                onBarClick(phase)
+              }}
+            >
+              <div
+                data-seghandle="left"
+                title="Redimensionner (début)"
+                style={{
+                  position: 'absolute', left: 0, top: 0, bottom: 0,
+                  width: HANDLE_W, cursor: 'ew-resize', zIndex: 10,
+                  background: 'rgba(255,255,255,0.3)',
+                }}
+                onMouseDown={(e) => onSegmentDragStart?.(e, seg, 'resize-left')}
+              />
+              <div
+                data-seghandle="right"
+                title="Redimensionner (durée)"
+                style={{
+                  position: 'absolute', right: 0, top: 0, bottom: 0,
+                  width: HANDLE_W, cursor: 'ew-resize', zIndex: 10,
+                  background: 'rgba(255,255,255,0.3)',
+                }}
+                onMouseDown={(e) => onSegmentDragStart?.(e, seg, 'resize-right')}
+              />
+            </div>
+            {seg.nom && (
+              <div style={{
+                position: 'absolute',
+                left: segLeft + segWidth + 4,
+                top: barPad, bottom: barPad,
+                display: 'flex', alignItems: 'center',
+                whiteSpace: 'nowrap', fontSize: 10, fontStyle: 'italic',
+                color: '#9C9591', pointerEvents: 'none', userSelect: 'none',
+                zIndex: 10,
+              }}>
+                {seg.nom}
+              </div>
+            )}
+          </div>
+        )
+      })}
 
       {/* ── Connection dot START ───────────────────────────────────────── */}
       <div

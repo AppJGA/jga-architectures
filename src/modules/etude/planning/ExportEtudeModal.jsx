@@ -48,7 +48,7 @@ function computeRange(taches) {
   return { semDebut: start.semaine, anneeDebut: start.annee, semFin: fin.semaine, anneeFin: fin.annee }
 }
 
-export function ExportEtudeModal({ open, onClose, taches = [], jalons = [], affaire = {} }) {
+export function ExportEtudeModal({ open, onClose, taches = [], jalons = [], affaire = {}, segments = [], periodes = [] }) {
   const computed = useMemo(() => computeRange(taches), [taches])
 
   const [semDebut,     setSemDebut]     = useState(computed.semDebut)
@@ -91,6 +91,16 @@ export function ExportEtudeModal({ open, onClose, taches = [], jalons = [], affa
     [jalons, semDebut, anneeDebut, semFin, anneeFin]
   )
 
+  // Segments recoupant la période exportée (mêmes bornes que les phases)
+  const segmentsInPeriod = useMemo(() =>
+    segments.filter(sg => {
+      const end = addWeeks(sg.semaine_debut, sg.annee_debut, sg.duree_semaines)
+      return weeksBetween(sg.semaine_debut, sg.annee_debut, semFin, anneeFin) >= 0 &&
+             weeksBetween(semDebut, anneeDebut, end.semaine, end.annee) >= 0
+    }),
+    [segments, semDebut, anneeDebut, semFin, anneeFin]
+  )
+
   const finalFormat = formatTab === 'standard'
     ? PAGE_FORMATS[fmtIdx]
     : { w: Math.max(100, Math.min(2000, customW)), h: Math.max(100, Math.min(2000, customH)) }
@@ -115,6 +125,8 @@ export function ExportEtudeModal({ open, onClose, taches = [], jalons = [], affa
       anneeFin,
       largeurMm: finalFormat.w,
       hauteurMm: finalFormat.h,
+      segments: segmentsInPeriod,
+      periodes,
     })
     onClose()
   }
@@ -253,7 +265,10 @@ export function ExportEtudeModal({ open, onClose, taches = [], jalons = [], affa
           <div style={{ borderRadius: 2, backgroundColor: '#FAF7F2', border: '0.5px solid rgba(0,0,0,0.08)', padding: '12px 16px' }}>
             <p style={{ fontSize: 12, color: '#1F1B17', fontWeight: 500, marginBottom: 4 }}>Récapitulatif</p>
             <p style={{ fontSize: 11, color: '#5E5854', lineHeight: 1.7 }}>
-              {tachesInPeriod.length} phase{tachesInPeriod.length > 1 ? 's' : ''} sur la période sélectionnée<br />
+              {tachesInPeriod.length} phase{tachesInPeriod.length > 1 ? 's' : ''} sur la période sélectionnée
+              {segmentsInPeriod.length > 0 && ` · ${segmentsInPeriod.length} segment${segmentsInPeriod.length > 1 ? 's' : ''}`}
+              {periodes.length > 0 && ` · ${periodes.length} période${periodes.length > 1 ? 's' : ''}`}
+              <br />
               Période : S{semDebut} {anneeDebut} → S{semFin} {anneeFin}<br />
               Format : {finalFormat.w} mm × {finalFormat.h} mm<br />
               <span style={{ color: '#9C9591', fontSize: 10 }}>Le tableau sera mis à l'échelle pour tenir sur une page.</span>

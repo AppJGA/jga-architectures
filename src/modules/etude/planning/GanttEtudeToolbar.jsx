@@ -1,4 +1,4 @@
-import { ZoomIn, ZoomOut, FileDown, Plus, Flag, GitBranch, CalendarDays, RefreshCw } from 'lucide-react'
+import { ZoomIn, ZoomOut, FileDown, Plus, Flag, GitBranch, CalendarDays, RefreshCw, Ban, Table } from 'lucide-react'
 
 const BTN = {
   display: 'inline-flex', alignItems: 'center', gap: 6,
@@ -15,10 +15,13 @@ const BTN_PRIMARY = {
 }
 
 export function GanttEtudeToolbar({
-  onZoomIn, onZoomOut, onExportPdf, onAddTask,
+  onZoomIn, onZoomOut, onExportPdf, onExportExcel, onAddTask,
   onOpenJalons, onToggleConnections, showConnections, semWidth,
+  onOpenPeriodes, periodes = [],
   notionEnabled, notionConnected, onToggleNotion,
 }) {
+  const nbBloquantes = periodes.filter(p => p.est_bloquante !== false).length
+  const accentPeriodes = nbBloquantes > 0
   const canZoomOut = semWidth > 16
   const canZoomIn = semWidth < 80
 
@@ -94,6 +97,27 @@ export function GanttEtudeToolbar({
         <button style={BTN} onClick={onOpenJalons}>
           <Flag size={13} /> Jalons
         </button>
+        {onOpenPeriodes && (
+          <button
+            onClick={onOpenPeriodes}
+            style={{
+              ...BTN,
+              backgroundColor: accentPeriodes ? '#FEF2F2' : periodes.length > 0 ? '#F5F2F0' : 'white',
+              color: accentPeriodes ? '#B8412C' : '#374151',
+            }}
+            title={periodes.length > 0
+              ? `${nbBloquantes} bloquante(s), ${periodes.length - nbBloquantes} informative(s)`
+              : 'Gérer les périodes'}
+          >
+            <Ban size={13} />
+            {periodes.length > 0 ? `${periodes.length} période(s)` : 'Périodes'}
+          </button>
+        )}
+        {onExportExcel && (
+          <button style={BTN} onClick={onExportExcel}>
+            <Table size={13} /> Excel
+          </button>
+        )}
         <button style={BTN} onClick={onExportPdf}>
           <FileDown size={13} /> Export PDF
         </button>

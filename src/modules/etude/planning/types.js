@@ -70,6 +70,22 @@ export function getCurrentWeek() {
   return getISOWeek(new Date())
 }
 
+// Parsing local d'une date ISO 'YYYY-MM-DD' — `new Date(str)` serait interprété
+// en UTC et décalerait la date d'un jour selon le fuseau.
+export function parseDateLocale(d) {
+  if (d instanceof Date) return new Date(d)
+  if (!d) return null
+  const [y, m, day] = String(d).split('T')[0].split('-').map(Number)
+  if (!y || !m || !day) return null
+  return new Date(y, m - 1, day)
+}
+
+// Semaine ISO d'une date ISO 'YYYY-MM-DD' (null si date invalide)
+export function weekOfDate(d) {
+  const date = parseDateLocale(d)
+  return date ? getISOWeek(date) : null
+}
+
 // Label humain d'une semaine
 export function formatWeekLabel(semaine, annee) {
   const d = getWeekStart(semaine, annee)

@@ -1,4 +1,5 @@
-import { getWeekStart, addWeeks, getCurrentWeek } from './types'
+import { getWeekStart, addWeeks, weeksBetween, getCurrentWeek, weekOfDate } from './types'
+import { assignLabelLanes } from '../../chantier/planning/jalonLayout'
 
 const BAR_COLORS = {
   etude:         '#E8A200',
@@ -50,7 +51,32 @@ function buildWeekHeaders(weeks, cw) {
   }).join('')
 }
 
-function buildPhaseRows(phases, weeks, jalons) {
+// Fond d'une cellule couverte par une période : hachures si bloquante, aplat
+// très clair si informative (mêmes conventions que le planning chantier).
+function hexToRgb(hex) {
+  const h = (hex || '#B8412C').replace('#', '')
+  return `${parseInt(h.slice(0, 2), 16)},${parseInt(h.slice(2, 4), 16)},${parseInt(h.slice(4, 6), 16)}`
+}
+
+function periodeDeLaSemaine(w, periodes) {
+  const couvrantes = (periodes ?? []).filter(p => {
+    const d = weekOfDate(p.date_debut)
+    const f = weekOfDate(p.date_fin)
+    if (!d || !f) return false
+    return weeksBetween(d.semaine, d.annee, w.semaine, w.annee) >= 0
+      && weeksBetween(w.semaine, w.annee, f.semaine, f.annee) >= 0
+  })
+  return couvrantes.find(p => p.est_bloquante !== false) ?? couvrantes[0] ?? null
+}
+
+function fondPeriode(periode) {
+  const rgb = hexToRgb(periode.couleur)
+  return periode.est_bloquante !== false
+    ? `repeating-linear-gradient(45deg, rgba(${rgb},0.08), rgba(${rgb},0.08) 3px, rgba(${rgb},0.15) 3px, rgba(${rgb},0.15) 6px)`
+    : `rgba(${rgb},0.06)`
+}
+
+function buildPhaseRows(phases, weeks, jalons, segments = [], periodes = []) {
   return phases.map(phase => {
     const color = BAR_COLORS[phase.type_tache] ?? '#9C9591'
     const labelCls = {
@@ -66,6 +92,9 @@ function buildPhaseRows(phases, weeks, jalons) {
     const endW = addWeeks(phase.semaine_debut, phase.annee_debut, phase.duree_semaines)
     const endIdx = weeks.findIndex(w => w.semaine === endW.semaine && w.annee === endW.annee)
     const spanCount = endIdx >= 0 ? endIdx - startIdx : weeks.length - Math.max(startIdx, 0)
+
+    // Segments de la phase : chacun démarre dans sa propre cellule
+    const segsDePhase = segments.filter(s => s.phase_id === phase.id)
 
     const cells = weeks.map((w, idx) => {
       const ms = isFirstWeekOfMonth(w.semaine, w.annee)
@@ -102,21 +131,69 @@ function buildPhaseRows(phases, weeks, jalons) {
           <div style="position:absolute;left:calc(${spanCount * 100}% + 3px);top:0;bottom:0;display:flex;align-items:center;white-space:nowrap;font-size:6.5pt;font-weight:${isMoe ? 'bold' : 'normal'};color:#1F1B17;z-index:10;">${phase.nom}</div>`
       }
 
+      // Barres de segment (mêmes couleur et géométrie que dans la timeline)
+      let segContent = ''
+      segsDePhase.forEach(seg => {
+        if (seg.semaine_debut !== w.semaine || seg.annee_debut !== w.annee) return
+        const span = Math.max(1, seg.duree_semaines)
+        segContent += `<div class="bar seg-bar" style="left:0;width:${span * 100}%;background:${color}">
+          ${seg.nom ? `<span class="bar-inner-txt">${seg.nom}</span>` : ''}
+        </div>`
+      })
+
       const jalonsSemaine = (jalons ?? []).filter(j => j.semaine === w.semaine && j.annee === w.annee)
       const jalonLines = jalonsSemaine.map(j =>
-        `<div class="jalon-line" style="background:${j.couleur};left:50%">
-           <div class="jalon-label" style="background:${j.couleur}">${j.label}</div>
-         </div>`
+        `<div class="jalon-line" style="background:${j.couleur};left:50%"></div>`
       ).join('')
 
-      return `<td class="pcell${ms ? ' ms' : ''}" style="position:relative">${content}${jalonLines}</td>`
+      const periode = periodeDeLaSemaine(w, periodes)
+      const bg = periode ? `background:${fondPeriode(periode)};` : ''
+
+      return `<td class="pcell${ms ? ' ms' : ''}" style="position:relative;${bg}">${content}${segContent}${jalonLines}</td>`
     }).join('')
 
     return `<tr><td class="plabel ${labelCls}">${phase.nom}</td>${cells}</tr>`
   }).join('')
 }
 
-function buildHtml({ phases, jalons, affaire, semaineDebut, anneeDebut, semaineFin, anneeFin, largeurMm, hauteurMm }) {
+// ─── Bande de jalons ──────────────────────────────────────────────────────────
+// Un seul libellé par jalon, au-dessus du tableau, décalé verticalement quand
+// deux jalons sont trop proches (même traitement que le planning chantier).
+const JALON_GAP_MM = 26
+const JALON_LIGNE_MM = 3.2
+
+function buildJalonBand(jalons, weeks, labelColMm, weekWidthMm) {
+  const places = (jalons ?? [])
+    .map(j => {
+      const idx = weeks.findIndex(w => w.semaine === j.semaine && w.annee === j.annee)
+      if (idx < 0) return null
+      return { jalon: j, x: labelColMm + idx * weekWidthMm + weekWidthMm / 2 }
+    })
+    .filter(Boolean)
+
+  if (places.length === 0) return ''
+
+  const lanes = assignLabelLanes(places.map(p => p.x), JALON_GAP_MM)
+  const hauteurMm = (Math.max(...lanes) + 1) * JALON_LIGNE_MM + 5
+
+  const marqueurs = places.map(({ jalon, x }, i) => {
+    const couleur = jalon.couleur ?? '#8B5CF6'
+    const topLabel = lanes[i] * JALON_LIGNE_MM
+    const topTrait = (lanes[i] + 1) * JALON_LIGNE_MM
+    return `<div style="position:absolute;left:${x.toFixed(2)}mm;top:0;bottom:0;width:0">
+      <div style="position:absolute;top:${topLabel.toFixed(2)}mm;left:1.2mm;font-size:5pt;font-weight:bold;color:${couleur};white-space:nowrap;line-height:${JALON_LIGNE_MM}mm">${jalon.label ?? ''}</div>
+      <div style="position:absolute;top:${topTrait.toFixed(2)}mm;bottom:1.6mm;left:0;width:1.5px;background:${couleur}"></div>
+      <div style="position:absolute;bottom:0;left:-2.5px;width:0;height:0;border-left:2.5px solid transparent;border-right:2.5px solid transparent;border-top:1.6mm solid ${couleur}"></div>
+    </div>`
+  }).join('')
+
+  return `<div style="position:relative;height:${hauteurMm.toFixed(2)}mm;border-bottom:1px solid #E9E2D6;margin-bottom:1mm">${marqueurs}</div>`
+}
+
+function buildHtml({
+  phases, jalons, affaire, semaineDebut, anneeDebut, semaineFin, anneeFin,
+  largeurMm, hauteurMm, segments = [], periodes = [],
+}) {
   const weeks = buildWeeksList(semaineDebut, anneeDebut, semaineFin, anneeFin)
   const cw = getCurrentWeek()
   const logoUrl = window.location.origin + '/Logo_JGA_Archi.jpg'
@@ -127,7 +204,8 @@ function buildHtml({ phases, jalons, affaire, semaineDebut, anneeDebut, semaineF
 
   const monthHeaders = buildMonthHeaders(weeks)
   const weekHeaders  = buildWeekHeaders(weeks, cw)
-  const phaseRows    = buildPhaseRows(phases, weeks, jalons)
+  const phaseRows    = buildPhaseRows(phases, weeks, jalons, segments, periodes)
+  const jalonBand    = buildJalonBand(jalons, weeks, labelColMm, weekWidthMm)
 
   const dateStr    = new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })
   const nomAffaire  = affaire?.nom ?? ''
@@ -177,6 +255,7 @@ function buildHtml({ phases, jalons, affaire, semaineDebut, anneeDebut, semaineF
 
   .bar          { position: absolute; top: 2mm; bottom: 1mm; z-index: 2; overflow: hidden; }
   .seg          { position: absolute; top: 0; bottom: 0; display: flex; align-items: center; justify-content: center; font-size: 5.5pt; font-weight: bold; color: white; border-right: 1px solid rgba(255,255,255,0.5); }
+  .seg-bar      { opacity: 0.85; outline: 1px dashed rgba(255,255,255,0.6); outline-offset: -1px; z-index: 3; }
   .bar-inner-txt{ position: absolute; inset: 0; display: flex; align-items: center; padding: 0 1.5mm; font-size: 5.5pt; color: white; font-style: italic; }
 
   .jalon-line  { position: absolute; top: 0; bottom: 0; width: 1.5px; z-index: 5; }
@@ -206,6 +285,7 @@ function buildHtml({ phases, jalons, affaire, semaineDebut, anneeDebut, semaineF
 </div>
 
 <div class="gantt-wrap" id="gw">
+  ${jalonBand}
   <table class="gantt-table">
     <colgroup>
       <col class="col-label">
@@ -237,6 +317,10 @@ function buildHtml({ phases, jalons, affaire, semaineDebut, anneeDebut, semaineF
   ${[['1','Architecte'],['2','BET'],['3','Économiste']].map(([n,l]) =>
     `<div class="leg-item"><div class="leg-num">${n}</div>${l}</div>`
   ).join('')}
+  <div style="border-left:0.5px solid #ddd;height:8px;margin:0 2mm"></div>
+  <div class="leg-item"><div class="leg-swatch" style="background:#E8A200;opacity:0.85;outline:1px dashed rgba(255,255,255,0.6);outline-offset:-1px"></div>Segment</div>
+  <div class="leg-item"><div class="leg-swatch" style="background:repeating-linear-gradient(45deg, rgba(184,65,44,0.15), rgba(184,65,44,0.15) 3px, rgba(184,65,44,0.28) 3px, rgba(184,65,44,0.28) 6px)"></div>Période bloquante</div>
+  <div class="leg-item"><div class="leg-swatch" style="background:rgba(184,65,44,0.10);border:0.5px solid rgba(184,65,44,0.25)"></div>Période informative</div>
   <div style="border-left:0.5px solid #ddd;height:8px;margin:0 2mm"></div>
   <div class="leg-item"><div style="width:8mm;border-top:2px solid #E8602C"></div>Jalon</div>
 </div>

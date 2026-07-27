@@ -3,6 +3,8 @@ import { supabase } from '../../../core/supabase/client'
 import { propagateEtudeDependencies, computeLagSemaines, addWeeks, weeksBetween, getCurrentWeek } from './types'
 import { computeCriticalPath } from './computeCriticalPath'
 import { usePlanningEtude } from '../../../shared/hooks/usePlanningEtude'
+import { usePlanningEtudeSegments } from '../../../shared/hooks/usePlanningEtudeSegments'
+import { usePeriodesBloquees } from '../../../shared/hooks/usePeriodesBloquees'
 import { useNotionSync, etudePhaseToNotion } from '../../../shared/hooks/useNotionSync'
 import { GanttEtudeToolbar } from './GanttEtudeToolbar'
 import { GanttEtudeSidebar } from './GanttEtudeSidebar'
@@ -10,10 +12,20 @@ import { GanttEtudeTimeline } from './GanttEtudeTimeline'
 import { PhaseEtudeModal } from './PhaseEtudeModal'
 import { JalonEtudeModal } from './JalonEtudeModal'
 import { ExportEtudeModal } from './ExportEtudeModal'
+import { PeriodesBloqueesModal } from '../../chantier/planning/PeriodesBloqueesModal'
+import { exportPlanningEtudeExcel } from './exportPlanningEtudeExcel'
 import { Toast } from '../../../shared/components/Toast'
 
 export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', affaire = {} }) {
   const { phases: hookPhases, jalons, loading, error, addPhase, updatePhase, deletePhase, refetch } = usePlanningEtude(affaireId)
+
+  // ── Segments (une phase peut réapparaître à d'autres périodes) ────────────────
+  const {
+    segments, addSegment, updateSegment, updateSegmentLocal, deleteSegment, getSegmentsForPhase,
+  } = usePlanningEtudeSegments(affaireId)
+
+  // ── Périodes (congés, fermetures…) — mêmes hook et modale que le chantier ─────
+  const { periodes, addPeriode, updatePeriode, deletePeriode } = usePeriodesBloquees(affaireId)
 
   // ── Notion sync ───────────────────────────────────────────────────────────────
   const notionSync     = useNotionSync(affaireId)
@@ -89,6 +101,7 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
   const [phaseModalMode, setPhaseModalMode] = useState('edit')
   const [showJalonsModal, setShowJalonsModal] = useState(false)
   const [showExportModal, setShowExportModal] = useState(false)
+  const [showPeriodesModal, setShowPeriodesModal] = useState(false)
 
   // ── Scroll sync ───────────────────────────────────────────────────────────────
   const sidebarRef = useRef(null)
@@ -210,6 +223,19 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
     }
   }, [persistUpdates, notionSync.pushToNotion])
 
+  // ── Commit d'un segment après drag/resize dans la timeline ────────────────────
+  const handleSegmentCommit = useCallback(async (segmentId, changes) => {
+    await updateSegment(segmentId, changes)
+  }, [updateSegment])
+
+  // ── Export Excel ──────────────────────────────────────────────────────────────
+  const handleExportExcel = useCallback(() => {
+    exportPlanningEtudeExcel({
+      phases: sortedPhases, segments, jalons, periodes, affaire,
+      refSemaine: refDate.semaine, refAnnee: refDate.annee,
+    })
+  }, [sortedPhases, segments, jalons, periodes, affaire, refDate])
+
   // ── Dependencies ──────────────────────────────────────────────────────────────
   const handleDependencyCreate = useCallback(async (fromPhaseId, toPhaseId, lagSemaines) => {
     await supabase.from('planning_etude_phases')
@@ -258,8 +284,11 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
           onZoomIn={() => setSemWidth(w => Math.min(80, w + 4))}
           onZoomOut={() => setSemWidth(w => Math.max(16, w - 4))}
           onExportPdf={() => setShowExportModal(true)}
+          onExportExcel={handleExportExcel}
           onAddTask={() => { setEditingPhase(null); setPhaseModalMode('create'); setShowPhaseModal(true) }}
           onOpenJalons={() => setShowJalonsModal(true)}
+          onOpenPeriodes={() => setShowPeriodesModal(true)}
+          periodes={periodes}
           onToggleConnections={() => setShowConnections(v => !v)}
           showConnections={showConnections}
           semWidth={semWidth}
@@ -308,6 +337,11 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
             criticalIds={criticalIds}
             refSemaine={refDate.semaine}
             refAnnee={refDate.annee}
+            segments={segments}
+            getSegmentsForPhase={getSegmentsForPhase}
+            updateSegmentLocal={updateSegmentLocal}
+            onSegmentCommit={handleSegmentCommit}
+            periodes={periodes}
           />
         </div>
       </div>
@@ -374,6 +408,10 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
         onSave={handleSavePhase}
         onDelete={handleDeletePhase}
         mode={phaseModalMode}
+        getSegmentsForPhase={getSegmentsForPhase}
+        addSegment={addSegment}
+        updateSegment={updateSegment}
+        deleteSegment={deleteSegment}
       />
 
       <JalonEtudeModal
@@ -390,6 +428,17 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
         taches={phases}
         jalons={jalons}
         affaire={affaire}
+        segments={segments}
+        periodes={periodes}
+      />
+
+      <PeriodesBloqueesModal
+        open={showPeriodesModal}
+        onClose={() => setShowPeriodesModal(false)}
+        periodes={periodes}
+        addPeriode={addPeriode}
+        updatePeriode={updatePeriode}
+        deletePeriode={deletePeriode}
       />
 
       {notionToast && (

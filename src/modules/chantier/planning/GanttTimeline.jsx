@@ -8,6 +8,7 @@ import {
   workingDaysBetween,
   computeLag,
 } from './types'
+import { assignLabelLanes } from './jalonLayout'
 
 // Étendue minimale de la timeline, même sans tâche (la plage réelle est calculée
 // depuis la dernière tâche/segment + une large marge droite — voir `dayCount`).
@@ -28,6 +29,11 @@ const HEADER_ROW_YEAR = 24
 const HEADER_ROW_MONTH = 24
 const BAR_PAD = 4
 const WEEKEND_RATIO = 0.35
+
+// Jalons : en dessous de cet écart horizontal, deux labels se chevauchent et
+// sont répartis sur des lignes successives (hauteur d'une ligne de label).
+const JALON_LABEL_MIN_GAP = 80
+const JALON_LABEL_HEIGHT = 20
 
 // ── Fonctions géométrie variable (colonnes week-end réduites) ─────────────────
 
@@ -420,7 +426,7 @@ export function GanttTimeline({
   jalons = [], onJalonClick,
   onTaskClick, onTaskUpdate, onDependencyCreate, onDependencyDelete,
   zones = [], colorMode = 'lot', viewMode = 'day', zoomLevel = 1,
-  getSegmentsForTache, segments = [], updateSegmentLocal, onSegmentDateCommit,
+  getSegmentsForTache, segments = [], updateSegmentLocal, onSegmentCommit,
   dependances = [], onSegmentDependencyCreate, onSegmentDependencyDelete,
   periodes = [], getNextWorkingDay, dragOverTaskId = null,
   drawMode = false, onDrawCreate, scrollRef = null,
@@ -772,7 +778,7 @@ export function GanttTimeline({
         if (getNextWorkingDay) finalDate = getNextWorkingDay(finalDate)
         const snapped = formatDateISO(finalDate)
         if (snapped !== seg.date_debut) updateSegmentLocal?.(draggingSegment.segmentId, { date_debut: snapped })
-        await onSegmentDateCommit?.(draggingSegment.segmentId, snapped)
+        await onSegmentCommit?.(draggingSegment.segmentId, { date_debut: snapped })
       }
       setDraggingSegment(null)
     }
@@ -783,7 +789,76 @@ export function GanttTimeline({
       window.removeEventListener('mousemove', handleMouseMove)
       window.removeEventListener('mouseup', handleMouseUp)
     }
-  }, [draggingSegment, segments, viewMode, pxToDays, updateSegmentLocal, onSegmentDateCommit, getNextWorkingDay])
+  }, [draggingSegment, segments, viewMode, pxToDays, updateSegmentLocal, onSegmentCommit, getNextWorkingDay])
+
+  // ── Resize segment (poignées gauche/droite) ───────────────────────────────────
+  //
+  // Même géométrie que le resize d'une barre de tâche : `duree_jours` est une
+  // durée en jours OUVRÉS (c'est ainsi que la barre du segment est dessinée),
+  // donc on réutilise applyDeltaDays/resizeLeftDuree plutôt qu'un calcul en jours
+  // calendaires, qui ferait sauter la barre au relâchement.
+  const [resizingSegment, setResizingSegment] = useState(null)
+
+  const handleSegmentResizeStart = useCallback((e, segment, side) => {
+    if (drawMode || e.button !== 0) return
+    e.stopPropagation()
+    e.preventDefault()
+    // Même drapeau que le drag : il empêche le clic de fin de geste (qui remonte
+    // jusqu'à la barre du segment) de rouvrir la modale de la tâche.
+    segmentDragRef.current = { moved: false }
+    setResizingSegment({
+      segmentId: segment.id,
+      side,
+      startX: e.clientX,
+      originalDateDebut: segment.date_debut,
+      originalDuree: segment.duree_jours ?? 1,
+    })
+  }, [drawMode])
+
+  useEffect(() => {
+    if (!resizingSegment) return
+    const { segmentId, side, startX, originalDateDebut, originalDuree } = resizingSegment
+    const origDebut = parseDate(originalDateDebut)
+    const minDuree = viewMode === 'month' ? 5 : 1
+
+    const computeChanges = (dx) => {
+      const deltaDays = pxToDays(dx)
+      if (side === 'right') {
+        return { duree_jours: Math.max(minDuree, originalDuree + deltaDays) }
+      }
+      const shift = Math.min(deltaDays, originalDuree - minDuree)
+      const newDebut = applyDeltaDays(origDebut, shift, viewMode)
+      return {
+        date_debut: formatDateISO(newDebut),
+        duree_jours: viewMode === 'day'
+          ? resizeLeftDuree(origDebut, originalDuree, newDebut, minDuree)
+          : Math.max(minDuree, originalDuree - deltaDays),
+      }
+    }
+
+    const handleMouseMove = (e) => {
+      const dx = e.clientX - startX
+      if (Math.abs(dx) > 3) segmentDragRef.current.moved = true
+      updateSegmentLocal?.(segmentId, computeChanges(dx))
+    }
+
+    const handleMouseUp = async (e) => {
+      const changes = computeChanges(e.clientX - startX)
+      const inchange = changes.duree_jours === originalDuree
+        && (changes.date_debut ?? originalDateDebut) === originalDateDebut
+      setResizingSegment(null)
+      if (inchange) return
+      updateSegmentLocal?.(segmentId, changes)
+      await onSegmentCommit?.(segmentId, changes)
+    }
+
+    window.addEventListener('mousemove', handleMouseMove)
+    window.addEventListener('mouseup', handleMouseUp)
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove)
+      window.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [resizingSegment, viewMode, pxToDays, updateSegmentLocal, onSegmentCommit])
 
   // ── Connexion chemin critique ──────────────────────────────────────────────────
   const [connectingFrom, setConnectingFrom] = useState(null)
@@ -1036,6 +1111,12 @@ export function GanttTimeline({
     const today = new Date(); today.setHours(0, 0, 0, 0)
     return getX(today)
   }, [getX])
+
+  // Voie verticale de chaque label de jalon (anti-chevauchement)
+  const jalonLabelLanes = useMemo(
+    () => assignLabelLanes(jalons.map((j) => getX(parseDate(j.date))), JALON_LABEL_MIN_GAP),
+    [jalons, getX]
+  )
 
   return (
     <div
@@ -1378,8 +1459,8 @@ export function GanttTimeline({
           )
         })()}
 
-        {/* Jalons — lignes verticales */}
-        {jalons.map(jalon => {
+        {/* Jalons — lignes verticales (labels décalés pour ne pas se chevaucher) */}
+        {jalons.map((jalon, idx) => {
           const x = getX(parseDate(jalon.date))
           return (
             <div
@@ -1393,7 +1474,9 @@ export function GanttTimeline({
               onClick={(e) => { e.stopPropagation(); onJalonClick?.(jalon) }}
             >
               <div style={{
-                position: 'absolute', top: 4, left: 5,
+                position: 'absolute',
+                top: 4 + (jalonLabelLanes[idx] ?? 0) * JALON_LABEL_HEIGHT,
+                left: 5,
                 backgroundColor: jalon.couleur, color: 'white',
                 fontSize: 10, fontWeight: 600, padding: '2px 6px', borderRadius: 3,
                 whiteSpace: 'nowrap', letterSpacing: '0.02em',
@@ -1438,6 +1521,8 @@ export function GanttTimeline({
                 isDragging={draggingBar === row.task.id}
                 draggingSegmentId={draggingSegment?.segmentId ?? null}
                 onSegmentDragStart={handleSegmentMouseDown}
+                onSegmentResizeStart={handleSegmentResizeStart}
+                resizingSegmentId={resizingSegment?.segmentId ?? null}
                 segmentDragMovedRef={segmentDragRef}
                 isConnecting={!!connectingFrom}
                 connectingFrom={connectingFrom}
@@ -1471,6 +1556,8 @@ export function GanttTimeline({
                     isDragging={draggingBar === task.id}
                     draggingSegmentId={draggingSegment?.segmentId ?? null}
                     onSegmentDragStart={handleSegmentMouseDown}
+                onSegmentResizeStart={handleSegmentResizeStart}
+                resizingSegmentId={resizingSegment?.segmentId ?? null}
                     segmentDragMovedRef={segmentDragRef}
                     isConnecting={!!connectingFrom}
                     connectingFrom={connectingFrom}
@@ -1504,6 +1591,8 @@ export function GanttTimeline({
                     isDragging={draggingBar === task.id}
                     draggingSegmentId={draggingSegment?.segmentId ?? null}
                     onSegmentDragStart={handleSegmentMouseDown}
+                onSegmentResizeStart={handleSegmentResizeStart}
+                resizingSegmentId={resizingSegment?.segmentId ?? null}
                     segmentDragMovedRef={segmentDragRef}
                     isConnecting={!!connectingFrom}
                     connectingFrom={connectingFrom}
@@ -1714,6 +1803,7 @@ function TaskBarRow({
   visibleSegmentIds = null, showMainBar = true,
   isDragging, isConnecting, connectingFrom, hoveredPoint,
   draggingSegmentId, onSegmentDragStart, segmentDragMovedRef,
+  onSegmentResizeStart, resizingSegmentId,
   onBarDragStart, onBarClick, onConnectionPointClick, onConnectionPointHover,
 }) {
   const [isHovered, setIsHovered] = useState(false)
@@ -1880,6 +1970,11 @@ function TaskBarRow({
         />
       )}
 
+      {/* ── Délai après la tâche (séchage, livraison…) ────────────── */}
+      {showMainBar && task.delai_apres > 0 && (
+        <DelaiApresBar task={task} color={color} geo={geo} />
+      )}
+
       {/* ── Segments supplémentaires ────────────────────────────────── */}
       {segments
         .filter((seg) => !visibleSegmentIds || visibleSegmentIds.includes(seg.id))
@@ -1888,7 +1983,7 @@ function TaskBarRow({
         const segColor = seg.zone_id
           ? zones.find((z) => z.id === seg.zone_id)?.couleur ?? color
           : color
-        const isDraggingThis = draggingSegmentId === seg.id
+        const isDraggingThis = draggingSegmentId === seg.id || resizingSegmentId === seg.id
 
         const segIsOwnSource = sameEndpoint(connectingFrom, { type: 'segment', segmentId: seg.id })
         const segStartHovered = hoveredPoint?.type === 'segment' && hoveredPoint?.segmentId === seg.id && hoveredPoint?.side === 'start'
@@ -1913,13 +2008,42 @@ function TaskBarRow({
                 cursor: isDraggingThis ? 'grabbing' : 'grab',
                 zIndex: isDraggingThis ? 25 : 8,
               }}
-              onMouseDown={(e) => onSegmentDragStart(e, seg)}
+              onMouseDown={(e) => {
+                if (e.target.dataset.seghandle) return
+                onSegmentDragStart(e, seg)
+              }}
               onClick={(e) => {
                 e.stopPropagation()
                 if (segmentDragMovedRef?.current?.moved) return
                 onBarClick(task)
               }}
-            />
+            >
+              {/* Poignées de redimensionnement — mêmes gestes que sur une barre de tâche */}
+              <div
+                data-seghandle="left"
+                title="Redimensionner (début)"
+                style={{
+                  position: 'absolute', left: 0, top: 0, bottom: 0,
+                  width: HANDLE_W, cursor: 'ew-resize', zIndex: 10,
+                  background: 'rgba(255,255,255,0.3)',
+                }}
+                onMouseDown={(e) => onSegmentResizeStart?.(e, seg, 'left')}
+                onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,0,0,0.2)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.3)'}
+              />
+              <div
+                data-seghandle="right"
+                title="Redimensionner (durée)"
+                style={{
+                  position: 'absolute', right: 0, top: 0, bottom: 0,
+                  width: HANDLE_W, cursor: 'ew-resize', zIndex: 10,
+                  background: 'rgba(255,255,255,0.3)',
+                }}
+                onMouseDown={(e) => onSegmentResizeStart?.(e, seg, 'right')}
+                onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,0,0,0.2)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.3)'}
+              />
+            </div>
             {seg.afficher_nom && showLabel && (
               <div style={{
                 position: 'absolute',
@@ -2055,6 +2179,34 @@ function ApproBar({ task, color, geo }) {
         {label}
       </span>
     </div>
+  )
+}
+
+// ─── DelaiApresBar ────────────────────────────────────────────────────────────
+//
+// Prolongement hachuré à droite de la barre : le temps pendant lequel la tâche
+// bloque encore ses suivantes sans mobiliser personne (séchage, livraison…).
+// Hachures inversées (-45°) et plus transparentes que l'appro, pour distinguer
+// les deux d'un coup d'œil.
+
+function DelaiApresBar({ task, color, geo }) {
+  const lastDay = addWorkingDays(parseDate(task.debut), Math.max(1, task.duree) - 1)
+  const debutDelai = addWorkingDays(lastDay, 1)
+  const { left, width } = computeGeometry(debutDelai, task.delai_apres, geo)
+
+  return (
+    <div
+      title={`${task.nom} · Délai après : ${task.delai_apres} j. ouvré(s)`}
+      style={{
+        position: 'absolute',
+        left, width: Math.max(width, 4),
+        top: BAR_PAD + 2, bottom: BAR_PAD + 2,
+        background: `repeating-linear-gradient(-45deg, ${color}30, ${color}30 3px, ${color}60 3px, ${color}60 6px)`,
+        border: `1px dashed ${color}80`,
+        pointerEvents: 'none', userSelect: 'none',
+        zIndex: 5,
+      }}
+    />
   )
 }
 

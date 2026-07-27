@@ -1,6 +1,9 @@
 // ─── Propagation en cascade des chemins critiques ─────────────────────────────
 //
-// Règle : debut(enfant) = max sur TOUS ses parents de (fin(parent) + lag(parent→enfant))
+// Règle : debut(enfant) = max sur TOUS ses parents de (finEffective(parent) + lag)
+//
+//   - finEffective = dernier jour ouvré de la tâche + son `delai_apres` (séchage,
+//     livraison…) : une tâche qui sèche 3 jours ne libère ses suivantes qu'après ;
 //
 //   - le lag est calculé une seule fois à la création du lien, puis conservé ;
 //   - un enfant est contraint par TOUS ses parents, pas seulement par celui d'où
@@ -101,34 +104,42 @@ function buildChildEdges(parentEdges) {
  */
 export function propagateAllDependencies({
   tasks, segments, dependances,
-  changedType, changedId, newDebut, newDuree,
+  changedType, changedId, newDebut, newDuree, newDelaiApres,
   periodes = [],
 }) {
   // Snapshot mutable des dates de toutes les entités
   const snapshot = new Map()
   tasks.forEach((t) => snapshot.set(entityKey('task', t.id), {
-    type: 'task', id: t.id, debut: t.debut, duree: t.duree,
+    type: 'task', id: t.id, debut: t.debut, duree: t.duree, delaiApres: t.delai_apres ?? 0,
   }))
   segments.forEach((s) => snapshot.set(entityKey('segment', s.id), {
-    type: 'segment', id: s.id, debut: s.date_debut, duree: s.duree_jours,
+    type: 'segment', id: s.id, debut: s.date_debut, duree: s.duree_jours, delaiApres: 0,
   }))
 
   const changedKey = entityKey(changedType, changedId)
   const changed = snapshot.get(changedKey)
   if (!changed) return new Map()
-  snapshot.set(changedKey, { ...changed, debut: newDebut, duree: newDuree })
+  snapshot.set(changedKey, {
+    ...changed,
+    debut: newDebut,
+    duree: newDuree,
+    delaiApres: newDelaiApres ?? changed.delaiApres,
+  })
 
   const parentEdges = buildParentEdges(tasks, dependances)
   const childEdges = buildChildEdges(parentEdges)
 
-  // Début au plus tôt d'une entité, contraint par l'ensemble de ses parents
+  // Début au plus tôt d'une entité, contraint par l'ensemble de ses parents.
+  // Le délai après la fin du parent s'ajoute au lag : applyLag part du dernier
+  // jour ouvré du parent, on lui ajoute donc (delai_apres + lag) jours ouvrés.
   const earliestStart = (key) => {
     let best = null
     ;(parentEdges.get(key) ?? []).forEach(({ parentKey, lag }) => {
       const parent = snapshot.get(parentKey)
       if (!parent?.debut) return
       const duree = Math.max(1, Number(parent.duree) || 1)
-      const start = skipBlockedPeriods(applyLag(parseDate(parent.debut), duree, lag), periodes)
+      const decalage = lag + (Number(parent.delaiApres) || 0)
+      const start = skipBlockedPeriods(applyLag(parseDate(parent.debut), duree, decalage), periodes)
       if (!best || start > best) best = start
     })
     return best
@@ -172,14 +183,27 @@ export function propagateAllDependencies({
 }
 
 /**
- * La date de fin (dernier jour ouvré) d'une tâche change-t-elle ?
+ * Fin effective d'une tâche : dernier jour ouvré + délai après (séchage…).
+ * C'est cette date que voient les tâches dépendantes.
+ *
+ * @param entite { debut, duree, delai_apres }
+ */
+export function finEffective({ debut, duree, delai_apres }) {
+  const lastDay = addWorkingDays(parseDate(debut), Math.max(1, Number(duree) || 1) - 1)
+  const delai = Number(delai_apres) || 0
+  return delai > 0 ? addWorkingDays(lastDay, delai) : lastDay
+}
+
+/**
+ * La fin effective d'une tâche change-t-elle ?
  *
  * Un redimensionnement par la poignée gauche recule la date de début et
  * augmente la durée d'autant : la fin ne bouge pas, donc aucune dépendance
  * n'est affectée et toute propagation serait un faux positif.
+ *
+ * @param avant { debut, duree, delai_apres }
+ * @param apres { debut, duree, delai_apres }
  */
-export function endDateChanged(debutAvant, dureeAvant, debutApres, dureeApres) {
-  const finAvant = addWorkingDays(parseDate(debutAvant), Math.max(1, dureeAvant) - 1)
-  const finApres = addWorkingDays(parseDate(debutApres), Math.max(1, dureeApres) - 1)
-  return finAvant.getTime() !== finApres.getTime()
+export function endDateChanged(avant, apres) {
+  return finEffective(avant).getTime() !== finEffective(apres).getTime()
 }

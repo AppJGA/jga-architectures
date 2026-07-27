@@ -1,7 +1,13 @@
 import { parseDate, formatDateISO, addWorkingDays } from './types'
+import { assignLabelLanes } from './jalonLayout'
 
 const WEEKEND_RATIO = 0.35
 const LABEL_COL_MM = 45
+
+// Bande de jalons : écart minimal (mm) entre deux libellés avant de les répartir
+// sur des lignes successives, et hauteur d'une de ces lignes.
+const JALON_LABEL_MIN_GAP_MM = 26
+const JALON_LABEL_HEIGHT_MM = 3.2
 
 function isWeekend(date) {
   return date.getDay() === 0 || date.getDay() === 6
@@ -136,6 +142,49 @@ function computeBarGeometry(days, dayWidths, startStr, duree) {
   return { startIdx, widthMm }
 }
 
+// ─── Bande de jalons ──────────────────────────────────────────────────────────
+//
+// Les jalons occupent une zone dédiée au-dessus du tableau plutôt que d'être
+// répétés sur chaque ligne de tâche : un seul libellé par jalon, décalé
+// verticalement quand deux jalons sont trop proches. Une fine ligne verticale
+// reste tracée dans les lignes du tableau comme repère de lecture (cf.
+// buildTaskRow), mais sans texte.
+//
+// Les positions sont en mm dans le même repère que le tableau (colonne de
+// libellés + colonnes de jours), pour rester alignées après la mise à l'échelle
+// appliquée à l'ensemble du bloc.
+function buildJalonBand(jalons, days, dayWidths) {
+  const places = (jalons ?? [])
+    .map((jalon) => {
+      const dayStr = (jalon.date ?? '').split('T')[0]
+      const idx = days.findIndex((d) => formatDateISO(d) === dayStr)
+      if (idx < 0) return null
+      let x = LABEL_COL_MM
+      for (let i = 0; i < idx; i++) x += dayWidths[i]
+      return { jalon, x: x + dayWidths[idx] / 2 }
+    })
+    .filter(Boolean)
+
+  if (places.length === 0) return ''
+
+  const lanes = assignLabelLanes(places.map((p) => p.x), JALON_LABEL_MIN_GAP_MM)
+  const nbLignes = Math.max(...lanes) + 1
+  const hauteurMm = nbLignes * JALON_LABEL_HEIGHT_MM + 5
+
+  const marqueurs = places.map(({ jalon, x }, i) => {
+    const couleur = jalon.couleur ?? '#E8602C'
+    const topLabel = lanes[i] * JALON_LABEL_HEIGHT_MM
+    const topTrait = (lanes[i] + 1) * JALON_LABEL_HEIGHT_MM
+    return `<div style="position:absolute;left:${x.toFixed(2)}mm;top:0;bottom:0;width:0">
+      <div style="position:absolute;top:${topLabel.toFixed(2)}mm;left:1.2mm;font-size:5pt;font-weight:bold;color:${couleur};white-space:nowrap;line-height:${JALON_LABEL_HEIGHT_MM}mm">${jalon.label ?? ''}</div>
+      <div style="position:absolute;top:${topTrait.toFixed(2)}mm;bottom:1.6mm;left:0;width:1.5px;background:${couleur}"></div>
+      <div style="position:absolute;bottom:0;left:-2.5px;width:0;height:0;border-left:2.5px solid transparent;border-right:2.5px solid transparent;border-top:1.6mm solid ${couleur}"></div>
+    </div>`
+  }).join('')
+
+  return `<div style="position:relative;height:${hauteurMm.toFixed(2)}mm;border-bottom:1px solid #E9E2D6;margin-bottom:1mm">${marqueurs}</div>`
+}
+
 function buildDayHeaders(days, dayWidths, todayStr) {
   return days.map((d, i) => {
     const isWE = isWeekend(d)
@@ -174,6 +223,18 @@ function buildTaskRow(task, color, days, dayWidths, jalons, todayStr, ctx) {
     }
   }
 
+  // Délai après la tâche (séchage, livraison…) : prolongement hachuré à droite de
+  // la barre. Rendu ici aussi pour que l'export explique pourquoi les tâches
+  // suivantes démarrent plus tard que la fin apparente de celle-ci.
+  let delaiApresHtml = ''
+  if (task.delai_apres > 0 && startIdx >= 0 && barWidthMm > 0) {
+    const lastDay = addWorkingDays(parseDate(taskStartStr), Math.max(1, task.duree) - 1)
+    const geoDelai = computeBarGeometry(days, dayWidths, formatDateISO(addWorkingDays(lastDay, 1)), task.delai_apres)
+    if (geoDelai && geoDelai.widthMm > 0) {
+      delaiApresHtml = `<div style="position:absolute;left:${barWidthMm.toFixed(2)}mm;width:${geoDelai.widthMm.toFixed(2)}mm;top:1.4mm;bottom:1.4mm;background:repeating-linear-gradient(-45deg, ${color}30, ${color}30 3px, ${color}60 3px, ${color}60 6px);border:1px dashed ${color}80;z-index:3;pointer-events:none"></div>`
+    }
+  }
+
   // Segments supplémentaires de la tâche : chacun est rendu comme sa propre barre,
   // enfant du <td> de son propre jour de début (même technique que la barre principale
   // et l'extension d'appro ci-dessus).
@@ -208,7 +269,7 @@ function buildTaskRow(task, color, days, dayWidths, jalons, todayStr, ctx) {
       const labelAvancement = task.avancement > 0 && task.avancement < 100
         ? `<span style="margin-left:1.5mm;font-size:5.5pt;color:#9C9591">${task.avancement}%</span>`
         : ''
-      barContent = `${approHtml}
+      barContent = `${approHtml}${delaiApresHtml}
         <div data-task-id="${task.id}" data-type="task" style="position:absolute;left:0;width:${barWidthMm.toFixed(2)}mm;top:1mm;bottom:1mm;background:${color};z-index:4;overflow:hidden">${progressBar}</div>
         <div style="position:absolute;left:${barWidthMm.toFixed(2)}mm;padding-left:3px;top:0;bottom:0;display:flex;align-items:center;white-space:nowrap;font-size:6.5pt;color:#1F1B17;z-index:10">${task.nom}${labelAvancement}</div>`
     }
@@ -221,12 +282,12 @@ function buildTaskRow(task, color, days, dayWidths, jalons, todayStr, ctx) {
       segContent += `<div data-segment-id="${seg.id}" data-task-id="${task.id}" data-type="segment" style="position:absolute;left:0;width:${segWidthMm.toFixed(2)}mm;top:1mm;bottom:1mm;background:${segColor};outline:1px dashed rgba(255,255,255,0.6);outline-offset:-1px;z-index:3;overflow:hidden;display:flex;align-items:center">${segLabel}</div>`
     })
 
+    // Repère vertical du jalon, sans libellé : celui-ci est rendu une seule fois
+    // dans la bande dédiée au-dessus du tableau (buildJalonBand).
     const dayStr = formatDateISO(d)
     const jalonLines = (jalons ?? [])
       .filter(j => (j.date ?? '').split('T')[0] === dayStr)
-      .map(j => `<div style="position:absolute;top:0;bottom:0;left:50%;width:1.5px;background:${j.couleur};z-index:5">
-        <div style="position:absolute;top:0.5mm;left:2px;font-size:5pt;font-weight:bold;color:${j.couleur};white-space:nowrap">${j.label}</div>
-      </div>`)
+      .map(j => `<div style="position:absolute;top:0;bottom:0;left:50%;width:1.5px;background:${j.couleur};opacity:0.55;z-index:5"></div>`)
       .join('')
 
     return `<td style="width:${dayWidths[idx].toFixed(2)}mm;border-bottom:0.5px solid #f0f0f0;border-left:${borderLeft};height:6mm;padding:0;overflow:visible;position:relative;background:${bg}">${barContent}${segContent}${jalonLines}</td>`
@@ -241,7 +302,7 @@ function buildTaskRow(task, color, days, dayWidths, jalons, todayStr, ctx) {
 function buildHtml({
   tasks, lots, jalons, affaire, dateDebut, dateFin, largeurMm, hauteurMm,
   zones = [], colorMode = 'lot', viewMode = 'day',
-  segments = [], dependances = [], periodes = [],
+  segments = [], dependances = [], periodes = [], showDependances = true,
 }) {
   const dStart = parseDate(dateDebut)
   const dEnd = parseDate(dateFin)
@@ -259,7 +320,9 @@ function buildHtml({
   const legacyDeps = tasks
     .filter(t => t.depends_on != null)
     .map(t => ({ source_tache_id: t.depends_on, cible_tache_id: t.id }))
-  const allDeps = [...legacyDeps, ...dependances]
+  // Option « Afficher les chemins critiques » : sans elle, aucune dépendance
+  // n'est transmise au script de rendu, qui ne trace donc aucune flèche.
+  const allDeps = showDependances ? [...legacyDeps, ...dependances] : []
   // Échappe "</" pour ne pas fermer prématurément le <script> hôte si un champ
   // texte venait à contenir cette séquence.
   const depsJson = JSON.stringify(allDeps).replace(/</g, '\\u003c')
@@ -357,6 +420,7 @@ function buildHtml({
 </div>
 
 <div class="gantt-wrap" id="gw">
+  ${buildJalonBand(jalons, days, dayWidths)}
   <table class="gantt-table" id="gantt-table">
     <colgroup>
       <col class="col-label">
@@ -406,6 +470,10 @@ function buildHtml({
     Extension appro.
   </div>
   <div class="leg-item">
+    <div class="leg-swatch" style="background:repeating-linear-gradient(-45deg, #E8602C30, #E8602C30 3px, #E8602C60 3px, #E8602C60 6px);border:1px dashed #E8602C80"></div>
+    Délai après (séchage…)
+  </div>
+  <div class="leg-item">
     <div class="leg-swatch" style="background:#C9C4C0;outline:1px dashed rgba(255,255,255,0.6);outline-offset:-1px"></div>
     Segment
   </div>
@@ -413,13 +481,13 @@ function buildHtml({
     <div class="leg-swatch" style="background:repeating-linear-gradient(45deg, rgba(184,65,44,0.15), rgba(184,65,44,0.15) 3px, rgba(184,65,44,0.28) 3px, rgba(184,65,44,0.28) 6px)"></div>
     Période bloquée
   </div>
-  <div class="leg-item">
+  ${showDependances ? `<div class="leg-item">
     <svg width="10mm" height="4mm" viewBox="0 0 38 16" style="overflow:visible">
       <path d="M 0 8 C 15 8, 23 8, 34 8" fill="none" stroke="#e4702a" stroke-width="2" stroke-dasharray="6 3" stroke-opacity="0.85" />
       <path d="M34,8 L28,4 L28,12 z" fill="#e4702a" />
     </svg>
     Dépendance (chemin critique)
-  </div>
+  </div>` : ''}
   <div style="border-left:0.5px solid #ddd;height:8px;margin:0 2mm"></div>
   <div class="leg-item">
     <div style="width:8mm;border-top:2px solid #8B5CF6"></div>
@@ -512,7 +580,11 @@ window.onload = function() {
     svg.appendChild(circle);
   }
 
-  // Hauteur du SVG alignée sur celle du tableau, pour ne couper aucune flèche.
+  // Origine et hauteur du SVG alignées sur le tableau : les coordonnées ci-dessus
+  // sont mesurées depuis le haut du TABLEAU, alors que l'overlay est positionné
+  // dans #gw, qui commence plus haut (bande de jalons). Sans ce recalage, toutes
+  // les flèches seraient décalées vers le haut de la hauteur de la bande.
+  svg.style.top = table.offsetTop + 'px';
   svg.setAttribute('height', table.offsetHeight);
   svg.style.height = table.offsetHeight + 'px';
 

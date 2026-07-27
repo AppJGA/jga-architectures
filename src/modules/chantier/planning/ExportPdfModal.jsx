@@ -71,6 +71,7 @@ export function ExportPdfModal({
   const [isLandscape, setIsLandscape] = useState(true)
   const [exportColorMode, setExportColorMode] = useState(colorMode ?? 'lot')
   const [exportViewMode,  setExportViewMode]  = useState(viewMode ?? 'day')
+  const [exportDependances, setExportDependances] = useState(true)
 
   useEffect(() => {
     if (!open) return
@@ -128,6 +129,7 @@ export function ExportPdfModal({
       segments,
       dependances,
       periodes,
+      showDependances: exportDependances,
     })
     onClose()
   }
@@ -327,6 +329,19 @@ export function ExportPdfModal({
             <p style={{ fontSize: 11, color: '#9C9591', marginTop: 6, fontStyle: 'italic' }}>
               Pré-sélectionné selon la vue active.
             </p>
+
+            <label style={{
+              display: 'flex', alignItems: 'center', gap: 8, fontSize: 12,
+              cursor: 'pointer', color: '#5E5854', marginTop: 12,
+            }}>
+              <input
+                type="checkbox"
+                checked={exportDependances}
+                onChange={e => setExportDependances(e.target.checked)}
+                style={{ width: 14, height: 14, cursor: 'pointer', accentColor: '#E8602C' }}
+              />
+              Afficher les chemins critiques
+            </label>
           </div>
 
           {/* ── C) RÉSUMÉ ── */}

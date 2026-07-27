@@ -441,6 +441,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
       appro_actif: taskData.appro_actif ?? false,
       appro_duree: taskData.appro_actif ? (taskData.appro_duree ?? null) : null,
       appro_materiau: taskData.appro_actif ? (taskData.appro_materiau ?? null) : null,
+      delai_apres: taskData.delai_apres ?? 0,
     }
     if (taskModalMode === 'create') {
       // Ajoute la tâche à la fin de son lot (même convention que le num_tache auto-incrémenté)
@@ -453,15 +454,18 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
       // d'appels parallèles. Une modification qui ne déplace pas la fin de la
       // tâche (renommage, avancement…) ne déclenche aucune cascade.
       const ancienne = tasks.find((t) => t.id === taskData.id)
-      const cascades = (ancienne && endDateChanged(ancienne.debut, ancienne.duree, payload.debut, payload.duree))
+      const cascades = (ancienne && endDateChanged(ancienne, payload))
         ? propagateAllDependencies({
             tasks, segments, dependances, periodes,
             changedType: 'task', changedId: taskData.id,
             newDebut: payload.debut, newDuree: payload.duree,
+            newDelaiApres: payload.delai_apres,
           })
         : new Map()
 
-      applyCascadeLocally(cascades, { [taskData.id]: { debut: payload.debut, duree: payload.duree } })
+      applyCascadeLocally(cascades, {
+        [taskData.id]: { debut: payload.debut, duree: payload.duree, delai_apres: payload.delai_apres },
+      })
 
       const ok = await persistCascade(cascades, [
         supabase.from('planning').update(payload).eq('id', taskData.id),
@@ -532,7 +536,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
 
     // Scénario resize gauche : le début recule et la durée augmente d'autant, donc
     // la date de fin ne bouge pas — aucune dépendance n'est affectée.
-    const cascades = endDateChanged(movedTask.debut, movedTask.duree, newDebut, newDuree)
+    const cascades = endDateChanged(movedTask, { ...movedTask, debut: newDebut, duree: newDuree })
       ? propagateAllDependencies({
           tasks, segments, dependances, periodes,
           changedType: 'task', changedId: taskId, newDebut, newDuree,
@@ -548,21 +552,26 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
     ])
   }, [tasks, segments, dependances, periodes, applyCascadeLocally, persistCascade])
 
-  // ── Déplacement d'un segment avec propagation en cascade ───────────────────────
-  const handleSegmentDateCommit = useCallback(async (segmentId, newDateDebut) => {
+  // ── Déplacement / redimensionnement d'un segment, avec propagation ─────────────
+  // `changes` : { date_debut?, duree_jours? } — un déplacement ne change que la
+  // date, un resize peut changer les deux.
+  const handleSegmentCommit = useCallback(async (segmentId, changes) => {
     const seg = segments.find((s) => s.id === segmentId)
     if (!seg) return
+
+    const newDebut = changes.date_debut ?? seg.date_debut
+    const newDuree = changes.duree_jours ?? seg.duree_jours
 
     const cascades = propagateAllDependencies({
       tasks, segments, dependances, periodes,
       changedType: 'segment', changedId: segmentId,
-      newDebut: newDateDebut, newDuree: seg.duree_jours,
+      newDebut, newDuree,
     })
 
     applyCascadeLocally(cascades)
 
     await persistCascade(cascades, [
-      updateSegment(segmentId, { date_debut: newDateDebut }),
+      updateSegment(segmentId, changes),
     ])
   }, [tasks, segments, dependances, periodes, updateSegment, applyCascadeLocally, persistCascade])
 
@@ -911,8 +920,11 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
       return overlaps(unit, debut, finExclusive)
     }
 
+    // En mode zone, une tâche sans zone (ou dont la zone a été supprimée) sort en
+    // gris — pas dans la couleur de son lot, qui ferait lire une zone inexistante.
     const getTaskColor = (task) => {
-      if (colorMode === 'zone' && task.zone_id) {
+      if (colorMode === 'zone') {
+        if (!task.zone_id) return '#C9C4C0'
         return zones.find((z) => z.id === task.zone_id)?.couleur ?? '#C9C4C0'
       }
       return lots.find((l) => l.id === task.lot_id)?.couleur ?? '#C9C4C0'
@@ -1251,7 +1263,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
             getSegmentsForTache={getSegmentsForTache}
             segments={segments}
             updateSegmentLocal={updateSegmentLocal}
-            onSegmentDateCommit={handleSegmentDateCommit}
+            onSegmentCommit={handleSegmentCommit}
             dependances={dependances}
             onSegmentDependencyCreate={addDependance}
             onSegmentDependencyDelete={deleteDependance}

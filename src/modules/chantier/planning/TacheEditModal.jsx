@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Trash2, Save, X, Plus, Minimize2, Maximize2 } from 'lucide-react'
-import { parseDate, formatDateISO, computeLag, addWorkingDays } from './types'
+import { parseDate, formatDateISO, computeLag, addWorkingDays, workingDaysBetween } from './types'
+import { DatePickerISO } from '../../../shared/components/DatePickerISO'
 
 const LABEL = {
   display: 'block', fontSize: 10, fontWeight: 700, textTransform: 'uppercase',
@@ -45,6 +46,18 @@ function clampPosition(x, y) {
   }
 }
 
+// Dernier jour ouvré de la tâche (la durée inclut le jour de début)
+function computeDateFin(debut, duree) {
+  if (!debut) return ''
+  return formatDateISO(addWorkingDays(parseDate(debut), Math.max(1, Number(duree) || 1) - 1))
+}
+
+// Inverse : durée en jours ouvrés couvrant [début, fin] bornes incluses
+function computeDuree(debut, fin) {
+  if (!debut || !fin) return 1
+  return Math.max(1, workingDaysBetween(parseDate(debut), parseDate(fin)) + 1)
+}
+
 function emptyForm(lots, defaultDebut, lastUsedLotId) {
   const validLastUsed = lastUsedLotId && lots.some((l) => l.id === lastUsedLotId) ? lastUsedLotId : null
   return {
@@ -60,6 +73,7 @@ function emptyForm(lots, defaultDebut, lastUsedLotId) {
     appro_actif: false,
     appro_duree: null,
     appro_materiau: null,
+    delai_apres: 0,
   }
 }
 
@@ -78,6 +92,9 @@ export function TacheEditModal({
 }) {
   const [form, setForm] = useState(emptyForm(lots))
   const [saving, setSaving] = useState(false)
+  // Saisir la fin de la tâche par sa durée ou par sa date — les deux restent
+  // synchronisées, seule la façon de l'exprimer change.
+  const [inputMode, setInputMode] = useState('duree')
 
   // ── Modale flottante : position, minimisation, drag ────────────────────────────
   const [position, setPosition] = useState(centeredPosition)
@@ -184,6 +201,9 @@ export function TacheEditModal({
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+    // Le sélecteur de date est un champ readonly : il est exclu de la validation
+    // HTML native (`required` y est sans effet), d'où ce contrôle explicite.
+    if (!form.debut) return
     setSaving(true)
     try {
       await onSave(form)
@@ -329,24 +349,71 @@ export function TacheEditModal({
               </div>
             </div>
 
-            {/* Début + Durée */}
+            {/* Début + (Durée ou Date de fin) */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
               <div>
                 <label style={LABEL}>Date de début</label>
-                <input type="date" value={form.debut ?? ''} onChange={(e) => set('debut', e.target.value)}
-                  required style={INPUT}
-                  onFocus={e => { e.target.style.borderColor = '#E8602C'; e.target.style.boxShadow = '0 0 0 3px rgba(232,96,44,0.12)' }}
-                  onBlur={e => { e.target.style.borderColor = 'rgba(0,0,0,0.12)'; e.target.style.boxShadow = 'none' }}
+                <DatePickerISO
+                  value={form.debut ?? ''}
+                  onChange={(v) => set('debut', v)}
+                  required
+                  style={INPUT}
                 />
               </div>
               <div>
-                <label style={LABEL}>Durée (j. ouvrés)</label>
-                <input type="number" min={1} value={form.duree ?? 1}
-                  onChange={(e) => set('duree', Math.max(1, Number(e.target.value)))}
-                  required style={INPUT}
-                  onFocus={e => { e.target.style.borderColor = '#E8602C'; e.target.style.boxShadow = '0 0 0 3px rgba(232,96,44,0.12)' }}
-                  onBlur={e => { e.target.style.borderColor = 'rgba(0,0,0,0.12)'; e.target.style.boxShadow = 'none' }}
-                />
+                <label style={LABEL}>Fin de la tâche</label>
+
+                {/* Choix du mode de saisie */}
+                <div style={{
+                  display: 'flex', border: '0.5px solid rgba(0,0,0,0.12)',
+                  overflow: 'hidden', marginBottom: 4, width: 'fit-content',
+                }}>
+                  {[
+                    { value: 'duree', label: 'Durée' },
+                    { value: 'date_fin', label: 'Date fin' },
+                  ].map((opt, idx) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setInputMode(opt.value)}
+                      style={{
+                        padding: '3px 10px', fontSize: 11, border: 'none',
+                        borderRight: idx === 0 ? '0.5px solid rgba(0,0,0,0.12)' : 'none',
+                        background: inputMode === opt.value ? '#1F1B17' : 'transparent',
+                        color: inputMode === opt.value ? 'white' : '#5E5854',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+
+                {inputMode === 'duree' ? (
+                  <input
+                    type="number" min={1} value={form.duree ?? 1}
+                    onChange={(e) => set('duree', Math.max(1, Number(e.target.value)))}
+                    required style={INPUT}
+                    onFocus={e => { e.target.style.borderColor = '#E8602C'; e.target.style.boxShadow = '0 0 0 3px rgba(232,96,44,0.12)' }}
+                    onBlur={e => { e.target.style.borderColor = 'rgba(0,0,0,0.12)'; e.target.style.boxShadow = 'none' }}
+                  />
+                ) : (
+                  <DatePickerISO
+                    value={computeDateFin(form.debut, form.duree)}
+                    onChange={(v) => set('duree', computeDuree(form.debut, v))}
+                    min={form.debut}
+                    style={INPUT}
+                  />
+                )}
+
+                {/* L'autre valeur, toujours visible en lecture seule */}
+                <p style={{ fontSize: 10, color: '#9C9591', marginTop: 4 }}>
+                  {inputMode === 'duree'
+                    ? `Fin : ${form.debut
+                        ? parseDate(computeDateFin(form.debut, form.duree)).toLocaleDateString('fr-FR')
+                        : '—'}`
+                    : `Durée : ${form.duree ?? 1} jour(s) ouvré(s)`}
+                </p>
               </div>
             </div>
 
@@ -470,6 +537,26 @@ export function TacheEditModal({
               </div>
             </div>
 
+            {/* Délai après la tâche — repousse la fin effective pour les suivantes */}
+            <div style={{ borderTop: '0.5px solid rgba(0,0,0,0.08)', paddingTop: 14 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: 10, alignItems: 'start' }}>
+                <div>
+                  <label style={LABEL}>Délai après (j)</label>
+                  <input
+                    type="number" min={0} value={form.delai_apres ?? 0}
+                    onChange={(e) => set('delai_apres', Math.max(0, parseInt(e.target.value, 10) || 0))}
+                    style={INPUT}
+                    onFocus={e => { e.target.style.borderColor = '#E8602C'; e.target.style.boxShadow = '0 0 0 3px rgba(232,96,44,0.12)' }}
+                    onBlur={e => { e.target.style.borderColor = 'rgba(0,0,0,0.12)'; e.target.style.boxShadow = 'none' }}
+                  />
+                </div>
+                <p style={{ fontSize: 10, color: '#9C9591', lineHeight: 1.6, paddingTop: 20 }}>
+                  Temps d'attente après la fin (séchage, livraison…). Les tâches
+                  dépendantes ne démarrent qu'après ce délai.
+                </p>
+              </div>
+            </div>
+
             {/* Approvisionnement */}
             <div style={{ borderTop: '0.5px solid rgba(0,0,0,0.08)', paddingTop: 14 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: form.appro_actif ? 12 : 0 }}>
@@ -558,13 +645,13 @@ export function TacheEditModal({
                           DÉBUT
                         </label>
                       )}
-                      <input
-                        type="date"
+                      <DatePickerISO
                         value={seg.date_debut}
-                        onChange={(e) => updateSegment(seg.id, { date_debut: e.target.value })}
+                        onChange={(v) => updateSegment(seg.id, { date_debut: v })}
                         style={{
                           width: '100%', padding: '6px 8px', fontSize: 12,
                           border: '0.5px solid rgba(0,0,0,0.12)', borderRadius: 2,
+                          boxSizing: 'border-box',
                         }}
                       />
                     </div>

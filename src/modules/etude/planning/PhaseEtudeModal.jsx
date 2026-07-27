@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react'
-import { X, Trash2, Plus } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { X, Trash2, Plus, Minimize2, Maximize2 } from 'lucide-react'
 import {
   getWeekStart, getCurrentWeek, addWeeks, weeksBetween,
-  computeLagSemaines,
+  computeLagSemaines, getPhaseCouleur, COULEURS_PHASE_PRESET,
 } from './types'
 
 const LABEL = {
@@ -13,6 +13,24 @@ const INPUT = {
   width: '100%', height: 36, padding: '0 10px', borderRadius: 2, fontSize: 13,
   border: '0.5px solid rgba(0,0,0,0.12)', backgroundColor: '#FAFAF9', outline: 'none',
   boxSizing: 'border-box', color: '#1F1B17',
+}
+
+const MODAL_WIDTH = 480
+const MODAL_MINIMIZED_HEIGHT = 44
+const MODAL_HEIGHT_REF = 600
+
+function centeredPosition() {
+  return {
+    x: Math.max(0, (window.innerWidth - MODAL_WIDTH) / 2),
+    y: Math.max(0, (window.innerHeight - MODAL_HEIGHT_REF) / 2),
+  }
+}
+
+function clampPosition(x, y) {
+  return {
+    x: Math.max(0, Math.min(window.innerWidth - MODAL_WIDTH, x)),
+    y: Math.max(0, Math.min(window.innerHeight - MODAL_MINIMIZED_HEIGHT, y)),
+  }
 }
 
 const TYPE_OPTIONS = [
@@ -33,30 +51,188 @@ export function typeToImportance(type) {
   return { etude: 'moe', validation: 'moa', administratif: 'admin', chantier: 'chantier' }[type] ?? 'moa'
 }
 
-function emptyForm() {
-  const now = getCurrentWeek()
+// `defaultSemaine` : première semaine libre du planning, calculée par le parent
+// (dernière phase + périodes bloquantes déduites). Retombe sur la semaine
+// courante si le planning est vide.
+function emptyForm(defaultSemaine, createDefaults) {
+  const debut = createDefaults?.semaine_debut
+    ? { semaine: createDefaults.semaine_debut, annee: createDefaults.annee_debut }
+    : (defaultSemaine ?? getCurrentWeek())
   return {
     nom: '',
     type_tache: 'etude',
-    semaine_debut: now.semaine,
-    annee_debut: now.annee,
-    duree_semaines: 4,
+    semaine_debut: debut.semaine,
+    annee_debut: debut.annee,
+    duree_semaines: createDefaults?.duree_semaines ?? 4,
     duree_arch: '',
     duree_bet: '',
     duree_econ: '',
     label_barre: '',
+    couleur_custom: null,
     depends_on: null,
     lag_semaines: 0,
   }
 }
 
+// ─── Ligne de segment ─────────────────────────────────────────────────────────
+//
+// Les champs sont tenus en brouillon local et ne sont persistés qu'au blur :
+// `updateSegment` attend la réponse Supabase avant de mettre le state à jour, si
+// bien qu'un input contrôlé directement sur la valeur du hook « perdait » des
+// lettres (chaque frappe repartait de la valeur encore non rafraîchie, et les
+// réponses concurrentes se résolvaient dans le désordre).
+function SegmentRow({ seg, premier, placeholderNom, onUpdate, onDelete }) {
+  const [nom, setNom] = useState(seg.nom ?? '')
+  const [semaine, setSemaine] = useState(seg.semaine_debut)
+  const [annee, setAnnee] = useState(seg.annee_debut)
+  const [duree, setDuree] = useState(seg.duree_semaines)
+
+  useEffect(() => { setNom(seg.nom ?? '') }, [seg.nom])
+  useEffect(() => { setSemaine(seg.semaine_debut) }, [seg.semaine_debut])
+  useEffect(() => { setAnnee(seg.annee_debut) }, [seg.annee_debut])
+  useEffect(() => { setDuree(seg.duree_semaines) }, [seg.duree_semaines])
+
+  const commit = (changes) => onUpdate(seg.id, changes)
+  const fin = addWeeks(seg.semaine_debut, seg.annee_debut, seg.duree_semaines)
+
+  const CHAMP = { ...INPUT, height: 30, fontSize: 12 }
+
+  return (
+    <div style={{
+      display: 'grid', gridTemplateColumns: '1fr 70px 80px 70px 28px', gap: 8,
+      alignItems: 'end', padding: '8px 0',
+      borderBottom: '0.5px solid rgba(0,0,0,0.06)',
+    }}>
+      <div>
+        {premier && <label style={{ ...LABEL, marginBottom: 3 }}>Nom (optionnel)</label>}
+        <input
+          type="text"
+          value={nom}
+          onChange={e => setNom(e.target.value)}
+          onBlur={() => { if ((seg.nom ?? '') !== nom) commit({ nom: nom || null }) }}
+          placeholder={placeholderNom}
+          style={CHAMP}
+        />
+      </div>
+      <div>
+        {premier && <label style={{ ...LABEL, marginBottom: 3 }}>Semaine</label>}
+        <input
+          type="number" min={1} max={53}
+          value={semaine}
+          onChange={e => setSemaine(e.target.value)}
+          onBlur={() => {
+            const v = Math.min(53, Math.max(1, Number(semaine) || 1))
+            setSemaine(v)
+            if (v !== seg.semaine_debut) commit({ semaine_debut: v })
+          }}
+          style={CHAMP}
+        />
+      </div>
+      <div>
+        {premier && <label style={{ ...LABEL, marginBottom: 3 }}>Année</label>}
+        <input
+          type="number" min={2020} max={2040}
+          value={annee}
+          onChange={e => setAnnee(e.target.value)}
+          onBlur={() => {
+            const v = Number(annee) || seg.annee_debut
+            setAnnee(v)
+            if (v !== seg.annee_debut) commit({ annee_debut: v })
+          }}
+          style={CHAMP}
+        />
+      </div>
+      <div>
+        {premier && <label style={{ ...LABEL, marginBottom: 3 }}>Durée</label>}
+        <input
+          type="number" min={1}
+          value={duree}
+          onChange={e => setDuree(e.target.value)}
+          onBlur={() => {
+            const v = Math.max(1, Number(duree) || 1)
+            setDuree(v)
+            if (v !== seg.duree_semaines) commit({ duree_semaines: v })
+          }}
+          style={CHAMP}
+          title="Durée en semaines"
+        />
+      </div>
+      <button
+        type="button"
+        onClick={() => onDelete(seg.id)}
+        title={`Supprimer ce segment (fin S${fin.semaine} ${fin.annee})`}
+        style={{
+          width: 28, height: 30,
+          border: '0.5px solid rgba(220,38,38,0.3)',
+          background: '#FEF2F2', color: '#DC2626', cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}
+      >
+        <Trash2 size={11} />
+      </button>
+    </div>
+  )
+}
+
 export function PhaseEtudeModal({
   open, onClose, phase, phases, onSave, onDelete, mode,
+  defaultSemaine = null, createDefaults = null,
   getSegmentsForPhase, addSegment, updateSegment, deleteSegment,
 }) {
-  const [form, setForm] = useState(emptyForm())
+  const [form, setForm] = useState(() => emptyForm(defaultSemaine, createDefaults))
   const [saving, setSaving] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+
+  // ── Fenêtre flottante : position, minimisation, déplacement ─────────────────
+  const [position, setPosition] = useState(centeredPosition)
+  const [minimized, setMinimized] = useState(false)
+  const [isDraggingModal, setIsDraggingModal] = useState(false)
+  const dragStartRef = useRef(null)
+
+  useEffect(() => {
+    if (!open) return
+    setPosition(centeredPosition())
+    setMinimized(false)
+  }, [open])
+
+  useEffect(() => {
+    if (!isDraggingModal) return
+    const handleMove = (e) => {
+      const dx = e.clientX - dragStartRef.current.mouseX
+      const dy = e.clientY - dragStartRef.current.mouseY
+      setPosition(clampPosition(
+        dragStartRef.current.modalX + dx,
+        dragStartRef.current.modalY + dy,
+      ))
+    }
+    const handleUp = () => setIsDraggingModal(false)
+    window.addEventListener('mousemove', handleMove)
+    window.addEventListener('mouseup', handleUp)
+    return () => {
+      window.removeEventListener('mousemove', handleMove)
+      window.removeEventListener('mouseup', handleUp)
+    }
+  }, [isDraggingModal])
+
+  const handleModalDragStart = (e) => {
+    if (['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON'].includes(e.target.tagName)) return
+    setIsDraggingModal(true)
+    dragStartRef.current = {
+      mouseX: e.clientX, mouseY: e.clientY,
+      modalX: position.x, modalY: position.y,
+    }
+  }
+
+  // Les valeurs par défaut sont décomposées en primitives : le parent les
+  // recalcule dans un useMemo, donc leur IDENTITÉ change à chaque rendu même
+  // quand la valeur est identique. Les mettre telles quelles dans les
+  // dépendances de l'effet ci-dessous réinitialisait le formulaire en pleine
+  // saisie ; en primitives, l'effet ne se redéclenche que si la valeur change.
+  const semDefaut = defaultSemaine?.semaine ?? null
+  const anneeDefaut = defaultSemaine?.annee ?? null
+  const cdSemaine = createDefaults?.semaine_debut ?? null
+  const cdAnnee = createDefaults?.annee_debut ?? null
+  const cdDuree = createDefaults?.duree_semaines ?? null
 
   useEffect(() => {
     if (!open) return
@@ -71,14 +247,18 @@ export function PhaseEtudeModal({
         duree_bet:     phase.duree_bet  ?? '',
         duree_econ:    phase.duree_econ ?? '',
         label_barre:   phase.label_barre ?? '',
+        couleur_custom: phase.couleur_custom ?? null,
         depends_on:    phase.depends_on ?? null,
         lag_semaines:  phase.lag_semaines ?? 0,
       })
     } else {
-      setForm(emptyForm())
+      setForm(emptyForm(
+        semDefaut ? { semaine: semDefaut, annee: anneeDefaut } : null,
+        cdSemaine ? { semaine_debut: cdSemaine, annee_debut: cdAnnee, duree_semaines: cdDuree } : null,
+      ))
     }
     setConfirmDelete(false)
-  }, [open, phase])
+  }, [open, phase, semDefaut, anneeDefaut, cdSemaine, cdAnnee, cdDuree])
 
   if (!open) return null
 
@@ -139,6 +319,7 @@ export function PhaseEtudeModal({
       duree_bet:   isMoe && form.duree_bet  !== '' ? Number(form.duree_bet)  : null,
       duree_econ:  isMoe && form.duree_econ !== '' ? Number(form.duree_econ) : null,
       label_barre: form.type_tache === 'administratif' ? (form.label_barre || null) : null,
+      couleur_custom: form.couleur_custom || null,
       depends_on:  form.depends_on ?? null,
       lag_semaines: form.depends_on ? lagSem : 0,
     }
@@ -176,24 +357,72 @@ export function PhaseEtudeModal({
   }
 
   return (
+    // Fenêtre flottante : pas d'overlay sombre, pas de fermeture au clic
+    // extérieur — on ne ferme que par ✕, Annuler ou Enregistrer.
     <div
-      style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}
-      onClick={onClose}
+      style={{
+        position: 'fixed',
+        left: position.x,
+        top: position.y,
+        width: MODAL_WIDTH,
+        height: minimized ? MODAL_MINIMIZED_HEIGHT : 'auto',
+        maxHeight: minimized ? MODAL_MINIMIZED_HEIGHT : '85vh',
+        overflow: minimized ? 'hidden' : 'auto',
+        background: 'white',
+        border: '0.5px solid #E9E2D6',
+        boxShadow: '0 8px 32px rgba(0,0,0,0.15)',
+        zIndex: 100,
+        display: 'flex',
+        flexDirection: 'column',
+      }}
     >
+      {/* Header — déplaçable */}
       <div
-        style={{ backgroundColor: 'white', borderRadius: 0, padding: 28, width: '100%', maxWidth: 520, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 8px 40px rgba(0,0,0,0.14)' }}
-        onClick={e => e.stopPropagation()}
+        onMouseDown={handleModalDragStart}
+        style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '10px 14px', background: '#F5F2F0',
+          borderBottom: minimized ? 'none' : '0.5px solid #E9E2D6',
+          cursor: isDraggingModal ? 'grabbing' : 'grab',
+          userSelect: 'none', flexShrink: 0,
+        }}
       >
-        {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 22 }}>
-          <h2 style={{ fontSize: 15, fontWeight: 500, color: '#1F1B17', margin: 0 }}>
-            {mode === 'create' ? 'Nouvelle phase' : 'Modifier la phase'}
-          </h2>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9C9591' }}>
-            <X size={18} />
+        <span style={{
+          fontSize: 12, fontWeight: 500, color: '#1F1B17',
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}>
+          {mode === 'create' ? 'Nouvelle phase' : (phase?.nom || 'Modifier la phase')}
+        </span>
+
+        <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+          <button
+            type="button"
+            onMouseDown={e => e.stopPropagation()}
+            onClick={() => setMinimized(v => !v)}
+            title={minimized ? 'Agrandir' : 'Réduire'}
+            style={{
+              width: 24, height: 24, border: 'none', background: 'transparent', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9C9591',
+            }}
+          >
+            {minimized ? <Maximize2 size={13} /> : <Minimize2 size={13} />}
+          </button>
+          <button
+            type="button"
+            onMouseDown={e => e.stopPropagation()}
+            onClick={onClose}
+            style={{
+              width: 24, height: 24, border: 'none', background: 'transparent', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9C9591',
+            }}
+          >
+            <X size={13} />
           </button>
         </div>
+      </div>
 
+      {!minimized && (
+        <div style={{ padding: '18px 22px', overflowY: 'auto', flex: 1 }}>
         <form onSubmit={handleSubmit}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
@@ -229,6 +458,60 @@ export function PhaseEtudeModal({
                     </button>
                   )
                 })}
+              </div>
+            </div>
+
+            {/* Couleur personnalisée — prime sur la couleur du type */}
+            <div>
+              <label style={LABEL}>Couleur personnalisée (optionnel)</label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <div
+                  title="Couleur appliquée à la barre"
+                  style={{
+                    width: 28, height: 28,
+                    background: getPhaseCouleur(form),
+                    border: '2px solid white',
+                    boxShadow: '0 0 0 1px rgba(0,0,0,0.15)',
+                    flexShrink: 0,
+                  }}
+                />
+
+                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                  {COULEURS_PHASE_PRESET.map(couleur => (
+                    <div
+                      key={couleur}
+                      onClick={() => set('couleur_custom', couleur)}
+                      title={couleur}
+                      style={{
+                        width: 18, height: 18, background: couleur, cursor: 'pointer',
+                        border: form.couleur_custom === couleur
+                          ? '2px solid #1F1B17'
+                          : '2px solid transparent',
+                      }}
+                    />
+                  ))}
+                </div>
+
+                <input
+                  type="color"
+                  value={getPhaseCouleur(form)}
+                  onChange={e => set('couleur_custom', e.target.value)}
+                  title="Choisir une couleur libre"
+                  style={{ width: 28, height: 28, border: 'none', padding: 0, cursor: 'pointer', flexShrink: 0 }}
+                />
+
+                {form.couleur_custom && (
+                  <button
+                    type="button"
+                    onClick={() => set('couleur_custom', null)}
+                    style={{
+                      fontSize: 10, color: '#9C9591', background: 'none',
+                      border: 'none', cursor: 'pointer', padding: '2px 6px',
+                    }}
+                  >
+                    Réinitialiser
+                  </button>
+                )}
               </div>
             </div>
 
@@ -399,68 +682,16 @@ export function PhaseEtudeModal({
                   </p>
                 )}
 
-                {segmentsDePhase.map((seg, idx) => {
-                  const fin = addWeeks(seg.semaine_debut, seg.annee_debut, seg.duree_semaines)
-                  return (
-                    <div key={seg.id} style={{
-                      display: 'grid', gridTemplateColumns: '1fr 70px 80px 70px 28px', gap: 8,
-                      alignItems: 'end', padding: '8px 0',
-                      borderBottom: '0.5px solid rgba(0,0,0,0.06)',
-                    }}>
-                      <div>
-                        {idx === 0 && <label style={{ ...LABEL, marginBottom: 3 }}>Nom (optionnel)</label>}
-                        <input
-                          type="text"
-                          value={seg.nom ?? ''}
-                          onChange={e => updateSegment(seg.id, { nom: e.target.value || null })}
-                          placeholder={phase.nom}
-                          style={{ ...INPUT, height: 30, fontSize: 12 }}
-                        />
-                      </div>
-                      <div>
-                        {idx === 0 && <label style={{ ...LABEL, marginBottom: 3 }}>Semaine</label>}
-                        <input
-                          type="number" min={1} max={53}
-                          value={seg.semaine_debut}
-                          onChange={e => updateSegment(seg.id, { semaine_debut: Math.min(53, Math.max(1, Number(e.target.value) || 1)) })}
-                          style={{ ...INPUT, height: 30, fontSize: 12 }}
-                        />
-                      </div>
-                      <div>
-                        {idx === 0 && <label style={{ ...LABEL, marginBottom: 3 }}>Année</label>}
-                        <input
-                          type="number" min={2020} max={2040}
-                          value={seg.annee_debut}
-                          onChange={e => updateSegment(seg.id, { annee_debut: Number(e.target.value) || seg.annee_debut })}
-                          style={{ ...INPUT, height: 30, fontSize: 12 }}
-                        />
-                      </div>
-                      <div>
-                        {idx === 0 && <label style={{ ...LABEL, marginBottom: 3 }}>Durée</label>}
-                        <input
-                          type="number" min={1}
-                          value={seg.duree_semaines}
-                          onChange={e => updateSegment(seg.id, { duree_semaines: Math.max(1, Number(e.target.value) || 1) })}
-                          style={{ ...INPUT, height: 30, fontSize: 12 }}
-                          title="Durée en semaines"
-                        />
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => deleteSegment(seg.id)}
-                        title={`Supprimer ce segment (fin S${fin.semaine} ${fin.annee})`}
-                        style={{
-                          width: 28, height: 30,
-                          border: '0.5px solid rgba(220,38,38,0.3)',
-                          background: '#FEF2F2', color: '#DC2626', cursor: 'pointer',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        }}
-                      >
-                        <Trash2 size={11} />
-                      </button>
-                    </div>
-                  )
-                })}
+                {segmentsDePhase.map((seg, idx) => (
+                  <SegmentRow
+                    key={seg.id}
+                    seg={seg}
+                    premier={idx === 0}
+                    placeholderNom={phase.nom}
+                    onUpdate={updateSegment}
+                    onDelete={deleteSegment}
+                  />
+                ))}
               </div>
             )}
           </div>
@@ -499,7 +730,8 @@ export function PhaseEtudeModal({
             </button>
           </div>
         </form>
-      </div>
+        </div>
+      )}
     </div>
   )
 }

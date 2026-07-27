@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react'
 import { Pencil, GripVertical } from 'lucide-react'
-import { TYPE_COLORS } from './types'
+import { getPhaseCouleur } from './types'
 
 export const HEADER_HEIGHT = 56
 const ROW_HEIGHT = 44
@@ -79,7 +79,7 @@ function PhaseRow({
   onDragStart, onDragEnd, onDragOver, onDrop,
 }) {
   const [hovered, setHovered] = useState(false)
-  const color = TYPE_COLORS[phase.type_tache] ?? '#9C9591'
+  const color = getPhaseCouleur(phase)
 
   const nameStyle = {
     etude:         { fontSize: 12, fontWeight: 600, color: hovered ? '#E8602C' : '#1F1B17', fontStyle: 'normal', marginLeft: 0 },

@@ -4,7 +4,7 @@
 import XLSX from 'xlsx-js-style'
 import {
   TYPE_COLORS, getWeekStart, addWeeks, weeksBetween, getCurrentWeek, weekOfDate,
-  computePhaseFragments, finEffectivePhase,
+  computePhaseFragments, finEffectivePhase, getPhaseCouleur,
 } from './types'
 
 // ─── Export Excel du planning d'étude ─────────────────────────────────────────
@@ -165,7 +165,9 @@ export function exportPlanningEtudeExcel({
 
   // ── Lignes de phases ──
   phases.forEach((phase) => {
-    const couleur = TYPE_COLORS[phase.type_tache] ?? '#9C9591'
+    // Couleur effective (personnalisée si définie). xlsx ne gère pas les
+    // dégradés : les phases administratives sortent en aplat, pas en rayures.
+    const couleur = getPhaseCouleur(phase)
     const hex = couleur.replace('#', '')
     const segs = segments.filter((s) => s.phase_id === phase.id)
 
@@ -238,7 +240,7 @@ export function exportPlanningEtudeExcel({
   const legende = [
     { color: TYPE_COLORS.etude.replace('#', ''), label: 'Phase MOE' },
     { color: TYPE_COLORS.validation.replace('#', ''), label: 'Validation MOA' },
-    { color: TYPE_COLORS.administratif.replace('#', ''), label: 'Administratif' },
+    { color: TYPE_COLORS.administratif.replace('#', ''), label: 'Administratif (couleur pleine)' },
     { color: TYPE_COLORS.chantier.replace('#', ''), label: 'Chantier' },
     { color: pastel(TYPE_COLORS.etude, 0.65), label: 'Segment' },
     { color: pastel('#B8412C', 0.22), label: 'Période bloquante' },

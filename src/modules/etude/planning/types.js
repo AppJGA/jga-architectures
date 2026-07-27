@@ -14,6 +14,34 @@ export const TYPE_LABELS = {
   chantier:      'Phase chantier',
 }
 
+// Couleurs proposées dans le sélecteur de couleur personnalisée
+export const COULEURS_PHASE_PRESET = [
+  '#E8602C', '#2A8A4E', '#D97706', '#1B3A5C', '#9C9591',
+  '#8B5CF6', '#0891B2', '#B8412C', '#5E5854', '#639922',
+]
+
+// Couleur effective d'une phase : la couleur personnalisée l'emporte sur celle
+// de son type. Source unique pour la timeline, la sidebar et les deux exports.
+export function getPhaseCouleur(phase) {
+  return phase?.couleur_custom || TYPE_COLORS[phase?.type_tache] || '#9C9591'
+}
+
+// Assombrit une couleur hex d'un facteur (0 → inchangée, 1 → noire)
+export function darken(hex, amount = 0.15) {
+  const h = (hex || '#9C9591').replace('#', '')
+  const canal = (i) => {
+    const v = parseInt(h.slice(i, i + 2), 16)
+    return Math.round(v * (1 - amount)).toString(16).padStart(2, '0')
+  }
+  return `#${canal(0)}${canal(2)}${canal(4)}`
+}
+
+// Rayures des phases administratives — même motif à l'écran et dans le PDF
+export function adminGradient(couleur) {
+  const sombre = darken(couleur, 0.15)
+  return `repeating-linear-gradient(-45deg, ${couleur}, ${couleur} 6px, ${sombre} 6px, ${sombre} 12px)`
+}
+
 export const INTERVENANTS = [
   { id: 1, label: 'Architecte',      abrev: 'ARCH' },
   { id: 2, label: 'BET',             abrev: 'BET'  },
@@ -180,6 +208,66 @@ export function finEffectivePhase(phase, periodes) {
   const fragments = computePhaseFragments(phase, periodes)
   const dernier = fragments[fragments.length - 1]
   return addWeeks(dernier.semaine_debut, dernier.annee_debut, dernier.duree_semaines)
+}
+
+/**
+ * Première semaine libre après la dernière phase du planning — proposée par
+ * défaut à la création d'une phase.
+ *
+ * `finEffectivePhase` renvoie déjà la semaine qui SUIT la dernière semaine
+ * travaillée (borne de fin exclusive, comme pour la propagation où un lag de 0
+ * signifie « collée à la fin »). Aucun +1 supplémentaire, sinon on laisserait
+ * une semaine vide entre les deux phases.
+ */
+export function getNextAvailableSemaine(phases, periodes = []) {
+  const valides = (phases ?? []).filter((p) => p?.semaine_debut && p?.annee_debut)
+  if (valides.length === 0) return getCurrentWeek()
+
+  let fin = null
+  valides.forEach((phase) => {
+    const f = finEffectivePhase(phase, periodes)
+    if (!fin || f.annee > fin.annee || (f.annee === fin.annee && f.semaine > fin.semaine)) {
+      fin = f
+    }
+  })
+  return fin ?? getCurrentWeek()
+}
+
+/**
+ * Répartit les sous-durées MOE (① architecte, ② BET, ③ économiste) à travers les
+ * fragments d'une phase : elles s'enchaînent dans l'ordre et se poursuivent sur
+ * le fragment suivant quand une période bloquante coupe la barre.
+ *
+ * @returns un tableau parallèle à `fragments` : [[{ num, duree }], …]
+ */
+export function distributeSegmentsAcrossFragments(phase, fragments) {
+  const sequence = [
+    { num: 1, duree: Number(phase?.duree_arch) || 0 },
+    { num: 2, duree: Number(phase?.duree_bet) || 0 },
+    { num: 3, duree: Number(phase?.duree_econ) || 0 },
+  ].filter((s) => s.duree > 0)
+
+  const parFragment = fragments.map(() => [])
+  if (sequence.length === 0) return parFragment
+
+  let segIdx = 0
+  let restantDansSeg = sequence[0].duree
+
+  fragments.forEach((frag, fragIdx) => {
+    let restantDansFrag = Math.max(0, frag.duree_semaines)
+    while (restantDansFrag > 0 && segIdx < sequence.length) {
+      const pris = Math.min(restantDansFrag, restantDansSeg)
+      parFragment[fragIdx].push({ num: sequence[segIdx].num, duree: pris })
+      restantDansFrag -= pris
+      restantDansSeg -= pris
+      if (restantDansSeg === 0) {
+        segIdx++
+        restantDansSeg = sequence[segIdx]?.duree ?? 0
+      }
+    }
+  })
+
+  return parFragment
 }
 
 // ─── Propagation chemin critique ──────────────────────────────────────────────

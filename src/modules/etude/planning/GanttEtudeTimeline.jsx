@@ -1,8 +1,9 @@
 import { useMemo, useRef, useCallback, useState, useEffect } from 'react'
 import { Pencil, GitBranch } from 'lucide-react'
 import {
-  TYPE_COLORS, getWeekStart, addWeeks, weeksBetween, getCurrentWeek, computeLagSemaines,
-  weekOfDate, computePhaseFragments, finEffectivePhase,
+  getWeekStart, addWeeks, weeksBetween, getCurrentWeek, computeLagSemaines,
+  getPhaseCouleur, adminGradient, darken,
+  weekOfDate, computePhaseFragments, finEffectivePhase, distributeSegmentsAcrossFragments,
 } from './types'
 
 function hexToRgba(hex, alpha) {
@@ -11,6 +12,18 @@ function hexToRgba(hex, alpha) {
   const g = parseInt(h.substring(2, 4), 16)
   const b = parseInt(h.substring(4, 6), 16)
   return `rgba(${r}, ${g}, ${b}, ${alpha})`
+}
+
+// Style de remplissage d'une barre : rayures pour les phases administratives
+// (barre principale ET segments, pour qu'ils se ressemblent), aplat sinon.
+function getBarStyle(phase, couleur) {
+  if (phase.type_tache === 'administratif') {
+    return {
+      background: adminGradient(couleur),
+      border: `1px solid ${darken(couleur, 0.15)}`,
+    }
+  }
+  return { backgroundColor: couleur }
 }
 
 const HEADER_HEIGHT = 56
@@ -37,6 +50,7 @@ export function GanttEtudeTimeline({
   refSemaine, refAnnee,
   segments = [], getSegmentsForPhase, updateSegmentLocal, onSegmentCommit,
   periodes = [],
+  drawMode = false, onDrawCreate,
 }) {
   // ── Reference week — reçue depuis GanttEtude (dynamique, -4 sem de marge) ─────
   const refWeek = useMemo(
@@ -128,6 +142,7 @@ export function GanttEtudeTimeline({
   const [dragPreview, setDragPreview] = useState(null)
 
   const startBarDrag = useCallback((e, phase, type) => {
+    if (drawMode) return   // en mode dessin, le geste crée une phase
     e.preventDefault(); e.stopPropagation()
     dragState.moved = false
     barDragRef.current = {
@@ -141,7 +156,7 @@ export function GanttEtudeTimeline({
     setDraggingBar(phase.id)
     setDragPreview(null)
     document.body.style.cursor = type === 'move' ? 'grabbing' : 'ew-resize'
-  }, [])
+  }, [drawMode])
 
   // Nouvelle géométrie d'une phase après un déplacement de `delta` semaines —
   // partagée par l'aperçu et l'enregistrement, pour qu'ils ne divergent jamais.
@@ -169,6 +184,7 @@ export function GanttEtudeTimeline({
   const [draggingSeg, setDraggingSeg] = useState(null)
 
   const startSegDrag = useCallback((e, seg, type) => {
+    if (drawMode) return
     e.preventDefault(); e.stopPropagation()
     dragState.moved = false
     const origLeft = weeksBetween(refWeek.semaine, refWeek.annee, seg.semaine_debut, seg.annee_debut) * semWidth
@@ -181,7 +197,7 @@ export function GanttEtudeTimeline({
     }
     setDraggingSeg(seg.id)
     document.body.style.cursor = type === 'move' ? 'grabbing' : 'ew-resize'
-  }, [refWeek, semWidth])
+  }, [refWeek, semWidth, drawMode])
 
   // Géométrie d'un segment après un déplacement de `delta` semaines
   const segChangesFor = useCallback((drag, delta) => {
@@ -221,6 +237,83 @@ export function GanttEtudeTimeline({
     }).filter(Boolean),
     [periodes, refWeek, semWidth]
   )
+
+  // ── Dessin d'une phase par cliquer-glisser ────────────────────────────────────
+  // Le planning d'étude n'a pas de groupement : la ligne survolée n'importe pas,
+  // seule la plage de semaines compte.
+  const [drawState, setDrawState] = useState(null)
+  const containerRef = useRef(null)
+
+  const semaineAtX = useCallback((x) => {
+    const offset = Math.floor(x / semWidth)
+    return addWeeks(refWeek.semaine, refWeek.annee, offset)
+  }, [refWeek, semWidth])
+
+  const handleDrawMouseDown = useCallback((e) => {
+    if (!drawMode || e.button !== 0) return
+    const rect = containerRef.current?.getBoundingClientRect()
+    if (!rect) return
+    // Ne pas démarrer un dessin sur l'en-tête collant
+    if (e.clientY - rect.top < HEADER_HEIGHT) return
+    e.preventDefault()
+    const depart = semaineAtX(e.clientX - rect.left)
+    setDrawState({ depart, courante: depart })
+  }, [drawMode, semaineAtX])
+
+  useEffect(() => {
+    if (!drawState) return
+
+    const handleMove = (e) => {
+      const rect = containerRef.current?.getBoundingClientRect()
+      if (!rect) return
+      const courante = semaineAtX(e.clientX - rect.left)
+      setDrawState(prev => (prev ? { ...prev, courante } : prev))
+    }
+
+    const handleUp = () => {
+      setDrawState(prev => {
+        if (prev) {
+          const delta = weeksBetween(
+            prev.depart.semaine, prev.depart.annee,
+            prev.courante.semaine, prev.courante.annee
+          )
+          const debut = delta >= 0 ? prev.depart : prev.courante
+          onDrawCreate?.({
+            semaine_debut: debut.semaine,
+            annee_debut: debut.annee,
+            duree_semaines: Math.max(1, Math.abs(delta) + 1),
+          })
+        }
+        return null
+      })
+    }
+
+    window.addEventListener('mousemove', handleMove)
+    window.addEventListener('mouseup', handleUp)
+    return () => {
+      window.removeEventListener('mousemove', handleMove)
+      window.removeEventListener('mouseup', handleUp)
+    }
+  }, [drawState, semaineAtX, onDrawCreate, weeksBetween])
+
+  // Quitter le mode dessin annule un geste en cours
+  useEffect(() => { if (!drawMode) setDrawState(null) }, [drawMode])
+
+  // Géométrie du rectangle de prévisualisation
+  const drawPreview = useMemo(() => {
+    if (!drawState) return null
+    const delta = weeksBetween(
+      drawState.depart.semaine, drawState.depart.annee,
+      drawState.courante.semaine, drawState.courante.annee
+    )
+    const debut = delta >= 0 ? drawState.depart : drawState.courante
+    const duree = Math.abs(delta) + 1
+    return {
+      left: weeksBetween(refWeek.semaine, refWeek.annee, debut.semaine, debut.annee) * semWidth,
+      width: duree * semWidth,
+      duree,
+    }
+  }, [drawState, refWeek, semWidth])
 
   // ── Connections ───────────────────────────────────────────────────────────────
   const [connectingFrom, setConnectingFrom] = useState(null)
@@ -378,7 +471,12 @@ export function GanttEtudeTimeline({
 
   return (
     <div
-      style={{ position: 'relative', userSelect: 'none', width: totalWidth, minWidth: totalWidth }}
+      ref={containerRef}
+      style={{
+        position: 'relative', userSelect: 'none', width: totalWidth, minWidth: totalWidth,
+        cursor: drawMode ? 'crosshair' : 'default',
+      }}
+      onMouseDown={handleDrawMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
@@ -561,6 +659,25 @@ export function GanttEtudeTimeline({
           />
         ))}
 
+        {/* Prévisualisation du dessin en cours */}
+        {drawPreview && (
+          <div style={{
+            position: 'absolute',
+            left: drawPreview.left, width: drawPreview.width,
+            top: 4, bottom: 4,
+            background: '#E8602C', opacity: 0.35,
+            border: '2px solid #E8602C',
+            pointerEvents: 'none', zIndex: 30,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            {drawPreview.duree > 1 && (
+              <span style={{ fontSize: 10, color: 'white', fontWeight: 500 }}>
+                {drawPreview.duree}S
+              </span>
+            )}
+          </div>
+        )}
+
         {/* SVG: dependency arrows */}
         <svg
           ref={svgRef}
@@ -697,7 +814,8 @@ function PhaseBarRow({
   const isMoe = phase.type_tache === 'etude'
   const rh = rowHeightOf(phase)
   const barPad = barPadOf(phase)
-  const color = TYPE_COLORS[phase.type_tache] ?? '#9C9591'
+  const color = getPhaseCouleur(phase)
+  const barStyle = getBarStyle(phase, color)
   const isAdmin = phase.type_tache === 'administratif'
 
   // Fragments visuels : la phase est coupée par les périodes bloquantes.
@@ -705,6 +823,13 @@ function PhaseBarRow({
   const fragments = useMemo(
     () => computePhaseFragments(phase, periodes),
     [phase, periodes]
+  )
+
+  // Répartition ①②③ étalée sur TOUS les fragments : une sous-durée interrompue
+  // par des congés reprend sur le fragment suivant.
+  const segsParFragment = useMemo(
+    () => distributeSegmentsAcrossFragments(phase, fragments),
+    [phase, fragments]
   )
 
   const premierFrag = fragments[0]
@@ -751,10 +876,7 @@ function PhaseBarRow({
             style={{
               position: 'absolute', left: fLeft, width: fWidth,
               top: barPad, bottom: barPad,
-              backgroundColor: color,
-              backgroundImage: isAdmin
-                ? `repeating-linear-gradient(45deg, transparent, transparent 8px, rgba(255,255,255,0.18) 8px, rgba(255,255,255,0.18) 16px)`
-                : 'none',
+              ...barStyle,
               borderRadius: 0,
               display: 'flex', alignItems: 'center', overflow: 'visible',
               boxShadow: isDragging
@@ -784,25 +906,40 @@ function PhaseBarRow({
               </div>
             )}
 
-            {/* Répartition des intervenants MOE — sur le premier fragment,
-                tronquée à sa largeur (les sous-durées ne sont pas refragmentées) */}
-            {premier && isMoe && (phase.duree_arch > 0 || phase.duree_bet > 0 || phase.duree_econ > 0) && (
+            {/* Répartition des intervenants MOE — poursuivie d'un fragment à
+                l'autre (cf. distributeSegmentsAcrossFragments) */}
+            {isMoe && (segsParFragment[i] ?? []).length > 0 && (
               <div style={{ position: 'absolute', inset: 0, display: 'flex', overflow: 'hidden', pointerEvents: 'none' }}>
-                {[
-                  { duree: phase.duree_arch, num: '1', fond: 'rgba(0,0,0,0.15)' },
-                  { duree: phase.duree_bet, num: '2', fond: 'rgba(0,0,0,0.25)' },
-                  { duree: phase.duree_econ, num: '3', fond: 'rgba(0,0,0,0.35)' },
-                ].filter(s => s.duree > 0).map((s, k, tous) => (
-                  <div key={s.num} style={{
-                    width: s.duree * semWidth, height: '100%', flexShrink: 0,
-                    backgroundColor: s.fond,
+                {(segsParFragment[i] ?? []).map((sub, k, tous) => (
+                  <div key={`${sub.num}-${k}`} style={{
+                    width: sub.duree * semWidth, height: '100%', flexShrink: 0,
+                    backgroundColor: `rgba(0,0,0,${sub.num === 1 ? 0.15 : sub.num === 2 ? 0.25 : 0.35})`,
                     borderRight: k < tous.length - 1 ? '1px solid rgba(255,255,255,0.6)' : 'none',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     pointerEvents: 'none',
                   }}>
-                    <span style={{ fontSize: 10, fontWeight: 700, color: 'white', userSelect: 'none' }}>{s.num}</span>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: 'white', userSelect: 'none' }}>{sub.num}</span>
                   </div>
                 ))}
+              </div>
+            )}
+
+            {/* Texte des phases administratives — dans la barre, sur CHAQUE
+                fragment (la barre peut être coupée par une période bloquante) */}
+            {isAdmin && phase.label_barre && (
+              <div style={{
+                position: 'absolute', inset: 0,
+                display: 'flex', alignItems: 'center', padding: '0 6px',
+                overflow: 'hidden', pointerEvents: 'none',
+              }}>
+                <span style={{
+                  fontSize: 10, fontWeight: 600, color: 'white',
+                  textTransform: 'uppercase', letterSpacing: '0.04em',
+                  whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                  textShadow: '0 1px 2px rgba(0,0,0,0.3)',
+                }}>
+                  {phase.label_barre}
+                </span>
               </div>
             )}
 
@@ -844,8 +981,9 @@ function PhaseBarRow({
         )
       })}
 
-      {/* Label à droite du dernier fragment */}
-      <div style={{
+      {/* Label à droite du dernier fragment — sauf pour les phases
+          administratives, dont le texte est écrit dans la barre */}
+      {!isAdmin && <div style={{
         position: 'absolute',
         left: finLeft + 4,
         top: barPad,
@@ -861,7 +999,7 @@ function PhaseBarRow({
         zIndex: 10,
       }}>
         {phase.nom}
-      </div>
+      </div>}
 
 
       {/* ── Segments supplémentaires ───────────────────────────────────────
@@ -880,7 +1018,9 @@ function PhaseBarRow({
                 position: 'absolute',
                 left: segLeft, width: segWidth,
                 top: barPad, bottom: barPad,
-                backgroundColor: color,
+                // Même remplissage que la barre principale (rayures si admin) —
+                // seul l'outline pointillé distingue un segment d'un fragment.
+                ...barStyle,
                 opacity: isDraggingSeg ? 0.7 : 0.85,
                 outline: '1.5px dashed rgba(255,255,255,0.5)',
                 outlineOffset: -2,
@@ -917,8 +1057,26 @@ function PhaseBarRow({
                 }}
                 onMouseDown={(e) => onSegmentDragStart?.(e, seg, 'resize-right')}
               />
+
+              {/* Phase administrative : le texte s'écrit DANS la barre */}
+              {isAdmin && (
+                <div style={{
+                  position: 'absolute', inset: 0,
+                  display: 'flex', alignItems: 'center', padding: '0 6px',
+                  overflow: 'hidden', pointerEvents: 'none',
+                }}>
+                  <span style={{
+                    fontSize: 10, fontWeight: 600, color: 'white',
+                    textTransform: 'uppercase', letterSpacing: '0.04em',
+                    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                    textShadow: '0 1px 2px rgba(0,0,0,0.3)',
+                  }}>
+                    {seg.nom ?? phase.label_barre ?? ''}
+                  </span>
+                </div>
+              )}
             </div>
-            {seg.nom && (
+            {!isAdmin && seg.nom && (
               <div style={{
                 position: 'absolute',
                 left: segLeft + segWidth + 4,

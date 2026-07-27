@@ -1,6 +1,10 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
+import { X, ZoomIn, ZoomOut } from 'lucide-react'
 import { supabase } from '../../../core/supabase/client'
-import { propagateEtudeDependencies, computeLagSemaines, addWeeks, weeksBetween, getCurrentWeek } from './types'
+import {
+  propagateEtudeDependencies, computeLagSemaines, addWeeks, weeksBetween, getCurrentWeek,
+  getNextAvailableSemaine,
+} from './types'
 import { computeCriticalPath } from './computeCriticalPath'
 import { usePlanningEtude } from '../../../shared/hooks/usePlanningEtude'
 import { usePlanningEtudeSegments } from '../../../shared/hooks/usePlanningEtudeSegments'
@@ -15,6 +19,10 @@ import { ExportEtudeModal } from './ExportEtudeModal'
 import { PeriodesBloqueesModal } from '../../chantier/planning/PeriodesBloqueesModal'
 import { exportPlanningEtudeExcel } from './exportPlanningEtudeExcel'
 import { Toast } from '../../../shared/components/Toast'
+
+// Bornes de zoom (largeur d'une colonne semaine, en px)
+const SEM_WIDTH_MIN = 16
+const SEM_WIDTH_MAX = 80
 
 export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', affaire = {} }) {
   const { phases: hookPhases, jalons, loading, error, addPhase, updatePhase, deletePhase, refetch } = usePlanningEtude(affaireId)
@@ -94,6 +102,13 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
     return addWeeks(minSemaine, minAnnee, -4)
   }, [phases])
 
+  // Semaine proposée à la création : la première libre après la dernière phase,
+  // périodes bloquantes déduites.
+  const prochaineSemaine = useMemo(
+    () => getNextAvailableSemaine(phases, periodes),
+    [phases, periodes]
+  )
+
   const [semWidth, setSemWidth] = useState(40)
   const [showConnections, setShowConnections] = useState(true)
   const [editingPhase, setEditingPhase] = useState(null)
@@ -102,6 +117,33 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
   const [showJalonsModal, setShowJalonsModal] = useState(false)
   const [showExportModal, setShowExportModal] = useState(false)
   const [showPeriodesModal, setShowPeriodesModal] = useState(false)
+  const [showOptionsPanel, setShowOptionsPanel] = useState(false)
+  const [drawMode, setDrawMode] = useState(false)
+  const [createDefaults, setCreateDefaults] = useState(null)
+
+  const handleNewPhase = useCallback(() => {
+    setCreateDefaults(null)
+    setEditingPhase(null)
+    setPhaseModalMode('create')
+    setShowPhaseModal(true)
+  }, [])
+
+  // Fin du geste de dessin : ouvre la modale de création pré-remplie. `drawMode`
+  // reste actif pour enchaîner plusieurs créations (comme le planning chantier).
+  const handleDrawCreate = useCallback((plage) => {
+    setCreateDefaults(plage)
+    setEditingPhase(null)
+    setPhaseModalMode('create')
+    setShowPhaseModal(true)
+  }, [])
+
+  // Échap quitte le mode dessin
+  useEffect(() => {
+    if (!drawMode) return
+    const handleKey = (e) => { if (e.key === 'Escape') setDrawMode(false) }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [drawMode])
 
   // ── Scroll sync ───────────────────────────────────────────────────────────────
   const sidebarRef = useRef(null)
@@ -281,24 +323,25 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 52px)', overflow: 'hidden', backgroundColor: '#FAFAF9' }}>
       <div data-print="hidden">
         <GanttEtudeToolbar
-          onZoomIn={() => setSemWidth(w => Math.min(80, w + 4))}
-          onZoomOut={() => setSemWidth(w => Math.max(16, w - 4))}
-          onExportPdf={() => setShowExportModal(true)}
-          onExportExcel={handleExportExcel}
-          onAddTask={() => { setEditingPhase(null); setPhaseModalMode('create'); setShowPhaseModal(true) }}
-          onOpenJalons={() => setShowJalonsModal(true)}
+          onAddTask={handleNewPhase}
+          drawMode={drawMode}
+          onSetDrawMode={setDrawMode}
           onOpenPeriodes={() => setShowPeriodesModal(true)}
           periodes={periodes}
+          onExportPdf={() => setShowExportModal(true)}
+          onExportExcel={handleExportExcel}
+          onOpenJalons={() => setShowJalonsModal(true)}
           onToggleConnections={() => setShowConnections(v => !v)}
           showConnections={showConnections}
-          semWidth={semWidth}
+          showOptionsPanel={showOptionsPanel}
+          onToggleOptionsPanel={() => setShowOptionsPanel(v => !v)}
           notionEnabled={notionSync.notionEnabled}
           notionConnected={notionSync.notionConnected}
           onToggleNotion={notionSync.toggleNotion}
         />
       </div>
 
-      <div id="gantt-etude-print-root" style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+      <div id="gantt-etude-print-root" style={{ display: 'flex', flex: 1, overflow: 'hidden', position: 'relative' }}>
         {/* Sidebar */}
         <div
           ref={sidebarRef}
@@ -342,7 +385,104 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
             updateSegmentLocal={updateSegmentLocal}
             onSegmentCommit={handleSegmentCommit}
             periodes={periodes}
+            drawMode={drawMode}
+            onDrawCreate={handleDrawCreate}
           />
+        </div>
+
+        {/* ── Panneau latéral d'options ─────────────────────────────────────
+            Glisse depuis la droite par-dessus la timeline, comme le planning
+            chantier. Le planning d'étude n'a qu'une granularité (la semaine) :
+            le panneau ne contient donc que le zoom. */}
+        <div style={{
+          position: 'absolute', top: 0, right: 0, bottom: 0, width: 280,
+          backgroundColor: 'white',
+          borderLeft: '0.5px solid #E9E2D6',
+          boxShadow: '-4px 0 16px rgba(0,0,0,0.08)',
+          zIndex: 60,
+          transform: showOptionsPanel ? 'translateX(0)' : 'translateX(100%)',
+          transition: 'transform 0.25s ease',
+          display: 'flex', flexDirection: 'column', overflow: 'hidden',
+        }}>
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '12px 16px', borderBottom: '0.5px solid #E9E2D6', flexShrink: 0,
+          }}>
+            <span style={{ fontSize: 13, fontWeight: 500, color: '#1F1B17' }}>
+              Options d'affichage
+            </span>
+            <button
+              onClick={() => setShowOptionsPanel(false)}
+              style={{
+                width: 24, height: 24, border: 'none', background: 'transparent', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9C9591',
+              }}
+            >
+              <X size={14} />
+            </button>
+          </div>
+
+          <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
+            <p style={{
+              fontSize: 10, fontWeight: 500, color: '#9C9591',
+              textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10,
+            }}>
+              Zoom
+            </p>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button
+                onClick={() => setSemWidth(w => Math.max(SEM_WIDTH_MIN, w - 4))}
+                style={{
+                  width: 28, height: 28, border: '0.5px solid rgba(0,0,0,0.15)',
+                  background: 'transparent', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                }}
+              >
+                <ZoomOut size={13} />
+              </button>
+
+              <div
+                style={{ flex: 1, height: 4, background: '#E9E2D6', borderRadius: 2, position: 'relative', cursor: 'pointer' }}
+                onClick={(e) => {
+                  const rect = e.currentTarget.getBoundingClientRect()
+                  const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
+                  setSemWidth(Math.round(SEM_WIDTH_MIN + ratio * (SEM_WIDTH_MAX - SEM_WIDTH_MIN)))
+                }}
+              >
+                <div style={{
+                  position: 'absolute',
+                  left: `${(semWidth - SEM_WIDTH_MIN) / (SEM_WIDTH_MAX - SEM_WIDTH_MIN) * 100}%`,
+                  top: '50%', transform: 'translate(-50%, -50%)',
+                  width: 14, height: 14, borderRadius: '50%',
+                  background: '#E8602C', border: '2px solid white',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                }} />
+              </div>
+
+              <button
+                onClick={() => setSemWidth(w => Math.min(SEM_WIDTH_MAX, w + 4))}
+                style={{
+                  width: 28, height: 28, border: '0.5px solid rgba(0,0,0,0.15)',
+                  background: 'transparent', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                }}
+              >
+                <ZoomIn size={13} />
+              </button>
+
+              <span
+                onDoubleClick={() => setSemWidth(40)}
+                title="Double-clic pour réinitialiser"
+                style={{
+                  fontSize: 10, color: '#9C9591', minWidth: 44, textAlign: 'center',
+                  cursor: 'pointer', fontFamily: "'JetBrains Mono', monospace",
+                }}
+              >
+                {semWidth} px/s
+              </span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -402,12 +542,14 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
 
       <PhaseEtudeModal
         open={showPhaseModal}
-        onClose={() => setShowPhaseModal(false)}
+        onClose={() => { setShowPhaseModal(false); setCreateDefaults(null) }}
         phase={editingPhase}
         phases={phases}
         onSave={handleSavePhase}
         onDelete={handleDeletePhase}
         mode={phaseModalMode}
+        defaultSemaine={prochaineSemaine}
+        createDefaults={createDefaults}
         getSegmentsForPhase={getSegmentsForPhase}
         addSegment={addSegment}
         updateSegment={updateSegment}

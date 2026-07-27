@@ -55,10 +55,14 @@ function barWidthAt(startDate, workingDays, dateRef, dayPositions, dayWidth) {
   )
 }
 
-// ── Périodes bloquées (congés d'entreprises) ───────────────────────────────────
+// ── Périodes (congés, fermetures, repères informatifs) ─────────────────────────
+//
+// Seules les périodes bloquantes décalent les barres ; les périodes informatives
+// sont dessinées mais traversées normalement par les tâches.
 
 function isDateInPeriodes(date, periodes) {
   return periodes.some((p) => {
+    if (p.est_bloquante === false) return false
     const debut = parseDate(p.date_debut)
     const fin = parseDate(p.date_fin)
     return date >= debut && date <= fin
@@ -1389,22 +1393,25 @@ export function GanttTimeline({
           }} />
         ))}
 
-        {/* Périodes bloquées — zones hachurées */}
+        {/* Périodes — hachurées si bloquantes, fond uni si informatives */}
         {periodes.map((periode) => {
           const dateDebut = parseDate(periode.date_debut)
           const dateFinInclusive = parseDate(periode.date_fin)
           dateFinInclusive.setDate(dateFinInclusive.getDate() + 1)
           const { left, width } = periodeGeometry(dateDebut, dateFinInclusive, geo)
           const couleur = periode.couleur || '#B8412C'
+          const bloquante = periode.est_bloquante !== false
           return (
             <div
               key={periode.id}
-              title={`${periode.label} — période bloquée`}
+              title={`${periode.label} — période ${bloquante ? 'bloquante' : 'informative'}`}
               style={{
                 position: 'absolute', left, width, top: 0, bottom: 0,
-                background: `repeating-linear-gradient(45deg, ${hexToRgba(couleur, 0.06)}, ${hexToRgba(couleur, 0.06)} 4px, ${hexToRgba(couleur, 0.12)} 4px, ${hexToRgba(couleur, 0.12)} 8px)`,
-                borderLeft: `1.5px solid ${hexToRgba(couleur, 0.3)}`,
-                borderRight: `1.5px solid ${hexToRgba(couleur, 0.3)}`,
+                background: bloquante
+                  ? `repeating-linear-gradient(45deg, ${hexToRgba(couleur, 0.06)}, ${hexToRgba(couleur, 0.06)} 4px, ${hexToRgba(couleur, 0.12)} 4px, ${hexToRgba(couleur, 0.12)} 8px)`
+                  : hexToRgba(couleur, 0.06),
+                borderLeft: `${bloquante ? 1.5 : 1}px solid ${hexToRgba(couleur, bloquante ? 0.3 : 0.2)}`,
+                borderRight: `${bloquante ? 1.5 : 1}px solid ${hexToRgba(couleur, bloquante ? 0.3 : 0.2)}`,
                 pointerEvents: 'none',
                 zIndex: 1,
               }}
@@ -1836,7 +1843,7 @@ function TaskBarRow({
   const showEndDot = isConnecting ? false : isHovered
 
   const barTitle = task.appro_actif && task.appro_duree
-    ? `${task.nom} · Délai d'appro : ${task.appro_duree}j${task.appro_materiau ? ` (${task.appro_materiau})` : ''}`
+    ? `${task.nom} · Délai avant : ${task.appro_duree}j${task.appro_materiau ? ` (${task.appro_materiau})` : ''}`
     : task.nom
 
   return (
@@ -2149,36 +2156,51 @@ function TaskBarRow({
 
 // ─── ApproBar ─────────────────────────────────────────────────────────────────
 
+// Hauteur réservée sous une barre de délai quand son motif est affiché
+const DELAI_LABEL_HEIGHT = 12
+
+// Motif d'un délai, en petit texte gris italique sous la barre correspondante
+function DelaiLabel({ label, left, width }) {
+  return (
+    <div style={{
+      position: 'absolute',
+      left, width, bottom: BAR_PAD - 2,
+      fontSize: 9, fontStyle: 'italic', color: '#9C9591',
+      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+      pointerEvents: 'none', userSelect: 'none',
+      zIndex: 6,
+    }}>
+      {label}
+    </div>
+  )
+}
+
 function ApproBar({ task, color, geo }) {
   const taskStartDate = parseDate(task.debut)
   const approStartDate = addWorkingDays(taskStartDate, -task.appro_duree)
   const { left: approLeft, width: approWidth } = computeGeometry(approStartDate, task.appro_duree, geo)
-  const label = task.appro_materiau
-    ? `Appro. – ${task.appro_materiau}`
-    : `Délai appro. – ${task.appro_duree}j`
+  const largeur = Math.max(approWidth, 4)
+  const motif = task.appro_materiau ?? ''
 
   return (
-    <div style={{
-      position: 'absolute',
-      left: approLeft, width: Math.max(approWidth, 4),
-      top: BAR_PAD, bottom: BAR_PAD,
-      backgroundColor: color, opacity: 0.28,
-      borderRadius: 0,
-      border: `1.5px dashed ${color}`, borderRight: 'none',
-      display: 'flex', alignItems: 'center', justifyContent: 'flex-end', paddingRight: 6,
-      overflow: 'hidden',
-      pointerEvents: 'none', userSelect: 'none',
-      zIndex: 5,
-    }}>
-      <span style={{
-        fontSize: 10, fontWeight: 500, whiteSpace: 'nowrap',
-        overflow: 'hidden', textOverflow: 'ellipsis',
-        color: color,
-        filter: 'brightness(0.4)',
-      }}>
-        {label}
-      </span>
-    </div>
+    <>
+      <div
+        title={`${task.nom} · Délai avant : ${task.appro_duree} j. ouvré(s)${motif ? ` — ${motif}` : ''}`}
+        style={{
+          position: 'absolute',
+          left: approLeft, width: largeur,
+          top: BAR_PAD,
+          bottom: BAR_PAD + (motif ? DELAI_LABEL_HEIGHT : 0),
+          backgroundColor: color, opacity: 0.28,
+          borderRadius: 0,
+          border: `1.5px dashed ${color}`, borderRight: 'none',
+          overflow: 'hidden',
+          pointerEvents: 'none', userSelect: 'none',
+          zIndex: 5,
+        }}
+      />
+      {motif && <DelaiLabel label={motif} left={approLeft} width={largeur} />}
+    </>
   )
 }
 
@@ -2193,20 +2215,26 @@ function DelaiApresBar({ task, color, geo }) {
   const lastDay = addWorkingDays(parseDate(task.debut), Math.max(1, task.duree) - 1)
   const debutDelai = addWorkingDays(lastDay, 1)
   const { left, width } = computeGeometry(debutDelai, task.delai_apres, geo)
+  const largeur = Math.max(width, 4)
+  const motif = task.label_apres ?? ''
 
   return (
-    <div
-      title={`${task.nom} · Délai après : ${task.delai_apres} j. ouvré(s)`}
-      style={{
-        position: 'absolute',
-        left, width: Math.max(width, 4),
-        top: BAR_PAD + 2, bottom: BAR_PAD + 2,
-        background: `repeating-linear-gradient(-45deg, ${color}30, ${color}30 3px, ${color}60 3px, ${color}60 6px)`,
-        border: `1px dashed ${color}80`,
-        pointerEvents: 'none', userSelect: 'none',
-        zIndex: 5,
-      }}
-    />
+    <>
+      <div
+        title={`${task.nom} · Délai après : ${task.delai_apres} j. ouvré(s)${motif ? ` — ${motif}` : ''}`}
+        style={{
+          position: 'absolute',
+          left, width: largeur,
+          top: BAR_PAD + 2,
+          bottom: BAR_PAD + 2 + (motif ? DELAI_LABEL_HEIGHT : 0),
+          background: `repeating-linear-gradient(-45deg, ${color}30, ${color}30 3px, ${color}60 3px, ${color}60 6px)`,
+          border: `1px dashed ${color}80`,
+          pointerEvents: 'none', userSelect: 'none',
+          zIndex: 5,
+        }}
+      />
+      {motif && <DelaiLabel label={motif} left={left} width={largeur} />}
+    </>
   )
 }
 

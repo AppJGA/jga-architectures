@@ -71,9 +71,10 @@ function emptyForm(lots, defaultDebut, lastUsedLotId) {
     depends_on: null,
     lag_days: null,
     appro_actif: false,
-    appro_duree: null,
+    appro_duree: 0,
     appro_materiau: null,
     delai_apres: 0,
+    label_apres: null,
   }
 }
 
@@ -537,64 +538,73 @@ export function TacheEditModal({
               </div>
             </div>
 
-            {/* Délai après la tâche — repousse la fin effective pour les suivantes */}
-            <div style={{ borderTop: '0.5px solid rgba(0,0,0,0.08)', paddingTop: 14 }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: 10, alignItems: 'start' }}>
-                <div>
-                  <label style={LABEL}>Délai après (j)</label>
-                  <input
-                    type="number" min={0} value={form.delai_apres ?? 0}
-                    onChange={(e) => set('delai_apres', Math.max(0, parseInt(e.target.value, 10) || 0))}
-                    style={INPUT}
-                    onFocus={e => { e.target.style.borderColor = '#E8602C'; e.target.style.boxShadow = '0 0 0 3px rgba(232,96,44,0.12)' }}
-                    onBlur={e => { e.target.style.borderColor = 'rgba(0,0,0,0.12)'; e.target.style.boxShadow = 'none' }}
-                  />
-                </div>
-                <p style={{ fontSize: 10, color: '#9C9591', lineHeight: 1.6, paddingTop: 20 }}>
-                  Temps d'attente après la fin (séchage, livraison…). Les tâches
-                  dépendantes ne démarrent qu'après ce délai.
-                </p>
-              </div>
-            </div>
+            {/* ── Délais avant / après ─────────────────────────────────────
+                Purement visuels : ils n'entrent pas dans le calcul des chemins
+                critiques, qui part toujours de la fin réelle de la tâche.
+                Le délai AVANT réutilise les colonnes historiques d'appro
+                (appro_duree / appro_materiau) — d'où l'absence de champ
+                `delai_appro` en base. */}
+            <div style={{ marginTop: 16, borderTop: '0.5px solid rgba(0,0,0,0.08)', paddingTop: 14 }}>
+              <p style={{
+                fontSize: 10, fontWeight: 500, color: '#9C9591',
+                textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10,
+              }}>
+                Délais
+              </p>
 
-            {/* Approvisionnement */}
-            <div style={{ borderTop: '0.5px solid rgba(0,0,0,0.08)', paddingTop: 14 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: form.appro_actif ? 12 : 0 }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+              {/* Délai avant */}
+              <div style={{ border: '0.5px solid rgba(0,0,0,0.08)', padding: 12, marginBottom: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                  <span style={{ fontSize: 11, color: '#5E5854', fontWeight: 500 }}>Délai avant</span>
                   <input
-                    type="checkbox" checked={!!form.appro_actif}
-                    onChange={(e) => set('appro_actif', e.target.checked)}
-                    style={{ accentColor: '#E8602C', width: 14, height: 14, cursor: 'pointer' }}
+                    type="number" min={0}
+                    value={form.appro_duree ?? 0}
+                    onChange={(e) => set('appro_duree', Math.max(0, parseInt(e.target.value, 10) || 0))}
+                    style={{
+                      width: 60, padding: '3px 6px', fontSize: 12,
+                      border: '0.5px solid rgba(0,0,0,0.12)',
+                    }}
                   />
-                  <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#9C9591' }}>
-                    Délai d'approvisionnement
-                  </span>
-                </label>
-              </div>
-              {form.appro_actif && (
-                <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: 10, alignItems: 'end' }}>
-                  <div>
-                    <label style={LABEL}>Durée (j. ouvrés)</label>
-                    <input
-                      type="number" min={1} value={form.appro_duree ?? ''}
-                      onChange={(e) => set('appro_duree', e.target.value === '' ? null : Math.max(1, Number(e.target.value)))}
-                      placeholder="10" style={INPUT}
-                      onFocus={e => { e.target.style.borderColor = '#E8602C'; e.target.style.boxShadow = '0 0 0 3px rgba(232,96,44,0.12)' }}
-                      onBlur={e => { e.target.style.borderColor = 'rgba(0,0,0,0.12)'; e.target.style.boxShadow = 'none' }}
-                    />
-                  </div>
-                  <div>
-                    <label style={LABEL}>Matériau / fourniture</label>
-                    <input
-                      value={form.appro_materiau ?? ''}
-                      onChange={(e) => set('appro_materiau', e.target.value || null)}
-                      placeholder="Charpente bois lamellé-collé" style={INPUT}
-                      onFocus={e => { e.target.style.borderColor = '#E8602C'; e.target.style.boxShadow = '0 0 0 3px rgba(232,96,44,0.12)' }}
-                      onBlur={e => { e.target.style.borderColor = 'rgba(0,0,0,0.12)'; e.target.style.boxShadow = 'none' }}
-                    />
-                  </div>
+                  <span style={{ fontSize: 11, color: '#9C9591' }}>jours ouvrés</span>
                 </div>
-              )}
+                <input
+                  type="text"
+                  value={form.appro_materiau ?? ''}
+                  onChange={(e) => set('appro_materiau', e.target.value || null)}
+                  placeholder="Motif (ex : livraison matériaux)"
+                  style={{
+                    width: '100%', padding: '5px 8px', fontSize: 11, boxSizing: 'border-box',
+                    border: '0.5px solid rgba(0,0,0,0.12)', color: '#1F1B17',
+                  }}
+                />
+              </div>
+
+              {/* Délai après */}
+              <div style={{ border: '0.5px solid rgba(0,0,0,0.08)', padding: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                  <span style={{ fontSize: 11, color: '#5E5854', fontWeight: 500 }}>Délai après</span>
+                  <input
+                    type="number" min={0}
+                    value={form.delai_apres ?? 0}
+                    onChange={(e) => set('delai_apres', Math.max(0, parseInt(e.target.value, 10) || 0))}
+                    style={{
+                      width: 60, padding: '3px 6px', fontSize: 12,
+                      border: '0.5px solid rgba(0,0,0,0.12)',
+                    }}
+                  />
+                  <span style={{ fontSize: 11, color: '#9C9591' }}>jours ouvrés</span>
+                </div>
+                <input
+                  type="text"
+                  value={form.label_apres ?? ''}
+                  onChange={(e) => set('label_apres', e.target.value || null)}
+                  placeholder="Motif (ex : temps de séchage)"
+                  style={{
+                    width: '100%', padding: '5px 8px', fontSize: 11, boxSizing: 'border-box',
+                    border: '0.5px solid rgba(0,0,0,0.12)', color: '#1F1B17',
+                  }}
+                />
+              </div>
             </div>
 
             {/* Segments supplémentaires */}

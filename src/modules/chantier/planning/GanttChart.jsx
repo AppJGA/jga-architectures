@@ -143,6 +143,19 @@ function getNextAvailableDate(tasks) {
   return addWorkingDays(maxEnd, 1)
 }
 
+// ── Teinte pastel pour Excel ──────────────────────────────────────────────────
+//
+// xlsx-js-style ne gère pas la transparence : on simule l'opacité en mélangeant
+// la couleur avec du blanc. `ratio` = part de la couleur d'origine (0 → blanc).
+function pastel(hex, ratio) {
+  const h = (hex || '#B8412C').replace('#', '')
+  const melange = (i) => {
+    const c = parseInt(h.slice(i, i + 2), 16)
+    return Math.round(255 - (255 - c) * ratio).toString(16).padStart(2, '0')
+  }
+  return `${melange(0)}${melange(2)}${melange(4)}`.toUpperCase()
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 
 const DEFAULT_DAY_WIDTH = 40
@@ -438,10 +451,14 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
       depends_on: taskData.depends_on ?? null,
       lag_days: taskData.lag_days ?? 0,
       affaire_id: affaireId,
-      appro_actif: taskData.appro_actif ?? false,
-      appro_duree: taskData.appro_actif ? (taskData.appro_duree ?? null) : null,
-      appro_materiau: taskData.appro_actif ? (taskData.appro_materiau ?? null) : null,
+      // Délai avant : la modale n'a plus de case « activer », une durée > 0 suffit.
+      // `appro_actif` reste la colonne qui pilote l'affichage de la barre.
+      appro_actif: (taskData.appro_duree ?? 0) > 0,
+      appro_duree: (taskData.appro_duree ?? 0) > 0 ? taskData.appro_duree : null,
+      appro_materiau: (taskData.appro_duree ?? 0) > 0 ? (taskData.appro_materiau ?? null) : null,
+      // Délai après
       delai_apres: taskData.delai_apres ?? 0,
+      label_apres: (taskData.delai_apres ?? 0) > 0 ? (taskData.label_apres ?? null) : null,
     }
     if (taskModalMode === 'create') {
       // Ajoute la tâche à la fin de son lot (même convention que le num_tache auto-incrémenté)
@@ -459,7 +476,6 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
             tasks, segments, dependances, periodes,
             changedType: 'task', changedId: taskData.id,
             newDebut: payload.debut, newDuree: payload.duree,
-            newDelaiApres: payload.delai_apres,
           })
         : new Map()
 
@@ -681,7 +697,9 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
     const merges = []
     let rowIdx = 0
     const FIXED_COLS = 3 // N°, Tâche, Av.%
-    const BLOCKED_FILL = 'FFE8E0' // rouge très pâle — périodes bloquées
+    // Teintes de la légende (les cellules, elles, prennent la couleur de chaque période)
+    const BLOQUANTE_FILL = pastel('#B8412C', 0.22)
+    const INFORMATIVE_FILL = pastel('#B8412C', 0.08)
 
     const setCell = (col, row, value, style) => {
       const addr = XLSX.utils.encode_cell({ c: col, r: row })
@@ -976,14 +994,19 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
             const inMain = isInTask(unit, task)
             const inSeg = segs.find((s) => isInSegment(unit, s))
             const active = inMain || inSeg
-            const isBlocked = periodes.some((p) => isInPeriode(unit, p))
+            // En cas de chevauchement, la période bloquante prime sur l'informative
+            const couvrantes = periodes.filter((p) => isInPeriode(unit, p))
+            const periode = couvrantes.find((p) => p.est_bloquante !== false) ?? couvrantes[0] ?? null
+            const isBlocked = !!periode
 
             let fillHex = 'FFFFFF'
 
             if (active) {
               fillHex = inSeg ? getSegColor(inSeg, task).replace('#', '') : taskHex
-            } else if (isBlocked) {
-              fillHex = BLOCKED_FILL
+            } else if (periode) {
+              // Teinte dérivée de la couleur de la période : plus soutenue si
+              // elle est bloquante, très pâle si elle est informative.
+              fillHex = pastel(periode.couleur, periode.est_bloquante !== false ? 0.22 : 0.08)
             } else if (viewMode === 'day') {
               const d = new Date(unit)
               if (d.getDay() === 0 || d.getDay() === 6) fillHex = 'F0EDE8'
@@ -1057,7 +1080,8 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
     rowIdx += 2
     const legendItems = [
       { color: 'E8602C', label: 'Tâche (couleur du lot/zone)' },
-      { color: BLOCKED_FILL, label: 'Période bloquée (congés)' },
+      { color: BLOQUANTE_FILL, label: 'Période bloquante' },
+      { color: INFORMATIVE_FILL, label: 'Période informative' },
       { color: 'F0EDE8', label: 'Week-end' },
     ]
     legendItems.forEach((item, i) => {

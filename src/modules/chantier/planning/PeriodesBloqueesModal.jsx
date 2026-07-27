@@ -93,6 +93,8 @@ function PeriodeRow({ periode, onUpdate, onDelete, onPastilleClick, autoFocus })
     onDelete(periode.id)
   }
 
+  const bloquante = periode.est_bloquante !== false
+
   return (
     <div style={{ padding: '8px 0', borderBottom: '0.5px solid rgba(0,0,0,0.06)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -136,6 +138,34 @@ function PeriodeRow({ periode, onUpdate, onDelete, onPastilleClick, autoFocus })
             border: '0.5px solid rgba(0,0,0,0.12)', backgroundColor: '#FAFAF9', flexShrink: 0,
           }}
         />
+
+        {/* Bloquante (décale les tâches) ou simple repère informatif */}
+        <label
+          title={bloquante
+            ? 'Les tâches sautent cette période'
+            : 'Période affichée mais sans effet sur les dates'}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 6, fontSize: 11,
+            color: '#5E5854', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+          }}
+        >
+          <div
+            onClick={() => onUpdate(periode.id, { est_bloquante: !bloquante })}
+            style={{
+              width: 32, height: 18, borderRadius: 9,
+              background: bloquante ? '#B8412C' : '#C9C4C0',
+              position: 'relative', cursor: 'pointer',
+              transition: 'background 0.2s', flexShrink: 0,
+            }}
+          >
+            <div style={{
+              position: 'absolute', top: 2, left: bloquante ? 16 : 2,
+              width: 14, height: 14, borderRadius: '50%',
+              background: 'white', transition: 'left 0.2s',
+            }} />
+          </div>
+          {bloquante ? 'Bloquante' : 'Informative'}
+        </label>
 
         <button
           type="button" onClick={handleDelete}
@@ -190,27 +220,27 @@ export function PeriodesBloqueesModal({ open, onClose, periodes, addPeriode, upd
     }}>
       <div style={{
         backgroundColor: 'white', borderRadius: 0, padding: 28,
-        width: '100%', maxWidth: 540, maxHeight: '80vh',
+        width: '100%', maxWidth: 700, maxHeight: '80vh',
         display: 'flex', flexDirection: 'column',
         boxShadow: '0 8px 40px rgba(0,0,0,0.12)',
       }}>
 
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, flexShrink: 0 }}>
-          <h2 style={{ fontSize: 15, fontWeight: 500, color: '#1F1B17' }}>Périodes bloquées</h2>
+          <h2 style={{ fontSize: 15, fontWeight: 500, color: '#1F1B17' }}>Périodes</h2>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9C9591' }}>
             <X size={18} />
           </button>
         </div>
         <p style={{ fontSize: 11, color: '#9C9591', marginBottom: 16, flexShrink: 0 }}>
-          Congés, ponts et fermetures d'entreprises. Les tâches sautent automatiquement ces périodes.
+          Congés, ponts, fermetures, repères de chantier. Une période <strong>bloquante</strong> est sautée par les tâches ; une période <strong>informative</strong> est seulement affichée.
         </p>
 
         {/* List */}
         <div style={{ flex: 1, overflowY: 'auto', marginBottom: 16 }}>
           {periodes.length === 0 ? (
             <p style={{ fontSize: 12, color: '#9C9591', textAlign: 'center', padding: '24px 0' }}>
-              Aucune période bloquée — ajoutez-en une ci-dessous.
+              Aucune période — ajoutez-en une ci-dessous.
             </p>
           ) : (
             periodes.map((periode) => (

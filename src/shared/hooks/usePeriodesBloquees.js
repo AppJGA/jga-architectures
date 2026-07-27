@@ -34,7 +34,7 @@ export function usePeriodesBloquees(affaireId) {
   const addPeriode = async (data) => {
     const { data: p, error } = await supabase
       .from('periodes_bloquees')
-      .insert([{ affaire_id: affaireId, ...data }])
+      .insert([{ affaire_id: affaireId, est_bloquante: true, ...data }])
       .select()
       .single()
     if (!error) setPeriodes((prev) => sortByDateDebut([...prev, p]))
@@ -63,10 +63,13 @@ export function usePeriodesBloquees(affaireId) {
     return { error }
   }
 
-  // Une date (Date ou string ISO) tombe-t-elle dans une période bloquée ?
+  // Une date (Date ou string ISO) tombe-t-elle dans une période bloquante ?
+  // Les périodes informatives (est_bloquante = false) sont ignorées ici : elles
+  // s'affichent sur le planning mais ne décalent aucune tâche.
   const isDateBloquee = (date) => {
     const d = parseDate(date)
     return periodes.some((p) => {
+      if (p.est_bloquante === false) return false
       const debut = parseDate(p.date_debut)
       const fin = parseDate(p.date_fin)
       return d >= debut && d <= fin

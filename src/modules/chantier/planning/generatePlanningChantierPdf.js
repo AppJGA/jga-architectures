@@ -113,8 +113,10 @@ function buildWeekHeaders(days) {
   ).join('')
 }
 
-function isBlockedDay(day, periodes) {
-  return periodes.some(p => {
+// Période couvrant ce jour, sinon null. En cas de chevauchement, la bloquante
+// l'emporte : son hachurage ne doit pas être masqué par un simple repère.
+function periodeDuJour(day, periodes) {
+  const couvrantes = periodes.filter(p => {
     if (!p.date_debut || !p.date_fin) return false
     const debut = parseDate(p.date_debut)
     const fin = parseDate(p.date_fin)
@@ -124,6 +126,21 @@ function isBlockedDay(day, periodes) {
     d.setHours(12, 0, 0, 0)
     return d >= debut && d <= fin
   })
+  return couvrantes.find(p => p.est_bloquante !== false) ?? couvrantes[0] ?? null
+}
+
+function hexToRgb(hex) {
+  const h = (hex || '#B8412C').replace('#', '')
+  return `${parseInt(h.slice(0, 2), 16)},${parseInt(h.slice(2, 4), 16)},${parseInt(h.slice(4, 6), 16)}`
+}
+
+// Fond d'une cellule couverte par une période : hachures à la couleur de la
+// période si elle est bloquante, aplat très clair si elle est informative.
+function fondPeriode(periode) {
+  const rgb = hexToRgb(periode.couleur)
+  return periode.est_bloquante !== false
+    ? `repeating-linear-gradient(45deg, rgba(${rgb},0.08), rgba(${rgb},0.08) 3px, rgba(${rgb},0.15) 3px, rgba(${rgb},0.15) 6px)`
+    : `rgba(${rgb},0.06)`
 }
 
 // Position + largeur (en mm) d'une barre tâche/segment, exprimées relativement à la
@@ -216,7 +233,7 @@ function buildTaskRow(task, color, days, dayWidths, jalons, todayStr, ctx) {
     let approWidthMm = 0
     for (let i = (approIdx >= 0 ? approIdx : 0); i < startIdx && i < days.length; i++) approWidthMm += dayWidths[i]
     if (approWidthMm > 0) {
-      const lbl = task.appro_materiau ? `Appro. – ${task.appro_materiau}` : `Délai appro. – ${task.appro_duree}j`
+      const lbl = task.appro_materiau ? `Délai avant – ${task.appro_materiau}` : `Délai avant – ${task.appro_duree}j`
       approHtml = `<div style="position:absolute;left:-${approWidthMm.toFixed(2)}mm;width:${approWidthMm.toFixed(2)}mm;top:1mm;bottom:1mm;background:${color};opacity:0.28;border:1.5px dashed ${color};border-right:none;display:flex;align-items:center;overflow:hidden;z-index:3;pointer-events:none">
         <span style="font-size:5pt;color:${color};filter:brightness(0.5);white-space:nowrap;overflow:hidden;padding:0 1mm">${lbl}</span>
       </div>`
@@ -256,9 +273,9 @@ function buildTaskRow(task, color, days, dayWidths, jalons, todayStr, ctx) {
     // Comme les barres sont des <div> opaques positionnés par-dessus, il suffit d'appliquer
     // le hachurage sur toutes les cellules bloquées : les barres le masquent naturellement
     // là où elles passent.
-    const isBlocked = isBlockedDay(d, periodes)
-    const bg = isBlocked
-      ? 'repeating-linear-gradient(45deg, rgba(184,65,44,0.08), rgba(184,65,44,0.08) 3px, rgba(184,65,44,0.15) 3px, rgba(184,65,44,0.15) 6px)'
+    const periode = periodeDuJour(d, periodes)
+    const bg = periode
+      ? fondPeriode(periode)
       : isWE ? 'rgba(0,0,0,0.03)' : 'transparent'
 
     let barContent = ''
@@ -467,7 +484,7 @@ function buildHtml({
   </div>
   <div class="leg-item">
     <div class="leg-swatch" style="background:transparent;border:1px dashed #E8602C;opacity:0.6"></div>
-    Extension appro.
+    Délai avant (appro…)
   </div>
   <div class="leg-item">
     <div class="leg-swatch" style="background:repeating-linear-gradient(-45deg, #E8602C30, #E8602C30 3px, #E8602C60 3px, #E8602C60 6px);border:1px dashed #E8602C80"></div>
@@ -479,7 +496,11 @@ function buildHtml({
   </div>
   <div class="leg-item">
     <div class="leg-swatch" style="background:repeating-linear-gradient(45deg, rgba(184,65,44,0.15), rgba(184,65,44,0.15) 3px, rgba(184,65,44,0.28) 3px, rgba(184,65,44,0.28) 6px)"></div>
-    Période bloquée
+    Période bloquante
+  </div>
+  <div class="leg-item">
+    <div class="leg-swatch" style="background:rgba(184,65,44,0.10);border:0.5px solid rgba(184,65,44,0.25)"></div>
+    Période informative
   </div>
   ${showDependances ? `<div class="leg-item">
     <svg width="10mm" height="4mm" viewBox="0 0 38 16" style="overflow:visible">

@@ -75,21 +75,31 @@ export function GanttToolbar({
             <ChevronDown size={11} />
           </button>
         </div>
-        <button
-          onClick={onOpenPeriodesBloquees}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px',
-            fontSize: 12,
-            border: '0.5px solid rgba(0,0,0,0.15)',
-            background: periodes.length > 0 ? '#FEF2F2' : 'transparent',
-            color: periodes.length > 0 ? '#B8412C' : '#5E5854',
-            cursor: 'pointer',
-          }}
-          title="Gérer les périodes bloquées"
-        >
-          <Ban size={13} strokeWidth={1.25} />
-          {periodes.length > 0 ? `${periodes.length} période(s)` : 'Périodes bloquées'}
-        </button>
+        {/* Périodes — accent rouge seulement si au moins une période bloque
+            réellement les tâches ; gris si toutes sont informatives. */}
+        {(() => {
+          const nbBloquantes = periodes.filter((p) => p.est_bloquante !== false).length
+          const accent = nbBloquantes > 0
+          return (
+            <button
+              onClick={onOpenPeriodesBloquees}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px',
+                fontSize: 12,
+                border: '0.5px solid rgba(0,0,0,0.15)',
+                background: accent ? '#FEF2F2' : periodes.length > 0 ? '#F5F2F0' : 'transparent',
+                color: accent ? '#B8412C' : '#5E5854',
+                cursor: 'pointer',
+              }}
+              title={periodes.length > 0
+                ? `${nbBloquantes} bloquante(s), ${periodes.length - nbBloquantes} informative(s)`
+                : 'Gérer les périodes'}
+            >
+              <Ban size={13} strokeWidth={1.25} />
+              {periodes.length > 0 ? `${periodes.length} période(s)` : 'Périodes'}
+            </button>
+          )
+        })()}
 
         <button
           ref={exportBtnRef}

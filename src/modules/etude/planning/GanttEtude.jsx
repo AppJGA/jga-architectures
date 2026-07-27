@@ -3,7 +3,7 @@ import { X, ZoomIn, ZoomOut } from 'lucide-react'
 import { supabase } from '../../../core/supabase/client'
 import {
   propagateEtudeDependencies, computeLagSemaines, addWeeks, weeksBetween, getCurrentWeek,
-  getNextAvailableSemaine,
+  getNextAvailableSemaine, TYPE_COLORS, adminGradient,
 } from './types'
 import { computeCriticalPath } from './computeCriticalPath'
 import { usePlanningEtude } from '../../../shared/hooks/usePlanningEtude'
@@ -21,8 +21,9 @@ import { exportPlanningEtudeExcel } from './exportPlanningEtudeExcel'
 import { Toast } from '../../../shared/components/Toast'
 
 // Bornes de zoom (largeur d'une colonne semaine, en px)
-const SEM_WIDTH_MIN = 16
-const SEM_WIDTH_MAX = 80
+const SEM_WIDTH_MIN = 4
+const SEM_WIDTH_MAX = 120
+const SEM_WIDTH_DEFAUT = 40
 
 export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', affaire = {} }) {
   const { phases: hookPhases, jalons, loading, error, addPhase, updatePhase, deletePhase, refetch } = usePlanningEtude(affaireId)
@@ -109,7 +110,17 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
     [phases, periodes]
   )
 
-  const [semWidth, setSemWidth] = useState(40)
+  const [semWidth, setSemWidth] = useState(() => {
+    const saved = localStorage.getItem(`planning-etude-semwidth-${affaireId}`)
+    const valeur = saved ? parseFloat(saved) : SEM_WIDTH_DEFAUT
+    return Number.isFinite(valeur)
+      ? Math.min(SEM_WIDTH_MAX, Math.max(SEM_WIDTH_MIN, valeur))
+      : SEM_WIDTH_DEFAUT
+  })
+
+  useEffect(() => {
+    localStorage.setItem(`planning-etude-semwidth-${affaireId}`, String(semWidth))
+  }, [semWidth, affaireId])
   const [showConnections, setShowConnections] = useState(true)
   const [editingPhase, setEditingPhase] = useState(null)
   const [showPhaseModal, setShowPhaseModal] = useState(false)
@@ -157,6 +168,73 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
     else if (source === 'timeline' && sidebarRef.current) sidebarRef.current.scrollTop = scrollTop
     requestAnimationFrame(() => { isScrolling.current = null })
   }, [])
+
+  // ── Zoom molette (⌘/Ctrl + molette), centré sur le curseur ────────────────────
+  const [showZoomToast, setShowZoomToast] = useState(false)
+  const zoomToastTimer = useRef(null)
+
+  useEffect(() => {
+    const el = timelineRef.current
+    if (!el) return
+
+    const handleWheel = (e) => {
+      if (!e.metaKey && !e.ctrlKey) return
+      e.preventDefault()
+      e.stopPropagation()
+
+      const rect = el.getBoundingClientRect()
+      const cursorX = e.clientX - rect.left
+      const ratio = el.scrollWidth > 0 ? (el.scrollLeft + cursorX) / el.scrollWidth : 0
+      const direction = e.deltaY > 0 ? -1 : 1
+
+      setSemWidth(w => Math.min(SEM_WIDTH_MAX, Math.max(SEM_WIDTH_MIN, w + direction * 2)))
+
+      // Conserver le point sous le curseur après le changement de largeur
+      requestAnimationFrame(() => {
+        if (timelineRef.current) {
+          timelineRef.current.scrollLeft = Math.max(0, ratio * timelineRef.current.scrollWidth - cursorX)
+        }
+      })
+
+      setShowZoomToast(true)
+      clearTimeout(zoomToastTimer.current)
+      zoomToastTimer.current = setTimeout(() => setShowZoomToast(false), 1500)
+    }
+
+    el.addEventListener('wheel', handleWheel, { passive: false })
+    return () => el.removeEventListener('wheel', handleWheel)
+  // `loading`/`error` : tant qu'ils sont actifs le composant rend un écran de
+  // substitution, donc `timelineRef.current` vaut encore null au premier passage.
+  }, [loading, error])
+
+  useEffect(() => () => clearTimeout(zoomToastTimer.current), [])
+
+  // ── Pan (clic molette + glisser) ──────────────────────────────────────────────
+  const [isPanning, setIsPanning] = useState(false)
+  const panStartRef = useRef({ x: 0, scrollLeft: 0 })
+
+  const handleTimelineMouseDown = useCallback((e) => {
+    if (e.button !== 1) return
+    e.preventDefault()   // coupe aussi l'autoscroll natif du navigateur
+    if (!timelineRef.current) return
+    panStartRef.current = { x: e.clientX, scrollLeft: timelineRef.current.scrollLeft }
+    setIsPanning(true)
+  }, [])
+
+  useEffect(() => {
+    if (!isPanning) return
+    const handleMove = (e) => {
+      if (!timelineRef.current) return
+      timelineRef.current.scrollLeft = panStartRef.current.scrollLeft - (e.clientX - panStartRef.current.x)
+    }
+    const handleUp = (e) => { if (e.button === 1) setIsPanning(false) }
+    window.addEventListener('mousemove', handleMove)
+    window.addEventListener('mouseup', handleUp)
+    return () => {
+      window.removeEventListener('mousemove', handleMove)
+      window.removeEventListener('mouseup', handleUp)
+    }
+  }, [isPanning])
 
   // Centrer la vue sur la semaine courante à chaque changement de refDate/zoom
   useEffect(() => {
@@ -365,7 +443,12 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
         <div
           ref={timelineRef}
           onScroll={e => syncScroll('timeline', e.target.scrollTop)}
-          style={{ flex: 1, overflow: 'auto' }}
+          onMouseDown={handleTimelineMouseDown}
+          style={{
+            flex: 1, overflow: 'auto',
+            cursor: isPanning ? 'grabbing' : 'default',
+            userSelect: isPanning ? 'none' : 'auto',
+          }}
         >
           <GanttEtudeTimeline
             phases={sortedPhases}
@@ -389,6 +472,19 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
             onDrawCreate={handleDrawCreate}
           />
         </div>
+
+        {/* Indicateur de zoom — apparaît brièvement à la molette */}
+        {showZoomToast && (
+          <div style={{
+            position: 'absolute', top: 16, right: 16,
+            background: 'rgba(31,27,23,0.85)', color: 'white',
+            padding: '6px 12px', fontSize: 13,
+            fontFamily: "'JetBrains Mono', monospace", fontWeight: 500,
+            pointerEvents: 'none', zIndex: 50,
+          }}>
+            {semWidth} px/sem
+          </div>
+        )}
 
         {/* ── Panneau latéral d'options ─────────────────────────────────────
             Glisse depuis la droite par-dessus la timeline, comme le planning
@@ -433,9 +529,12 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <button
                 onClick={() => setSemWidth(w => Math.max(SEM_WIDTH_MIN, w - 4))}
+                disabled={semWidth <= SEM_WIDTH_MIN}
                 style={{
                   width: 28, height: 28, border: '0.5px solid rgba(0,0,0,0.15)',
-                  background: 'transparent', cursor: 'pointer',
+                  background: 'transparent',
+                  cursor: semWidth <= SEM_WIDTH_MIN ? 'default' : 'pointer',
+                  opacity: semWidth <= SEM_WIDTH_MIN ? 0.4 : 1,
                   display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
                 }}
               >
@@ -462,9 +561,12 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
 
               <button
                 onClick={() => setSemWidth(w => Math.min(SEM_WIDTH_MAX, w + 4))}
+                disabled={semWidth >= SEM_WIDTH_MAX}
                 style={{
                   width: 28, height: 28, border: '0.5px solid rgba(0,0,0,0.15)',
-                  background: 'transparent', cursor: 'pointer',
+                  background: 'transparent',
+                  cursor: semWidth >= SEM_WIDTH_MAX ? 'default' : 'pointer',
+                  opacity: semWidth >= SEM_WIDTH_MAX ? 0.4 : 1,
                   display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
                 }}
               >
@@ -472,7 +574,7 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
               </button>
 
               <span
-                onDoubleClick={() => setSemWidth(40)}
+                onDoubleClick={() => setSemWidth(SEM_WIDTH_DEFAUT)}
                 title="Double-clic pour réinitialiser"
                 style={{
                   fontSize: 10, color: '#9C9591', minWidth: 44, textAlign: 'center',
@@ -500,16 +602,16 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
           Légende
         </span>
         {[
-          { color: '#E8A200', label: 'Phase MOE (ESQ, APS, APD…)' },
-          { color: '#2A8A4E', label: 'Validation / Visa' },
-          { color: '#D97706', label: 'Période administrative', dashed: true },
-          { color: '#1B3A5C', label: 'Phase chantier' },
+          { color: TYPE_COLORS.etude, label: 'Phase MOE (ESQ, APS, APD…)' },
+          { color: TYPE_COLORS.validation, label: 'Validation / Visa' },
+          { color: TYPE_COLORS.administratif, label: 'Période administrative', bariole: true },
+          { color: TYPE_COLORS.chantier, label: 'Phase chantier' },
         ].map(item => (
           <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <div style={{
               width: 24, height: 10, borderRadius: 3,
-              backgroundColor: item.dashed ? 'transparent' : item.color,
-              border: item.dashed ? `1.5px dashed ${item.color}` : 'none',
+              // L'administratif est bariolé, comme ses barres dans la timeline
+              background: item.bariole ? adminGradient(item.color) : item.color,
               flexShrink: 0,
             }} />
             <span style={{ fontSize: 11, color: '#5E5854' }}>{item.label}</span>

@@ -2,7 +2,7 @@ import { useMemo, useRef, useCallback, useState, useEffect } from 'react'
 import { Pencil, GitBranch } from 'lucide-react'
 import {
   getWeekStart, addWeeks, weeksBetween, getCurrentWeek, computeLagSemaines,
-  getPhaseCouleur, adminGradient, darken,
+  getPhaseCouleur, adminGradient,
   weekOfDate, computePhaseFragments, finEffectivePhase, distributeSegmentsAcrossFragments,
 } from './types'
 
@@ -18,10 +18,7 @@ function hexToRgba(hex, alpha) {
 // (barre principale ET segments, pour qu'ils se ressemblent), aplat sinon.
 function getBarStyle(phase, couleur) {
   if (phase.type_tache === 'administratif') {
-    return {
-      background: adminGradient(couleur),
-      border: `1px solid ${darken(couleur, 0.15)}`,
-    }
+    return { background: adminGradient(couleur) }
   }
   return { backgroundColor: couleur }
 }
@@ -30,6 +27,12 @@ const HEADER_HEIGHT = 56
 const DOT_R = 6
 
 const dragState = { moved: false }
+
+// Vrai entre le début d'une connexion et le clic qui la termine ou l'annule.
+// Le `click` est dispatché APRÈS le `mouseup` qui a déjà remis `connectingFrom`
+// à null : l'état React ne permet donc pas de filtrer ce clic-là, d'où ce
+// drapeau hors rendu (même principe que `dragState.moved`).
+const connectionState = { pending: false }
 
 function rowHeightOf() { return 44 }
 function barPadOf() { return 4 }
@@ -294,7 +297,7 @@ export function GanttEtudeTimeline({
       window.removeEventListener('mousemove', handleMove)
       window.removeEventListener('mouseup', handleUp)
     }
-  }, [drawState, semaineAtX, onDrawCreate, weeksBetween])
+  }, [drawState, semaineAtX, onDrawCreate])
 
   // Quitter le mode dessin annule un geste en cours
   useEffect(() => { if (!drawMode) setDrawState(null) }, [drawMode])
@@ -438,7 +441,11 @@ export function GanttEtudeTimeline({
   }, [semWidth, onPhaseUpdate, connectingFrom, hoveredPoint, phaseChangesFor, segChangesFor, updateSegmentLocal, onSegmentCommit])
 
   useEffect(() => {
-    const h = (e) => { if (e.key === 'Escape') setConnectingFrom(null) }
+    const h = (e) => {
+      if (e.key !== 'Escape') return
+      connectionState.pending = false
+      setConnectingFrom(null)
+    }
     window.addEventListener('keydown', h)
     return () => window.removeEventListener('keydown', h)
   }, [])
@@ -447,6 +454,7 @@ export function GanttEtudeTimeline({
     e.preventDefault(); e.stopPropagation()
     if (!connectingFrom) {
       if (point.side === 'end') {
+        connectionState.pending = true
         setConnectingFrom(point)
         if (svgRef.current) {
           const rect = svgRef.current.getBoundingClientRect()
@@ -465,6 +473,7 @@ export function GanttEtudeTimeline({
           onDependencyCreate(connectingFrom.phaseId, point.phaseId, lag)
         }
       }
+      connectionState.pending = false
       setConnectingFrom(null)
     }
   }, [connectingFrom, phases, onDependencyCreate, periodes])
@@ -954,13 +963,20 @@ function PhaseBarRow({
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     borderRadius: 3, border: 'none', cursor: 'pointer',
                     backgroundColor: 'rgba(0,0,0,0.3)', color: 'white',
-                    opacity: isHovered ? 1 : 0, transition: 'opacity 0.15s',
+                    opacity: isHovered && !isConnecting ? 1 : 0, transition: 'opacity 0.15s',
+                    // Invisible ⇒ non cliquable : sans cela, un clic sur une
+                    // pastille de connexion passait au travers et ouvrait la modale.
+                    pointerEvents: isHovered && !isConnecting ? 'auto' : 'none',
                     flexShrink: 0,
                   }}
                   onMouseDown={e => e.stopPropagation()}
                   onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.5)'}
                   onMouseLeave={e => e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.3)'}
-                  onClick={(e) => { e.stopPropagation(); onBarClick(phase) }}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    if (connectionState.pending) { connectionState.pending = false; return }
+                    onBarClick(phase)
+                  }}
                   title="Modifier"
                 >
                   <Pencil size={11} strokeWidth={2.5} />
@@ -1033,7 +1049,10 @@ function PhaseBarRow({
               }}
               onClick={(e) => {
                 e.stopPropagation()
-                if (dragState.moved) return
+                // Le clic qui termine ou annule une connexion ne doit pas
+                // ouvrir la modale — il est consommé ici.
+                if (connectionState.pending) { connectionState.pending = false; return }
+                if (dragState.moved || isConnecting) return
                 onBarClick(phase)
               }}
             >
@@ -1107,7 +1126,8 @@ function PhaseBarRow({
           transition: 'transform 0.15s, opacity 0.15s, background-color 0.15s',
           pointerEvents: showStartDot ? 'auto' : 'none',
         }}
-        onClick={(e) => onConnectionPointClick(e, startPoint)}
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => { e.stopPropagation(); onConnectionPointClick(e, startPoint) }}
         onMouseEnter={() => onConnectionPointHover(startPoint)}
         onMouseLeave={() => onConnectionPointHover(null)}
       />
@@ -1126,7 +1146,8 @@ function PhaseBarRow({
           transition: 'transform 0.15s, opacity 0.15s, background-color 0.15s',
           pointerEvents: showEndDot ? 'auto' : 'none',
         }}
-        onClick={(e) => onConnectionPointClick(e, endPoint)}
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => { e.stopPropagation(); onConnectionPointClick(e, endPoint) }}
         onMouseEnter={() => onConnectionPointHover(endPoint)}
         onMouseLeave={() => onConnectionPointHover(null)}
       />

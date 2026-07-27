@@ -187,10 +187,18 @@ export function exportPlanningEtudeExcel({
     // Fragments : seules les semaines travaillées sont coloriées ; celles d'une
     // période bloquante gardent la teinte de la période.
     const fragments = computePhaseFragments(phase, periodes)
+    const isAdmin = phase.type_tache === 'administratif'
+
+    // Occupation semaine par semaine, précalculée : elle sert aussi à savoir où
+    // commence et où finit chaque barre, pour n'épaissir que ses extrémités.
+    const occupee = weeks.map((w) => ({
+      phase: fragments.some((f) => couvre(w, f.semaine_debut, f.annee_debut, f.duree_semaines)),
+      segment: segs.some((s) => couvre(w, s.semaine_debut, s.annee_debut, s.duree_semaines)),
+    }))
+    const couverte = (idx) => idx >= 0 && idx < occupee.length && (occupee[idx].phase || occupee[idx].segment)
 
     weeks.forEach((w, i) => {
-      const dansPhase = fragments.some((f) => couvre(w, f.semaine_debut, f.annee_debut, f.duree_semaines))
-      const dansSegment = segs.some((s) => couvre(w, s.semaine_debut, s.annee_debut, s.duree_semaines))
+      const { phase: dansPhase, segment: dansSegment } = occupee[i]
       const periode = periodeDeLaSemaine(w)
 
       let fillHex = 'FFFFFF'
@@ -198,9 +206,20 @@ export function exportPlanningEtudeExcel({
       else if (dansSegment) fillHex = pastel(couleur, 0.65)   // segment : même teinte, atténuée
       else if (periode) fillHex = pastel(periode.couleur, periode.est_bloquante !== false ? 0.22 : 0.08)
 
+      // Administratif : le bariolé n'est pas reproductible en Excel — un aplat
+      // rouge encadré de noir remplit le même rôle de signal fort. Les traits
+      // épais ne marquent que le début et la fin de la barre.
+      const bordure = (isAdmin && (dansPhase || dansSegment))
+        ? {
+            top: B_THICK, bottom: B_THICK,
+            left: couverte(i - 1) ? B_THIN : B_THICK,
+            right: couverte(i + 1) ? B_THIN : B_THICK,
+          }
+        : borderRow(isFirstWeekOfMonth(w.semaine, w.annee), false)
+
       setCell(FIXED_COLS + i, rowIdx, '', {
         fill: { fgColor: { rgb: fillHex } },
-        border: borderRow(isFirstWeekOfMonth(w.semaine, w.annee), false),
+        border: bordure,
       })
     })
     rowIdx++
@@ -240,7 +259,7 @@ export function exportPlanningEtudeExcel({
   const legende = [
     { color: TYPE_COLORS.etude.replace('#', ''), label: 'Phase MOE' },
     { color: TYPE_COLORS.validation.replace('#', ''), label: 'Validation MOA' },
-    { color: TYPE_COLORS.administratif.replace('#', ''), label: 'Administratif (couleur pleine)' },
+    { color: TYPE_COLORS.administratif.replace('#', ''), label: 'Administratif — aplat rouge, bordure épaisse' },
     { color: TYPE_COLORS.chantier.replace('#', ''), label: 'Chantier' },
     { color: pastel(TYPE_COLORS.etude, 0.65), label: 'Segment' },
     { color: pastel('#B8412C', 0.22), label: 'Période bloquante' },

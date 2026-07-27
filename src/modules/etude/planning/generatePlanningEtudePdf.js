@@ -1,7 +1,7 @@
 import {
   getWeekStart, addWeeks, weeksBetween, getCurrentWeek, weekOfDate,
   computePhaseFragments, distributeSegmentsAcrossFragments,
-  getPhaseCouleur, adminGradient, darken,
+  getPhaseCouleur, adminGradient, TYPE_COLORS,
 } from './types'
 import { assignLabelLanes } from '../../chantier/planning/jalonLayout'
 
@@ -77,9 +77,10 @@ function buildPhaseRows(phases, weeks, jalons, segments = [], periodes = []) {
   return phases.map(phase => {
     // Couleur effective : personnalisée si définie, sinon celle du type
     const color = getPhaseCouleur(phase)
-    // Les phases administratives sont rayées, à l'écran comme ici
+    // Phases administratives : bariolé rouge et trait noir épais, pour qu'elles
+    // ressortent nettement de l'ambre MOE une fois imprimées.
     const fondBarre = phase.type_tache === 'administratif'
-      ? `background:${adminGradient(color)};border:1px solid ${darken(color, 0.15)};`
+      ? `background:${adminGradient(color)};border:2px solid #1F1B17;box-sizing:border-box;`
       : `background:${color};`
     const labelCls = {
       etude:         'lbl-moe',
@@ -264,7 +265,7 @@ function buildHtml({
   .bar          { position: absolute; top: 2mm; bottom: 1mm; z-index: 2; overflow: hidden; }
   .seg          { position: absolute; top: 0; bottom: 0; display: flex; align-items: center; justify-content: center; font-size: 5.5pt; font-weight: bold; color: white; border-right: 1px solid rgba(255,255,255,0.5); }
   .seg-bar      { opacity: 0.85; outline: 1px dashed rgba(255,255,255,0.6); outline-offset: -1px; z-index: 3; }
-  .bar-inner-txt{ position: absolute; inset: 0; display: flex; align-items: center; padding: 0 1.5mm; font-size: 5.5pt; color: white; font-style: italic; }
+  .bar-inner-txt{ position: absolute; inset: 0; display: flex; align-items: center; padding: 0 1.5mm; font-size: 5.5pt; color: white; font-style: italic; text-shadow: 0 1px 3px rgba(0,0,0,0.5); }
 
   .jalon-line  { position: absolute; top: 0; bottom: 0; width: 1.5px; z-index: 5; }
   .jalon-label { position: absolute; top: 1mm; left: 2px; font-size: 5.5pt; font-weight: bold; color: white; white-space: nowrap; padding: 0.3mm 1mm; }
@@ -316,11 +317,11 @@ function buildHtml({
 <div class="legend">
   <span class="leg-title">Légende</span>
   ${[
-    { c: '#E8A200', l: 'MOE' },
-    { c: '#2A8A4E', l: 'Validation MOA' },
-    { c: '#D97706', l: 'Administratif', dashed: true },
-    { c: '#1B3A5C', l: 'Chantier' },
-  ].map(i => `<div class="leg-item"><div class="leg-swatch" style="background:${i.c};${i.dashed ? 'background:transparent;border:1px dashed ' + i.c + ';' : ''}"></div>${i.l}</div>`).join('')}
+    { c: TYPE_COLORS.etude, l: 'MOE' },
+    { c: TYPE_COLORS.validation, l: 'Validation MOA' },
+    { c: TYPE_COLORS.administratif, l: 'Administratif (bariolé)', bariole: true },
+    { c: TYPE_COLORS.chantier, l: 'Chantier' },
+  ].map(i => `<div class="leg-item"><div class="leg-swatch" style="background:${i.bariole ? adminGradient(i.c) : i.c};${i.bariole ? 'border:2px solid #1F1B17;box-sizing:border-box;' : ''}"></div>${i.l}</div>`).join('')}
   <div style="border-left:0.5px solid #ddd;height:8px;margin:0 2mm"></div>
   ${[['1','Architecte'],['2','BET'],['3','Économiste']].map(([n,l]) =>
     `<div class="leg-item"><div class="leg-num">${n}</div>${l}</div>`

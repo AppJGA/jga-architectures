@@ -1,10 +1,10 @@
 // ─── Couleurs et labels par type de tâche ────────────────────────────────────
 
 export const TYPE_COLORS = {
-  etude:         '#E8A200',
-  validation:    '#2A8A4E',
-  administratif: '#D97706',
-  chantier:      '#1B3A5C',
+  etude:         '#E8A200', // ambre MOE
+  validation:    '#2A8A4E', // vert MOA
+  administratif: '#B8412C', // rouge alerte JGA
+  chantier:      '#1B3A5C', // bleu blueprint
 }
 
 export const TYPE_LABELS = {
@@ -36,9 +36,13 @@ export function darken(hex, amount = 0.15) {
   return `#${canal(0)}${canal(2)}${canal(4)}`
 }
 
+// Assombrissement des raies administratives — 25 % pour que le bariolé rouge
+// reste lisible et nettement distinct de l'ambre MOE.
+export const ADMIN_STRIPE_DARKEN = 0.25
+
 // Rayures des phases administratives — même motif à l'écran et dans le PDF
 export function adminGradient(couleur) {
-  const sombre = darken(couleur, 0.15)
+  const sombre = darken(couleur, ADMIN_STRIPE_DARKEN)
   return `repeating-linear-gradient(-45deg, ${couleur}, ${couleur} 6px, ${sombre} 6px, ${sombre} 12px)`
 }
 

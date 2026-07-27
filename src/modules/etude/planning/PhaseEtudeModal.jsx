@@ -36,7 +36,7 @@ function clampPosition(x, y) {
 const TYPE_OPTIONS = [
   { type: 'etude',         label: 'MOE',          sublabel: 'ESQ, APS, APD, PRO, DCE…',       couleur: '#E8A200', fondClair: '#FFF8E7' },
   { type: 'validation',    label: 'MOA',           sublabel: 'Visas, validations, approbations', couleur: '#2A8A4E', fondClair: 'rgba(42,138,78,0.12)' },
-  { type: 'administratif', label: 'Administratif', sublabel: 'Instruction PC, recours, dépôt…', couleur: '#D97706', fondClair: '#FEF3C7' },
+  { type: 'administratif', label: 'Administratif', sublabel: 'Instruction PC, recours, dépôt…', couleur: '#B8412C', fondClair: 'rgba(184,65,44,0.10)' },
   { type: 'chantier',      label: 'Chantier',      sublabel: 'DET, travaux, OPR, réception',    couleur: '#1B3A5C', fondClair: 'rgba(27,58,92,0.10)' },
 ]
 

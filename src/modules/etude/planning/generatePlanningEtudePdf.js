@@ -1,4 +1,4 @@
-import { getWeekStart, addWeeks, weeksBetween, getCurrentWeek, weekOfDate } from './types'
+import { getWeekStart, addWeeks, weeksBetween, getCurrentWeek, weekOfDate, computePhaseFragments } from './types'
 import { assignLabelLanes } from '../../chantier/planning/jalonLayout'
 
 const BAR_COLORS = {
@@ -86,12 +86,13 @@ function buildPhaseRows(phases, weeks, jalons, segments = [], periodes = []) {
       chantier:      'lbl-chantier',
     }[phase.type_tache] ?? 'lbl-moa'
 
-    const startIdx = weeks.findIndex(w =>
-      w.semaine === phase.semaine_debut && w.annee === phase.annee_debut
-    )
-    const endW = addWeeks(phase.semaine_debut, phase.annee_debut, phase.duree_semaines)
-    const endIdx = weeks.findIndex(w => w.semaine === endW.semaine && w.annee === endW.annee)
-    const spanCount = endIdx >= 0 ? endIdx - startIdx : weeks.length - Math.max(startIdx, 0)
+    // Fragments : les semaines bloquantes coupent la barre (même règle qu'à l'écran)
+    const fragments = computePhaseFragments(phase, periodes)
+    const fragsIndexes = fragments.map(f => ({
+      idx: weeks.findIndex(w => w.semaine === f.semaine_debut && w.annee === f.annee_debut),
+      duree: f.duree_semaines,
+    })).filter(f => f.idx >= 0)
+    const dernierFrag = fragsIndexes[fragsIndexes.length - 1] ?? null
 
     // Segments de la phase : chacun démarre dans sa propre cellule
     const segsDePhase = segments.filter(s => s.phase_id === phase.id)
@@ -100,9 +101,13 @@ function buildPhaseRows(phases, weeks, jalons, segments = [], periodes = []) {
       const ms = isFirstWeekOfMonth(w.semaine, w.annee)
       let content = ''
 
-      if (idx === startIdx && startIdx >= 0 && spanCount > 0) {
+      const fragIci = fragsIndexes.find(f => f.idx === idx)
+      if (fragIci) {
+        const spanCount = fragIci.duree
+        const estPremier = fragIci === fragsIndexes[0]
+        const estDernier = fragIci === dernierFrag
         let segments = ''
-        if (phase.type_tache === 'etude') {
+        if (estPremier && phase.type_tache === 'etude') {
           const segs = [
             { d: phase.duree_arch, n: '1', op: 0.15 },
             { d: phase.duree_bet,  n: '2', op: 0.25 },
@@ -111,7 +116,9 @@ function buildPhaseRows(phases, weeks, jalons, segments = [], periodes = []) {
           if (segs.length) {
             let offset = 0
             segments = segs.map(seg => {
-              const pct = (seg.d / phase.duree_semaines) * 100
+              // Pourcentage relatif à la LARGEUR DU FRAGMENT (la barre ne fait
+              // plus toute la durée de la phase) ; `.bar` masque le débordement.
+              const pct = (seg.d / spanCount) * 100
               const div = `<div class="seg" style="left:${offset}%;width:${pct}%;background:rgba(0,0,0,${seg.op})">${seg.n}</div>`
               offset += pct
               return div
@@ -127,8 +134,10 @@ function buildPhaseRows(phases, weeks, jalons, segments = [], periodes = []) {
         const isAdmin = phase.type_tache === 'administratif'
         const barStyle = `left:0;width:${spanCount * 100}%;background:${color};${isAdmin ? 'background:transparent;border:1px dashed ' + color + ';' : ''}`
 
-        content = `<div class="bar" style="${barStyle}">${segments}${barText}</div>
-          <div style="position:absolute;left:calc(${spanCount * 100}% + 3px);top:0;bottom:0;display:flex;align-items:center;white-space:nowrap;font-size:6.5pt;font-weight:${isMoe ? 'bold' : 'normal'};color:#1F1B17;z-index:10;">${phase.nom}</div>`
+        content = `<div class="bar" style="${barStyle}">${segments}${barText}</div>`
+        if (estDernier) {
+          content += `<div style="position:absolute;left:calc(${spanCount * 100}% + 3px);top:0;bottom:0;display:flex;align-items:center;white-space:nowrap;font-size:6.5pt;font-weight:${isMoe ? 'bold' : 'normal'};color:#1F1B17;z-index:10;">${phase.nom}</div>`
+        }
       }
 
       // Barres de segment (mêmes couleur et géométrie que dans la timeline)

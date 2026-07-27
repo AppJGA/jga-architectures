@@ -92,9 +92,99 @@ export function formatWeekLabel(semaine, annee) {
   return d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })
 }
 
+// ─── Fragments d'une phase autour des périodes bloquantes ─────────────────────
+//
+// Une phase de 5 semaines qui démarre une semaine avant des congés de 2 semaines
+// s'affiche en deux morceaux : 1 semaine, puis 4 semaines après les congés. La
+// durée en semaines TRAVAILLÉES reste 5, la date de début ne bouge pas, seule la
+// fin effective recule.
+//
+// À la granularité hebdomadaire du planning d'étude, une semaine est neutralisée
+// dès qu'une période bloquante la touche — même convention que l'affichage des
+// bandes de période, pour que les deux coïncident toujours à l'écran.
+
+const MAX_SEMAINES_PARCOURUES = 520 // garde-fou (10 ans) contre une boucle sans fin
+
+function rangesBloquants(periodes) {
+  return (periodes ?? [])
+    .filter((p) => p.est_bloquante !== false)
+    .map((p) => {
+      const debut = weekOfDate(p.date_debut)
+      const fin = weekOfDate(p.date_fin)
+      return debut && fin ? { debut, fin } : null
+    })
+    .filter(Boolean)
+}
+
+export function semaineEstBloquee(semaine, annee, ranges) {
+  return ranges.some(({ debut, fin }) =>
+    weeksBetween(debut.semaine, debut.annee, semaine, annee) >= 0 &&
+    weeksBetween(semaine, annee, fin.semaine, fin.annee) >= 0
+  )
+}
+
+/**
+ * Découpe une phase en fragments visuels autour des périodes bloquantes.
+ *
+ * @returns [{ semaine_debut, annee_debut, duree_semaines }] — au moins un
+ *          fragment ; la somme des durées vaut toujours `phase.duree_semaines`.
+ */
+export function computePhaseFragments(phase, periodes) {
+  const dureeTotale = Math.max(0, Number(phase?.duree_semaines) || 0)
+  const entier = [{
+    semaine_debut: phase?.semaine_debut,
+    annee_debut: phase?.annee_debut,
+    duree_semaines: dureeTotale || 1,
+  }]
+  if (!phase?.semaine_debut || dureeTotale === 0) return entier
+
+  const ranges = rangesBloquants(periodes)
+  if (ranges.length === 0) return entier
+
+  const fragments = []
+  let semaine = phase.semaine_debut
+  let annee = phase.annee_debut
+  let restant = dureeTotale
+  let debutFragment = null
+  let dureeFragment = 0
+  let garde = 0
+
+  while (restant > 0 && garde++ < MAX_SEMAINES_PARCOURUES) {
+    if (semaineEstBloquee(semaine, annee, ranges)) {
+      // Semaine neutralisée : elle ne consomme pas de durée et coupe le fragment
+      if (debutFragment) {
+        fragments.push({ ...debutFragment, duree_semaines: dureeFragment })
+        debutFragment = null
+        dureeFragment = 0
+      }
+    } else {
+      if (!debutFragment) debutFragment = { semaine_debut: semaine, annee_debut: annee }
+      dureeFragment++
+      restant--
+    }
+    const suivante = addWeeks(semaine, annee, 1)
+    semaine = suivante.semaine
+    annee = suivante.annee
+  }
+
+  if (debutFragment) fragments.push({ ...debutFragment, duree_semaines: dureeFragment })
+
+  return fragments.length > 0 ? fragments : entier
+}
+
+/**
+ * Fin effective d'une phase : fin du dernier fragment, périodes bloquantes
+ * déduites. C'est cette date que voient les phases dépendantes.
+ */
+export function finEffectivePhase(phase, periodes) {
+  const fragments = computePhaseFragments(phase, periodes)
+  const dernier = fragments[fragments.length - 1]
+  return addWeeks(dernier.semaine_debut, dernier.annee_debut, dernier.duree_semaines)
+}
+
 // ─── Propagation chemin critique ──────────────────────────────────────────────
 
-export function propagateEtudeDependencies(taches, changedId, newSemaine, newAnnee, newDuree) {
+export function propagateEtudeDependencies(taches, changedId, newSemaine, newAnnee, newDuree, periodes = []) {
   const snapshot = new Map(taches.map(t => [t.id, { ...t }]))
   snapshot.set(changedId, {
     ...snapshot.get(changedId),
@@ -113,7 +203,8 @@ export function propagateEtudeDependencies(taches, changedId, newSemaine, newAnn
     visited.add(parentId)
 
     const parent = snapshot.get(parentId)
-    const parentEnd = addWeeks(parent.semaine_debut, parent.annee_debut, parent.duree_semaines)
+    // Fin effective : les semaines bloquées repoussent d'autant la fin réelle
+    const parentEnd = finEffectivePhase(parent, periodes)
 
     snapshot.forEach(child => {
       if (child.depends_on !== parentId) return
@@ -128,8 +219,13 @@ export function propagateEtudeDependencies(taches, changedId, newSemaine, newAnn
   return updates
 }
 
-// Calcule le lag en semaines entre la fin d'une tâche parente et le début d'une enfant
-export function computeLagSemaines(parentSemaine, parentAnnee, parentDuree, childSemaine, childAnnee) {
-  const parentEnd = addWeeks(parentSemaine, parentAnnee, parentDuree)
+// Calcule le lag en semaines entre la fin d'une tâche parente et le début d'une
+// enfant. `periodes` permet de partir de la fin EFFECTIVE du parent, pour que le
+// lag mesuré à l'écran soit celui qui sera réappliqué à la propagation.
+export function computeLagSemaines(parentSemaine, parentAnnee, parentDuree, childSemaine, childAnnee, periodes = []) {
+  const parentEnd = finEffectivePhase(
+    { semaine_debut: parentSemaine, annee_debut: parentAnnee, duree_semaines: parentDuree },
+    periodes
+  )
   return weeksBetween(parentEnd.semaine, parentEnd.annee, childSemaine, childAnnee)
 }

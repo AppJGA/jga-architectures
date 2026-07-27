@@ -192,13 +192,13 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
             ...finalChanges,
             lag_semaines: computeLagSemaines(
               parent.semaine_debut, parent.annee_debut, parent.duree_semaines,
-              newSem, newAnn
+              newSem, newAnn, periodes
             ),
           }
         }
       }
 
-      const cascades   = propagateEtudeDependencies(prev, phaseId, newSem, newAnn, newDuree)
+      const cascades   = propagateEtudeDependencies(prev, phaseId, newSem, newAnn, newDuree, periodes)
       const cascadeMap = new Map(cascades.map(u => [u.id, u]))
 
       const next = prev.map(p => {
@@ -221,7 +221,7 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
     if (notionId && capturedPhase) {
       notionSync.pushToNotion(notionId, capturedPhase)
     }
-  }, [persistUpdates, notionSync.pushToNotion])
+  }, [persistUpdates, notionSync.pushToNotion, periodes])
 
   // ── Commit d'un segment après drag/resize dans la timeline ────────────────────
   const handleSegmentCommit = useCallback(async (segmentId, changes) => {

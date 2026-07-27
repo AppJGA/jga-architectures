@@ -2,7 +2,7 @@ import { useMemo, useRef, useCallback, useState, useEffect } from 'react'
 import { Pencil, GitBranch } from 'lucide-react'
 import {
   TYPE_COLORS, getWeekStart, addWeeks, weeksBetween, getCurrentWeek, computeLagSemaines,
-  weekOfDate,
+  weekOfDate, computePhaseFragments, finEffectivePhase,
 } from './types'
 
 function hexToRgba(hex, alpha) {
@@ -28,12 +28,6 @@ function isFirstWeekOfMonth(semaine, annee) {
   return prevWeek.getMonth() !== date.getMonth()
 }
 
-function getPhaseX(phase, refSemaine, refAnnee, semWidth) {
-  const left = weeksBetween(refSemaine, refAnnee, phase.semaine_debut, phase.annee_debut) * semWidth
-  const width = phase.duree_semaines * semWidth
-  return { left, width }
-}
-
 export function GanttEtudeTimeline({
   phases, semWidth, showConnections,
   jalons = [], onJalonClick,
@@ -55,7 +49,9 @@ export function GanttEtudeTimeline({
     if (phases.length === 0 && segments.length === 0) return 52
     let maxEnd = 0
     phases.forEach(p => {
-      const end = weeksBetween(refSemaine, refAnnee, p.semaine_debut, p.annee_debut) + p.duree_semaines
+      // Fin effective : une phase coupée par des congés se termine plus tard
+      const fin = finEffectivePhase(p, periodes)
+      const end = weeksBetween(refSemaine, refAnnee, fin.semaine, fin.annee)
       if (end > maxEnd) maxEnd = end
     })
     // Les segments peuvent se prolonger au-delà de la dernière phase
@@ -64,7 +60,7 @@ export function GanttEtudeTimeline({
       if (end > maxEnd) maxEnd = end
     })
     return Math.max(maxEnd + 8, 52)
-  }, [phases, segments, refSemaine, refAnnee])
+  }, [phases, segments, periodes, refSemaine, refAnnee])
 
   const weeks = useMemo(() =>
     Array.from({ length: totalWeeks }, (_, i) => addWeeks(refWeek.semaine, refWeek.annee, i)),
@@ -122,24 +118,49 @@ export function GanttEtudeTimeline({
   )
 
   // ── Drag ──────────────────────────────────────────────────────────────────────
+  //
+  // Une phase peut être scindée en plusieurs fragments (périodes bloquantes) :
+  // l'aperçu passe donc par un état React plutôt que par une mutation du DOM,
+  // pour que les fragments soient recalculés pendant le geste. Le state n'est
+  // touché que lorsque le décalage change de semaine — pas à chaque pixel.
   const barDragRef = useRef(null)
   const [draggingBar, setDraggingBar] = useState(null)
+  const [dragPreview, setDragPreview] = useState(null)
 
   const startBarDrag = useCallback((e, phase, type) => {
     e.preventDefault(); e.stopPropagation()
     dragState.moved = false
-    const { left: origLeft } = getPhaseX(phase, refWeek.semaine, refWeek.annee, semWidth)
     barDragRef.current = {
       type, phaseId: phase.id,
       startX: e.clientX,
       origSemaine: phase.semaine_debut,
       origAnnee: phase.annee_debut,
       origDuree: phase.duree_semaines,
-      origLeft,
+      lastDelta: 0,
     }
     setDraggingBar(phase.id)
+    setDragPreview(null)
     document.body.style.cursor = type === 'move' ? 'grabbing' : 'ew-resize'
-  }, [refWeek, semWidth])
+  }, [])
+
+  // Nouvelle géométrie d'une phase après un déplacement de `delta` semaines —
+  // partagée par l'aperçu et l'enregistrement, pour qu'ils ne divergent jamais.
+  const phaseChangesFor = useCallback((drag, delta) => {
+    const { type, origSemaine, origAnnee, origDuree } = drag
+    if (type === 'resize-right') {
+      return { duree_semaines: Math.max(1, origDuree + delta) }
+    }
+    if (type === 'resize-left') {
+      const shift = Math.min(delta, origDuree - 1)
+      const ns = addWeeks(origSemaine, origAnnee, shift)
+      return {
+        semaine_debut: ns.semaine, annee_debut: ns.annee,
+        duree_semaines: Math.max(1, origDuree - shift),
+      }
+    }
+    const ns = addWeeks(origSemaine, origAnnee, delta)
+    return { semaine_debut: ns.semaine, annee_debut: ns.annee }
+  }, [])
 
   // ── Drag / resize des segments ────────────────────────────────────────────────
   // Même mécanique que les barres de phase : aperçu en manipulant le DOM pendant
@@ -218,8 +239,16 @@ export function GanttEtudeTimeline({
         const fromOffset = rowOffsets[fromPhase.id]
         const toOffset = rowOffsets[p.id]
         if (fromOffset === undefined || toOffset === undefined) return null
-        const { left: fromLeft, width: fromWidth } = getPhaseX(fromPhase, refWeek.semaine, refWeek.annee, semWidth)
-        const { left: toLeft } = getPhaseX(p, refWeek.semaine, refWeek.annee, semWidth)
+        // Fin effective (dernier fragment) : la flèche part de la fin réelle,
+        // pas de début + durée, qui ignorerait les semaines bloquées.
+        const finParent = finEffectivePhase(fromPhase, periodes)
+        const fromLeft = weeksBetween(refWeek.semaine, refWeek.annee, finParent.semaine, finParent.annee) * semWidth
+        const fromWidth = 0
+        const fragsEnfant = computePhaseFragments(p, periodes)
+        const toLeft = weeksBetween(
+          refWeek.semaine, refWeek.annee,
+          fragsEnfant[0].semaine_debut, fragsEnfant[0].annee_debut
+        ) * semWidth
         const fromY = fromOffset + rowHeightOf(fromPhase) - barPadOf(fromPhase)
         const toY = toOffset + rowHeightOf(p) - barPadOf(p)
         return {
@@ -234,26 +263,19 @@ export function GanttEtudeTimeline({
         }
       })
       .filter(Boolean),
-    [phases, rowOffsets, refWeek, semWidth]
+    [phases, rowOffsets, refWeek, semWidth, periodes]
   )
 
   // ── Mouse handlers ─────────────────────────────────────────────────────────────
   const handleMouseMove = useCallback((e) => {
     if (barDragRef.current) {
-      const { type, phaseId, startX, origDuree, origLeft } = barDragRef.current
-      const dx = e.clientX - startX
+      const drag = barDragRef.current
+      const dx = e.clientX - drag.startX
       if (Math.abs(dx) > 4) dragState.moved = true
       const delta = Math.round(dx / semWidth)
-      const el = document.querySelector(`[data-phaseid="${phaseId}"]`)
-      if (!el) return
-      if (type === 'move') {
-        el.style.left = `${origLeft + delta * semWidth}px`
-      } else if (type === 'resize-right') {
-        el.style.width = `${Math.max(semWidth, (origDuree + delta) * semWidth)}px`
-      } else if (type === 'resize-left') {
-        const shift = Math.min(delta, origDuree - 1)
-        el.style.left = `${origLeft + shift * semWidth}px`
-        el.style.width = `${Math.max(semWidth, (origDuree - delta) * semWidth)}px`
+      if (delta !== drag.lastDelta) {
+        drag.lastDelta = delta
+        setDragPreview({ id: drag.phaseId, ...phaseChangesFor(drag, delta) })
       }
     }
     if (segDragRef.current) {
@@ -275,26 +297,18 @@ export function GanttEtudeTimeline({
       const rect = svgRef.current.getBoundingClientRect()
       setMousePos({ x: e.clientX - rect.left, y: e.clientY - rect.top })
     }
-  }, [semWidth, connectingFrom, segChangesFor])
+  }, [semWidth, connectingFrom, segChangesFor, phaseChangesFor])
 
   const handleMouseUp = useCallback((e) => {
     if (barDragRef.current) {
-      const { type, phaseId, startX, origSemaine, origAnnee, origDuree } = barDragRef.current
+      const drag = barDragRef.current
+      const { phaseId, startX, origSemaine, origAnnee, origDuree } = drag
       if (dragState.moved) {
-        const dx = e.clientX - startX
-        const delta = Math.round(dx / semWidth)
-        let newSem = origSemaine, newAnn = origAnnee, newDuree = origDuree
-        if (type === 'move') {
-          const ns = addWeeks(origSemaine, origAnnee, delta)
-          newSem = ns.semaine; newAnn = ns.annee
-        } else if (type === 'resize-right') {
-          newDuree = Math.max(1, origDuree + delta)
-        } else if (type === 'resize-left') {
-          const shift = Math.min(delta, origDuree - 1)
-          const ns = addWeeks(origSemaine, origAnnee, shift)
-          newSem = ns.semaine; newAnn = ns.annee
-          newDuree = Math.max(1, origDuree - delta)
-        }
+        const delta = Math.round((e.clientX - startX) / semWidth)
+        const c = phaseChangesFor(drag, delta)
+        const newSem = c.semaine_debut ?? origSemaine
+        const newAnn = c.annee_debut ?? origAnnee
+        const newDuree = c.duree_semaines ?? origDuree
         if (newSem !== origSemaine || newAnn !== origAnnee || newDuree !== origDuree) {
           onPhaseUpdate(phaseId, { semaine_debut: newSem, annee_debut: newAnn, duree_semaines: newDuree })
         }
@@ -302,6 +316,7 @@ export function GanttEtudeTimeline({
       barDragRef.current = null
       dragState.moved = false   // reset pour que le crayon fonctionne après un drag
       setDraggingBar(null)
+      setDragPreview(null)
       document.body.style.cursor = ''
     }
 
@@ -327,7 +342,7 @@ export function GanttEtudeTimeline({
     }
 
     if (connectingFrom && !hoveredPoint) setConnectingFrom(null)
-  }, [semWidth, onPhaseUpdate, connectingFrom, hoveredPoint, segChangesFor, updateSegmentLocal, onSegmentCommit])
+  }, [semWidth, onPhaseUpdate, connectingFrom, hoveredPoint, phaseChangesFor, segChangesFor, updateSegmentLocal, onSegmentCommit])
 
   useEffect(() => {
     const h = (e) => { if (e.key === 'Escape') setConnectingFrom(null) }
@@ -352,14 +367,14 @@ export function GanttEtudeTimeline({
           const fromPhase = phases.find(p => p.id === connectingFrom.phaseId)
           const toPhase = phases.find(p => p.id === point.phaseId)
           const lag = (fromPhase && toPhase)
-            ? computeLagSemaines(fromPhase.semaine_debut, fromPhase.annee_debut, fromPhase.duree_semaines, toPhase.semaine_debut, toPhase.annee_debut)
+            ? computeLagSemaines(fromPhase.semaine_debut, fromPhase.annee_debut, fromPhase.duree_semaines, toPhase.semaine_debut, toPhase.annee_debut, periodes)
             : 0
           onDependencyCreate(connectingFrom.phaseId, point.phaseId, lag)
         }
       }
       setConnectingFrom(null)
     }
-  }, [connectingFrom, phases, onDependencyCreate])
+  }, [connectingFrom, phases, onDependencyCreate, periodes])
 
   return (
     <div
@@ -521,11 +536,12 @@ export function GanttEtudeTimeline({
           ) : null
         ))}
 
-        {/* Phase rows */}
+        {/* Phase rows — la phase affichée intègre l'aperçu du geste en cours */}
         {phases.map((phase) => (
           <PhaseBarRow
             key={phase.id}
-            phase={phase}
+            phase={dragPreview?.id === phase.id ? { ...phase, ...dragPreview } : phase}
+            periodes={periodes}
             rowOffset={rowOffsets[phase.id] ?? 0}
             semWidth={semWidth}
             refSemaine={refWeek.semaine}
@@ -670,7 +686,7 @@ export function GanttEtudeTimeline({
 // ─── PhaseBarRow ───────────────────────────────────────────────────────────────
 
 function PhaseBarRow({
-  phase, rowOffset, semWidth, refSemaine, refAnnee,
+  phase, periodes = [], rowOffset, semWidth, refSemaine, refAnnee,
   isDragging, isConnecting, connectingFromId, hoveredPoint,
   onBarDragStart, onBarClick, onConnectionPointClick, onConnectionPointHover,
   isCritical,
@@ -684,7 +700,20 @@ function PhaseBarRow({
   const color = TYPE_COLORS[phase.type_tache] ?? '#9C9591'
   const isAdmin = phase.type_tache === 'administratif'
 
-  const { left, width } = getPhaseX(phase, refSemaine, refAnnee, semWidth)
+  // Fragments visuels : la phase est coupée par les périodes bloquantes.
+  // Recalculés à chaque rendu — un drag/resize met simplement à jour la phase.
+  const fragments = useMemo(
+    () => computePhaseFragments(phase, periodes),
+    [phase, periodes]
+  )
+
+  const premierFrag = fragments[0]
+  const dernierFrag = fragments[fragments.length - 1]
+  const left = weeksBetween(refSemaine, refAnnee, premierFrag.semaine_debut, premierFrag.annee_debut) * semWidth
+  // Bord droit = fin EFFECTIVE (dernier fragment), pas début + durée
+  const finLeft = weeksBetween(refSemaine, refAnnee, dernierFrag.semaine_debut, dernierFrag.annee_debut) * semWidth
+    + dernierFrag.duree_semaines * semWidth
+
   const HANDLE_W = Math.max(5, Math.min(8, semWidth * 0.2))
   const connectionY = rowOffset + rh - barPad
 
@@ -695,7 +724,7 @@ function PhaseBarRow({
   const showEndDot = !isConnecting && isHovered
 
   const startPoint = { phaseId: phase.id, side: 'start', x: left, y: connectionY }
-  const endPoint = { phaseId: phase.id, side: 'end', x: left + width, y: connectionY }
+  const endPoint = { phaseId: phase.id, side: 'end', x: finLeft, y: connectionY }
 
   return (
     <div
@@ -703,120 +732,122 @@ function PhaseBarRow({
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      {/* ── Phase bar ──────────────────────────────────────────────────── */}
-      <div
-        data-phaseid={phase.id}
-        title={phase.nom}
-        style={{
-          position: 'absolute', left, width,
-          top: barPad, bottom: barPad,
-          backgroundColor: color,
-          backgroundImage: isAdmin
-            ? `repeating-linear-gradient(45deg, transparent, transparent 8px, rgba(255,255,255,0.18) 8px, rgba(255,255,255,0.18) 16px)`
-            : 'none',
-          borderRadius: 0,
-          display: 'flex', alignItems: 'center', overflow: 'visible',
-          boxShadow: isDragging
-            ? '0 8px 24px rgba(0,0,0,0.2)'
-            : isCritical
-              ? '0 0 0 2px #B8412C, 0 1px 3px rgba(0,0,0,0.15)'
-              : '0 1px 3px rgba(0,0,0,0.15)',
-          zIndex: isDragging ? 30 : 10,
-          opacity: isDragging ? 0.9 : 1,
-          cursor: isConnecting && !isSource ? 'crosshair' : 'grab',
-        }}
-        onMouseDown={(e) => {
-          if (e.target.dataset.handle || e.target.dataset.editbtn || isConnecting) return
-          onBarDragStart(e, phase, 'move')
-        }}
-      >
+      {/* ── Barres de phase — un fragment par plage travaillée ───────────
+          Les semaines couvertes par une période bloquante coupent la barre :
+          la durée travaillée est conservée, la fin effective recule. */}
+      {fragments.map((frag, i) => {
+        const fLeft = weeksBetween(refSemaine, refAnnee, frag.semaine_debut, frag.annee_debut) * semWidth
+        const fWidth = frag.duree_semaines * semWidth
+        const premier = i === 0
+        const dernier = i === fragments.length - 1
 
-        {/* Resize left */}
-        <div
-          data-handle="left"
-          style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: HANDLE_W, cursor: 'ew-resize', flexShrink: 0, borderRadius: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-          onMouseDown={(e) => { e.stopPropagation(); onBarDragStart(e, phase, 'resize-left') }}
-          onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.2)'}
-          onMouseLeave={e => e.currentTarget.style.backgroundColor = ''}
-        >
-          <div style={{ height: 10, width: 1, backgroundColor: 'rgba(255,255,255,0.4)', pointerEvents: 'none' }} />
-        </div>
-
-        {/* Segments intervenants MOE — largeurs en px, non-interactifs */}
-        {isMoe && (phase.duree_arch > 0 || phase.duree_bet > 0 || phase.duree_econ > 0) && (
-          <div style={{ position: 'absolute', inset: 0, display: 'flex', overflow: 'hidden', pointerEvents: 'none' }}>
-            {phase.duree_arch > 0 && (
-              <div style={{
-                width: phase.duree_arch * semWidth, height: '100%', flexShrink: 0,
-                backgroundColor: 'rgba(0,0,0,0.15)',
-                borderRight: '1px solid rgba(255,255,255,0.6)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                pointerEvents: 'none',
-              }}>
-                <span style={{ fontSize: 10, fontWeight: 700, color: 'white', userSelect: 'none' }}>1</span>
+        return (
+          <div
+            key={`${phase.id}-frag-${i}`}
+            data-phaseid={premier ? phase.id : undefined}
+            title={fragments.length > 1
+              ? `${phase.nom} — fragment ${i + 1}/${fragments.length}`
+              : phase.nom}
+            style={{
+              position: 'absolute', left: fLeft, width: fWidth,
+              top: barPad, bottom: barPad,
+              backgroundColor: color,
+              backgroundImage: isAdmin
+                ? `repeating-linear-gradient(45deg, transparent, transparent 8px, rgba(255,255,255,0.18) 8px, rgba(255,255,255,0.18) 16px)`
+                : 'none',
+              borderRadius: 0,
+              display: 'flex', alignItems: 'center', overflow: 'visible',
+              boxShadow: isDragging
+                ? '0 8px 24px rgba(0,0,0,0.2)'
+                : isCritical
+                  ? '0 0 0 2px #B8412C, 0 1px 3px rgba(0,0,0,0.15)'
+                  : '0 1px 3px rgba(0,0,0,0.15)',
+              zIndex: isDragging ? 30 : 10,
+              opacity: isDragging ? 0.9 : 1,
+              cursor: isConnecting && !isSource ? 'crosshair' : 'grab',
+            }}
+            onMouseDown={(e) => {
+              if (e.target.dataset.handle || e.target.dataset.editbtn || isConnecting) return
+              onBarDragStart(e, phase, 'move')
+            }}
+          >
+            {/* Resize left — sur le premier fragment (début de la phase) */}
+            {premier && (
+              <div
+                data-handle="left"
+                style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: HANDLE_W, cursor: 'ew-resize', flexShrink: 0, borderRadius: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                onMouseDown={(e) => { e.stopPropagation(); onBarDragStart(e, phase, 'resize-left') }}
+                onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.2)'}
+                onMouseLeave={e => e.currentTarget.style.backgroundColor = ''}
+              >
+                <div style={{ height: 10, width: 1, backgroundColor: 'rgba(255,255,255,0.4)', pointerEvents: 'none' }} />
               </div>
             )}
-            {phase.duree_bet > 0 && (
-              <div style={{
-                width: phase.duree_bet * semWidth, height: '100%', flexShrink: 0,
-                backgroundColor: 'rgba(0,0,0,0.25)',
-                borderRight: '1px solid rgba(255,255,255,0.6)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                pointerEvents: 'none',
-              }}>
-                <span style={{ fontSize: 10, fontWeight: 700, color: 'white', userSelect: 'none' }}>2</span>
+
+            {/* Répartition des intervenants MOE — sur le premier fragment,
+                tronquée à sa largeur (les sous-durées ne sont pas refragmentées) */}
+            {premier && isMoe && (phase.duree_arch > 0 || phase.duree_bet > 0 || phase.duree_econ > 0) && (
+              <div style={{ position: 'absolute', inset: 0, display: 'flex', overflow: 'hidden', pointerEvents: 'none' }}>
+                {[
+                  { duree: phase.duree_arch, num: '1', fond: 'rgba(0,0,0,0.15)' },
+                  { duree: phase.duree_bet, num: '2', fond: 'rgba(0,0,0,0.25)' },
+                  { duree: phase.duree_econ, num: '3', fond: 'rgba(0,0,0,0.35)' },
+                ].filter(s => s.duree > 0).map((s, k, tous) => (
+                  <div key={s.num} style={{
+                    width: s.duree * semWidth, height: '100%', flexShrink: 0,
+                    backgroundColor: s.fond,
+                    borderRight: k < tous.length - 1 ? '1px solid rgba(255,255,255,0.6)' : 'none',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    pointerEvents: 'none',
+                  }}>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: 'white', userSelect: 'none' }}>{s.num}</span>
+                  </div>
+                ))}
               </div>
             )}
-            {phase.duree_econ > 0 && (
-              <div style={{
-                width: phase.duree_econ * semWidth, height: '100%', flexShrink: 0,
-                backgroundColor: 'rgba(0,0,0,0.35)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                pointerEvents: 'none',
-              }}>
-                <span style={{ fontSize: 10, fontWeight: 700, color: 'white', userSelect: 'none' }}>3</span>
-              </div>
+
+            {/* Crayon + resize right — sur le dernier fragment (fin de la phase) */}
+            {dernier && (
+              <>
+                <button
+                  data-editbtn="1"
+                  style={{
+                    position: 'absolute', zIndex: 20, right: HANDLE_W + 2, top: '50%', transform: 'translateY(-50%)',
+                    width: 20, height: 20,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    borderRadius: 3, border: 'none', cursor: 'pointer',
+                    backgroundColor: 'rgba(0,0,0,0.3)', color: 'white',
+                    opacity: isHovered ? 1 : 0, transition: 'opacity 0.15s',
+                    flexShrink: 0,
+                  }}
+                  onMouseDown={e => e.stopPropagation()}
+                  onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.5)'}
+                  onMouseLeave={e => e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.3)'}
+                  onClick={(e) => { e.stopPropagation(); onBarClick(phase) }}
+                  title="Modifier"
+                >
+                  <Pencil size={11} strokeWidth={2.5} />
+                </button>
+
+                <div
+                  data-handle="right"
+                  style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: HANDLE_W, cursor: 'ew-resize', flexShrink: 0, borderRadius: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  onMouseDown={(e) => { e.stopPropagation(); onBarDragStart(e, phase, 'resize-right') }}
+                  onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.2)'}
+                  onMouseLeave={e => e.currentTarget.style.backgroundColor = ''}
+                >
+                  <div style={{ height: 10, width: 1, backgroundColor: 'rgba(255,255,255,0.4)', pointerEvents: 'none' }} />
+                </div>
+              </>
             )}
           </div>
-        )}
+        )
+      })}
 
-        {/* Edit pencil */}
-        <button
-          data-editbtn="1"
-          style={{
-            position: 'absolute', zIndex: 20, right: HANDLE_W + 2, top: '50%', transform: 'translateY(-50%)',
-            width: 20, height: 20,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            borderRadius: 3, border: 'none', cursor: 'pointer',
-            backgroundColor: 'rgba(0,0,0,0.3)', color: 'white',
-            opacity: isHovered ? 1 : 0, transition: 'opacity 0.15s',
-            flexShrink: 0,
-          }}
-          onMouseDown={e => e.stopPropagation()}
-          onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.5)'}
-          onMouseLeave={e => e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.3)'}
-          onClick={(e) => { e.stopPropagation(); onBarClick(phase) }}
-          title="Modifier"
-        >
-          <Pencil size={11} strokeWidth={2.5} />
-        </button>
-
-        {/* Resize right */}
-        <div
-          data-handle="right"
-          style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: HANDLE_W, cursor: 'ew-resize', flexShrink: 0, borderRadius: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-          onMouseDown={(e) => { e.stopPropagation(); onBarDragStart(e, phase, 'resize-right') }}
-          onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.2)'}
-          onMouseLeave={e => e.currentTarget.style.backgroundColor = ''}
-        >
-          <div style={{ height: 10, width: 1, backgroundColor: 'rgba(255,255,255,0.4)', pointerEvents: 'none' }} />
-        </div>
-      </div>
-
-      {/* Label à droite de la barre */}
+      {/* Label à droite du dernier fragment */}
       <div style={{
         position: 'absolute',
-        left: left + width + 4,
+        left: finLeft + 4,
         top: barPad,
         bottom: barPad,
         display: 'flex',
@@ -831,6 +862,7 @@ function PhaseBarRow({
       }}>
         {phase.nom}
       </div>
+
 
       {/* ── Segments supplémentaires ───────────────────────────────────────
           Même couleur que la phase, contour tireté pour les distinguer de la
@@ -926,7 +958,7 @@ function PhaseBarRow({
       <div
         style={{
           position: 'absolute', zIndex: 40,
-          left: left + width - DOT_R, top: rh - barPad - DOT_R,
+          left: finLeft - DOT_R, top: rh - barPad - DOT_R,
           width: DOT_R * 2, height: DOT_R * 2,
           borderRadius: '50%', border: '2px solid white', cursor: 'crosshair',
           backgroundColor: isSource || isEndHov ? '#E8602C' : color,

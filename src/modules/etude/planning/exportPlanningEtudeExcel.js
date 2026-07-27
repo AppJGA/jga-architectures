@@ -2,7 +2,10 @@
 // l'espace de noms ESM n'expose pas `utils` hors bundler — l'import par défaut
 // renvoie `module.exports` dans les deux cas.
 import XLSX from 'xlsx-js-style'
-import { TYPE_COLORS, getWeekStart, addWeeks, weeksBetween, getCurrentWeek, weekOfDate } from './types'
+import {
+  TYPE_COLORS, getWeekStart, addWeeks, weeksBetween, getCurrentWeek, weekOfDate,
+  computePhaseFragments, finEffectivePhase,
+} from './types'
 
 // ─── Export Excel du planning d'étude ─────────────────────────────────────────
 //
@@ -57,7 +60,11 @@ function buildWeeks(phases, segments, periodes, refSemaine, refAnnee) {
     const fin = weeksBetween(refSemaine, refAnnee, sem, ann) + duree
     if (fin > maxEnd) maxEnd = fin
   }
-  phases.forEach((p) => pousse(p.semaine_debut, p.annee_debut, p.duree_semaines))
+  phases.forEach((p) => {
+    // Fin effective : une phase coupée par des congés se termine plus tard
+    const fin = finEffectivePhase(p, periodes)
+    pousse(fin.semaine, fin.annee, 0)
+  })
   segments.forEach((s) => pousse(s.semaine_debut, s.annee_debut, s.duree_semaines))
   periodes.forEach((p) => {
     const w = weekOfDate(p.date_fin)
@@ -175,8 +182,12 @@ export function exportPlanningEtudeExcel({
       border: borderRow(false, true),
     })
 
+    // Fragments : seules les semaines travaillées sont coloriées ; celles d'une
+    // période bloquante gardent la teinte de la période.
+    const fragments = computePhaseFragments(phase, periodes)
+
     weeks.forEach((w, i) => {
-      const dansPhase = couvre(w, phase.semaine_debut, phase.annee_debut, phase.duree_semaines)
+      const dansPhase = fragments.some((f) => couvre(w, f.semaine_debut, f.annee_debut, f.duree_semaines))
       const dansSegment = segs.some((s) => couvre(w, s.semaine_debut, s.annee_debut, s.duree_semaines))
       const periode = periodeDeLaSemaine(w)
 

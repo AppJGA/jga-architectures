@@ -1,11 +1,18 @@
 import { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { X, Plus, Trash2 } from 'lucide-react'
+import { X, Plus, Trash2, GripVertical } from 'lucide-react'
 import { ColorPickerField } from '../../../shared/components/ColorPicker'
+import { reordonner } from '../../../shared/hooks/ordreZones'
 
-function ZoneRow({ zone, onUpdate, onDelete, onPastilleClick, autoFocus }) {
+function ZoneRow({
+  zone, onUpdate, onDelete, onPastilleClick, autoFocus,
+  onDragStart, onDragEnd, onDragOver, onDrop, enGlissement, insertion,
+}) {
   const [nom, setNom] = useState(zone.nom)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
+  // La ligne ne devient déplaçable qu'en partant de la poignée : `draggable`
+  // en permanence empêcherait de sélectionner le texte du champ Nom.
+  const [glissable, setGlissable] = useState(false)
   const debounceRef = useRef(null)
   const inputRef = useRef(null)
 
@@ -31,11 +38,37 @@ function ZoneRow({ zone, onUpdate, onDelete, onPastilleClick, autoFocus }) {
     onDelete(zone.id)
   }
 
+  // Trait d'insertion du côté où la zone déplacée va effectivement se poser
+  const traitInsertion = '2px solid #E8602C'
+
   return (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: 8,
-      padding: '6px 0', borderBottom: '0.5px solid rgba(0,0,0,0.06)',
-    }}>
+    <div
+      draggable={glissable}
+      onDragStart={(e) => onDragStart(e, zone.id)}
+      onDragEnd={(e) => { setGlissable(false); onDragEnd(e) }}
+      onDragOver={(e) => onDragOver(e, zone.id)}
+      onDrop={(e) => onDrop(e, zone.id)}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 8,
+        padding: '6px 0',
+        borderBottom: insertion === 'apres' ? traitInsertion : '0.5px solid rgba(0,0,0,0.06)',
+        borderTop: insertion === 'avant' ? traitInsertion : '2px solid transparent',
+        opacity: enGlissement ? 0.4 : 1,
+        transition: 'opacity 0.15s',
+      }}
+    >
+      <div
+        onMouseDown={() => setGlissable(true)}
+        onMouseUp={() => setGlissable(false)}
+        title="Glisser pour réordonner"
+        style={{
+          cursor: 'grab', color: '#C9C4C0', display: 'flex', alignItems: 'center',
+          flexShrink: 0, padding: '0 2px',
+        }}
+      >
+        <GripVertical size={14} strokeWidth={1.25} />
+      </div>
+
       <button
         type="button" onClick={(e) => onPastilleClick(e, zone)}
         title="Changer la couleur"
@@ -79,9 +112,11 @@ function ZoneRow({ zone, onUpdate, onDelete, onPastilleClick, autoFocus }) {
   )
 }
 
-export function ZonesModal({ open, onClose, zones, createZone, updateZone, deleteZone }) {
+export function ZonesModal({ open, onClose, zones, createZone, updateZone, deleteZone, reorderZones }) {
   const [focusNewId, setFocusNewId] = useState(null)
   const [pickerState, setPickerState] = useState(null)
+  const [draggedId, setDraggedId] = useState(null)
+  const [dragOverId, setDragOverId] = useState(null)
 
   useEffect(() => { if (!open) setPickerState(null) }, [open])
 
@@ -90,6 +125,40 @@ export function ZonesModal({ open, onClose, zones, createZone, updateZone, delet
   const handleAdd = async () => {
     const { data } = await createZone('', '#9C9591')
     if (data) setFocusNewId(data.id)
+  }
+
+  const handleDragStart = (e, zoneId) => {
+    setDraggedId(zoneId)
+    e.dataTransfer.effectAllowed = 'move'
+    // Firefox n'amorce pas le glissement sans données transportées
+    e.dataTransfer.setData('text/plain', String(zoneId))
+  }
+
+  const handleDragEnd = () => {
+    setDraggedId(null)
+    setDragOverId(null)
+  }
+
+  const handleDragOver = (e, zoneId) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    setDragOverId(zoneId === draggedId ? null : zoneId)
+  }
+
+  const handleDrop = async (e, targetId) => {
+    e.preventDefault()
+    const nouvelOrdre = reorderZones ? reordonner(zones, draggedId, targetId) : null
+    setDraggedId(null)
+    setDragOverId(null)
+    if (nouvelOrdre) await reorderZones(nouvelOrdre)
+  }
+
+  // Côté du trait d'insertion : la zone déplacée se pose après sa cible quand
+  // elle descend, avant quand elle monte.
+  const indexDe = (id) => zones.findIndex((z) => z.id === id)
+  const insertionPour = (zoneId) => {
+    if (zoneId !== dragOverId || draggedId == null) return null
+    return indexDe(draggedId) < indexDe(zoneId) ? 'apres' : 'avant'
   }
 
   const handlePastilleClick = (e, zone) => {
@@ -119,7 +188,8 @@ export function ZonesModal({ open, onClose, zones, createZone, updateZone, delet
           </button>
         </div>
         <p style={{ fontSize: 11, color: '#9C9591', marginBottom: 16, flexShrink: 0 }}>
-          Définissez des zones pour colorier les tâches indépendamment des lots
+          Définissez des zones pour colorier les tâches indépendamment des lots.
+          Glissez une poignée pour changer leur ordre d'affichage.
         </p>
 
         {/* List */}
@@ -137,6 +207,12 @@ export function ZonesModal({ open, onClose, zones, createZone, updateZone, delet
                 onDelete={deleteZone}
                 onPastilleClick={handlePastilleClick}
                 autoFocus={zone.id === focusNewId}
+                onDragStart={handleDragStart}
+                onDragEnd={handleDragEnd}
+                onDragOver={handleDragOver}
+                onDrop={handleDrop}
+                enGlissement={draggedId === zone.id}
+                insertion={insertionPour(zone.id)}
               />
             ))
           )}

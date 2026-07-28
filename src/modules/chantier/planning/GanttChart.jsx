@@ -5,6 +5,7 @@ import { parseDate, formatDateISO, computeLag, addWorkingDays } from './types'
 import { propagateAllDependencies, endDateChanged, entityKey } from './propagation'
 import { buildRowsByZone } from './groupByZone'
 import { legendeCouleurs, sansDiese } from './legende'
+import { trierZones } from '../../../shared/hooks/ordreZones'
 import { supabase } from '../../../core/supabase/client'
 import { usePlanningZones } from '../../../shared/hooks/usePlanningZones'
 import { usePlanningSegments } from '../../../shared/hooks/usePlanningSegments'
@@ -141,7 +142,11 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
     localStorage.setItem(`planning-zoom-${affaireId}`, zoomLevel.toString())
   }, [zoomLevel, affaireId])
 
-  const { zones, createZone, updateZone, deleteZone } = usePlanningZones(affaireId)
+  const { zones: zonesBrutes, createZone, updateZone, deleteZone, reorderZones } = usePlanningZones(affaireId)
+
+  // Ordre d'affichage des zones : `ordre` fait foi partout — lignes groupées,
+  // couleurs, légende et exports — pour que l'écran et le papier concordent.
+  const zones = useMemo(() => trierZones(zonesBrutes), [zonesBrutes])
   const {
     segments, addSegment, updateSegment, updateSegmentLocal, deleteSegment, getSegmentsForTache,
   } = usePlanningSegments(affaireId)
@@ -1684,6 +1689,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
         zones={zones}
         createZone={createZone}
         updateZone={updateZone}
+        reorderZones={reorderZones}
         deleteZone={deleteZone}
       />
 

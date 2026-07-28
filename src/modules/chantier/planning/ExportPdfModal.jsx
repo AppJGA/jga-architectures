@@ -30,6 +30,20 @@ const PAGE_FORMATS = [
   { label: 'A1 Paysage',   w: 841, h: 594 },
 ]
 
+const DENSITY_OPTIONS = [
+  { label: 'Compact', value: 'compact' },
+  { label: 'Normal', value: 'normal' },
+  { label: 'Confort', value: 'confort' },
+]
+
+// Même seuils que l'export Excel, pour que les deux exports proposent la même
+// densité par défaut à partir du réglage affiché à l'écran.
+function densityFromRowHeight(rowHeight) {
+  if (rowHeight <= 28) return 'compact'
+  if (rowHeight >= 44) return 'confort'
+  return 'normal'
+}
+
 function computeRange(tasks) {
   if (!tasks.length) {
     const d = new Date()
@@ -57,7 +71,8 @@ function computeRange(tasks) {
 
 export function ExportPdfModal({
   open, onClose, lots = [], tasks = [], jalons = [], affaire = {},
-  zones = [], colorMode = 'lot', viewMode = 'day', groupMode = 'lot',
+  zones = [], colorMode = 'lot', viewMode = 'day', groupMode = 'lot', rowHeight = 36,
+  onExportExcel,
   segments = [], dependances = [], periodes = [],
 }) {
   const computed = useMemo(() => computeRange(tasks), [tasks])
@@ -73,6 +88,7 @@ export function ExportPdfModal({
   const [exportViewMode,  setExportViewMode]  = useState(viewMode ?? 'day')
   const [exportDependances, setExportDependances] = useState(true)
   const [exportGroupMode, setExportGroupMode] = useState(groupMode ?? 'lot')
+  const [exportDensity, setExportDensity] = useState(() => densityFromRowHeight(rowHeight))
 
   useEffect(() => {
     if (!open) return
@@ -81,7 +97,8 @@ export function ExportPdfModal({
     setExportColorMode(colorMode ?? 'lot')
     setExportViewMode(viewMode ?? 'day')
     setExportGroupMode(groupMode ?? 'lot')
-  }, [open, computed, colorMode, viewMode, groupMode])
+    setExportDensity(densityFromRowHeight(rowHeight))
+  }, [open, computed, colorMode, viewMode, groupMode, rowHeight])
 
   const { totalDays, totalWeeks } = useMemo(() => {
     if (!dateDebut || !dateFin) return { totalDays: 0, totalWeeks: 0 }
@@ -133,6 +150,7 @@ export function ExportPdfModal({
       periodes,
       showDependances: exportDependances,
       groupMode: zones.length > 0 ? exportGroupMode : 'lot',
+      density: exportDensity,
     })
     onClose()
   }
@@ -386,6 +404,39 @@ export function ExportPdfModal({
             </label>
           </div>
 
+          {/* ── B4) HAUTEUR DES LIGNES ── */}
+          <div style={{ marginBottom: 20 }}>
+            <label style={{
+              fontSize: 11, fontWeight: 500, color: '#9C9591',
+              textTransform: 'uppercase', letterSpacing: '0.05em',
+              display: 'block', marginBottom: 8,
+            }}>
+              Hauteur des lignes
+            </label>
+            <div style={{ display: 'flex', border: '0.5px solid rgba(0,0,0,0.15)', overflow: 'hidden' }}>
+              {DENSITY_OPTIONS.map((opt, idx) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setExportDensity(opt.value)}
+                  style={{
+                    flex: 1, padding: '6px 0', fontSize: 12, border: 'none',
+                    borderRight: idx < DENSITY_OPTIONS.length - 1 ? '0.5px solid rgba(0,0,0,0.15)' : 'none',
+                    background: exportDensity === opt.value ? '#E8602C' : 'transparent',
+                    color: exportDensity === opt.value ? 'white' : '#5E5854',
+                    cursor: 'pointer',
+                    fontWeight: exportDensity === opt.value ? 500 : 400,
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            <p style={{ fontSize: 11, color: '#9C9591', marginTop: 6, fontStyle: 'italic' }}>
+              Pré-sélectionnée selon la densité affichée à l'écran.
+            </p>
+          </div>
+
           {/* ── C) RÉSUMÉ ── */}
           <div style={{ borderRadius: 2, backgroundColor: '#FAF7F2', border: '0.5px solid rgba(0,0,0,0.08)', padding: '12px 16px' }}>
             <p style={{ fontSize: 12, color: '#1F1B17', fontWeight: 500, marginBottom: 4 }}>Récapitulatif</p>
@@ -400,7 +451,10 @@ export function ExportPdfModal({
                 ? `Zones : ${zones.map(z => z.nom).join(', ')}`
                 : `Lots inclus : ${lots.length > 0 ? lots.map(l => l.nom).join(', ') : '—'}`}
               <br />
-              Format : {finalFormat.w} mm × {finalFormat.h} mm<br />
+              Format : {finalFormat.w} mm × {finalFormat.h} mm
+              {' · '}
+              {DENSITY_OPTIONS.find(o => o.value === exportDensity)?.label}
+              <br />
               <span style={{ color: '#9C9591', fontSize: 10 }}>Le tableau sera mis à l'échelle pour tenir sur une page.</span>
             </p>
           </div>
@@ -410,6 +464,15 @@ export function ExportPdfModal({
         {/* Footer */}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 22, paddingTop: 16, borderTop: '0.5px solid rgba(0,0,0,0.08)' }}>
           <button style={BTN} onClick={onClose}><X size={13} /> Annuler</button>
+          {onExportExcel && (
+            <button
+              style={{ ...BTN, marginRight: 'auto' }}
+              onClick={() => { onExportExcel({ density: exportDensity }); onClose() }}
+              title="Exporter le tableau avec les mêmes options de densité"
+            >
+              <FileDown size={13} /> Excel
+            </button>
+          )}
           <button
             style={{ ...BTN_PRIMARY, opacity: isValid ? 1 : 0.5 }}
             onClick={handleGenerate}

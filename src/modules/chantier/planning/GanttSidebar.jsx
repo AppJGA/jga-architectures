@@ -12,6 +12,20 @@ function getBarColor(task, lotColor, zones, colorMode) {
   return lotColor
 }
 
+// Métriques dérivées de la hauteur de ligne. Partagées par les deux groupements
+// (par lot et par zone), qui sont rendus par deux composants distincts : les
+// garder ici évite qu'une des deux branches soit oubliée.
+function rowMetrics(rowHeight) {
+  const compact = rowHeight <= 28
+  return {
+    compact,
+    nomFontSize: compact ? 11 : rowHeight >= 44 ? 13 : 12,
+    inputHeight: compact ? 18 : 24,
+    puceHeight: compact ? 12 : 16,
+    numFontSize: compact ? 10 : 11,
+  }
+}
+
 export function GanttSidebar({
   tasks, lots, rows = null, rowHeight, headerHeight, onEdit, onAvancementChange, zones = [], colorMode = 'lot',
   onReorderTask, dragOverTaskId = null, onDragOverTaskChange,
@@ -139,9 +153,7 @@ function TaskRow({
 
   // La ligne compacte (24 px) ne peut pas loger un champ de 24 px plus ses
   // bordures : on resserre le champ et la typographie en conséquence.
-  const compact = rowHeight <= 28
-  const nomFontSize = compact ? 11 : rowHeight >= 44 ? 13 : 12
-  const inputHeight = compact ? 18 : 24
+  const { compact, nomFontSize, inputHeight, puceHeight, numFontSize } = rowMetrics(rowHeight)
 
   return (
     <div
@@ -173,8 +185,8 @@ function TaskRow({
 
       {/* Color bar + task number */}
       <div style={{ display: 'flex', width: 48, flexShrink: 0, alignItems: 'center', gap: 6 }}>
-        <div style={{ width: 2, height: compact ? 12 : 16, borderRadius: 2, backgroundColor: lotColor }} />
-        <span style={{ fontSize: 11, fontWeight: 600, color: '#9C9591', fontVariantNumeric: 'tabular-nums' }}>
+        <div style={{ width: 2, height: puceHeight, borderRadius: 2, backgroundColor: lotColor }} />
+        <span style={{ fontSize: numFontSize, fontWeight: 600, color: '#9C9591', fontVariantNumeric: 'tabular-nums' }}>
           {task.num_tache}
         </span>
       </div>
@@ -247,6 +259,8 @@ function TaskRow({
 // et une tâche peut apparaître sur plusieurs lignes, ce que la réorganisation
 // (au sein d'un seul lot) ne gère pas.
 function ZoneGroupedSidebar({ rows, lots, rowHeight, headerHeight, onEdit, onAvancementChange }) {
+  const { compact, nomFontSize, inputHeight, puceHeight, numFontSize } = rowMetrics(rowHeight)
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column' }}>
       {/* Header */}
@@ -303,8 +317,8 @@ function ZoneGroupedSidebar({ rows, lots, rowHeight, headerHeight, onEdit, onAva
           >
             {/* Color bar + numéro */}
             <div style={{ display: 'flex', width: 48, flexShrink: 0, alignItems: 'center', gap: 6 }}>
-              <div style={{ width: 2, height: 16, borderRadius: 2, backgroundColor: lot?.couleur ?? '#C9C4C0' }} />
-              <span style={{ fontSize: 11, fontWeight: 600, color: '#9C9591', fontVariantNumeric: 'tabular-nums' }}>
+              <div style={{ width: 2, height: puceHeight, borderRadius: 2, backgroundColor: lot?.couleur ?? '#C9C4C0' }} />
+              <span style={{ fontSize: numFontSize, fontWeight: 600, color: '#9C9591', fontVariantNumeric: 'tabular-nums' }}>
                 {row.numero}
               </span>
             </div>

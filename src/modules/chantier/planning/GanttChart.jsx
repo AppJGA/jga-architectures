@@ -52,6 +52,21 @@ function pastel(hex, ratio) {
 
 // ──────────────────────────────────────────────────────────────────────────────
 
+// Hauteurs de ligne (points) et corps de texte de l'export Excel, par densité.
+// `normal` reproduit le rendu historique (16 pt, corps 9).
+const EXCEL_DENSITY = {
+  compact: { headerRow: 14, taskRow: 12, lotRow: 14, legendRow: 12, fontSize: 7 },
+  normal:  { headerRow: 18, taskRow: 16, lotRow: 18, legendRow: 14, fontSize: 9 },
+  confort: { headerRow: 24, taskRow: 22, lotRow: 26, legendRow: 18, fontSize: 11 },
+}
+
+// Densité déduite de la hauteur de ligne active dans l'éditeur
+function densityFromRowHeight(rowHeight) {
+  if (rowHeight <= 28) return 'compact'
+  if (rowHeight >= 44) return 'confort'
+  return 'normal'
+}
+
 // Densité des lignes du Gantt
 const ROW_HEIGHT_OPTIONS = [
   { label: 'Compact', value: 24 },
@@ -558,7 +573,14 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
   }
 
   // ── Export Excel ──────────────────────────────────────────────────────────────
-  const handleExportExcel = () => {
+  // `density` vient de la modale d'export ; à défaut (bouton Excel direct de la
+  // barre d'outils), on reprend la densité affichée à l'écran.
+  const handleExportExcel = ({ density } = {}) => {
+    const dens = EXCEL_DENSITY[density] ?? EXCEL_DENSITY[densityFromRowHeight(rowHeight)]
+    const fontSize = dens.fontSize
+    // Hauteur de chaque ligne, renseignée au fil des émissions
+    const rowHeights = []
+    const noteHauteur = (idx, hpt) => { rowHeights[idx] = { hpt } }
     // ── 1. Déterminer la plage de dates et les unités de temps (jour/semaine/mois) ──
     let minDate = null
     let maxDate = null
@@ -651,14 +673,14 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
     const LAST_SIDEBAR_COL = 2
 
     const styleHeader = (col) => ({
-      font: { bold: true, sz: 9, color: { rgb: 'FFFFFF' } },
+      font: { bold: true, sz: fontSize, color: { rgb: 'FFFFFF' } },
       fill: { fgColor: { rgb: '1F1B17' } },
       alignment: { horizontal: 'center', vertical: 'center' },
       border: borderHeader(false, col === LAST_SIDEBAR_COL),
     })
 
     const styleMonthHeader = (isCurrentMonth) => ({
-      font: { bold: true, sz: 9, color: { rgb: isCurrentMonth ? 'E8602C' : '1F1B17' } },
+      font: { bold: true, sz: fontSize, color: { rgb: isCurrentMonth ? 'E8602C' : '1F1B17' } },
       fill: { fgColor: { rgb: isCurrentMonth ? 'FAF0EB' : 'F5F2F0' } },
       alignment: { horizontal: 'center', vertical: 'center' },
       // Chaque cellule de mois est un groupe fusionné : encadré épais des deux côtés
@@ -668,14 +690,14 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
     const styleLotHeader = (couleur, col) => {
       const hex = couleur?.replace('#', '') ?? 'E8602C'
       return {
-        font: { bold: true, sz: 9, color: { rgb: hex } },
+        font: { bold: true, sz: fontSize, color: { rgb: hex } },
         fill: { fgColor: { rgb: 'FAF7F2' } },
         border: borderLot(col === LAST_SIDEBAR_COL),
       }
     }
 
     const styleSidebar = (bold, col) => ({
-      font: { bold: bold ?? false, sz: 9, color: { rgb: '1F1B17' } },
+      font: { bold: bold ?? false, sz: fontSize, color: { rgb: '1F1B17' } },
       fill: { fgColor: { rgb: 'FFFFFF' } },
       alignment: { vertical: 'center' },
       border: borderTask(false, col === LAST_SIDEBAR_COL),
@@ -720,6 +742,8 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
       setCell(0, rowIdx, 'N°', styleHeader(0))
       setCell(1, rowIdx, 'Tâche', styleHeader(1))
       setCell(2, rowIdx, 'Av.%', styleHeader(2))
+      noteHauteur(0, dens.headerRow)
+      noteHauteur(rowIdx, dens.headerRow)
 
       timeUnits.forEach((d, i) => {
         const isWE = d.getDay() === 0 || d.getDay() === 6
@@ -727,7 +751,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
         const isMonthStart = d.getDate() === 1
         setCell(FIXED_COLS + i, rowIdx, d.getDate(), {
           font: {
-            bold: isTod, sz: 8,
+            bold: isTod, sz: Math.max(6, fontSize - 1),
             color: { rgb: isTod ? 'E8602C' : isWE ? '9C9591' : '5E5854' },
           },
           fill: { fgColor: { rgb: isTod ? 'FAF0EB' : isWE ? 'F0EDE8' : 'FAFAF9' } },
@@ -770,6 +794,8 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
       setCell(0, 1, 'N°', styleHeader(0))
       setCell(1, 1, 'Tâche', styleHeader(1))
       setCell(2, 1, 'Av.%', styleHeader(2))
+      noteHauteur(0, dens.headerRow)
+      noteHauteur(1, dens.headerRow)
 
       timeUnits.forEach((monday, i) => {
         const d = new Date(monday)
@@ -782,7 +808,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
         const isCurWeek = monday <= today && today < new Date(monday.getTime() + 7 * 24 * 3600 * 1000)
 
         setCell(FIXED_COLS + i, 1, `S${wNum}`, {
-          font: { bold: isCurWeek, sz: 8, color: { rgb: isCurWeek ? 'E8602C' : '5E5854' } },
+          font: { bold: isCurWeek, sz: Math.max(6, fontSize - 1), color: { rgb: isCurWeek ? 'E8602C' : '5E5854' } },
           fill: { fgColor: { rgb: isCurWeek ? 'FAF0EB' : 'FAFAF9' } },
           alignment: { horizontal: 'center' },
           border: borderHeader(isMonthStart, false),
@@ -793,6 +819,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
       setCell(0, 0, 'N°', styleHeader(0))
       setCell(1, 0, 'Tâche', styleHeader(1))
       setCell(2, 0, 'Av.%', styleHeader(2))
+      noteHauteur(0, dens.headerRow)
 
       timeUnits.forEach((d, i) => {
         const isCur = d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear()
@@ -950,6 +977,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
         })
       })
 
+      noteHauteur(rowIdx, dens.taskRow)
       rowIdx++
     }
 
@@ -959,7 +987,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
       setCell(0, rowIdx, '', styleLotHeader(couleur, 0))
       setCell(1, rowIdx, libelle, {
         ...styleLotHeader(couleur, 1),
-        font: { bold: true, sz: 9, color: { rgb: hexGroupe } },
+        font: { bold: true, sz: fontSize, color: { rgb: hexGroupe } },
       })
       setCell(2, rowIdx, '', styleLotHeader(couleur, 2))
       timeUnits.forEach((_, i) => {
@@ -968,6 +996,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
           border: borderLot(false),
         })
       })
+      noteHauteur(rowIdx, dens.lotRow)
       rowIdx++
     }
 
@@ -1004,7 +1033,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
     // ── Jalons ──
     if (jalons && jalons.length > 0) {
       setCell(0, rowIdx, '', { border: borderThin })
-      setCell(1, rowIdx, 'JALONS', { font: { bold: true, sz: 9 }, border: borderThin })
+      setCell(1, rowIdx, 'JALONS', { font: { bold: true, sz: fontSize }, border: borderThin })
       rowIdx++
 
       jalons.forEach((jalon) => {
@@ -1037,6 +1066,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
             border: borderTask(false, false),
           })
         })
+        noteHauteur(rowIdx, dens.taskRow)
         rowIdx++
       })
     }
@@ -1056,11 +1086,12 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
         border: borderThin,
       })
       setCell(FIXED_COLS + i * 2 + 1, rowIdx, item.label, {
-        font: { sz: 8, color: { rgb: '5E5854' } },
+        font: { sz: Math.max(6, fontSize - 1), color: { rgb: '5E5854' } },
         alignment: { vertical: 'center' },
         border: borderThin,
       })
     })
+    noteHauteur(rowIdx, dens.legendRow)
     rowIdx++
 
     // ── Finaliser la feuille ──
@@ -1075,7 +1106,9 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
       colWidths.push({ wch: viewMode === 'day' ? 3.5 : viewMode === 'week' ? 6 : 10 })
     })
     ws['!cols'] = colWidths
-    ws['!rows'] = Array(rowIdx).fill({ hpt: 16 })
+    // Toute ligne non renseignée (séparateurs, lignes vides) reprend la hauteur
+    // d'une ligne de tâche.
+    ws['!rows'] = Array.from({ length: rowIdx }, (_, i) => rowHeights[i] ?? { hpt: dens.taskRow })
 
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, 'Planning')
@@ -1628,6 +1661,8 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
         colorMode={colorMode}
         viewMode={viewMode}
         groupMode={groupMode}
+        rowHeight={rowHeight}
+        onExportExcel={handleExportExcel}
         segments={segments}
         dependances={dependances}
         periodes={periodes}

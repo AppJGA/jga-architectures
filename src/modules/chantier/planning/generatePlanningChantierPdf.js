@@ -2,6 +2,21 @@ import { parseDate, formatDateISO, addWorkingDays } from './types'
 import { assignLabelLanes } from './jalonLayout'
 import { buildRowsByZone } from './groupByZone'
 
+// ─── Densité des lignes ───────────────────────────────────────────────────────
+//
+// Reprend le réglage « Hauteur des lignes » de l'éditeur. `normal` reproduit
+// exactement le rendu historique (6 mm par ligne) : seules les variantes
+// compact et confort s'en écartent.
+const DENSITY_CONFIG = {
+  compact: { rowMm: 4.5, barPadMm: 0.5, labelPt: 6,   barLabelPt: 5.5, groupMm: 4.5, groupPt: 6.5, hdrPadMm: 0.5 },
+  normal:  { rowMm: 6,   barPadMm: 1,   labelPt: 6.5, barLabelPt: 6.5, groupMm: 5.5, groupPt: 7,   hdrPadMm: 1 },
+  confort: { rowMm: 9,   barPadMm: 1.5, labelPt: 8,   barLabelPt: 8,   groupMm: 8,   groupPt: 8.5, hdrPadMm: 1.5 },
+}
+
+function densityConfig(density) {
+  return DENSITY_CONFIG[density] ?? DENSITY_CONFIG.normal
+}
+
 const WEEKEND_RATIO = 0.35
 const LABEL_COL_MM = 45
 
@@ -219,7 +234,8 @@ function buildDayHeaders(days, dayWidths, todayStr) {
 }
 
 function buildTaskRow(task, color, days, dayWidths, jalons, todayStr, ctx, rowInfo) {
-  const { segments = [], periodes = [], zones = [] } = ctx ?? {}
+  const { segments = [], periodes = [], zones = [], density } = ctx ?? {}
+  const dens = densityConfig(density)
   // En groupement par zone, une tâche peut n'apparaître que par ses segments
   // (ligne dupliquée) : `showMainBar` et `visibleSegmentIds` viennent alors de
   // buildRowsByZone, la même source que la timeline interactive.
@@ -246,7 +262,7 @@ function buildTaskRow(task, color, days, dayWidths, jalons, todayStr, ctx, rowIn
     if (approWidthMm > 0) {
       // Motif à l'intérieur de la barre, aligné à gauche et tronqué si trop long
       const lbl = task.appro_materiau || `Appro. ${task.appro_duree}j`
-      approHtml = `<div style="position:absolute;left:-${approWidthMm.toFixed(2)}mm;width:${approWidthMm.toFixed(2)}mm;top:1mm;bottom:1mm;background:${fondDelai};border:1px dashed ${color}80;display:flex;align-items:center;overflow:hidden;z-index:3;pointer-events:none">
+      approHtml = `<div style="position:absolute;left:-${approWidthMm.toFixed(2)}mm;width:${approWidthMm.toFixed(2)}mm;top:${dens.barPadMm}mm;bottom:${dens.barPadMm}mm;background:${fondDelai};border:1px dashed ${color}80;display:flex;align-items:center;overflow:hidden;z-index:3;pointer-events:none">
         <span style="font-size:5pt;font-style:italic;color:${color};filter:brightness(0.6);white-space:nowrap;overflow:hidden;padding:0 1mm">${lbl}</span>
       </div>`
     }
@@ -260,7 +276,7 @@ function buildTaskRow(task, color, days, dayWidths, jalons, todayStr, ctx, rowIn
     const geoDelai = computeBarGeometry(days, dayWidths, formatDateISO(addWorkingDays(lastDay, 1)), task.delai_apres)
     if (geoDelai && geoDelai.widthMm > 0) {
       const finDelaiMm = barWidthMm + geoDelai.widthMm
-      delaiApresHtml = `<div style="position:absolute;left:${barWidthMm.toFixed(2)}mm;width:${geoDelai.widthMm.toFixed(2)}mm;top:1mm;bottom:1mm;background:${fondDelai};border:1px dashed ${color}80;z-index:3;pointer-events:none"></div>`
+      delaiApresHtml = `<div style="position:absolute;left:${barWidthMm.toFixed(2)}mm;width:${geoDelai.widthMm.toFixed(2)}mm;top:${dens.barPadMm}mm;bottom:${dens.barPadMm}mm;background:${fondDelai};border:1px dashed ${color}80;z-index:3;pointer-events:none"></div>`
       if (task.label_apres) {
         delaiApresHtml += `<div style="position:absolute;left:${finDelaiMm.toFixed(2)}mm;padding-left:3px;top:0;bottom:0;display:flex;align-items:center;white-space:nowrap;font-size:5.5pt;font-style:italic;color:#9C9591;z-index:10">${task.label_apres}</div>`
       }
@@ -303,8 +319,8 @@ function buildTaskRow(task, color, days, dayWidths, jalons, todayStr, ctx, rowIn
         ? `<span style="margin-left:1.5mm;font-size:5.5pt;color:#9C9591">${task.avancement}%</span>`
         : ''
       barContent = `${approHtml}${delaiApresHtml}
-        <div data-task-id="${task.id}" data-type="task" style="position:absolute;left:0;width:${barWidthMm.toFixed(2)}mm;top:1mm;bottom:1mm;background:${color};z-index:4;overflow:hidden">${progressBar}</div>
-        <div style="position:absolute;left:${barWidthMm.toFixed(2)}mm;padding-left:3px;top:0;bottom:0;display:flex;align-items:center;white-space:nowrap;font-size:6.5pt;color:#1F1B17;z-index:10">${labelLigne}${labelAvancement}</div>`
+        <div data-task-id="${task.id}" data-type="task" style="position:absolute;left:0;width:${barWidthMm.toFixed(2)}mm;top:${dens.barPadMm}mm;bottom:${dens.barPadMm}mm;background:${color};z-index:4;overflow:hidden">${progressBar}</div>
+        <div style="position:absolute;left:${barWidthMm.toFixed(2)}mm;padding-left:3px;top:0;bottom:0;display:flex;align-items:center;white-space:nowrap;font-size:${dens.barLabelPt}pt;color:#1F1B17;z-index:10">${labelLigne}${labelAvancement}</div>`
     }
 
     let segContent = ''
@@ -312,7 +328,7 @@ function buildTaskRow(task, color, days, dayWidths, jalons, todayStr, ctx, rowIn
       if (segStartIdx !== idx || segWidthMm <= 0) return
       const segColor = getSegColor(seg, color, zones)
       const segLabel = seg.nom ? `<span style="margin-left:1.5mm;font-size:5.5pt;color:#1F1B17">${seg.nom}</span>` : ''
-      segContent += `<div data-segment-id="${seg.id}" data-task-id="${task.id}" data-type="segment" style="position:absolute;left:0;width:${segWidthMm.toFixed(2)}mm;top:1mm;bottom:1mm;background:${segColor};outline:1px dashed rgba(255,255,255,0.6);outline-offset:-1px;z-index:3;overflow:hidden;display:flex;align-items:center">${segLabel}</div>`
+      segContent += `<div data-segment-id="${seg.id}" data-task-id="${task.id}" data-type="segment" style="position:absolute;left:0;width:${segWidthMm.toFixed(2)}mm;top:${dens.barPadMm}mm;bottom:${dens.barPadMm}mm;background:${segColor};outline:1px dashed rgba(255,255,255,0.6);outline-offset:-1px;z-index:3;overflow:hidden;display:flex;align-items:center">${segLabel}</div>`
     })
 
     // Repère vertical du jalon, sans libellé : celui-ci est rendu une seule fois
@@ -323,7 +339,7 @@ function buildTaskRow(task, color, days, dayWidths, jalons, todayStr, ctx, rowIn
       .map(j => `<div style="position:absolute;top:0;bottom:0;left:50%;width:1.5px;background:${j.couleur};opacity:0.55;z-index:5"></div>`)
       .join('')
 
-    return `<td style="width:${dayWidths[idx].toFixed(2)}mm;border-bottom:0.5px solid #f0f0f0;border-left:${borderLeft};height:6mm;padding:0;overflow:visible;position:relative;background:${bg}">${barContent}${segContent}${jalonLines}</td>`
+    return `<td style="width:${dayWidths[idx].toFixed(2)}mm;border-bottom:0.5px solid #f0f0f0;border-left:${borderLeft};height:${dens.rowMm}mm;padding:0;overflow:visible;position:relative;background:${bg}">${barContent}${segContent}${jalonLines}</td>`
   }).join('')
 
   const suffixe = rowInfo?.suffixe
@@ -340,8 +356,9 @@ function buildHtml({
   tasks, lots, jalons, affaire, dateDebut, dateFin, largeurMm, hauteurMm,
   zones = [], colorMode = 'lot', viewMode = 'day',
   segments = [], dependances = [], periodes = [], showDependances = true,
-  groupMode = 'lot',
+  groupMode = 'lot', density = 'normal',
 }) {
+  const dens = densityConfig(density)
   const dStart = parseDate(dateDebut)
   const dEnd = parseDate(dateFin)
   const days = buildDaysList(dStart, dEnd)
@@ -349,7 +366,7 @@ function buildHtml({
   const contentMm = largeurMm - 20 - LABEL_COL_MM
   const dayWidths = computeDayWidths(days, contentMm, viewMode)
   const todayStr = formatDateISO(new Date())
-  const rowCtx = { segments, periodes, zones }
+  const rowCtx = { segments, periodes, zones, density }
 
   // Chemins critiques : deux sources, comme dans la timeline interactive — les
   // dépendances tâche→tâche historiques (`depends_on`) et la table étendue
@@ -395,7 +412,7 @@ function buildHtml({
       if (row.type === 'header-zone') {
         const couleur = row.couleur ?? '#C9C4C0'
         lotsRows += `<tr>
-          <td colspan="${1 + days.length}" style="background:${couleur}18;color:${couleur};font-weight:bold;font-size:7pt;padding:0 2mm;height:5.5mm;border-bottom:1px solid ${couleur}">
+          <td colspan="${1 + days.length}" style="background:${couleur}18;color:${couleur};font-weight:bold;font-size:${dens.groupPt}pt;padding:0 2mm;height:${dens.groupMm}mm;border-bottom:1px solid ${couleur}">
             ${(row.displayName ?? '').toUpperCase()}
           </td>
         </tr>`
@@ -421,7 +438,7 @@ function buildHtml({
       const lotTasks = tasks.filter(t => t.lot_id === lot.id)
       if (!lotTasks.length) return
       lotsRows += `<tr>
-        <td colspan="${1 + days.length}" style="background:${lot.couleur}18;color:${lot.couleur};font-weight:bold;font-size:7pt;padding:0 2mm;height:5.5mm;border-bottom:0.5px solid rgba(0,0,0,0.08)">
+        <td colspan="${1 + days.length}" style="background:${lot.couleur}18;color:${lot.couleur};font-weight:bold;font-size:${dens.groupPt}pt;padding:0 2mm;height:${dens.groupMm}mm;border-bottom:0.5px solid rgba(0,0,0,0.08)">
           ${lot.num_lot ?? ''} – ${lot.nom}
         </td>
       </tr>`
@@ -429,7 +446,7 @@ function buildHtml({
     })
     const unassigned = tasks.filter(t => t.lot_id == null)
     if (unassigned.length > 0) {
-      lotsRows += `<tr><td colspan="${1 + days.length}" style="color:#9C9591;font-weight:bold;font-size:7pt;padding:0 2mm;height:5.5mm;border-bottom:0.5px solid rgba(0,0,0,0.08)">Sans lot</td></tr>`
+      lotsRows += `<tr><td colspan="${1 + days.length}" style="color:#9C9591;font-weight:bold;font-size:${dens.groupPt}pt;padding:0 2mm;height:${dens.groupMm}mm;border-bottom:0.5px solid rgba(0,0,0,0.08)">Sans lot</td></tr>`
       unassigned.forEach(t => { lotsRows += buildTaskRow(t, getBarColor(t, null, zones, colorMode), days, dayWidths, jalons, todayStr, rowCtx) })
     }
   }
@@ -460,12 +477,12 @@ function buildHtml({
 
   .col-label { width: ${LABEL_COL_MM}mm; min-width: ${LABEL_COL_MM}mm; }
 
-  .hdr-year  { background: #F5F2F0; font-size: 7pt; font-weight: bold; color: #1F1B17; text-align: center; border: 0.5px solid #ddd; padding: 1mm 0; }
-  .hdr-month { background: #FAF7F2; font-size: 6.5pt; font-weight: bold; color: #E8602C; text-align: center; border: 0.5px solid #ddd; padding: 1mm 0; }
-  .hdr-week  { background: #FAFAF9; font-size: 5.5pt; color: #9C9591; text-align: center; border: 0.5px solid #ddd; padding: 0.6mm 0; }
-  .hdr-day   { font-size: 5pt; text-align: center; border-bottom: 0.5px solid #ddd; padding: 0.5mm 0; }
+  .hdr-year  { background: #F5F2F0; font-size: ${dens.groupPt}pt; font-weight: bold; color: #1F1B17; text-align: center; border: 0.5px solid #ddd; padding: ${dens.hdrPadMm}mm 0; }
+  .hdr-month { background: #FAF7F2; font-size: ${dens.labelPt}pt; font-weight: bold; color: #E8602C; text-align: center; border: 0.5px solid #ddd; padding: ${dens.hdrPadMm}mm 0; }
+  .hdr-week  { background: #FAFAF9; font-size: ${(dens.labelPt - 1).toFixed(1)}pt; color: #9C9591; text-align: center; border: 0.5px solid #ddd; padding: ${(dens.hdrPadMm * 0.6).toFixed(2)}mm 0; }
+  .hdr-day   { font-size: ${(dens.labelPt - 1.5).toFixed(1)}pt; text-align: center; border-bottom: 0.5px solid #ddd; padding: ${(dens.hdrPadMm * 0.5).toFixed(2)}mm 0; }
 
-  .plabel { width: ${LABEL_COL_MM}mm; border: 0.5px solid #eee; border-right: 1px solid #ccc; padding: 0 1.5mm; vertical-align: middle; overflow: hidden; white-space: nowrap; height: 6mm; font-size: 6.5pt; color: #1F1B17; }
+  .plabel { width: ${LABEL_COL_MM}mm; border: 0.5px solid #eee; border-right: 1px solid #ccc; padding: 0 1.5mm; vertical-align: middle; overflow: hidden; white-space: nowrap; height: ${dens.rowMm}mm; font-size: ${dens.labelPt}pt; color: #1F1B17; }
 
   .legend { margin-top: 5mm; padding-top: 3mm; border-top: 0.5px solid #eee; display: flex; align-items: center; gap: 5mm; flex-wrap: wrap; }
   .leg-title { font-size: 5.5pt; font-weight: bold; color: #9C9591; text-transform: uppercase; letter-spacing: 0.05em; }

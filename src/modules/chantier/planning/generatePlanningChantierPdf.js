@@ -1,5 +1,6 @@
 import { parseDate, formatDateISO, addWorkingDays } from './types'
 import { assignLabelLanes } from './jalonLayout'
+import { buildRowsByZone } from './groupByZone'
 
 const WEEKEND_RATIO = 0.35
 const LABEL_COL_MM = 45
@@ -217,11 +218,17 @@ function buildDayHeaders(days, dayWidths, todayStr) {
   }).join('')
 }
 
-function buildTaskRow(task, color, days, dayWidths, jalons, todayStr, ctx) {
+function buildTaskRow(task, color, days, dayWidths, jalons, todayStr, ctx, rowInfo) {
   const { segments = [], periodes = [], zones = [] } = ctx ?? {}
+  // En groupement par zone, une tâche peut n'apparaître que par ses segments
+  // (ligne dupliquée) : `showMainBar` et `visibleSegmentIds` viennent alors de
+  // buildRowsByZone, la même source que la timeline interactive.
+  const showMainBar = rowInfo?.showMainBar !== false
+  const visibleSegmentIds = rowInfo?.visibleSegmentIds ?? null
+  const labelLigne = rowInfo?.displayName ?? task.nom
 
   const taskStartStr = typeof task.debut === 'string' ? task.debut.split('T')[0] : formatDateISO(parseDate(task.debut))
-  const mainGeo = computeBarGeometry(days, dayWidths, taskStartStr, task.duree)
+  const mainGeo = showMainBar ? computeBarGeometry(days, dayWidths, taskStartStr, task.duree) : null
   const startIdx = mainGeo?.startIdx ?? -1
   const barWidthMm = mainGeo?.widthMm ?? 0
 
@@ -265,6 +272,7 @@ function buildTaskRow(task, color, days, dayWidths, jalons, todayStr, ctx) {
   // et l'extension d'appro ci-dessus).
   const segGeoms = segments
     .filter(s => s.tache_id === task.id)
+    .filter(s => !visibleSegmentIds || visibleSegmentIds.includes(s.id))
     .map(seg => {
       const segStartStr = typeof seg.date_debut === 'string' ? seg.date_debut.split('T')[0] : formatDateISO(parseDate(seg.date_debut))
       const geo = computeBarGeometry(days, dayWidths, segStartStr, seg.duree_jours ?? 0)
@@ -296,7 +304,7 @@ function buildTaskRow(task, color, days, dayWidths, jalons, todayStr, ctx) {
         : ''
       barContent = `${approHtml}${delaiApresHtml}
         <div data-task-id="${task.id}" data-type="task" style="position:absolute;left:0;width:${barWidthMm.toFixed(2)}mm;top:1mm;bottom:1mm;background:${color};z-index:4;overflow:hidden">${progressBar}</div>
-        <div style="position:absolute;left:${barWidthMm.toFixed(2)}mm;padding-left:3px;top:0;bottom:0;display:flex;align-items:center;white-space:nowrap;font-size:6.5pt;color:#1F1B17;z-index:10">${task.nom}${labelAvancement}</div>`
+        <div style="position:absolute;left:${barWidthMm.toFixed(2)}mm;padding-left:3px;top:0;bottom:0;display:flex;align-items:center;white-space:nowrap;font-size:6.5pt;color:#1F1B17;z-index:10">${labelLigne}${labelAvancement}</div>`
     }
 
     let segContent = ''
@@ -318,8 +326,12 @@ function buildTaskRow(task, color, days, dayWidths, jalons, todayStr, ctx) {
     return `<td style="width:${dayWidths[idx].toFixed(2)}mm;border-bottom:0.5px solid #f0f0f0;border-left:${borderLeft};height:6mm;padding:0;overflow:visible;position:relative;background:${bg}">${barContent}${segContent}${jalonLines}</td>`
   }).join('')
 
+  const suffixe = rowInfo?.suffixe
+    ? `<span style="color:#9C9591;font-size:5.5pt;margin-left:1.5mm">${rowInfo.suffixe}</span>`
+    : ''
+
   return `<tr>
-    <td class="plabel">${task.num_tache ? `<span style="color:#9C9591;margin-right:1.5mm">${task.num_tache}</span>` : ''}${task.nom}</td>
+    <td class="plabel">${task.num_tache ? `<span style="color:#9C9591;margin-right:1.5mm">${task.num_tache}</span>` : ''}${labelLigne}${suffixe}</td>
     ${cells}
   </tr>`
 }
@@ -328,6 +340,7 @@ function buildHtml({
   tasks, lots, jalons, affaire, dateDebut, dateFin, largeurMm, hauteurMm,
   zones = [], colorMode = 'lot', viewMode = 'day',
   segments = [], dependances = [], periodes = [], showDependances = true,
+  groupMode = 'lot',
 }) {
   const dStart = parseDate(dateDebut)
   const dEnd = parseDate(dateFin)
@@ -371,22 +384,54 @@ function buildHtml({
   const weekHeaders  = showWeekRow ? buildWeekHeaders(days) : ''
   const dayHeaders   = showDayRow ? buildDayHeaders(days, dayWidths, todayStr) : ''
 
-  const sortedLots = [...lots].sort((a, b) => (a.ordre ?? 0) - (b.ordre ?? 0))
+  // ── Corps du tableau : groupé par lot (défaut) ou par zone ──
   let lotsRows = ''
-  sortedLots.forEach(lot => {
-    const lotTasks = tasks.filter(t => t.lot_id === lot.id)
-    if (!lotTasks.length) return
-    lotsRows += `<tr>
-      <td colspan="${1 + days.length}" style="background:${lot.couleur}18;color:${lot.couleur};font-weight:bold;font-size:7pt;padding:0 2mm;height:5.5mm;border-bottom:0.5px solid rgba(0,0,0,0.08)">
-        ${lot.num_lot ?? ''} – ${lot.nom}
-      </td>
-    </tr>`
-    lotTasks.forEach(t => { lotsRows += buildTaskRow(t, getBarColor(t, lot, zones, colorMode), days, dayWidths, jalons, todayStr, rowCtx) })
-  })
-  const unassigned = tasks.filter(t => t.lot_id == null)
-  if (unassigned.length > 0) {
-    lotsRows += `<tr><td colspan="${1 + days.length}" style="color:#9C9591;font-weight:bold;font-size:7pt;padding:0 2mm;height:5.5mm;border-bottom:0.5px solid rgba(0,0,0,0.08)">Sans lot</td></tr>`
-    unassigned.forEach(t => { lotsRows += buildTaskRow(t, getBarColor(t, null, zones, colorMode), days, dayWidths, jalons, todayStr, rowCtx) })
+
+  if (groupMode === 'zone') {
+    // Mêmes lignes que la vue « Par zone » de l'éditeur : une tâche peut
+    // apparaître dans plusieurs zones — une fois avec sa barre principale, une
+    // fois par ses seuls segments.
+    buildRowsByZone(tasks, zones, segments).forEach(row => {
+      if (row.type === 'header-zone') {
+        const couleur = row.couleur ?? '#C9C4C0'
+        lotsRows += `<tr>
+          <td colspan="${1 + days.length}" style="background:${couleur}18;color:${couleur};font-weight:bold;font-size:7pt;padding:0 2mm;height:5.5mm;border-bottom:1px solid ${couleur}">
+            ${(row.displayName ?? '').toUpperCase()}
+          </td>
+        </tr>`
+        return
+      }
+      const lot = lots.find(l => l.id === row.lotId) ?? null
+      lotsRows += buildTaskRow(
+        row.task,
+        getBarColor(row.task, lot, zones, colorMode),
+        days, dayWidths, jalons, todayStr, rowCtx,
+        {
+          showMainBar: row.showMainBar,
+          visibleSegmentIds: row.visibleSegmentIds,
+          displayName: row.displayName,
+          // Le lot n'est plus le regroupement : on le rappelle en petit
+          suffixe: lot ? `${lot.num_lot ?? ''} ${lot.nom}`.trim() : null,
+        }
+      )
+    })
+  } else {
+    const sortedLots = [...lots].sort((a, b) => (a.ordre ?? 0) - (b.ordre ?? 0))
+    sortedLots.forEach(lot => {
+      const lotTasks = tasks.filter(t => t.lot_id === lot.id)
+      if (!lotTasks.length) return
+      lotsRows += `<tr>
+        <td colspan="${1 + days.length}" style="background:${lot.couleur}18;color:${lot.couleur};font-weight:bold;font-size:7pt;padding:0 2mm;height:5.5mm;border-bottom:0.5px solid rgba(0,0,0,0.08)">
+          ${lot.num_lot ?? ''} – ${lot.nom}
+        </td>
+      </tr>`
+      lotTasks.forEach(t => { lotsRows += buildTaskRow(t, getBarColor(t, lot, zones, colorMode), days, dayWidths, jalons, todayStr, rowCtx) })
+    })
+    const unassigned = tasks.filter(t => t.lot_id == null)
+    if (unassigned.length > 0) {
+      lotsRows += `<tr><td colspan="${1 + days.length}" style="color:#9C9591;font-weight:bold;font-size:7pt;padding:0 2mm;height:5.5mm;border-bottom:0.5px solid rgba(0,0,0,0.08)">Sans lot</td></tr>`
+      unassigned.forEach(t => { lotsRows += buildTaskRow(t, getBarColor(t, null, zones, colorMode), days, dayWidths, jalons, todayStr, rowCtx) })
+    }
   }
 
   return `<!DOCTYPE html>

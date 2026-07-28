@@ -57,7 +57,7 @@ function computeRange(tasks) {
 
 export function ExportPdfModal({
   open, onClose, lots = [], tasks = [], jalons = [], affaire = {},
-  zones = [], colorMode = 'lot', viewMode = 'day',
+  zones = [], colorMode = 'lot', viewMode = 'day', groupMode = 'lot',
   segments = [], dependances = [], periodes = [],
 }) {
   const computed = useMemo(() => computeRange(tasks), [tasks])
@@ -72,6 +72,7 @@ export function ExportPdfModal({
   const [exportColorMode, setExportColorMode] = useState(colorMode ?? 'lot')
   const [exportViewMode,  setExportViewMode]  = useState(viewMode ?? 'day')
   const [exportDependances, setExportDependances] = useState(true)
+  const [exportGroupMode, setExportGroupMode] = useState(groupMode ?? 'lot')
 
   useEffect(() => {
     if (!open) return
@@ -79,7 +80,8 @@ export function ExportPdfModal({
     setDateFin(computed.fin)
     setExportColorMode(colorMode ?? 'lot')
     setExportViewMode(viewMode ?? 'day')
-  }, [open, computed, colorMode, viewMode])
+    setExportGroupMode(groupMode ?? 'lot')
+  }, [open, computed, colorMode, viewMode, groupMode])
 
   const { totalDays, totalWeeks } = useMemo(() => {
     if (!dateDebut || !dateFin) return { totalDays: 0, totalWeeks: 0 }
@@ -130,6 +132,7 @@ export function ExportPdfModal({
       dependances,
       periodes,
       showDependances: exportDependances,
+      groupMode: zones.length > 0 ? exportGroupMode : 'lot',
     })
     onClose()
   }
@@ -293,6 +296,45 @@ export function ExportPdfModal({
             )}
           </div>
 
+          {/* ── B2bis) GROUPEMENT ── */}
+          {zones.length > 0 && (
+            <div style={{ marginBottom: 20 }}>
+              <label style={{
+                fontSize: 11, fontWeight: 500, color: '#9C9591',
+                textTransform: 'uppercase', letterSpacing: '0.05em',
+                display: 'block', marginBottom: 8,
+              }}>
+                Groupement
+              </label>
+              <div style={{ display: 'flex', gap: 8 }}>
+                {[
+                  { value: 'lot', label: 'Par lot' },
+                  { value: 'zone', label: 'Par zone' },
+                ].map(opt => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setExportGroupMode(opt.value)}
+                    style={{
+                      padding: '6px 14px',
+                      fontSize: 12,
+                      border: exportGroupMode === opt.value ? '1.5px solid #E8602C' : '0.5px solid rgba(0,0,0,0.15)',
+                      background: exportGroupMode === opt.value ? '#FAF0EB' : 'transparent',
+                      color: exportGroupMode === opt.value ? '#E8602C' : '#5E5854',
+                      cursor: 'pointer',
+                      fontWeight: exportGroupMode === opt.value ? 500 : 400,
+                    }}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+              <p style={{ fontSize: 11, color: '#9C9591', marginTop: 6, fontStyle: 'italic' }}>
+                Pré-sélectionné selon le groupement actif.
+              </p>
+            </div>
+          )}
+
           {/* ── B3) GRANULARITÉ ── */}
           <div style={{ marginBottom: 20 }}>
             <label style={{
@@ -348,8 +390,16 @@ export function ExportPdfModal({
           <div style={{ borderRadius: 2, backgroundColor: '#FAF7F2', border: '0.5px solid rgba(0,0,0,0.08)', padding: '12px 16px' }}>
             <p style={{ fontSize: 12, color: '#1F1B17', fontWeight: 500, marginBottom: 4 }}>Récapitulatif</p>
             <p style={{ fontSize: 11, color: '#5E5854', lineHeight: 1.7 }}>
-              {tachesInPeriod.length} tâche{tachesInPeriod.length > 1 ? 's' : ''} sur la période sélectionnée<br />
-              Lots inclus : {lots.length > 0 ? lots.map(l => l.nom).join(', ') : '—'}<br />
+              {tachesInPeriod.length} tâche{tachesInPeriod.length > 1 ? 's' : ''} sur la période sélectionnée
+              {' · '}
+              {exportGroupMode === 'zone' && zones.length > 0
+                ? `${zones.length} zone${zones.length > 1 ? 's' : ''}`
+                : `${lots.length} lot${lots.length > 1 ? 's' : ''}`}
+              <br />
+              {exportGroupMode === 'zone' && zones.length > 0
+                ? `Zones : ${zones.map(z => z.nom).join(', ')}`
+                : `Lots inclus : ${lots.length > 0 ? lots.map(l => l.nom).join(', ') : '—'}`}
+              <br />
               Format : {finalFormat.w} mm × {finalFormat.h} mm<br />
               <span style={{ color: '#9C9591', fontSize: 10 }}>Le tableau sera mis à l'échelle pour tenir sur une page.</span>
             </p>

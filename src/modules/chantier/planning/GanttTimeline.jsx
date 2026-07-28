@@ -27,7 +27,11 @@ const MONTH_WIDTH_BASE = 80
 export const HEADER_HEIGHT = 84
 const HEADER_ROW_YEAR = 24
 const HEADER_ROW_MONTH = 24
-const BAR_PAD = 4
+// Marge verticale d'une barre, proportionnelle à la hauteur de ligne : en mode
+// compact la barre doit rester lisible, en mode confort elle ne doit pas s'étirer.
+function barPadFor(rowHeight) {
+  return Math.max(3, Math.round(rowHeight * 0.15))
+}
 const WEEKEND_RATIO = 0.35
 
 // Jalons : en dessous de cet écart horizontal, deux labels se chevauchent et
@@ -435,6 +439,7 @@ export function GanttTimeline({
   periodes = [], getNextWorkingDay, dragOverTaskId = null,
   drawMode = false, onDrawCreate, scrollRef = null,
 }) {
+  const BAR_PAD = barPadFor(rowHeight)
   const weekWidth = WEEK_WIDTH_BASE * zoomLevel
   const monthWidth = MONTH_WIDTH_BASE * zoomLevel
   // ── Date référence ────────────────────────────────────────────────────────────
@@ -995,7 +1000,7 @@ export function GanttTimeline({
       .filter(Boolean)
 
     return [...legacy, ...extended]
-  }, [tasks, segments, dependances, rowIndexMap, rowHeight, geo, rowY])
+  }, [tasks, segments, dependances, rowIndexMap, rowHeight, BAR_PAD, geo, rowY])
 
   // ── Mouse handlers ─────────────────────────────────────────────────────────────
   const handleMouseMove = useCallback((e) => {
@@ -1819,9 +1824,13 @@ function TaskBarRow({
   const { left, width } = computeGeometry(debut, task.duree, geo)
   const unitWidth = geo.viewMode === 'month' ? geo.monthWidth : geo.viewMode === 'week' ? geo.weekWidth : geo.dayWidth
   const HANDLE_W = Math.max(6, Math.min(10, unitWidth * 0.25))
-  const connectionPointSize = geo.viewMode === 'day' ? 8 : 10
+  // En ligne compacte, des pastilles plus petites évitent qu'elles débordent
+  const connectionPointSize = rowHeight <= 28 ? 6 : geo.viewMode === 'day' ? 8 : 10
   const DOT_R = connectionPointSize / 2
+  const BAR_PAD = barPadFor(rowHeight)
   const BAR_BOTTOM = rowHeight - BAR_PAD
+  // Libellés resserrés en compact, aérés en confort
+  const labelFontSize = rowHeight <= 28 ? 10 : rowHeight >= 44 ? 12 : 11
 
   // À fort dézoom, les labels à droite des barres se chevauchent — on les masque.
   // Seuils proportionnés à l'échelle propre à chaque vue (dayWidth / weekWidth / monthWidth).
@@ -1954,7 +1963,7 @@ function TaskBarRow({
         display: 'flex',
         alignItems: 'center',
         whiteSpace: 'nowrap',
-        fontSize: 11,
+        fontSize: labelFontSize,
         fontWeight: 500,
         color: '#1F1B17',
         pointerEvents: 'none',
@@ -1972,14 +1981,13 @@ function TaskBarRow({
       {/* ── Extension d'approvisionnement ────────────────────────── */}
       {showMainBar && task.appro_actif && task.appro_duree > 0 && (
         <ApproBar
-          task={task} color={color} geo={geo}
-          rowHeight={rowHeight} taskLeft={left} taskWidth={width}
+          task={task} color={color} geo={geo} barPad={BAR_PAD}
         />
       )}
 
       {/* ── Délai après la tâche (séchage, livraison…) ────────────── */}
       {showMainBar && task.delai_apres > 0 && (
-        <DelaiApresBar task={task} color={color} geo={geo} />
+        <DelaiApresBar task={task} color={color} geo={geo} barPad={BAR_PAD} />
       )}
 
       {/* ── Segments supplémentaires ────────────────────────────────── */}
@@ -2059,7 +2067,7 @@ function TaskBarRow({
                 display: 'flex',
                 alignItems: 'center',
                 whiteSpace: 'nowrap',
-                fontSize: 11,
+                fontSize: labelFontSize,
                 fontWeight: 500,
                 color: '#1F1B17',
                 pointerEvents: 'none',
@@ -2158,10 +2166,10 @@ function TaskBarRow({
 
 // Remplissage commun aux deux barres de délai : mêmes hachures à 45°, même
 // hauteur que la barre de tâche — seule leur position (avant / après) diffère.
-function delaiBarStyle(color) {
+function delaiBarStyle(color, barPad) {
   return {
     position: 'absolute',
-    top: BAR_PAD, bottom: BAR_PAD,
+    top: barPad, bottom: barPad,
     background: `repeating-linear-gradient(45deg, ${color}28, ${color}28 4px, ${color}55 4px, ${color}55 8px)`,
     border: `1px dashed ${color}80`,
     pointerEvents: 'none', userSelect: 'none',
@@ -2169,7 +2177,7 @@ function delaiBarStyle(color) {
   }
 }
 
-function ApproBar({ task, color, geo }) {
+function ApproBar({ task, color, geo, barPad }) {
   const taskStartDate = parseDate(task.debut)
   const approStartDate = addWorkingDays(taskStartDate, -task.appro_duree)
   const { left: approLeft, width: approWidth } = computeGeometry(approStartDate, task.appro_duree, geo)
@@ -2180,13 +2188,13 @@ function ApproBar({ task, color, geo }) {
     <>
       <div
         title={`${task.nom} · Délai avant : ${task.appro_duree} j. ouvré(s)${task.appro_materiau ? ` — ${task.appro_materiau}` : ''}`}
-        style={{ ...delaiBarStyle(color), left: approLeft, width: largeur }}
+        style={{ ...delaiBarStyle(color, barPad), left: approLeft, width: largeur }}
       />
       {/* Motif à l'intérieur de la barre, aligné à gauche et tronqué si besoin */}
       <div style={{
         position: 'absolute',
         left: approLeft + 4, maxWidth: Math.max(largeur - 8, 0),
-        top: BAR_PAD, bottom: BAR_PAD,
+        top: barPad, bottom: barPad,
         display: 'flex', alignItems: 'center',
         fontSize: 10, fontStyle: 'italic', color,
         whiteSpace: 'nowrap', overflow: 'hidden',
@@ -2206,7 +2214,7 @@ function ApproBar({ task, color, geo }) {
 // Hachures inversées (-45°) et plus transparentes que l'appro, pour distinguer
 // les deux d'un coup d'œil.
 
-function DelaiApresBar({ task, color, geo }) {
+function DelaiApresBar({ task, color, geo, barPad }) {
   const lastDay = addWorkingDays(parseDate(task.debut), Math.max(1, task.duree) - 1)
   const debutDelai = addWorkingDays(lastDay, 1)
   const { left, width } = computeGeometry(debutDelai, task.delai_apres, geo)
@@ -2217,14 +2225,14 @@ function DelaiApresBar({ task, color, geo }) {
     <>
       <div
         title={`${task.nom} · Délai après : ${task.delai_apres} j. ouvré(s)${motif ? ` — ${motif}` : ''}`}
-        style={{ ...delaiBarStyle(color), left, width: largeur }}
+        style={{ ...delaiBarStyle(color, barPad), left, width: largeur }}
       />
       {/* Motif à l'extérieur, à droite de la barre — comme le nom d'une tâche */}
       {motif && (
         <div style={{
           position: 'absolute',
           left: left + largeur + 4,
-          top: BAR_PAD, bottom: BAR_PAD,
+          top: barPad, bottom: barPad,
           display: 'flex', alignItems: 'center',
           fontSize: 10, fontStyle: 'italic', color: '#9C9591',
           whiteSpace: 'nowrap',

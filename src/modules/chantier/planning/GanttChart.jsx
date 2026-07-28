@@ -3,6 +3,7 @@ import { Trash2, X, ZoomIn, ZoomOut, Calendar, Eye, Layers, Palette } from 'luci
 import * as XLSX from 'xlsx-js-style'
 import { parseDate, formatDateISO, computeLag, addWorkingDays } from './types'
 import { propagateAllDependencies, endDateChanged, entityKey } from './propagation'
+import { buildRowsByZone } from './groupByZone'
 import { supabase } from '../../../core/supabase/client'
 import { usePlanningZones } from '../../../shared/hooks/usePlanningZones'
 import { usePlanningSegments } from '../../../shared/hooks/usePlanningSegments'
@@ -17,113 +18,6 @@ import { ExportPdfModal } from './ExportPdfModal'
 import { JalonModal } from './JalonModal'
 import { ZonesModal } from './ZonesModal'
 import { PeriodesBloqueesModal } from './PeriodesBloqueesModal'
-
-// ─── Lignes d'affichage en groupement "Par zone" ──────────────────────────────
-//
-// Une tâche peut apparaître sur plusieurs lignes en mode zone : une ligne
-// « principale » dans son propre groupe de zone (barre + ses segments non
-// zonés/zonés-ici), et une ligne « dupliquée » (segments seulement, pas de
-// barre principale) dans chaque autre zone où l'un de ses segments est placé.
-//
-// Note : contrairement au comportement « Par lot » (calculé directement par
-// GanttSidebar/GanttTimeline à partir de `tasks`+`lots`), ce mode précalcule
-// un tableau `rows` consommé tel quel par les deux composants — voir leur
-// prop `rows` (`null` = comportement par lot inchangé).
-function buildRowsByZone(tasks, zones, segments) {
-  const rows = []
-
-  // ── Groupe « Sans zone » en premier — tâches sans zone_id ──────────────────
-  // (leurs segments zonés apparaîtront en ligne dupliquée dans leur zone respective)
-  const tachesSansZone = tasks.filter((t) => t.zone_id == null)
-
-  if (tachesSansZone.length > 0) {
-    rows.push({
-      type: 'header-zone',
-      id: 'header-sans-zone',
-      zoneId: null,
-      displayName: 'Sans zone',
-      couleur: '#C9C4C0',
-    })
-    tachesSansZone.forEach((task, idx) => {
-      rows.push({
-        type: 'task-row',
-        id: `task-${task.id}-no-zone`,
-        task,
-        zoneId: null,
-        lotId: task.lot_id,
-        showMainBar: true,
-        visibleSegmentIds: segments
-          .filter((s) => s.tache_id === task.id && !s.zone_id)
-          .map((s) => s.id),
-        displayName: task.nom,
-        numero: String(idx + 1).padStart(2, '0'),
-      })
-    })
-  }
-
-  // ── Un groupe par zone ──────────────────────────────────────────────────────
-  zones.forEach((zone) => {
-    const rowsDeZone = []
-    let numeroIdx = 0
-
-    tasks.forEach((task) => {
-      const taskInZone = task.zone_id === zone.id
-      const segsInZone = segments.filter((s) => s.tache_id === task.id && s.zone_id === zone.id)
-
-      if (!taskInZone && segsInZone.length === 0) return
-      numeroIdx++
-
-      if (taskInZone) {
-        // Ligne principale : barre tâche + ses segments de cette zone ou non zonés
-        const segsVisibles = segments
-          .filter((s) => s.tache_id === task.id && (s.zone_id === zone.id || !s.zone_id))
-          .map((s) => s.id)
-
-        rowsDeZone.push({
-          type: 'task-row',
-          id: `task-${task.id}-zone-${zone.id}`,
-          task,
-          zoneId: zone.id,
-          lotId: task.lot_id,
-          showMainBar: true,
-          visibleSegmentIds: segsVisibles,
-          displayName: task.nom,
-          numero: String(numeroIdx).padStart(2, '0'),
-        })
-      } else {
-        // Ligne dupliquée : uniquement les segments de cette tâche placés dans cette
-        // zone (pas de barre principale, déjà affichée ailleurs — Sans zone ou sa
-        // propre zone). Nom affiché = nom propre du 1er segment sinon nom de la tâche.
-        const nomAffiche = segsInZone[0]?.nom ?? task.nom
-
-        rowsDeZone.push({
-          type: 'task-row',
-          id: `task-${task.id}-seg-zone-${zone.id}`,
-          task,
-          zoneId: zone.id,
-          lotId: task.lot_id,
-          showMainBar: false,
-          visibleSegmentIds: segsInZone.map((s) => s.id),
-          displayName: nomAffiche,
-          numero: String(numeroIdx).padStart(2, '0'),
-        })
-      }
-    })
-
-    if (rowsDeZone.length === 0) return
-
-    rows.push({
-      type: 'header-zone',
-      id: `header-zone-${zone.id}`,
-      zoneId: zone.id,
-      displayName: zone.nom,
-      couleur: zone.couleur,
-    })
-    rows.push(...rowsDeZone)
-  })
-
-  return rows
-}
 
 // ─── Prochaine date disponible (pour la création d'une nouvelle tâche) ────────
 //
@@ -157,6 +51,14 @@ function pastel(hex, ratio) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
+
+// Densité des lignes du Gantt
+const ROW_HEIGHT_OPTIONS = [
+  { label: 'Compact', value: 24 },
+  { label: 'Normal', value: 36 },
+  { label: 'Confort', value: 48 },
+]
+const ROW_HEIGHT_DEFAUT = 36
 
 const DEFAULT_DAY_WIDTH = 40
 
@@ -232,7 +134,14 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
     periodes, addPeriode, updatePeriode, deletePeriode, getNextWorkingDay, addWorkingDaysWithBlocked,
   } = usePeriodesBloquees(affaireId)
 
-  const ROW_HEIGHT = 40
+  const [rowHeight, setRowHeight] = useState(() => {
+    const saved = parseInt(localStorage.getItem(`planning-row-height-${affaireId}`), 10)
+    return ROW_HEIGHT_OPTIONS.some((o) => o.value === saved) ? saved : ROW_HEIGHT_DEFAUT
+  })
+
+  useEffect(() => {
+    localStorage.setItem(`planning-row-height-${affaireId}`, String(rowHeight))
+  }, [rowHeight, affaireId])
 
   // ── Ordre d'affichage (lot puis `ordre` au sein du lot) ─────────────────────────
   // La sidebar et la timeline doivent itérer les tâches dans le même ordre pour
@@ -983,19 +892,76 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
       return getTaskColor(task)
     }
 
-    lotOrder.forEach((lotId) => {
-      const lot = lots.find((l) => l.id === lotId)
-      const lotTasks = tasksByLot[lotId]
-      const lotColor = lot?.couleur ?? '#E8602C'
-      const lotHex = lotColor.replace('#', '')
+    // ── Émission d'une ligne de tâche ──
+    // Partagée par les deux groupements : en mode zone, `rowInfo` vient de
+    // buildRowsByZone (barre principale masquée, segments filtrés, libellé
+    // propre à la ligne), exactement comme dans la timeline.
+    const emitTaskRow = (task, rowInfo) => {
+      const showMainBar = rowInfo?.showMainBar !== false
+      const visibleSegmentIds = rowInfo?.visibleSegmentIds ?? null
+      const libelle = rowInfo?.displayName ?? task.nom ?? ''
+      const suffixe = rowInfo?.suffixe ? ` · ${rowInfo.suffixe}` : ''
 
-      setCell(0, rowIdx, '', styleLotHeader(lotColor, 0))
-      setCell(1, rowIdx,
-        `${lot?.numero ? String(lot.numero).padStart(2, '0') : ''} – ${lot?.nom ?? 'Sans lot'}`.trim(),
-        { ...styleLotHeader(lotColor, 1), font: { bold: true, sz: 9, color: { rgb: lotHex } } }
-      )
-      setCell(2, rowIdx, '', styleLotHeader(lotColor, 2))
+      const taskColor = getTaskColor(task)
+      const taskHex = taskColor.replace('#', '')
+      const segsTous = getSegmentsForTache ? getSegmentsForTache(task.id) : []
+      const segs = visibleSegmentIds
+        ? segsTous.filter((sg) => visibleSegmentIds.includes(sg.id))
+        : segsTous
 
+      setCell(0, rowIdx, rowInfo?.numero ?? task.num_tache ?? '', styleSidebar(false, 0))
+      setCell(1, rowIdx, `${libelle}${suffixe}`, styleSidebar(false, 1))
+      setCell(2, rowIdx, task.avancement ?? 0, { ...styleSidebar(false, 2), alignment: { horizontal: 'center' } })
+
+      timeUnits.forEach((unit, i) => {
+        const inMain = showMainBar && isInTask(unit, task)
+        const inSeg = segs.find((sg) => isInSegment(unit, sg))
+        const active = inMain || inSeg
+        // En cas de chevauchement, la période bloquante prime sur l'informative
+        const couvrantes = periodes.filter((pp) => isInPeriode(unit, pp))
+        const periode = couvrantes.find((pp) => pp.est_bloquante !== false) ?? couvrantes[0] ?? null
+
+        let fillHex = 'FFFFFF'
+
+        if (active) {
+          fillHex = inSeg ? getSegColor(inSeg, task).replace('#', '') : taskHex
+        } else if (showMainBar && (isInDelaiAvant(unit, task) || isInDelaiApres(unit, task))) {
+          // Délais : même couleur que la barre mais très atténuée, pour les
+          // distinguer de la tâche elle-même (Excel ne gère pas la transparence).
+          fillHex = pastel(taskColor, 0.4)
+        } else if (periode) {
+          // Teinte dérivée de la couleur de la période : plus soutenue si
+          // elle est bloquante, très pâle si elle est informative.
+          fillHex = pastel(periode.couleur, periode.est_bloquante !== false ? 0.22 : 0.08)
+        } else if (viewMode === 'day') {
+          const d = new Date(unit)
+          if (d.getDay() === 0 || d.getDay() === 6) fillHex = 'F0EDE8'
+        }
+
+        const isMonthStart = viewMode === 'day'
+          ? unit.getDate() === 1
+          : viewMode === 'week'
+            ? (i > 0 && unit.getMonth() !== timeUnits[i - 1]?.getMonth())
+            : true // en vue mois, chaque colonne est un début de mois
+
+        setCell(FIXED_COLS + i, rowIdx, '', {
+          fill: { fgColor: { rgb: fillHex } },
+          border: borderTask(isMonthStart, false),
+        })
+      })
+
+      rowIdx++
+    }
+
+    // ── En-tête de groupe (lot ou zone) ──
+    const emitGroupHeader = (couleur, libelle) => {
+      const hexGroupe = (couleur ?? '#E8602C').replace('#', '')
+      setCell(0, rowIdx, '', styleLotHeader(couleur, 0))
+      setCell(1, rowIdx, libelle, {
+        ...styleLotHeader(couleur, 1),
+        font: { bold: true, sz: 9, color: { rgb: hexGroupe } },
+      })
+      setCell(2, rowIdx, '', styleLotHeader(couleur, 2))
       timeUnits.forEach((_, i) => {
         setCell(FIXED_COLS + i, rowIdx, '', {
           fill: { fgColor: { rgb: 'FAF7F2' } },
@@ -1003,58 +969,37 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
         })
       })
       rowIdx++
+    }
 
-      lotTasks
-        .sort((a, b) => (a.num_tache ?? '').localeCompare(b.num_tache ?? ''))
-        .forEach((task) => {
-          const taskColor = getTaskColor(task)
-          const taskHex = taskColor.replace('#', '')
-          const segs = getSegmentsForTache ? getSegmentsForTache(task.id) : []
-
-          setCell(0, rowIdx, task.num_tache ?? '', styleSidebar(false, 0))
-          setCell(1, rowIdx, task.nom ?? '', styleSidebar(false, 1))
-          setCell(2, rowIdx, task.avancement ?? 0, { ...styleSidebar(false, 2), alignment: { horizontal: 'center' } })
-
-          timeUnits.forEach((unit, i) => {
-            const inMain = isInTask(unit, task)
-            const inSeg = segs.find((s) => isInSegment(unit, s))
-            const active = inMain || inSeg
-            // En cas de chevauchement, la période bloquante prime sur l'informative
-            const couvrantes = periodes.filter((p) => isInPeriode(unit, p))
-            const periode = couvrantes.find((p) => p.est_bloquante !== false) ?? couvrantes[0] ?? null
-
-            let fillHex = 'FFFFFF'
-
-            if (active) {
-              fillHex = inSeg ? getSegColor(inSeg, task).replace('#', '') : taskHex
-            } else if (isInDelaiAvant(unit, task) || isInDelaiApres(unit, task)) {
-              // Délais : même couleur que la barre mais très atténuée, pour les
-              // distinguer de la tâche elle-même (Excel ne gère pas la transparence).
-              fillHex = pastel(taskColor, 0.4)
-            } else if (periode) {
-              // Teinte dérivée de la couleur de la période : plus soutenue si
-              // elle est bloquante, très pâle si elle est informative.
-              fillHex = pastel(periode.couleur, periode.est_bloquante !== false ? 0.22 : 0.08)
-            } else if (viewMode === 'day') {
-              const d = new Date(unit)
-              if (d.getDay() === 0 || d.getDay() === 6) fillHex = 'F0EDE8'
-            }
-
-            const isMonthStart = viewMode === 'day'
-              ? unit.getDate() === 1
-              : viewMode === 'week'
-                ? (i > 0 && unit.getMonth() !== timeUnits[i - 1]?.getMonth())
-                : true // en vue mois, chaque colonne est un début de mois
-
-            setCell(FIXED_COLS + i, rowIdx, '', {
-              fill: { fgColor: { rgb: fillHex } },
-              border: borderTask(isMonthStart, false),
-            })
-          })
-
-          rowIdx++
+    if (groupMode === 'zone') {
+      // Mêmes lignes que la vue « Par zone » de l'éditeur
+      buildRowsByZone(sortedTasks, zones, segments).forEach((row) => {
+        if (row.type === 'header-zone') {
+          emitGroupHeader(row.couleur ?? '#C9C4C0', (row.displayName ?? '').toUpperCase())
+          return
+        }
+        const lot = lots.find((l) => l.id === row.lotId) ?? null
+        emitTaskRow(row.task, {
+          showMainBar: row.showMainBar,
+          visibleSegmentIds: row.visibleSegmentIds,
+          displayName: row.displayName,
+          numero: row.numero,
+          suffixe: lot ? `${lot.num_lot ?? ''} ${lot.nom}`.trim() : null,
         })
-    })
+      })
+    } else {
+      lotOrder.forEach((lotId) => {
+        const lot = lots.find((l) => l.id === lotId)
+        const lotTasks = tasksByLot[lotId]
+        emitGroupHeader(
+          lot?.couleur ?? '#E8602C',
+          `${lot?.numero ? String(lot.numero).padStart(2, '0') : ''} – ${lot?.nom ?? 'Sans lot'}`.trim()
+        )
+        lotTasks
+          .sort((a, b) => (a.num_tache ?? '').localeCompare(b.num_tache ?? ''))
+          .forEach((task) => emitTaskRow(task, null))
+      })
+    }
 
     // ── Jalons ──
     if (jalons && jalons.length > 0) {
@@ -1264,7 +1209,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
             tasks={sortedTasks}
             lots={lots}
             rows={rows}
-            rowHeight={ROW_HEIGHT}
+            rowHeight={rowHeight}
             headerHeight={HEADER_HEIGHT}
             onEdit={(t) => handleOpenTaskModal(t, 'edit')}
             onAvancementChange={handleAvancementChange}
@@ -1294,7 +1239,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
             dayWidth={dayWidth}
             drawMode={drawMode}
             onDrawCreate={handleDrawCreate}
-            rowHeight={ROW_HEIGHT}
+            rowHeight={rowHeight}
             showConnections={showConnections}
             jalons={jalons}
             onJalonClick={() => setShowJalonsModal(true)}
@@ -1366,6 +1311,36 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
 
           {/* Contenu scrollable */}
           <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
+
+            {/* ── Hauteur des lignes ── */}
+            <div style={{ marginBottom: 24 }}>
+              <p style={{
+                fontSize: 10, fontWeight: 500, color: '#9C9591',
+                textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10,
+              }}>
+                Hauteur des lignes
+              </p>
+              <div style={{ display: 'flex', border: '0.5px solid rgba(0,0,0,0.15)', overflow: 'hidden' }}>
+                {ROW_HEIGHT_OPTIONS.map((opt, idx) => (
+                  <button
+                    key={opt.value}
+                    onClick={() => setRowHeight(opt.value)}
+                    style={{
+                      flex: 1, padding: '7px 0', fontSize: 11, border: 'none',
+                      borderRight: idx < ROW_HEIGHT_OPTIONS.length - 1 ? '0.5px solid rgba(0,0,0,0.15)' : 'none',
+                      background: rowHeight === opt.value ? '#1F1B17' : 'transparent',
+                      color: rowHeight === opt.value ? 'white' : '#5E5854',
+                      cursor: 'pointer',
+                      fontWeight: rowHeight === opt.value ? 500 : 400,
+                    }}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ height: '0.5px', background: '#E9E2D6', marginBottom: 24 }} />
 
             {/* ── Granularité ── */}
             <div style={{ marginBottom: 24 }}>
@@ -1652,6 +1627,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
         zones={zones}
         colorMode={colorMode}
         viewMode={viewMode}
+        groupMode={groupMode}
         segments={segments}
         dependances={dependances}
         periodes={periodes}

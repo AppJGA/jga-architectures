@@ -137,6 +137,12 @@ function TaskRow({
 }) {
   const isDragOver = dragOverTaskId === task.id && draggedTaskId !== task.id
 
+  // La ligne compacte (24 px) ne peut pas loger un champ de 24 px plus ses
+  // bordures : on resserre le champ et la typographie en conséquence.
+  const compact = rowHeight <= 28
+  const nomFontSize = compact ? 11 : rowHeight >= 44 ? 13 : 12
+  const inputHeight = compact ? 18 : 24
+
   return (
     <div
       className="group"
@@ -167,7 +173,7 @@ function TaskRow({
 
       {/* Color bar + task number */}
       <div style={{ display: 'flex', width: 48, flexShrink: 0, alignItems: 'center', gap: 6 }}>
-        <div style={{ width: 2, height: 16, borderRadius: 2, backgroundColor: lotColor }} />
+        <div style={{ width: 2, height: compact ? 12 : 16, borderRadius: 2, backgroundColor: lotColor }} />
         <span style={{ fontSize: 11, fontWeight: 600, color: '#9C9591', fontVariantNumeric: 'tabular-nums' }}>
           {task.num_tache}
         </span>
@@ -176,7 +182,7 @@ function TaskRow({
       {/* Task name */}
       <button
         style={{
-          flex: 1, minWidth: 0, textAlign: 'left', fontSize: 12, color: '#1F1B17',
+          flex: 1, minWidth: 0, textAlign: 'left', fontSize: nomFontSize, color: '#1F1B17',
           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
           background: 'none', border: 'none', cursor: 'pointer', padding: 0,
         }}
@@ -205,7 +211,7 @@ function TaskRow({
             onAvancementChange(task.id, v)
           }}
           style={{
-            width: 46, height: 24, borderRadius: 3, textAlign: 'center', fontSize: 11,
+            width: 46, height: inputHeight, borderRadius: 3, textAlign: 'center', fontSize: compact ? 10 : 11,
             border: '0.5px solid rgba(0,0,0,0.15)', backgroundColor: '#FAFAF9',
             padding: '0 4px', fontVariantNumeric: 'tabular-nums', outline: 'none',
           }}
@@ -306,7 +312,7 @@ function ZoneGroupedSidebar({ rows, lots, rowHeight, headerHeight, onEdit, onAva
             {/* Nom — italique sur une ligne dupliquée (segments seulement) */}
             <button
               style={{
-                flex: 1, minWidth: 0, textAlign: 'left', fontSize: 12, color: '#1F1B17',
+                flex: 1, minWidth: 0, textAlign: 'left', fontSize: nomFontSize, color: '#1F1B17',
                 fontStyle: isDuplicate ? 'italic' : 'normal',
                 overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                 background: 'none', border: 'none', cursor: 'pointer', padding: 0,
@@ -328,7 +334,7 @@ function ZoneGroupedSidebar({ rows, lots, rowHeight, headerHeight, onEdit, onAva
                     onAvancementChange(row.task.id, v)
                   }}
                   style={{
-                    width: 46, height: 24, borderRadius: 3, textAlign: 'center', fontSize: 11,
+                    width: 46, height: inputHeight, borderRadius: 3, textAlign: 'center', fontSize: compact ? 10 : 11,
                     border: '0.5px solid rgba(0,0,0,0.15)', backgroundColor: '#FAFAF9',
                     padding: '0 4px', fontVariantNumeric: 'tabular-nums', outline: 'none',
                   }}

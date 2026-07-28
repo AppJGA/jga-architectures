@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Trash2, Save, X, Plus, Minimize2, Maximize2 } from 'lucide-react'
+import { Trash2, Save, X, Plus, Minimize2, Maximize2, ChevronRight } from 'lucide-react'
 import { parseDate, formatDateISO, computeLag, addWorkingDays, workingDaysBetween } from './types'
 import { DatePickerISO } from '../../../shared/components/DatePickerISO'
 
@@ -96,6 +96,9 @@ export function TacheEditModal({
   // Saisir la fin de la tâche par sa durée ou par sa date — les deux restent
   // synchronisées, seule la façon de l'exprimer change.
   const [inputMode, setInputMode] = useState('duree')
+  // Sections repliables : dépliées d'office seulement si elles portent une valeur
+  const [showDelais, setShowDelais] = useState(false)
+  const [showSegments, setShowSegments] = useState(false)
 
   // ── Modale flottante : position, minimisation, drag ────────────────────────────
   const [position, setPosition] = useState(centeredPosition)
@@ -117,6 +120,21 @@ export function TacheEditModal({
   useEffect(() => {
     if (open) setMinimized(false)
   }, [open, task?.id])
+
+  // À l'ouverture, ne déplier que les sections qui contiennent quelque chose
+  useEffect(() => {
+    if (!open) return
+    setShowDelais((task?.appro_duree ?? 0) > 0 || (task?.delai_apres ?? 0) > 0)
+    setShowSegments((task?.id && getSegmentsForTache ? getSegmentsForTache(task.id) : []).length > 0)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, task?.id])
+
+  // Une fenêtre rétrécie ne doit pas laisser la modale hors écran
+  useEffect(() => {
+    const handleResize = () => setPosition((prev) => clampPosition(prev.x, prev.y))
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
 
   useEffect(() => {
     if (!open) return
@@ -264,8 +282,9 @@ export function TacheEditModal({
         top: position.y,
         width: MODAL_WIDTH,
         height: minimized ? MODAL_MINIMIZED_HEIGHT : 'auto',
-        maxHeight: minimized ? MODAL_MINIMIZED_HEIGHT : '80vh',
-        overflow: minimized ? 'hidden' : 'auto',
+        // Jamais plus haute que la fenêtre : le corps défile, le pied reste visible
+        maxHeight: minimized ? MODAL_MINIMIZED_HEIGHT : 'calc(100vh - 48px)',
+        overflow: 'hidden',
         background: 'white',
         border: '0.5px solid #E9E2D6',
         boxShadow: '0 8px 32px rgba(0,0,0,0.15)',
@@ -322,12 +341,18 @@ export function TacheEditModal({
 
       {/* Contenu — masqué si minimisé */}
       {!minimized && (
-        <div style={{ padding: '16px 20px', overflowY: 'auto', flex: 1 }}>
-          <p style={{ fontSize: 11, color: '#9C9591', marginBottom: 14 }}>
+        <form
+          onSubmit={handleSubmit}
+          style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}
+        >
+          {/* Corps défilant */}
+          <div style={{
+            padding: '12px 16px', overflowY: 'auto', flex: 1, minHeight: 0,
+            display: 'flex', flexDirection: 'column', gap: 10,
+          }}>
+          <p style={{ fontSize: 11, color: '#9C9591' }}>
             Les durées sont calculées en jours ouvrés (lun.–ven.).
           </p>
-
-          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             {/* N° + Nom */}
             <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr', gap: 10 }}>
               <div>
@@ -418,7 +443,8 @@ export function TacheEditModal({
               </div>
             </div>
 
-            {/* Lot */}
+            {/* Lot + Avancement — appariés pour gagner une ligne */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <div>
               <label style={LABEL}>Lot</label>
               <select
@@ -435,6 +461,25 @@ export function TacheEditModal({
                   </option>
                 ))}
               </select>
+            </div>
+
+            <div>
+              <label style={LABEL}>Avancement : {form.avancement ?? 0}%</label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <input
+                  type="range" min={0} max={100} step={5} value={form.avancement ?? 0}
+                  onChange={(e) => set('avancement', Number(e.target.value))}
+                  style={{ flex: 1, minWidth: 0, accentColor: '#2A8A4E' }}
+                />
+                <input
+                  type="number" min={0} max={100} value={form.avancement ?? 0}
+                  onChange={(e) => set('avancement', Math.max(0, Math.min(100, Number(e.target.value))))}
+                  style={{ ...INPUT, width: 52, flexShrink: 0, padding: '0 4px', textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}
+                  onFocus={e => { e.target.style.borderColor = '#E8602C'; e.target.style.boxShadow = '0 0 0 3px rgba(232,96,44,0.12)' }}
+                  onBlur={e => { e.target.style.borderColor = 'rgba(0,0,0,0.12)'; e.target.style.boxShadow = 'none' }}
+                />
+              </div>
+            </div>
             </div>
 
             {/* Zone */}
@@ -519,39 +564,35 @@ export function TacheEditModal({
               </div>
             )}
 
-            {/* Avancement */}
-            <div>
-              <label style={LABEL}>Avancement : {form.avancement ?? 0}%</label>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <input
-                  type="range" min={0} max={100} step={5} value={form.avancement ?? 0}
-                  onChange={(e) => set('avancement', Number(e.target.value))}
-                  style={{ flex: 1, accentColor: '#2A8A4E' }}
-                />
-                <input
-                  type="number" min={0} max={100} value={form.avancement ?? 0}
-                  onChange={(e) => set('avancement', Math.max(0, Math.min(100, Number(e.target.value))))}
-                  style={{ ...INPUT, width: 64, textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}
-                  onFocus={e => { e.target.style.borderColor = '#E8602C'; e.target.style.boxShadow = '0 0 0 3px rgba(232,96,44,0.12)' }}
-                  onBlur={e => { e.target.style.borderColor = 'rgba(0,0,0,0.12)'; e.target.style.boxShadow = 'none' }}
-                />
-              </div>
-            </div>
-
             {/* ── Délais avant / après ─────────────────────────────────────
                 Purement visuels : ils n'entrent pas dans le calcul des chemins
                 critiques, qui part toujours de la fin réelle de la tâche.
                 Le délai AVANT réutilise les colonnes historiques d'appro
                 (appro_duree / appro_materiau) — d'où l'absence de champ
                 `delai_appro` en base. */}
-            <div style={{ marginTop: 16, borderTop: '0.5px solid rgba(0,0,0,0.08)', paddingTop: 14 }}>
-              <p style={{
-                fontSize: 10, fontWeight: 500, color: '#9C9591',
-                textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10,
-              }}>
+            <div style={{ borderTop: '0.5px solid rgba(0,0,0,0.08)', paddingTop: 8 }}>
+              <div
+                onClick={() => setShowDelais((v) => !v)}
+                style={{
+                  cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
+                  fontSize: 10, fontWeight: 500, color: '#9C9591',
+                  textTransform: 'uppercase', letterSpacing: '0.08em',
+                  padding: '4px 0', marginBottom: showDelais ? 8 : 0, userSelect: 'none',
+                }}
+              >
+                <ChevronRight
+                  size={12}
+                  style={{ transform: showDelais ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}
+                />
                 Délais
-              </p>
+                {!showDelais && ((form.appro_duree ?? 0) > 0 || (form.delai_apres ?? 0) > 0) && (
+                  <span style={{ textTransform: 'none', letterSpacing: 0, color: '#5E5854' }}>
+                    · {form.appro_duree || 0} j avant, {form.delai_apres || 0} j après
+                  </span>
+                )}
+              </div>
 
+              {showDelais && (<>
               {/* Délai avant */}
               <div style={{ border: '0.5px solid rgba(0,0,0,0.08)', padding: 12, marginBottom: 8 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
@@ -605,24 +646,35 @@ export function TacheEditModal({
                   }}
                 />
               </div>
+              </>)}
             </div>
 
             {/* Segments supplémentaires */}
             {mode === 'edit' && task?.id && (
-              <div style={{ marginTop: 6, borderTop: '0.5px solid rgba(0,0,0,0.08)', paddingTop: 14 }}>
+              <div style={{ borderTop: '0.5px solid rgba(0,0,0,0.08)', paddingTop: 8 }}>
                 <div style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10,
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  marginBottom: showSegments ? 8 : 0,
                 }}>
-                  <span style={{
-                    fontSize: 11, fontWeight: 500, color: '#9C9591',
-                    textTransform: 'uppercase', letterSpacing: '0.05em',
-                  }}>
-                    Segments supplémentaires
+                  <span
+                    onClick={() => setShowSegments((v) => !v)}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer',
+                      fontSize: 10, fontWeight: 500, color: '#9C9591',
+                      textTransform: 'uppercase', letterSpacing: '0.08em',
+                      padding: '4px 0', userSelect: 'none',
+                    }}
+                  >
+                    <ChevronRight
+                      size={12}
+                      style={{ transform: showSegments ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}
+                    />
+                    Segments
                     {segmentsDeTache.length > 0 && ` (${segmentsDeTache.length})`}
                   </span>
                   <button
                     type="button"
-                    onClick={handleAddSegment}
+                    onClick={() => { setShowSegments(true); handleAddSegment() }}
                     style={{
                       display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px',
                       fontSize: 11, borderRadius: 2,
@@ -635,14 +687,14 @@ export function TacheEditModal({
                   </button>
                 </div>
 
-                {segmentsDeTache.length === 0 && (
+                {showSegments && segmentsDeTache.length === 0 && (
                   <p style={{ fontSize: 11, color: '#9C9591', fontStyle: 'italic', padding: '8px 0' }}>
                     Ajoutez des segments pour représenter cette tâche à d'autres périodes ou zones
                     (ex : dallage Zone 1 puis Zone 2).
                   </p>
                 )}
 
-                {segmentsDeTache.map((seg, idx) => (
+                {showSegments && segmentsDeTache.map((seg, idx) => (
                   <div key={seg.id} style={{
                     display: 'grid', gridTemplateColumns: '1fr 1fr 80px 1fr auto 28px', gap: 8,
                     alignItems: 'center', padding: '8px 0',
@@ -762,8 +814,14 @@ export function TacheEditModal({
               </div>
             )}
 
-            {/* Footer */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, paddingTop: 8, borderTop: '0.5px solid rgba(0,0,0,0.08)' }}>
+          </div>
+
+          {/* Pied fixe — toujours visible, quelle que soit la hauteur du formulaire */}
+          <div style={{
+            flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
+            gap: 8, padding: '10px 16px', background: 'white',
+            borderTop: '0.5px solid #E9E2D6',
+          }}>
               {mode === 'edit' && onRequestDelete && (
                 <button type="button" style={{ ...BTN_DANGER, marginRight: 'auto' }}
                   onClick={handleDelete}>
@@ -776,11 +834,10 @@ export function TacheEditModal({
               </button>
               <button type="submit" style={{ ...BTN_PRIMARY, opacity: saving ? 0.7 : 1 }} disabled={saving}>
                 <Save size={13} />
-                {saving ? 'Enregistrement…' : 'Enregistrer'}
-              </button>
-            </div>
-          </form>
-        </div>
+              {saving ? 'Enregistrement…' : 'Enregistrer'}
+            </button>
+          </div>
+        </form>
       )}
     </div>
   )

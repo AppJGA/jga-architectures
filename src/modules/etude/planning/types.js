@@ -41,10 +41,9 @@ export function densityFromRowHeight(rowHeight) {
 }
 
 // Couleurs proposées dans le sélecteur de couleur personnalisée
-export const COULEURS_PHASE_PRESET = [
-  '#E8602C', '#2A8A4E', '#D97706', '#1B3A5C', '#9C9591',
-  '#8B5CF6', '#0891B2', '#B8412C', '#5E5854', '#639922',
-]
+// Réexport de la palette commune (cf. shared/components/ColorPicker) — les
+// phases d'étude, les zones et les périodes puisent dans la même liste.
+export { COULEURS_PRESET as COULEURS_PHASE_PRESET } from '../../../shared/components/couleursPreset'
 
 // Couleur effective d'une phase : la couleur personnalisée l'emporte sur celle
 // de son type. Source unique pour la timeline, la sidebar et les deux exports.

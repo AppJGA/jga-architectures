@@ -5,6 +5,7 @@ import XLSX from 'xlsx-js-style'
 import {
   TYPE_COLORS, getWeekStart, addWeeks, weeksBetween, getCurrentWeek, weekOfDate,
   computePhaseFragments, finEffectivePhase, getPhaseCouleur,
+  distributeSegmentsAcrossFragments,
 } from './types'
 
 // ─── Export Excel du planning d'étude ─────────────────────────────────────────
@@ -52,6 +53,29 @@ function pastel(hex, ratio) {
     return Math.round(255 - (255 - c) * ratio).toString(16).padStart(2, '0')
   }
   return `${melange(0)}${melange(2)}${melange(4)}`.toUpperCase()
+}
+
+// Teinte d'une sous-partie MOE (① architecte, ② BET, ③ économiste).
+//
+// La timeline superpose un voile noir de 15 / 25 / 35 % sur la couleur de la
+// phase : on reproduit ici exactement ce composite, pour que le tableur se lise
+// comme l'écran — la sous-partie ① est la plus claire, la ③ la plus foncée.
+const MOE_VOILE = { 1: 0.15, 2: 0.25, 3: 0.35 }
+
+function moeSubHex(couleur, num) {
+  const h = (couleur || '#9C9591').replace('#', '')
+  const facteur = 1 - (MOE_VOILE[num] ?? 0)
+  const canal = (i) =>
+    Math.round(parseInt(h.slice(i, i + 2), 16) * facteur).toString(16).padStart(2, '0')
+  return `${canal(0)}${canal(2)}${canal(4)}`.toUpperCase()
+}
+
+// Nom affiché dans la colonne de gauche : les phases administratives portent
+// leur texte de barre, qui est ce que le planning donne à lire.
+function displayName(phase) {
+  return phase.type_tache === 'administratif' && phase.label_barre
+    ? phase.label_barre
+    : phase.nom ?? ''
 }
 
 function isFirstWeekOfMonth(semaine, annee) {
@@ -186,7 +210,7 @@ export function exportPlanningEtudeExcel({
     const hex = couleur.replace('#', '')
     const segs = segments.filter((s) => s.phase_id === phase.id)
 
-    setCell(0, rowIdx, phase.nom ?? '', {
+    setCell(0, rowIdx, displayName(phase), {
       font: { bold: phase.type_tache === 'etude', sz: fontSize, color: { rgb: '1F1B17' } },
       fill: { fgColor: { rgb: 'FFFFFF' } },
       alignment: { vertical: 'center' },
@@ -203,6 +227,37 @@ export function exportPlanningEtudeExcel({
     // période bloquante gardent la teinte de la période.
     const fragments = computePhaseFragments(phase, periodes)
     const isAdmin = phase.type_tache === 'administratif'
+    const isMoe = phase.type_tache === 'etude'
+
+    // Répartition ①②③ à travers les fragments — même source que la timeline
+    const segsParFragment = distributeSegmentsAcrossFragments(phase, fragments)
+
+    // Fragment couvrant chaque semaine, et rang de la semaine dans ce fragment
+    const posFragment = weeks.map((w) => {
+      for (let fi = 0; fi < fragments.length; fi++) {
+        const f = fragments[fi]
+        const offset = weeksBetween(f.semaine_debut, f.annee_debut, w.semaine, w.annee)
+        if (offset >= 0 && offset < Math.max(1, f.duree_semaines)) return { fi, offset }
+      }
+      return null
+    })
+
+    // Sous-partie MOE couvrant une semaine, et si c'en est la première
+    const sousPartieMoe = (idx) => {
+      const pos = posFragment[idx]
+      if (!isMoe || !pos) return null
+      let cumul = 0
+      for (const sub of segsParFragment[pos.fi] ?? []) {
+        if (pos.offset < cumul + sub.duree) {
+          return { num: sub.num, premiere: pos.offset === cumul }
+        }
+        cumul += sub.duree
+      }
+      return null
+    }
+
+    const segmentDeLaSemaine = (w) =>
+      segs.find((sg) => couvre(w, sg.semaine_debut, sg.annee_debut, sg.duree_jours ?? sg.duree_semaines))
 
     // Occupation semaine par semaine, précalculée : elle sert aussi à savoir où
     // commence et où finit chaque barre, pour n'épaissir que ses extrémités.
@@ -215,11 +270,37 @@ export function exportPlanningEtudeExcel({
     weeks.forEach((w, i) => {
       const { phase: dansPhase, segment: dansSegment } = occupee[i]
       const periode = periodeDeLaSemaine(w)
+      const moe = dansPhase ? sousPartieMoe(i) : null
 
       let fillHex = 'FFFFFF'
-      if (dansPhase) fillHex = hex
+      if (dansPhase) fillHex = moe ? moeSubHex(couleur, moe.num) : hex
       else if (dansSegment) fillHex = pastel(couleur, 0.65)   // segment : même teinte, atténuée
       else if (periode) fillHex = pastel(periode.couleur, periode.est_bloquante !== false ? 0.22 : 0.08)
+
+      // Textes portés par les barres à l'écran, reportés dans la première
+      // cellule concernée : les cellules Excel ne débordent pas, un texte
+      // répété sur chaque colonne serait illisible.
+      let valeur = ''
+      let police = null
+      let alignement = { vertical: 'center' }
+
+      if (dansPhase && isAdmin && phase.label_barre && posFragment[i]?.offset === 0) {
+        valeur = phase.label_barre.toUpperCase()
+        police = { bold: true, sz: fontSize, color: { rgb: 'FFFFFF' } }
+        alignement = { horizontal: 'left', vertical: 'center' }
+      } else if (dansPhase && moe?.premiere) {
+        valeur = String(moe.num)
+        police = { bold: true, sz: fontSize, color: { rgb: 'FFFFFF' } }
+        alignement = { horizontal: 'center', vertical: 'center' }
+      } else if (!dansPhase && dansSegment && isAdmin) {
+        const seg = segmentDeLaSemaine(w)
+        const premiere = seg && weeksBetween(seg.semaine_debut, seg.annee_debut, w.semaine, w.annee) === 0
+        if (premiere) {
+          valeur = (seg.nom ?? phase.label_barre ?? '').toUpperCase()
+          police = { bold: true, sz: fontSize, color: { rgb: 'FFFFFF' } }
+          alignement = { horizontal: 'left', vertical: 'center' }
+        }
+      }
 
       // Administratif : le bariolé n'est pas reproductible en Excel — un aplat
       // rouge encadré de noir remplit le même rôle de signal fort. Les traits
@@ -232,8 +313,10 @@ export function exportPlanningEtudeExcel({
           }
         : borderRow(isFirstWeekOfMonth(w.semaine, w.annee), false)
 
-      setCell(FIXED_COLS + i, rowIdx, '', {
+      setCell(FIXED_COLS + i, rowIdx, valeur, {
         fill: { fgColor: { rgb: fillHex } },
+        ...(police ? { font: police } : {}),
+        alignment: alignement,
         border: bordure,
       })
     })
@@ -279,6 +362,9 @@ export function exportPlanningEtudeExcel({
     { color: TYPE_COLORS.validation.replace('#', ''), label: 'Validation MOA' },
     { color: TYPE_COLORS.administratif.replace('#', ''), label: 'Administratif — aplat rouge, bordure épaisse' },
     { color: TYPE_COLORS.chantier.replace('#', ''), label: 'Chantier' },
+    { color: moeSubHex(TYPE_COLORS.etude, 1), label: '① Architecte' },
+    { color: moeSubHex(TYPE_COLORS.etude, 2), label: '② BET' },
+    { color: moeSubHex(TYPE_COLORS.etude, 3), label: '③ Économiste' },
     { color: pastel(TYPE_COLORS.etude, 0.65), label: 'Segment' },
     { color: pastel('#B8412C', 0.22), label: 'Période bloquante' },
     { color: pastel('#B8412C', 0.08), label: 'Période informative' },

@@ -79,6 +79,14 @@ export function ExportPdfModal({
 
   const [dateDebut,   setDateDebut]   = useState(computed.debut)
   const [dateFin,     setDateFin]     = useState(computed.fin)
+
+  // Dates affichées en en-tête. Elles suivent la période d'export tant que
+  // l'utilisateur ne les a pas modifiées ; une fois saisies à la main, elles
+  // deviennent indépendantes — c'est tout l'intérêt du réglage (afficher une
+  // période contractuelle qui ne coïncide pas avec la plage imprimée).
+  const [headerDebut, setHeaderDebut] = useState(computed.debut)
+  const [headerFin,   setHeaderFin]   = useState(computed.fin)
+  const [headerLibre, setHeaderLibre] = useState(false)
   const [formatTab,   setFormatTab]   = useState('standard')
   const [fmtIdx,      setFmtIdx]      = useState(3)   // A3 Paysage par défaut
   const [customW,     setCustomW]     = useState(420)
@@ -123,6 +131,12 @@ export function ExportPdfModal({
     ? PAGE_FORMATS[fmtIdx]
     : { w: Math.max(100, Math.min(2000, customW)), h: Math.max(100, Math.min(2000, customH)) }
 
+  useEffect(() => {
+    if (headerLibre) return
+    setHeaderDebut(dateDebut)
+    setHeaderFin(dateFin)
+  }, [dateDebut, dateFin, headerLibre])
+
   const isValid = !!dateDebut && !!dateFin && totalDays > 0
 
   const handleOrientationToggle = () => {
@@ -140,6 +154,8 @@ export function ExportPdfModal({
       affaire,
       dateDebut,
       dateFin,
+      headerDateDebut: headerDebut,
+      headerDateFin: headerFin,
       largeurMm: finalFormat.w,
       hauteurMm: finalFormat.h,
       zones,
@@ -203,6 +219,45 @@ export function ExportPdfModal({
               {totalDays > 0
                 ? `${totalDays} jour${totalDays > 1 ? 's' : ''} · ${totalWeeks} semaine${totalWeeks > 1 ? 's' : ''}`
                 : 'Période invalide'}
+            </p>
+          </div>
+
+          {/* ── A2) PÉRIODE AFFICHÉE EN EN-TÊTE ── */}
+          <div>
+            <label style={LABEL}>Période affichée en en-tête</label>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: 8, alignItems: 'end' }}>
+              <div>
+                <span style={{ fontSize: 11, color: '#9C9591', display: 'block', marginBottom: 4 }}>Du</span>
+                <input
+                  type="date" value={headerDebut}
+                  onChange={e => { setHeaderLibre(true); setHeaderDebut(e.target.value) }}
+                  style={INPUT}
+                />
+              </div>
+              <span style={{ fontSize: 13, color: '#9C9591', paddingBottom: 6 }}>→</span>
+              <div>
+                <span style={{ fontSize: 11, color: '#9C9591', display: 'block', marginBottom: 4 }}>au</span>
+                <input
+                  type="date" value={headerFin}
+                  onChange={e => { setHeaderLibre(true); setHeaderFin(e.target.value) }}
+                  style={INPUT}
+                />
+              </div>
+            </div>
+            <p style={{ fontSize: 11, color: '#9C9591', marginTop: 6, fontStyle: 'italic' }}>
+              Ces dates n'apparaissent que dans l'en-tête — elles ne modifient pas la plage imprimée.
+              {headerLibre && (
+                <button
+                  type="button"
+                  onClick={() => setHeaderLibre(false)}
+                  style={{
+                    marginLeft: 6, fontSize: 11, color: '#E8602C', background: 'none',
+                    border: 'none', padding: 0, cursor: 'pointer', fontStyle: 'normal',
+                  }}
+                >
+                  Reprendre la période d'export
+                </button>
+              )}
             </p>
           </div>
 

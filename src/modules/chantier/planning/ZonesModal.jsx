@@ -1,38 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { X, Plus, Trash2 } from 'lucide-react'
-
-const COULEURS_PRESET = [
-  '#E8602C', '#2A8A4E', '#1B3A5C',
-  '#B8412C', '#9C9591', '#C44A1B',
-  '#5E5854', '#F8B89A', '#E9E2D6',
-  '#8B5CF6', '#0891B2', '#D97706',
-  '#64748B', '#0F172A', '#166534',
-]
-
-// Champ hex avec brouillon local — évite que la saisie « saute » tant que
-// le texte tapé ne correspond pas encore à un hex valide (#RRGGBB).
-function HexInput({ value, onCommit }) {
-  const [draft, setDraft] = useState(value)
-
-  useEffect(() => { setDraft(value) }, [value])
-
-  return (
-    <input
-      type="text" value={draft}
-      onChange={(e) => {
-        const v = e.target.value
-        setDraft(v)
-        if (/^#[0-9A-Fa-f]{6}$/.test(v)) onCommit(v)
-      }}
-      placeholder="#E8602C"
-      style={{
-        width: 80, fontSize: 12, padding: '4px 8px', borderRadius: 2,
-        border: '0.5px solid rgba(0,0,0,0.12)', fontVariantNumeric: 'tabular-nums',
-      }}
-    />
-  )
-}
+import { ColorPickerField } from '../../../shared/components/ColorPicker'
 
 function ZoneRow({ zone, onUpdate, onDelete, onPastilleClick, autoFocus }) {
   const [nom, setNom] = useState(zone.nom)
@@ -199,36 +168,10 @@ export function ZonesModal({ open, onClose, zones, createZone, updateZone, delet
             background: 'white', border: '0.5px solid #E9E2D6', borderRadius: 2,
             padding: 12, boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
           }}>
-            {/* Grille preset 5×3 */}
-            <div style={{
-              display: 'grid', gridTemplateColumns: 'repeat(5, 24px)', gap: 6, marginBottom: 10,
-            }}>
-              {COULEURS_PRESET.map((couleur) => (
-                <div
-                  key={couleur}
-                  onClick={() => { updateZone(pickerState.zoneId, { couleur }); setPickerState(null) }}
-                  style={{
-                    width: 24, height: 24, borderRadius: '50%', background: couleur, cursor: 'pointer',
-                    border: pickerZone.couleur.toLowerCase() === couleur.toLowerCase()
-                      ? '2px solid #1F1B17' : '2px solid transparent',
-                  }}
-                />
-              ))}
-            </div>
-
-            {/* Input couleur libre */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <input
-                type="color"
-                value={pickerZone.couleur ?? '#9C9591'}
-                onChange={(e) => updateZone(pickerState.zoneId, { couleur: e.target.value })}
-                style={{ width: 32, height: 32, border: 'none', padding: 0, cursor: 'pointer' }}
-              />
-              <HexInput
-                value={pickerZone.couleur ?? '#9C9591'}
-                onCommit={(couleur) => updateZone(pickerState.zoneId, { couleur })}
-              />
-            </div>
+            <ColorPickerField
+              value={pickerZone.couleur ?? '#9C9591'}
+              onChange={(couleur) => updateZone(pickerState.zoneId, { couleur })}
+            />
           </div>
         </>,
         document.body

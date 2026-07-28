@@ -1,6 +1,7 @@
 import { parseDate, formatDateISO, addWorkingDays } from './types'
 import { assignLabelLanes } from './jalonLayout'
 import { buildRowsByZone } from './groupByZone'
+import { legendeCouleurs } from './legende'
 
 // ─── Densité des lignes ───────────────────────────────────────────────────────
 //
@@ -132,6 +133,7 @@ function buildWeekHeaders(days) {
 // Période couvrant ce jour, sinon null. En cas de chevauchement, la bloquante
 // l'emporte : son hachurage ne doit pas être masqué par un simple repère.
 function periodeDuJour(day, periodes) {
+  if (!day) return null
   const couvrantes = periodes.filter(p => {
     if (!p.date_debut || !p.date_fin) return false
     const debut = parseDate(p.date_debut)
@@ -145,18 +147,24 @@ function periodeDuJour(day, periodes) {
   return couvrantes.find(p => p.est_bloquante !== false) ?? couvrantes[0] ?? null
 }
 
-function hexToRgb(hex) {
+// Pochage désaturé : la couleur de la période mélangée à du blanc. Les hachures
+// diagonales bavaient à l'impression (moiré, aplats irréguliers) ; un aplat
+// pastel opaque sort proprement sur toutes les imprimantes.
+function pastelPdf(hex, opacite) {
   const h = (hex || '#B8412C').replace('#', '')
-  return `${parseInt(h.slice(0, 2), 16)},${parseInt(h.slice(2, 4), 16)},${parseInt(h.slice(4, 6), 16)}`
+  const canal = (i) => {
+    const c = parseInt(h.slice(i, i + 2), 16)
+    return Math.round(c * opacite + 255 * (1 - opacite))
+  }
+  return `rgb(${canal(0)},${canal(2)},${canal(4)})`
 }
 
-// Fond d'une cellule couverte par une période : hachures à la couleur de la
-// période si elle est bloquante, aplat très clair si elle est informative.
+// Fond d'une cellule couverte par une période : pochage soutenu si elle est
+// bloquante, très pâle si elle est informative.
 function fondPeriode(periode) {
-  const rgb = hexToRgb(periode.couleur)
   return periode.est_bloquante !== false
-    ? `repeating-linear-gradient(45deg, rgba(${rgb},0.08), rgba(${rgb},0.08) 3px, rgba(${rgb},0.15) 3px, rgba(${rgb},0.15) 6px)`
-    : `rgba(${rgb},0.06)`
+    ? pastelPdf(periode.couleur ?? '#B8412C', 0.20)
+    : pastelPdf(periode.couleur ?? '#9C9591', 0.10)
 }
 
 // Position + largeur (en mm) d'une barre tâche/segment, exprimées relativement à la
@@ -305,10 +313,23 @@ function buildTaskRow(task, color, days, dayWidths, jalons, todayStr, ctx, rowIn
     // Comme les barres sont des <div> opaques positionnés par-dessus, il suffit d'appliquer
     // le hachurage sur toutes les cellules bloquées : les barres le masquent naturellement
     // là où elles passent.
+    // Une période s'étend sur plusieurs colonnes : son trait d'encadrement ne
+    // doit apparaître qu'à ses extrémités, sinon il double la grille.
     const periode = periodeDuJour(d, periodes)
     const bg = periode
       ? fondPeriode(periode)
       : isWE ? 'rgba(0,0,0,0.03)' : 'transparent'
+
+    // Le trait est calé sur les dates réelles de la période, non sur les
+    // colonnes voisines : une période qui déborde de la plage imprimée
+    // continue hors cadre et ne doit pas sembler s'y arrêter.
+    let bordsPeriode = ''
+    if (periode && periode.est_bloquante !== false) {
+      const trait = `1.5px solid ${periode.couleur ?? '#B8412C'}66`
+      const jour = formatDateISO(d)
+      if (jour === periode.date_debut) bordsPeriode += `border-left:${trait};`
+      if (jour === periode.date_fin) bordsPeriode += `border-right:${trait};`
+    }
 
     let barContent = ''
     if (idx === startIdx && startIdx >= 0 && barWidthMm > 0) {
@@ -339,7 +360,7 @@ function buildTaskRow(task, color, days, dayWidths, jalons, todayStr, ctx, rowIn
       .map(j => `<div style="position:absolute;top:0;bottom:0;left:50%;width:1.5px;background:${j.couleur};opacity:0.55;z-index:5"></div>`)
       .join('')
 
-    return `<td style="width:${dayWidths[idx].toFixed(2)}mm;border-bottom:0.5px solid #f0f0f0;border-left:${borderLeft};height:${dens.rowMm}mm;padding:0;overflow:visible;position:relative;background:${bg}">${barContent}${segContent}${jalonLines}</td>`
+    return `<td style="width:${dayWidths[idx].toFixed(2)}mm;border-bottom:0.5px solid #f0f0f0;border-left:${borderLeft};height:${dens.rowMm}mm;padding:0;overflow:visible;position:relative;background:${bg};${bordsPeriode}">${barContent}${segContent}${jalonLines}</td>`
   }).join('')
 
   const suffixe = rowInfo?.suffixe
@@ -354,6 +375,7 @@ function buildTaskRow(task, color, days, dayWidths, jalons, todayStr, ctx, rowIn
 
 function buildHtml({
   tasks, lots, jalons, affaire, dateDebut, dateFin, largeurMm, hauteurMm,
+  headerDateDebut, headerDateFin,
   zones = [], colorMode = 'lot', viewMode = 'day',
   segments = [], dependances = [], periodes = [], showDependances = true,
   groupMode = 'lot', density = 'normal',
@@ -387,7 +409,15 @@ function buildHtml({
   const moaNom      = affaire?.moa_nom ?? ''
   const codeAffaire = affaire?.code_affaire ?? affaire?.numero ?? ''
   const dateStr = new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })
-  const periodeStr = `${dStart.toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })} → ${dEnd.toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })}`
+  // L'en-tête peut annoncer une période distincte de la plage imprimée
+  // (dates contractuelles, par exemple) ; à défaut, il reprend la plage.
+  const formatDateHeader = (dateStr, fallback) => {
+    const d = dateStr ? parseDate(dateStr) : fallback
+    return Number.isNaN(d?.getTime?.())
+      ? fallback.toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })
+      : d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })
+  }
+  const periodeStr = `${formatDateHeader(headerDateDebut, dStart)} → ${formatDateHeader(headerDateFin, dEnd)}`
 
   // Granularité :
   //  - vue jour   : Mois (avec année) / Semaine / Jours — 3 niveaux
@@ -451,6 +481,19 @@ function buildHtml({
     }
   }
 
+  // Légende des couleurs de barres — source commune avec l'export Excel
+  const legCouleurs = legendeCouleurs({ tasks, lots, zones, colorMode, groupMode })
+  const legCouleursHtml = legCouleurs.entrees.length
+    ? `<span class="leg-sous-titre">${legCouleurs.titre}</span>` + legCouleurs.entrees.map(e => `
+  <div class="leg-item">
+    <div class="leg-swatch" style="background:${e.couleur}"></div>
+    ${e.label}
+  </div>`).join('') + '<div style="border-left:0.5px solid #ddd;height:8px;margin:0 2mm"></div>'
+    : ''
+  const legNoteHtml = legCouleurs.note
+    ? `<div class="leg-item" style="font-style:italic;color:#9C9591">${legCouleurs.note}</div>`
+    : ''
+
   return `<!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -487,6 +530,7 @@ function buildHtml({
   .legend { margin-top: 5mm; padding-top: 3mm; border-top: 0.5px solid #eee; display: flex; align-items: center; gap: 5mm; flex-wrap: wrap; }
   .leg-title { font-size: 5.5pt; font-weight: bold; color: #9C9591; text-transform: uppercase; letter-spacing: 0.05em; }
   .leg-item { display: flex; align-items: center; gap: 1.5mm; font-size: 6pt; color: #4b5563; }
+  .leg-sous-titre { font-size: 6pt; font-weight: bold; color: #9C9591; text-transform: uppercase; letter-spacing: 0.04em; }
   .leg-swatch { width: 8mm; height: 3mm; }
 
   .footer { margin-top: 4mm; padding-top: 2mm; border-top: 0.5px solid #eee; font-size: 6pt; color: #9C9591; display: flex; justify-content: space-between; }
@@ -544,9 +588,10 @@ function buildHtml({
 
 <div class="legend">
   <span class="leg-title">Légende</span>
+  ${legCouleursHtml}
   <div class="leg-item">
     <div class="leg-swatch" style="background:#E8602C"></div>
-    Barre de tâche (couleur du lot)
+    Barre de tâche (couleur ${colorMode === 'zone' ? 'de la zone' : 'du lot'})
   </div>
   <div class="leg-item">
     <div class="leg-swatch" style="background:rgba(0,0,0,0.22)"></div>
@@ -561,11 +606,11 @@ function buildHtml({
     Segment
   </div>
   <div class="leg-item">
-    <div class="leg-swatch" style="background:repeating-linear-gradient(45deg, rgba(184,65,44,0.15), rgba(184,65,44,0.15) 3px, rgba(184,65,44,0.28) 3px, rgba(184,65,44,0.28) 6px)"></div>
+    <div class="leg-swatch" style="background:${pastelPdf('#B8412C', 0.20)};border-left:1.5px solid #B8412C66;border-right:1.5px solid #B8412C66"></div>
     Période bloquante
   </div>
   <div class="leg-item">
-    <div class="leg-swatch" style="background:rgba(184,65,44,0.10);border:0.5px solid rgba(184,65,44,0.25)"></div>
+    <div class="leg-swatch" style="background:${pastelPdf('#B8412C', 0.10)}"></div>
     Période informative
   </div>
   ${showDependances ? `<div class="leg-item">
@@ -580,6 +625,7 @@ function buildHtml({
     <div style="width:8mm;border-top:2px solid #8B5CF6"></div>
     Jalon
   </div>
+  ${legNoteHtml}
 </div>
 
 <div class="footer">

@@ -2,8 +2,9 @@ import { useState, useEffect, useRef } from 'react'
 import { X, Trash2, Plus, Minimize2, Maximize2, ChevronRight } from 'lucide-react'
 import {
   getWeekStart, getCurrentWeek, addWeeks, weeksBetween,
-  computeLagSemaines, getPhaseCouleur, COULEURS_PHASE_PRESET,
+  computeLagSemaines, getPhaseCouleur,
 } from './types'
+import { ColorPickerField } from '../../../shared/components/ColorPicker'
 
 const LABEL = {
   display: 'block', fontSize: 10, fontWeight: 700, textTransform: 'uppercase',
@@ -504,41 +505,19 @@ export function PhaseEtudeModal({
                 )}
               </div>
               {showCouleur && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <div
-                  title="Couleur appliquée à la barre"
-                  style={{
-                    width: 28, height: 28,
-                    background: getPhaseCouleur(form),
-                    border: '2px solid white',
-                    boxShadow: '0 0 0 1px rgba(0,0,0,0.15)',
-                    flexShrink: 0,
-                  }}
-                />
-
-                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                  {COULEURS_PHASE_PRESET.map(couleur => (
-                    <div
-                      key={couleur}
-                      onClick={() => set('couleur_custom', couleur)}
-                      title={couleur}
-                      style={{
-                        width: 18, height: 18, background: couleur, cursor: 'pointer',
-                        border: form.couleur_custom === couleur
-                          ? '2px solid #1F1B17'
-                          : '2px solid transparent',
-                      }}
-                    />
-                  ))}
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
+                {/* Palette commune — 10 colonnes pour tenir sur deux rangs dans
+                    la modale compacte. Sa prévisualisation intégrée montre déjà
+                    la couleur appliquée à la barre. */}
+                <div style={{ flex: 1, minWidth: 220 }}>
+                  <ColorPickerField
+                    value={form.couleur_custom ?? getPhaseCouleur(form)}
+                    onChange={couleur => set('couleur_custom', couleur)}
+                    columns={10}
+                    swatchSize={16}
+                    ronde={false}
+                  />
                 </div>
-
-                <input
-                  type="color"
-                  value={getPhaseCouleur(form)}
-                  onChange={e => set('couleur_custom', e.target.value)}
-                  title="Choisir une couleur libre"
-                  style={{ width: 28, height: 28, border: 'none', padding: 0, cursor: 'pointer', flexShrink: 0 }}
-                />
 
                 {form.couleur_custom && (
                   <button

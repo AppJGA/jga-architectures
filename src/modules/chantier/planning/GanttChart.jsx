@@ -4,6 +4,7 @@ import * as XLSX from 'xlsx-js-style'
 import { parseDate, formatDateISO, computeLag, addWorkingDays } from './types'
 import { propagateAllDependencies, endDateChanged, entityKey } from './propagation'
 import { buildRowsByZone } from './groupByZone'
+import { legendeCouleurs, sansDiese } from './legende'
 import { supabase } from '../../../core/supabase/client'
 import { usePlanningZones } from '../../../shared/hooks/usePlanningZones'
 import { usePlanningSegments } from '../../../shared/hooks/usePlanningSegments'
@@ -1073,8 +1074,41 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
 
     // ── Légende ──
     rowIdx += 2
+
+    // Couleurs de barres (zones ou lots) — même source que l'export PDF.
+    // Disposées comme les entrées ci-dessous : paires pastille + libellé, par
+    // rangs de six pour qu'une opération à douze zones ne parte pas hors page.
+    const legCouleurs = legendeCouleurs({ tasks, lots, zones, colorMode, groupMode })
+    const PAIRES_PAR_RANG = 6
+    let colMax = FIXED_COLS
+
+    if (legCouleurs.entrees.length) {
+      setCell(0, rowIdx, legCouleurs.titre, {
+        font: { bold: true, sz: Math.max(6, fontSize - 1), color: { rgb: '1F1B17' } },
+        alignment: { vertical: 'center' },
+        border: borderThin,
+      })
+      legCouleurs.entrees.forEach((e, i) => {
+        const rang = Math.floor(i / PAIRES_PAR_RANG)
+        const col = FIXED_COLS + (i % PAIRES_PAR_RANG) * 2
+        setCell(col, rowIdx + rang, '', {
+          fill: { fgColor: { rgb: sansDiese(e.couleur) } },
+          border: borderThin,
+        })
+        setCell(col + 1, rowIdx + rang, e.label, {
+          font: { sz: Math.max(6, fontSize - 1), color: { rgb: '5E5854' } },
+          alignment: { vertical: 'center' },
+          border: borderThin,
+        })
+        colMax = Math.max(colMax, col + 1)
+      })
+      const rangs = Math.ceil(legCouleurs.entrees.length / PAIRES_PAR_RANG)
+      for (let r = 0; r < rangs; r++) noteHauteur(rowIdx + r, dens.legendRow)
+      rowIdx += rangs + 1   // rang vide de séparation
+    }
+
     const legendItems = [
-      { color: 'E8602C', label: 'Tâche (couleur du lot/zone)' },
+      { color: 'E8602C', label: `Tâche (couleur ${colorMode === 'zone' ? 'de la zone' : 'du lot'})` },
       { color: pastel('#E8602C', 0.4), label: 'Délai avant / après' },
       { color: BLOQUANTE_FILL, label: 'Période bloquante' },
       { color: INFORMATIVE_FILL, label: 'Période informative' },
@@ -1091,13 +1125,23 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
         border: borderThin,
       })
     })
+    colMax = Math.max(colMax, FIXED_COLS + legendItems.length * 2 - 1)
     noteHauteur(rowIdx, dens.legendRow)
     rowIdx++
+
+    if (legCouleurs.note) {
+      setCell(0, rowIdx, legCouleurs.note, {
+        font: { italic: true, sz: Math.max(6, fontSize - 1), color: { rgb: '9C9591' } },
+        alignment: { vertical: 'center' },
+      })
+      noteHauteur(rowIdx, dens.legendRow)
+      rowIdx++
+    }
 
     // ── Finaliser la feuille ──
     ws['!ref'] = XLSX.utils.encode_range({
       s: { r: 0, c: 0 },
-      e: { r: rowIdx - 1, c: Math.max(FIXED_COLS + timeUnits.length - 1, FIXED_COLS + legendItems.length * 2 - 1) },
+      e: { r: rowIdx - 1, c: Math.max(FIXED_COLS + timeUnits.length - 1, colMax) },
     })
     ws['!merges'] = merges
 

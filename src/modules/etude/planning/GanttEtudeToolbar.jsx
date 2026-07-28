@@ -2,7 +2,7 @@ import { useState, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import {
   Plus, Pencil, GitBranch, Flag, Ban, SlidersHorizontal,
-  Download, ChevronDown, FileText, TableProperties, RefreshCw,
+  Download, ChevronDown, FileText, TableProperties, RefreshCw, Undo2, Redo2,
 } from 'lucide-react'
 
 const BTN = {
@@ -21,6 +21,7 @@ const MENU_ITEM = {
 }
 
 export function GanttEtudeToolbar({
+  canUndo = false, canRedo = false, onUndo, onRedo, labelUndo, labelRedo,
   onAddTask, drawMode = false, onSetDrawMode,
   onOpenPeriodes, periodes = [],
   onExportPdf, onExportExcel,
@@ -45,6 +46,33 @@ export function GanttEtudeToolbar({
       borderBottom: '0.5px solid #E9E2D6', backgroundColor: 'white',
       overflowX: 'auto', flexWrap: 'nowrap', flexShrink: 0,
     }} data-print="hidden">
+
+      {/* Annuler / rétablir — mêmes commandes que le planning chantier */}
+      <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
+        {[
+          { actif: canUndo, action: onUndo, Icone: Undo2, titre: 'Annuler', raccourci: '⌘Z', label: labelUndo },
+          { actif: canRedo, action: onRedo, Icone: Redo2, titre: 'Rétablir', raccourci: '⌘⇧Z', label: labelRedo },
+        ].map(({ actif, action, Icone, titre, raccourci, label }) => (
+          <button
+            key={titre}
+            onClick={action}
+            disabled={!actif}
+            title={actif && label ? `${titre} : ${label} (${raccourci})` : `${titre} (${raccourci})`}
+            style={{
+              width: 28, height: 28, padding: 0,
+              border: '0.5px solid rgba(0,0,0,0.15)', background: 'transparent',
+              cursor: actif ? 'pointer' : 'not-allowed',
+              opacity: actif ? 1 : 0.4,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: '#5E5854',
+            }}
+          >
+            <Icone size={13} strokeWidth={1.25} />
+          </button>
+        ))}
+      </div>
+
+      <div style={SEPARATOR} />
 
       {/* Création — bouton principal + choix du mode (modale ou dessin) */}
       <div ref={createGroupRef} style={{ display: 'flex', alignItems: 'stretch', flexShrink: 0 }}>

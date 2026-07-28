@@ -8,6 +8,8 @@ import {
 import { computeCriticalPath } from './computeCriticalPath'
 import { usePlanningEtude } from '../../../shared/hooks/usePlanningEtude'
 import { usePlanningEtudeSegments } from '../../../shared/hooks/usePlanningEtudeSegments'
+import { useUndoRedo } from '../../../shared/hooks/useUndoRedo'
+import { diffSnapshotsEtude, diffEstVide, estPhasePersistee } from './snapshotDiffEtude'
 import { usePeriodesBloquees } from '../../../shared/hooks/usePeriodesBloquees'
 import { useNotionSync, etudePhaseToNotion } from '../../../shared/hooks/useNotionSync'
 import { GanttEtudeToolbar } from './GanttEtudeToolbar'
@@ -39,6 +41,7 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
   // ── Segments (une phase peut réapparaître à d'autres périodes) ────────────────
   const {
     segments, addSegment, updateSegment, updateSegmentLocal, deleteSegment, getSegmentsForPhase,
+    replaceSegments, refetch: refetchSegments,
   } = usePlanningEtudeSegments(affaireId)
 
   // ── Périodes (congés, fermetures…) — mêmes hook et modale que le chantier ─────
@@ -51,6 +54,22 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
 
   // ── Local optimistic state (fusionne Supabase + Notion) ───────────────────────
   const [phases, setPhases] = useState([])
+  const [undoError, setUndoError] = useState(null)
+
+  // ── Historique annuler / rétablir ───────────────────────────────────────────
+  const historique = useUndoRedo(20)
+  const {
+    saveSnapshot, beginPending, commitPending,
+    undo, redo, reset: resetHistorique, canUndo, canRedo,
+  } = historique
+
+  // Les phases venues de Notion n'ont pas d'identifiant en base : elles sont
+  // écartées de l'instantané, sinon l'annulation tenterait de les insérer.
+  const takeSnapshot = useCallback((label = '') => ({
+    phases: phases.filter(estPhasePersistee).map((p) => ({ ...p })),
+    segments: segments.map((sg) => ({ ...sg })),
+    label,
+  }), [phases, segments])
 
   useEffect(() => {
     if (notionSync.notionEnabled && notionSync.notionPhases.length > 0) {
@@ -83,6 +102,10 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
     if (!notionSync.lastUpdateAt) return
     setNotionToast(true)
   }, [notionSync.lastUpdateAt])
+
+  // L'état entier est rechargé quand on change d'affaire : l'historique
+  // précédent ne s'applique plus à rien.
+  useEffect(() => { resetHistorique() }, [affaireId, resetHistorique])
 
   // ── CPM (chemin critique, recalculé après chaque changement de phases) ────────
   const criticalIds = useMemo(() => computeCriticalPath(phases), [phases])
@@ -264,19 +287,34 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
   // ── Phase CRUD ─────────────────────────────────────────────────────────────────
   const handleSavePhase = useCallback(async (data) => {
     if (phaseModalMode === 'create') {
+      saveSnapshot(takeSnapshot('Nouvelle phase'))
       await addPhase(data)
     } else {
       const { id, ...changes } = data
-      await updatePhase(id ?? editingPhase?.id, changes)
+      const cible = id ?? editingPhase?.id
+      // Instantané pris seulement si l'enregistrement modifie réellement la
+      // phase : valider la modale sans rien changer ne doit pas consommer une
+      // étape d'historique, sinon le Ctrl+Z suivant paraîtrait sans effet.
+      const ancienne = phases.find((ph) => ph.id === cible)
+      const modifie = !ancienne
+        || Object.keys(changes).some((c) => (ancienne[c] ?? null) !== (changes[c] ?? null))
+      if (modifie) saveSnapshot(takeSnapshot(`Modification « ${data.nom ?? ancienne?.nom ?? ''} »`))
+      await updatePhase(cible, changes)
     }
-  }, [phaseModalMode, addPhase, updatePhase, editingPhase])
+  }, [phaseModalMode, addPhase, updatePhase, editingPhase, phases, saveSnapshot, takeSnapshot])
 
   const handleDeletePhase = useCallback(async (id) => {
+    saveSnapshot(takeSnapshot(`Suppression « ${phases.find((ph) => ph.id === id)?.nom ?? ''} »`))
     await deletePhase(id)
-  }, [deletePhase])
+    // La suppression se propage en base aux segments (on delete cascade) mais
+    // pas au state local : sans ce filtre ils resteraient affichés, et
+    // l'annulation ne saurait pas les recréer.
+    replaceSegments(segments.filter((sg) => sg.phase_id !== id))
+  }, [deletePhase, phases, segments, replaceSegments, saveSnapshot, takeSnapshot])
 
   // ── Réordonnancement par drag & drop ─────────────────────────────────────────
   const handleReorder = useCallback(async (reorderedPhases) => {
+    saveSnapshot(takeSnapshot('Réorganisation des phases'))
     setPhases(reorderedPhases)
     try {
       await Promise.all(
@@ -287,7 +325,7 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
     } catch {
       await refetch()
     }
-  }, [refetch])
+  }, [refetch, saveSnapshot, takeSnapshot])
 
   // ── Persist en arrière-plan (découplé du state updater) ──────────────────────
   const persistUpdates = useCallback(async (phaseId, changes, cascades) => {
@@ -307,6 +345,14 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
 
   // ── Drag/resize avec cascade optimiste ────────────────────────────────────────
   const handlePhaseUpdate = useCallback((phaseId, changes) => {
+    // L'aperçu du glissement se fait en manipulant le DOM : l'état local n'a
+    // pas encore bougé, l'instantané pris ici est donc bien celui d'avant.
+    saveSnapshot(takeSnapshot(
+      changes.duree_semaines != null && changes.semaine_debut == null
+        ? 'Redimensionnement d’une phase'
+        : 'Déplacement d’une phase'
+    ))
+
     // Variables capturées depuis l'updater pour les effets de bord
     let capturedChanges  = changes
     let capturedCascades = []
@@ -358,12 +404,106 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
     if (notionId && capturedPhase) {
       notionSync.pushToNotion(notionId, capturedPhase)
     }
-  }, [persistUpdates, notionSync.pushToNotion, periodes])
+  }, [persistUpdates, notionSync.pushToNotion, periodes, saveSnapshot, takeSnapshot])
 
   // ── Commit d'un segment après drag/resize dans la timeline ────────────────────
+  // Le geste sur un segment applique `updateSegmentLocal` juste avant le commit :
+  // l'instantané est pris au mousedown et mis en attente. Il n'entre dans
+  // l'historique qu'ici, une fois le geste abouti — un simple clic sur un
+  // segment ne laisse donc pas d'entrée vide.
+  const handleSegmentDragBegin = useCallback((label) => {
+    beginPending(takeSnapshot(label))
+  }, [beginPending, takeSnapshot])
+
   const handleSegmentCommit = useCallback(async (segmentId, changes) => {
+    commitPending()
     await updateSegment(segmentId, changes)
-  }, [updateSegment])
+  }, [updateSegment, commitPending])
+
+  // ── Application d'un instantané ─────────────────────────────────────────────
+  //
+  // On écrit le strict nécessaire : les lignes modifiées, celles créées depuis
+  // l'instantané (à supprimer) et celles supprimées depuis (à recréer avec leur
+  // identifiant, pour que les segments continuent de les viser).
+  const appliquerSnapshot = useCallback(async (depuis, vers) => {
+    const diff = diffSnapshotsEtude(depuis, vers)
+    if (diffEstVide(diff)) return true
+
+    // Affichage immédiat, écriture ensuite.
+    setPhases(vers.phases)
+    replaceSegments(vers.segments)
+
+    // Les segments partent en premier : une phase ne peut être supprimée tant
+    // qu'un segment la référence, et un segment ne peut être recréé avant sa
+    // phase. L'ordre inverse est appliqué de chaque côté.
+    const vague1 = await Promise.all([
+      ...diff.segments.deletions.map((id) =>
+        supabase.from('planning_etude_segments').delete().eq('id', id)),
+      ...(diff.phases.insertions.length
+        ? [supabase.from('planning_etude_phases').insert(
+            diff.phases.insertions.map((ph) => ({ ...ph, affaire_id: ph.affaire_id ?? affaireId })))]
+        : []),
+    ])
+
+    const vague2 = await Promise.all([
+      ...diff.phases.updates.map((u) =>
+        supabase.from('planning_etude_phases').update(u.changes).eq('id', u.id)),
+      ...diff.segments.updates.map((u) =>
+        supabase.from('planning_etude_segments').update(u.changes).eq('id', u.id)),
+      ...(diff.segments.insertions.length
+        ? [supabase.from('planning_etude_segments').insert(
+            diff.segments.insertions.map((sg) => ({ ...sg, affaire_id: sg.affaire_id ?? affaireId })))]
+        : []),
+      ...diff.phases.deletions.map((id) =>
+        supabase.from('planning_etude_phases').delete().eq('id', id)),
+    ])
+
+    const echec = [...vague1, ...vague2].find((r) => r?.error)
+    if (echec?.error) {
+      console.error('Historique : échec de persistance —', echec.error.message)
+      setUndoError(echec.error.message)
+    }
+    // `phases` local dérive de `hookPhases` (fusion Notion) : sans ce
+    // rechargement, la prochaine opération du hook repartirait de son état
+    // d'avant l'annulation et la réappliquerait.
+    await Promise.all([refetch(), refetchSegments()])
+    return !echec?.error
+  }, [affaireId, replaceSegments, refetch, refetchSegments])
+
+  const handleUndo = useCallback(async () => {
+    const courant = takeSnapshot()
+    const precedent = undo(courant)
+    if (!precedent) return
+    await appliquerSnapshot(courant, precedent)
+  }, [undo, takeSnapshot, appliquerSnapshot])
+
+  const handleRedo = useCallback(async () => {
+    const courant = takeSnapshot()
+    const suivant = redo(courant)
+    if (!suivant) return
+    await appliquerSnapshot(courant, suivant)
+  }, [redo, takeSnapshot, appliquerSnapshot])
+
+  // ── Raccourcis clavier ──────────────────────────────────────────────────────
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      // Ni pendant une saisie, ni dans une zone éditable : le geste y a un autre
+      // sens (annuler la frappe, pas la dernière action du planning).
+      const tag = document.activeElement?.tagName
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(tag)) return
+      if (document.activeElement?.isContentEditable) return
+      const touche = e.key.toLowerCase()
+      if (touche !== 'z' && touche !== 'y') return
+      if (!e.ctrlKey && !e.metaKey) return
+
+      const versLeFutur = (touche === 'z' && e.shiftKey) || touche === 'y'
+      e.preventDefault()
+      if (versLeFutur) { if (canRedo) handleRedo() }
+      else if (canUndo) handleUndo()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [canUndo, canRedo, handleUndo, handleRedo])
 
   // ── Export Excel ──────────────────────────────────────────────────────────────
   // `density` vient de la modale d'export ; à défaut (bouton Excel direct de la
@@ -420,7 +560,28 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 52px)', overflow: 'hidden', backgroundColor: '#FAFAF9' }}>
       <div data-print="hidden">
+        {undoError && (
+          <div style={{
+            padding: '6px 12px', fontSize: 12, color: '#B8412C',
+            background: 'rgba(184,65,44,0.08)', borderBottom: '0.5px solid rgba(184,65,44,0.2)',
+            display: 'flex', alignItems: 'center', gap: 8,
+          }}>
+            <span>Annulation impossible — {undoError}. Le planning a été rechargé.</span>
+            <button
+              onClick={() => setUndoError(null)}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#B8412C', textDecoration: 'underline' }}
+            >
+              Fermer
+            </button>
+          </div>
+        )}
         <GanttEtudeToolbar
+          canUndo={canUndo}
+          canRedo={canRedo}
+          onUndo={handleUndo}
+          onRedo={handleRedo}
+          labelUndo={historique.labelUndo}
+          labelRedo={historique.labelRedo}
           onAddTask={handleNewPhase}
           drawMode={drawMode}
           onSetDrawMode={setDrawMode}
@@ -488,6 +649,7 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
             getSegmentsForPhase={getSegmentsForPhase}
             updateSegmentLocal={updateSegmentLocal}
             onSegmentCommit={handleSegmentCommit}
+            onSegmentDragBegin={handleSegmentDragBegin}
             periodes={periodes}
             drawMode={drawMode}
             onDrawCreate={handleDrawCreate}

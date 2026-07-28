@@ -50,7 +50,7 @@ export function GanttEtudeTimeline({
   onDependencyCreate, onDependencyDelete,
   criticalIds,
   refSemaine, refAnnee,
-  segments = [], getSegmentsForPhase, updateSegmentLocal, onSegmentCommit,
+  segments = [], getSegmentsForPhase, updateSegmentLocal, onSegmentCommit, onSegmentDragBegin,
   periodes = [],
   drawMode = false, onDrawCreate,
   rowHeight = 44,
@@ -200,8 +200,13 @@ export function GanttEtudeTimeline({
       origLeft,
     }
     setDraggingSeg(seg.id)
+    // `updateSegmentLocal` est appelé juste avant le commit, au relâchement :
+    // l'instantané doit donc être pris ici, avant que l'état ne bouge.
+    onSegmentDragBegin?.(type === 'move'
+      ? 'Déplacement d’un segment'
+      : 'Redimensionnement d’un segment')
     document.body.style.cursor = type === 'move' ? 'grabbing' : 'ew-resize'
-  }, [refWeek, semWidth, drawMode])
+  }, [refWeek, semWidth, drawMode, onSegmentDragBegin])
 
   // Géométrie d'un segment après un déplacement de `delta` semaines
   const segChangesFor = useCallback((drag, delta) => {

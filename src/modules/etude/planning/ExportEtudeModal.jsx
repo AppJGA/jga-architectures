@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react'
 import { FileDown, X } from 'lucide-react'
-import { addWeeks, weeksBetween, getCurrentWeek } from './types'
+import { addWeeks, weeksBetween, getCurrentWeek, densityFromRowHeight } from './types'
 import { generatePlanningEtudePdf } from './generatePlanningEtudePdf'
 
 const LABEL = {
@@ -30,6 +30,12 @@ const PAGE_FORMATS = [
   { label: 'A1 Paysage',   w: 841, h: 594 },
 ]
 
+const DENSITY_OPTIONS = [
+  { label: 'Compact', value: 'compact' },
+  { label: 'Normal', value: 'normal' },
+  { label: 'Confort', value: 'confort' },
+]
+
 function computeRange(taches) {
   if (!taches.length) {
     const cw = getCurrentWeek()
@@ -48,7 +54,10 @@ function computeRange(taches) {
   return { semDebut: start.semaine, anneeDebut: start.annee, semFin: fin.semaine, anneeFin: fin.annee }
 }
 
-export function ExportEtudeModal({ open, onClose, taches = [], jalons = [], affaire = {}, segments = [], periodes = [] }) {
+export function ExportEtudeModal({
+  open, onClose, taches = [], jalons = [], affaire = {}, segments = [], periodes = [],
+  rowHeight = 36, onExportExcel,
+}) {
   const computed = useMemo(() => computeRange(taches), [taches])
 
   const [semDebut,     setSemDebut]     = useState(computed.semDebut)
@@ -60,6 +69,7 @@ export function ExportEtudeModal({ open, onClose, taches = [], jalons = [], affa
   const [customW,      setCustomW]      = useState(420)
   const [customH,      setCustomH]      = useState(297)
   const [isLandscape,  setIsLandscape]  = useState(true)
+  const [exportDensity, setExportDensity] = useState(() => densityFromRowHeight(rowHeight))
 
   useEffect(() => {
     if (!open) return
@@ -67,7 +77,8 @@ export function ExportEtudeModal({ open, onClose, taches = [], jalons = [], affa
     setAnneeDebut(computed.anneeDebut)
     setSemFin(computed.semFin)
     setAnneeFin(computed.anneeFin)
-  }, [open, computed])
+    setExportDensity(densityFromRowHeight(rowHeight))
+  }, [open, computed, rowHeight])
 
   const periodSemaines = useMemo(() =>
     Math.max(0, weeksBetween(semDebut, anneeDebut, semFin, anneeFin)),
@@ -127,6 +138,7 @@ export function ExportEtudeModal({ open, onClose, taches = [], jalons = [], affa
       hauteurMm: finalFormat.h,
       segments: segmentsInPeriod,
       periodes,
+      density: exportDensity,
     })
     onClose()
   }
@@ -261,6 +273,33 @@ export function ExportEtudeModal({ open, onClose, taches = [], jalons = [], affa
             </p>
           </div>
 
+          {/* ── B2) HAUTEUR DES LIGNES ── */}
+          <div style={{ marginBottom: 20 }}>
+            <label style={LABEL}>Hauteur des lignes</label>
+            <div style={{ display: 'flex', border: '0.5px solid rgba(0,0,0,0.15)', overflow: 'hidden' }}>
+              {DENSITY_OPTIONS.map((opt, idx) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setExportDensity(opt.value)}
+                  style={{
+                    flex: 1, padding: '6px 0', fontSize: 12, border: 'none',
+                    borderRight: idx < DENSITY_OPTIONS.length - 1 ? '0.5px solid rgba(0,0,0,0.15)' : 'none',
+                    background: exportDensity === opt.value ? '#E8602C' : 'transparent',
+                    color: exportDensity === opt.value ? 'white' : '#5E5854',
+                    cursor: 'pointer',
+                    fontWeight: exportDensity === opt.value ? 500 : 400,
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            <p style={{ fontSize: 11, color: '#9C9591', marginTop: 6, fontStyle: 'italic' }}>
+              Pré-sélectionnée selon la densité affichée à l'écran.
+            </p>
+          </div>
+
           {/* ── C) RÉSUMÉ ── */}
           <div style={{ borderRadius: 2, backgroundColor: '#FAF7F2', border: '0.5px solid rgba(0,0,0,0.08)', padding: '12px 16px' }}>
             <p style={{ fontSize: 12, color: '#1F1B17', fontWeight: 500, marginBottom: 4 }}>Récapitulatif</p>
@@ -270,7 +309,10 @@ export function ExportEtudeModal({ open, onClose, taches = [], jalons = [], affa
               {periodes.length > 0 && ` · ${periodes.length} période${periodes.length > 1 ? 's' : ''}`}
               <br />
               Période : S{semDebut} {anneeDebut} → S{semFin} {anneeFin}<br />
-              Format : {finalFormat.w} mm × {finalFormat.h} mm<br />
+              Format : {finalFormat.w} mm × {finalFormat.h} mm
+              {' · '}
+              {DENSITY_OPTIONS.find(o => o.value === exportDensity)?.label}
+              <br />
               <span style={{ color: '#9C9591', fontSize: 10 }}>Le tableau sera mis à l'échelle pour tenir sur une page.</span>
             </p>
           </div>
@@ -280,6 +322,15 @@ export function ExportEtudeModal({ open, onClose, taches = [], jalons = [], affa
         {/* Footer */}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 22, paddingTop: 16, borderTop: '0.5px solid rgba(0,0,0,0.08)' }}>
           <button style={BTN} onClick={onClose}><X size={13} /> Annuler</button>
+          {onExportExcel && (
+            <button
+              style={{ ...BTN, marginRight: 'auto' }}
+              onClick={() => { onExportExcel({ density: exportDensity }); onClose() }}
+              title="Exporter le tableau avec la même densité"
+            >
+              <FileDown size={13} /> Excel
+            </button>
+          )}
           <button
             style={{ ...BTN_PRIMARY, opacity: isValid ? 1 : 0.5 }}
             onClick={handleGenerate}

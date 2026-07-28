@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { X, Trash2, Plus, Minimize2, Maximize2 } from 'lucide-react'
+import { X, Trash2, Plus, Minimize2, Maximize2, ChevronRight } from 'lucide-react'
 import {
   getWeekStart, getCurrentWeek, addWeeks, weeksBetween,
   computeLagSemaines, getPhaseCouleur, COULEURS_PHASE_PRESET,
@@ -182,6 +182,9 @@ export function PhaseEtudeModal({
   const [form, setForm] = useState(() => emptyForm(defaultSemaine, createDefaults))
   const [saving, setSaving] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  // Sections repliables : dépliées d'office seulement si elles portent une valeur
+  const [showCouleur, setShowCouleur] = useState(false)
+  const [showSegments, setShowSegments] = useState(false)
 
   // ── Fenêtre flottante : position, minimisation, déplacement ─────────────────
   const [position, setPosition] = useState(centeredPosition)
@@ -193,7 +196,17 @@ export function PhaseEtudeModal({
     if (!open) return
     setPosition(centeredPosition())
     setMinimized(false)
-  }, [open])
+    setShowCouleur(!!phase?.couleur_custom)
+    setShowSegments((phase?.id && getSegmentsForPhase ? getSegmentsForPhase(phase.id) : []).length > 0)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, phase?.id])
+
+  // Une fenêtre rétrécie ne doit pas laisser la modale hors écran
+  useEffect(() => {
+    const handleResize = () => setPosition((prev) => clampPosition(prev.x, prev.y))
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
 
   useEffect(() => {
     if (!isDraggingModal) return
@@ -366,8 +379,9 @@ export function PhaseEtudeModal({
         top: position.y,
         width: MODAL_WIDTH,
         height: minimized ? MODAL_MINIMIZED_HEIGHT : 'auto',
-        maxHeight: minimized ? MODAL_MINIMIZED_HEIGHT : '85vh',
-        overflow: minimized ? 'hidden' : 'auto',
+        // Jamais plus haute que la fenêtre : le corps défile, le pied reste visible
+        maxHeight: minimized ? MODAL_MINIMIZED_HEIGHT : 'calc(100vh - 48px)',
+        overflow: 'hidden',
         background: 'white',
         border: '0.5px solid #E9E2D6',
         boxShadow: '0 8px 32px rgba(0,0,0,0.15)',
@@ -422,9 +436,14 @@ export function PhaseEtudeModal({
       </div>
 
       {!minimized && (
-        <div style={{ padding: '18px 22px', overflowY: 'auto', flex: 1 }}>
-        <form onSubmit={handleSubmit}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <form
+          onSubmit={handleSubmit}
+          style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}
+        >
+          <div style={{
+            padding: '12px 16px', overflowY: 'auto', flex: 1, minHeight: 0,
+            display: 'flex', flexDirection: 'column', gap: 10,
+          }}>
 
             {/* 4 boutons de type */}
             <div>
@@ -463,7 +482,28 @@ export function PhaseEtudeModal({
 
             {/* Couleur personnalisée — prime sur la couleur du type */}
             <div>
-              <label style={LABEL}>Couleur personnalisée (optionnel)</label>
+              <div
+                onClick={() => setShowCouleur((v) => !v)}
+                style={{
+                  cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
+                  fontSize: 10, fontWeight: 700, color: '#9C9591',
+                  textTransform: 'uppercase', letterSpacing: '0.06em',
+                  padding: '2px 0', marginBottom: showCouleur ? 6 : 0, userSelect: 'none',
+                }}
+              >
+                <ChevronRight
+                  size={12}
+                  style={{ transform: showCouleur ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}
+                />
+                Couleur personnalisée
+                {!showCouleur && form.couleur_custom && (
+                  <span style={{
+                    width: 12, height: 12, background: form.couleur_custom,
+                    border: '1px solid rgba(0,0,0,0.15)', display: 'inline-block',
+                  }} />
+                )}
+              </div>
+              {showCouleur && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 <div
                   title="Couleur appliquée à la barre"
@@ -513,6 +553,7 @@ export function PhaseEtudeModal({
                   </button>
                 )}
               </div>
+              )}
             </div>
 
             {/* Nom */}
@@ -654,16 +695,25 @@ export function PhaseEtudeModal({
             {mode === 'edit' && phase?.id && addSegment && (
               <div style={{ borderTop: '0.5px solid rgba(0,0,0,0.08)', paddingTop: 14 }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                  <span style={{
-                    fontSize: 11, fontWeight: 500, color: '#9C9591',
-                    textTransform: 'uppercase', letterSpacing: '0.05em',
-                  }}>
-                    Segments supplémentaires
+                  <span
+                    onClick={() => setShowSegments((v) => !v)}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer',
+                      fontSize: 10, fontWeight: 700, color: '#9C9591',
+                      textTransform: 'uppercase', letterSpacing: '0.06em',
+                      padding: '2px 0', userSelect: 'none',
+                    }}
+                  >
+                    <ChevronRight
+                      size={12}
+                      style={{ transform: showSegments ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}
+                    />
+                    Segments
                     {segmentsDePhase.length > 0 && ` (${segmentsDePhase.length})`}
                   </span>
                   <button
                     type="button"
-                    onClick={handleAddSegment}
+                    onClick={() => { setShowSegments(true); handleAddSegment() }}
                     style={{
                       display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px',
                       fontSize: 11, borderRadius: 2,
@@ -676,13 +726,13 @@ export function PhaseEtudeModal({
                   </button>
                 </div>
 
-                {segmentsDePhase.length === 0 && (
+                {showSegments && segmentsDePhase.length === 0 && (
                   <p style={{ fontSize: 11, color: '#9C9591', fontStyle: 'italic', padding: '4px 0' }}>
                     Aucun segment — la phase n'apparaît qu'à sa période principale.
                   </p>
                 )}
 
-                {segmentsDePhase.map((seg, idx) => (
+                {showSegments && segmentsDePhase.map((seg, idx) => (
                   <SegmentRow
                     key={seg.id}
                     seg={seg}
@@ -696,8 +746,11 @@ export function PhaseEtudeModal({
             )}
           </div>
 
-          {/* Footer */}
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 24, alignItems: 'center' }}>
+          {/* Pied fixe — toujours visible, quelle que soit la hauteur du formulaire */}
+          <div style={{
+            flexShrink: 0, display: 'flex', gap: 8, justifyContent: 'flex-end', alignItems: 'center',
+            padding: '10px 16px', background: 'white', borderTop: '0.5px solid #E9E2D6',
+          }}>
             {mode === 'edit' && phase && (
               <button type="button" onClick={handleDelete} disabled={saving}
                 style={{
@@ -730,7 +783,6 @@ export function PhaseEtudeModal({
             </button>
           </div>
         </form>
-        </div>
       )}
     </div>
   )

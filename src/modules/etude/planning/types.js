@@ -14,6 +14,32 @@ export const TYPE_LABELS = {
   chantier:      'Phase chantier',
 }
 
+// ─── Densité des lignes ───────────────────────────────────────────────────────
+//
+// Toutes les métriques dérivées de la hauteur de ligne, au niveau du MODULE :
+// la sidebar et la timeline sont deux composants distincts et doivent partager
+// la même source, sous peine qu'une des deux branches soit oubliée.
+export function rowMetrics(rowHeight) {
+  const compact = rowHeight <= 24
+  const confort = rowHeight >= 48
+  return {
+    compact,
+    barPad: Math.max(3, Math.round(rowHeight * 0.15)),
+    fontSize: compact ? 10 : confort ? 12 : 11,
+    numFontSize: compact ? 9 : confort ? 11 : 10,
+    connectionSize: compact ? 6 : 8,
+    inputHeight: compact ? 18 : 24,
+    dotSize: compact ? 5 : 6,
+  }
+}
+
+// Densité d'export déduite de la hauteur affichée à l'écran
+export function densityFromRowHeight(rowHeight) {
+  if (rowHeight <= 24) return 'compact'
+  if (rowHeight >= 48) return 'confort'
+  return 'normal'
+}
+
 // Couleurs proposées dans le sélecteur de couleur personnalisée
 export const COULEURS_PHASE_PRESET = [
   '#E8602C', '#2A8A4E', '#D97706', '#1B3A5C', '#9C9591',

@@ -1,11 +1,10 @@
 import { useState, useCallback } from 'react'
 import { Pencil, GripVertical } from 'lucide-react'
-import { getPhaseCouleur } from './types'
+import { getPhaseCouleur, rowMetrics } from './types'
 
 export const HEADER_HEIGHT = 56
-const ROW_HEIGHT = 44
 
-export function GanttEtudeSidebar({ phases, onEdit, criticalIds, onReorder }) {
+export function GanttEtudeSidebar({ phases, onEdit, criticalIds, onReorder, rowHeight = 44 }) {
   const [draggedId, setDraggedId]   = useState(null)
   const [dragOverId, setDragOverId] = useState(null)
 
@@ -59,6 +58,7 @@ export function GanttEtudeSidebar({ phases, onEdit, criticalIds, onReorder }) {
         <PhaseRow
           key={phase.id}
           phase={phase}
+          rowHeight={rowHeight}
           onEdit={onEdit}
           isCritical={criticalIds?.has(phase.id) ?? false}
           isDragging={draggedId === phase.id}
@@ -74,19 +74,22 @@ export function GanttEtudeSidebar({ phases, onEdit, criticalIds, onReorder }) {
 }
 
 function PhaseRow({
-  phase, onEdit, isCritical,
+  phase, rowHeight, onEdit, isCritical,
   isDragging, isDragOver,
   onDragStart, onDragEnd, onDragOver, onDrop,
 }) {
   const [hovered, setHovered] = useState(false)
   const color = getPhaseCouleur(phase)
+  const { fontSize, numFontSize, dotSize } = rowMetrics(rowHeight)
 
+  // Les phases MOE/chantier sont un cran au-dessus des lignes secondaires,
+  // l'écart étant conservé quelle que soit la densité.
   const nameStyle = {
-    etude:         { fontSize: 12, fontWeight: 600, color: hovered ? '#E8602C' : '#1F1B17', fontStyle: 'normal', marginLeft: 0 },
-    validation:    { fontSize: 11, fontWeight: 400, color: hovered ? '#E8602C' : '#4b5563', fontStyle: 'normal', marginLeft: 8 },
-    administratif: { fontSize: 11, fontWeight: 400, color: hovered ? '#E8602C' : '#92400E', fontStyle: 'italic', marginLeft: 0 },
-    chantier:      { fontSize: 12, fontWeight: 500, color: hovered ? '#E8602C' : '#1e40af', fontStyle: 'normal', marginLeft: 0 },
-  }[phase.type_tache] ?? { fontSize: 12, fontWeight: 400, color: '#1F1B17', fontStyle: 'normal', marginLeft: 0 }
+    etude:         { fontSize, fontWeight: 600, color: hovered ? '#E8602C' : '#1F1B17', fontStyle: 'normal', marginLeft: 0 },
+    validation:    { fontSize: numFontSize + 1, fontWeight: 400, color: hovered ? '#E8602C' : '#4b5563', fontStyle: 'normal', marginLeft: 8 },
+    administratif: { fontSize: numFontSize + 1, fontWeight: 400, color: hovered ? '#E8602C' : '#92400E', fontStyle: 'italic', marginLeft: 0 },
+    chantier:      { fontSize, fontWeight: 500, color: hovered ? '#E8602C' : '#1e40af', fontStyle: 'normal', marginLeft: 0 },
+  }[phase.type_tache] ?? { fontSize, fontWeight: 400, color: '#1F1B17', fontStyle: 'normal', marginLeft: 0 }
 
   return (
     <div
@@ -96,7 +99,7 @@ function PhaseRow({
       onDragOver={e => onDragOver(e, phase.id)}
       onDrop={e => onDrop(e, phase.id)}
       style={{
-        display: 'flex', alignItems: 'center', height: ROW_HEIGHT,
+        display: 'flex', alignItems: 'center', height: rowHeight,
         paddingRight: 12,
         borderBottom: '0.5px solid rgba(0,0,0,0.06)',
         borderTop: isDragOver ? '2px solid var(--jga-orange)' : '2px solid transparent',
@@ -123,14 +126,14 @@ function PhaseRow({
       {/* Point chemin critique */}
       {isCritical && (
         <div style={{
-          width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
+          width: dotSize, height: dotSize, borderRadius: '50%', flexShrink: 0,
           backgroundColor: '#B8412C', marginRight: 5,
         }} />
       )}
 
       {/* Point type */}
       <div style={{
-        width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
+        width: dotSize, height: dotSize, borderRadius: '50%', flexShrink: 0,
         backgroundColor: color, marginRight: 8,
       }} />
 

@@ -2,7 +2,7 @@ import { useMemo, useRef, useCallback, useState, useEffect } from 'react'
 import { Pencil, GitBranch } from 'lucide-react'
 import {
   getWeekStart, addWeeks, weeksBetween, getCurrentWeek, computeLagSemaines,
-  getPhaseCouleur, adminGradient,
+  getPhaseCouleur, adminGradient, rowMetrics,
   weekOfDate, computePhaseFragments, finEffectivePhase, distributeSegmentsAcrossFragments,
 } from './types'
 
@@ -24,7 +24,6 @@ function getBarStyle(phase, couleur) {
 }
 
 const HEADER_HEIGHT = 56
-const DOT_R = 6
 
 const dragState = { moved: false }
 
@@ -34,8 +33,8 @@ const dragState = { moved: false }
 // drapeau hors rendu (même principe que `dragState.moved`).
 const connectionState = { pending: false }
 
-function rowHeightOf() { return 44 }
-function barPadOf() { return 4 }
+// Hauteur et marges dérivées de la prop `rowHeight` (cf. rowMetrics dans
+// types.js) — plus aucune constante figée ici.
 
 function isFirstWeekOfMonth(semaine, annee) {
   const date = getWeekStart(semaine, annee)
@@ -54,7 +53,9 @@ export function GanttEtudeTimeline({
   segments = [], getSegmentsForPhase, updateSegmentLocal, onSegmentCommit,
   periodes = [],
   drawMode = false, onDrawCreate,
+  rowHeight = 44,
 }) {
+  const metrics = rowMetrics(rowHeight)
   // ── Reference week — reçue depuis GanttEtude (dynamique, -4 sem de marge) ─────
   const refWeek = useMemo(
     () => ({ semaine: refSemaine, annee: refAnnee }),
@@ -91,14 +92,14 @@ export function GanttEtudeTimeline({
     let y = 0
     for (const p of phases) {
       offsets[p.id] = y
-      y += rowHeightOf(p)
+      y += rowHeight
     }
     return offsets
-  }, [phases])
+  }, [phases, rowHeight])
 
   const totalBodyHeight = useMemo(() =>
-    phases.reduce((sum, p) => sum + rowHeightOf(p), 0),
-    [phases]
+    phases.length * rowHeight,
+    [phases, rowHeight]
   )
 
   const weekIndex = useCallback((sem, ann) =>
@@ -345,8 +346,8 @@ export function GanttEtudeTimeline({
           refWeek.semaine, refWeek.annee,
           fragsEnfant[0].semaine_debut, fragsEnfant[0].annee_debut
         ) * semWidth
-        const fromY = fromOffset + rowHeightOf(fromPhase) - barPadOf(fromPhase)
-        const toY = toOffset + rowHeightOf(p) - barPadOf(p)
+        const fromY = fromOffset + rowHeight - metrics.barPad
+        const toY = toOffset + rowHeight - metrics.barPad
         return {
           id: `${fromPhase.id}-${p.id}`,
           fromPhaseId: fromPhase.id, toPhaseId: p.id,
@@ -359,7 +360,7 @@ export function GanttEtudeTimeline({
         }
       })
       .filter(Boolean),
-    [phases, rowOffsets, refWeek, semWidth, periodes]
+    [phases, rowOffsets, refWeek, semWidth, periodes, rowHeight, metrics.barPad]
   )
 
   // ── Mouse handlers ─────────────────────────────────────────────────────────────
@@ -649,6 +650,7 @@ export function GanttEtudeTimeline({
             key={phase.id}
             phase={dragPreview?.id === phase.id ? { ...phase, ...dragPreview } : phase}
             periodes={periodes}
+            rowHeight={rowHeight}
             rowOffset={rowOffsets[phase.id] ?? 0}
             semWidth={semWidth}
             refSemaine={refWeek.semaine}
@@ -812,7 +814,7 @@ export function GanttEtudeTimeline({
 // ─── PhaseBarRow ───────────────────────────────────────────────────────────────
 
 function PhaseBarRow({
-  phase, periodes = [], rowOffset, semWidth, refSemaine, refAnnee,
+  phase, periodes = [], rowOffset, semWidth, refSemaine, refAnnee, rowHeight = 44,
   isDragging, isConnecting, connectingFromId, hoveredPoint,
   onBarDragStart, onBarClick, onConnectionPointClick, onConnectionPointHover,
   isCritical,
@@ -821,8 +823,9 @@ function PhaseBarRow({
   const [isHovered, setIsHovered] = useState(false)
 
   const isMoe = phase.type_tache === 'etude'
-  const rh = rowHeightOf(phase)
-  const barPad = barPadOf(phase)
+  const { barPad, fontSize, connectionSize } = rowMetrics(rowHeight)
+  const rh = rowHeight
+  const DOT_R = connectionSize / 2
   const color = getPhaseCouleur(phase)
   const barStyle = getBarStyle(phase, color)
   const isAdmin = phase.type_tache === 'administratif'
@@ -1007,7 +1010,7 @@ function PhaseBarRow({
         display: 'flex',
         alignItems: 'center',
         whiteSpace: 'nowrap',
-        fontSize: 11,
+        fontSize,
         fontWeight: isMoe ? 600 : 400,
         color: '#1F1B17',
         pointerEvents: 'none',

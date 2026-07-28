@@ -16,6 +16,14 @@ import {
 // par défaut, épaisses pour les séparateurs (mois, sidebar/timeline), tiretées
 // entre les lignes de phases.
 
+// Hauteurs de ligne (points) et corps de texte, par densité.
+// `normal` reproduit le rendu historique (16 pt, corps 9).
+const EXCEL_DENSITY = {
+  compact: { headerRow: 14, phaseRow: 12, legendRow: 12, fontSize: 7 },
+  normal:  { headerRow: 18, phaseRow: 16, legendRow: 14, fontSize: 9 },
+  confort: { headerRow: 24, phaseRow: 22, legendRow: 18, fontSize: 11 },
+}
+
 const FIXED_COLS = 2 // Phase, Durée
 
 const B_THIN = { style: 'thin', color: { rgb: '000000' } }
@@ -75,8 +83,13 @@ function buildWeeks(phases, segments, periodes, refSemaine, refAnnee) {
 
 export function exportPlanningEtudeExcel({
   phases = [], segments = [], jalons = [], periodes = [], affaire = {},
-  refSemaine, refAnnee,
+  refSemaine, refAnnee, density = 'normal',
 }) {
+  const dens = EXCEL_DENSITY[density] ?? EXCEL_DENSITY.normal
+  const fontSize = dens.fontSize
+  // Hauteur de chaque ligne, renseignée au fil des émissions
+  const rowHeights = []
+  const noteHauteur = (idx, hpt) => { rowHeights[idx] = { hpt } }
   const weeks = buildWeeks(phases, segments, periodes, refSemaine, refAnnee)
   const cw = getCurrentWeek()
 
@@ -92,7 +105,7 @@ export function exportPlanningEtudeExcel({
   }
 
   const styleHeader = (col) => ({
-    font: { bold: true, sz: 9, color: { rgb: 'FFFFFF' } },
+    font: { bold: true, sz: fontSize, color: { rgb: 'FFFFFF' } },
     fill: { fgColor: { rgb: '1F1B17' } },
     alignment: { horizontal: 'center', vertical: 'center' },
     border: borderHeader(false, col === FIXED_COLS - 1),
@@ -121,7 +134,7 @@ export function exportPlanningEtudeExcel({
   moisGroupes.forEach((mg) => {
     const isCur = mg.month === today.getMonth() && mg.year === today.getFullYear()
     setCell(colOff, 0, mg.label.charAt(0).toUpperCase() + mg.label.slice(1), {
-      font: { bold: true, sz: 9, color: { rgb: isCur ? 'E8602C' : '1F1B17' } },
+      font: { bold: true, sz: fontSize, color: { rgb: isCur ? 'E8602C' : '1F1B17' } },
       fill: { fgColor: { rgb: isCur ? 'FAF0EB' : 'F5F2F0' } },
       alignment: { horizontal: 'center', vertical: 'center' },
       border: borderHeader(true, true),
@@ -132,13 +145,15 @@ export function exportPlanningEtudeExcel({
 
   // ── Ligne 1 : numéros de semaine ──
   rowIdx = 1
+  noteHauteur(0, dens.headerRow)
+  noteHauteur(1, dens.headerRow)
   setCell(0, rowIdx, 'Phase', styleHeader(0))
   setCell(1, rowIdx, 'Durée', styleHeader(1))
 
   weeks.forEach((w, i) => {
     const isCur = w.semaine === cw.semaine && w.annee === cw.annee
     setCell(FIXED_COLS + i, rowIdx, `S${w.semaine}`, {
-      font: { bold: isCur, sz: 8, color: { rgb: isCur ? 'E8602C' : '5E5854' } },
+      font: { bold: isCur, sz: Math.max(6, fontSize - 1), color: { rgb: isCur ? 'E8602C' : '5E5854' } },
       fill: { fgColor: { rgb: isCur ? 'FAF0EB' : 'FAFAF9' } },
       alignment: { horizontal: 'center' },
       border: borderHeader(isFirstWeekOfMonth(w.semaine, w.annee), false),
@@ -172,13 +187,13 @@ export function exportPlanningEtudeExcel({
     const segs = segments.filter((s) => s.phase_id === phase.id)
 
     setCell(0, rowIdx, phase.nom ?? '', {
-      font: { bold: phase.type_tache === 'etude', sz: 9, color: { rgb: '1F1B17' } },
+      font: { bold: phase.type_tache === 'etude', sz: fontSize, color: { rgb: '1F1B17' } },
       fill: { fgColor: { rgb: 'FFFFFF' } },
       alignment: { vertical: 'center' },
       border: borderRow(false, false),
     })
     setCell(1, rowIdx, `${phase.duree_semaines} sem.`, {
-      font: { sz: 9, color: { rgb: '5E5854' } },
+      font: { sz: fontSize, color: { rgb: '5E5854' } },
       fill: { fgColor: { rgb: 'FFFFFF' } },
       alignment: { horizontal: 'center', vertical: 'center' },
       border: borderRow(false, true),
@@ -222,19 +237,21 @@ export function exportPlanningEtudeExcel({
         border: bordure,
       })
     })
+    noteHauteur(rowIdx, dens.phaseRow)
     rowIdx++
   })
 
   // ── Jalons ──
   if (jalons.length > 0) {
-    setCell(0, rowIdx, 'JALONS', { font: { bold: true, sz: 9 }, border: borderThin })
+    noteHauteur(rowIdx, dens.headerRow)
+    setCell(0, rowIdx, 'JALONS', { font: { bold: true, sz: fontSize }, border: borderThin })
     setCell(1, rowIdx, '', { border: borderThin })
     weeks.forEach((_, i) => setCell(FIXED_COLS + i, rowIdx, '', { border: borderThin }))
     rowIdx++
 
     jalons.forEach((jalon) => {
       setCell(0, rowIdx, jalon.label ?? '', {
-        font: { bold: true, sz: 9, color: { rgb: '1F1B17' } },
+        font: { bold: true, sz: fontSize, color: { rgb: '1F1B17' } },
         alignment: { vertical: 'center' },
         border: borderRow(false, false),
       })
@@ -250,6 +267,7 @@ export function exportPlanningEtudeExcel({
           border: borderRow(isFirstWeekOfMonth(w.semaine, w.annee), false),
         })
       })
+      noteHauteur(rowIdx, dens.phaseRow)
       rowIdx++
     })
   }
@@ -271,11 +289,12 @@ export function exportPlanningEtudeExcel({
       border: borderThin,
     })
     setCell(FIXED_COLS + i * 2 + 1, rowIdx, item.label, {
-      font: { sz: 8, color: { rgb: '5E5854' } },
+      font: { sz: Math.max(6, fontSize - 1), color: { rgb: '5E5854' } },
       alignment: { vertical: 'center' },
       border: borderThin,
     })
   })
+  noteHauteur(rowIdx, dens.legendRow)
   rowIdx++
 
   // ── Finalisation ──
@@ -288,7 +307,8 @@ export function exportPlanningEtudeExcel({
   })
   ws['!merges'] = merges
   ws['!cols'] = [{ wch: 30 }, { wch: 8 }, ...weeks.map(() => ({ wch: 4 }))]
-  ws['!rows'] = Array(rowIdx).fill({ hpt: 16 })
+  // Toute ligne non renseignée reprend la hauteur d'une ligne de phase
+  ws['!rows'] = Array.from({ length: rowIdx }, (_, i) => rowHeights[i] ?? { hpt: dens.phaseRow })
 
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, ws, 'Planning étude')

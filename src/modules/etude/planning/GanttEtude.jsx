@@ -3,7 +3,7 @@ import { X, ZoomIn, ZoomOut } from 'lucide-react'
 import { supabase } from '../../../core/supabase/client'
 import {
   propagateEtudeDependencies, computeLagSemaines, addWeeks, weeksBetween, getCurrentWeek,
-  getNextAvailableSemaine, TYPE_COLORS, adminGradient,
+  getNextAvailableSemaine, TYPE_COLORS, adminGradient, densityFromRowHeight,
 } from './types'
 import { computeCriticalPath } from './computeCriticalPath'
 import { usePlanningEtude } from '../../../shared/hooks/usePlanningEtude'
@@ -19,6 +19,14 @@ import { ExportEtudeModal } from './ExportEtudeModal'
 import { PeriodesBloqueesModal } from '../../chantier/planning/PeriodesBloqueesModal'
 import { exportPlanningEtudeExcel } from './exportPlanningEtudeExcel'
 import { Toast } from '../../../shared/components/Toast'
+
+// Densité des lignes du planning
+const ROW_HEIGHT_OPTIONS = [
+  { label: 'Compact', value: 24 },
+  { label: 'Normal', value: 36 },
+  { label: 'Confort', value: 48 },
+]
+const ROW_HEIGHT_DEFAUT = 36
 
 // Bornes de zoom (largeur d'une colonne semaine, en px)
 const SEM_WIDTH_MIN = 4
@@ -129,6 +137,15 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
   const [showExportModal, setShowExportModal] = useState(false)
   const [showPeriodesModal, setShowPeriodesModal] = useState(false)
   const [showOptionsPanel, setShowOptionsPanel] = useState(false)
+
+  const [rowHeight, setRowHeight] = useState(() => {
+    const saved = parseInt(localStorage.getItem(`planning-etude-row-height-${affaireId}`), 10)
+    return ROW_HEIGHT_OPTIONS.some((o) => o.value === saved) ? saved : ROW_HEIGHT_DEFAUT
+  })
+
+  useEffect(() => {
+    localStorage.setItem(`planning-etude-row-height-${affaireId}`, String(rowHeight))
+  }, [rowHeight, affaireId])
   const [drawMode, setDrawMode] = useState(false)
   const [createDefaults, setCreateDefaults] = useState(null)
 
@@ -349,12 +366,15 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
   }, [updateSegment])
 
   // ── Export Excel ──────────────────────────────────────────────────────────────
-  const handleExportExcel = useCallback(() => {
+  // `density` vient de la modale d'export ; à défaut (bouton Excel direct de la
+  // barre d'outils), on reprend la densité affichée à l'écran.
+  const handleExportExcel = useCallback(({ density } = {}) => {
     exportPlanningEtudeExcel({
       phases: sortedPhases, segments, jalons, periodes, affaire,
       refSemaine: refDate.semaine, refAnnee: refDate.annee,
+      density: density ?? densityFromRowHeight(rowHeight),
     })
-  }, [sortedPhases, segments, jalons, periodes, affaire, refDate])
+  }, [sortedPhases, segments, jalons, periodes, affaire, refDate, rowHeight])
 
   // ── Dependencies ──────────────────────────────────────────────────────────────
   const handleDependencyCreate = useCallback(async (fromPhaseId, toPhaseId, lagSemaines) => {
@@ -433,6 +453,7 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
         >
           <GanttEtudeSidebar
             phases={sortedPhases}
+            rowHeight={rowHeight}
             onEdit={p => { setEditingPhase(p); setPhaseModalMode('edit'); setShowPhaseModal(true) }}
             criticalIds={criticalIds}
             onReorder={handleReorder}
@@ -470,6 +491,7 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
             periodes={periodes}
             drawMode={drawMode}
             onDrawCreate={handleDrawCreate}
+            rowHeight={rowHeight}
           />
         </div>
 
@@ -519,6 +541,36 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
           </div>
 
           <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
+            {/* ── Hauteur des lignes ── */}
+            <div style={{ marginBottom: 24 }}>
+              <p style={{
+                fontSize: 10, fontWeight: 500, color: '#9C9591',
+                textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10,
+              }}>
+                Hauteur des lignes
+              </p>
+              <div style={{ display: 'flex', border: '0.5px solid rgba(0,0,0,0.15)', overflow: 'hidden' }}>
+                {ROW_HEIGHT_OPTIONS.map((opt, idx) => (
+                  <button
+                    key={opt.value}
+                    onClick={() => setRowHeight(opt.value)}
+                    style={{
+                      flex: 1, padding: '7px 0', fontSize: 11, border: 'none',
+                      borderRight: idx < ROW_HEIGHT_OPTIONS.length - 1 ? '0.5px solid rgba(0,0,0,0.15)' : 'none',
+                      background: rowHeight === opt.value ? '#1F1B17' : 'transparent',
+                      color: rowHeight === opt.value ? 'white' : '#5E5854',
+                      cursor: 'pointer',
+                      fontWeight: rowHeight === opt.value ? 500 : 400,
+                    }}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ height: '0.5px', background: '#E9E2D6', marginBottom: 24 }} />
+
             <p style={{
               fontSize: 10, fontWeight: 500, color: '#9C9591',
               textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10,
@@ -674,6 +726,8 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
         affaire={affaire}
         segments={segments}
         periodes={periodes}
+        rowHeight={rowHeight}
+        onExportExcel={handleExportExcel}
       />
 
       <PeriodesBloqueesModal

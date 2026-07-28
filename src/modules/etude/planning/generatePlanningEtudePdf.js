@@ -48,6 +48,20 @@ function buildWeekHeaders(weeks, cw) {
   }).join('')
 }
 
+// ─── Densité des lignes ───────────────────────────────────────────────────────
+//
+// Reprend le réglage « Hauteur des lignes » de l'éditeur. `normal` reproduit
+// exactement le rendu historique (8,5 mm par ligne).
+const DENSITY_CONFIG = {
+  compact: { rowMm: 6,   barPadTopMm: 1.2, barPadBotMm: 0.6, labelPt: 6,   barLabelPt: 5.5, hdrPadMm: 0.6 },
+  normal:  { rowMm: 8.5, barPadTopMm: 2,   barPadBotMm: 1,   labelPt: 7,   barLabelPt: 6.5, hdrPadMm: 1 },
+  confort: { rowMm: 12,  barPadTopMm: 3,   barPadBotMm: 1.5, labelPt: 8.5, barLabelPt: 8,   hdrPadMm: 1.5 },
+}
+
+function densityConfig(density) {
+  return DENSITY_CONFIG[density] ?? DENSITY_CONFIG.normal
+}
+
 // Fond d'une cellule couverte par une période : hachures si bloquante, aplat
 // très clair si informative (mêmes conventions que le planning chantier).
 function hexToRgb(hex) {
@@ -73,7 +87,8 @@ function fondPeriode(periode) {
     : `rgba(${rgb},0.06)`
 }
 
-function buildPhaseRows(phases, weeks, jalons, segments = [], periodes = []) {
+function buildPhaseRows(phases, weeks, jalons, segments = [], periodes = [], density = 'normal') {
+  const dens = densityConfig(density)
   return phases.map(phase => {
     // Couleur effective : personnalisée si définie, sinon celle du type
     const color = getPhaseCouleur(phase)
@@ -133,7 +148,7 @@ function buildPhaseRows(phases, weeks, jalons, segments = [], periodes = []) {
 
         content = `<div class="bar" style="${barStyle}">${segments}${barText}</div>`
         if (estDernier) {
-          content += `<div style="position:absolute;left:calc(${spanCount * 100}% + 3px);top:0;bottom:0;display:flex;align-items:center;white-space:nowrap;font-size:6.5pt;font-weight:${isMoe ? 'bold' : 'normal'};color:#1F1B17;z-index:10;">${phase.nom}</div>`
+          content += `<div style="position:absolute;left:calc(${spanCount * 100}% + 3px);top:0;bottom:0;display:flex;align-items:center;white-space:nowrap;font-size:${dens.barLabelPt}pt;font-weight:${isMoe ? 'bold' : 'normal'};color:#1F1B17;z-index:10;">${phase.nom}</div>`
         }
       }
 
@@ -201,8 +216,9 @@ function buildJalonBand(jalons, weeks, labelColMm, weekWidthMm) {
 
 function buildHtml({
   phases, jalons, affaire, semaineDebut, anneeDebut, semaineFin, anneeFin,
-  largeurMm, hauteurMm, segments = [], periodes = [],
+  largeurMm, hauteurMm, segments = [], periodes = [], density = 'normal',
 }) {
+  const dens = densityConfig(density)
   const weeks = buildWeeksList(semaineDebut, anneeDebut, semaineFin, anneeFin)
   const cw = getCurrentWeek()
   const logoUrl = window.location.origin + '/Logo_JGA_Archi.jpg'
@@ -213,7 +229,7 @@ function buildHtml({
 
   const monthHeaders = buildMonthHeaders(weeks)
   const weekHeaders  = buildWeekHeaders(weeks, cw)
-  const phaseRows    = buildPhaseRows(phases, weeks, jalons, segments, periodes)
+  const phaseRows    = buildPhaseRows(phases, weeks, jalons, segments, periodes, density)
   const jalonBand    = buildJalonBand(jalons, weeks, labelColMm, weekWidthMm)
 
   const dateStr    = new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })
@@ -248,24 +264,24 @@ function buildHtml({
   .col-label { width: ${labelColMm}mm; min-width: ${labelColMm}mm; }
   .col-week  { width: ${weekWidthMm}mm; min-width: ${weekWidthMm}mm; }
 
-  .week-month { background: #FAF7F2; font-size: 6.5pt; font-weight: bold; color: #E8602C; text-align: center; border: 0.5px solid #ddd; padding: 1mm 0; }
-  .week-num   { background: #FAFAF9; font-size: 5.5pt; color: #9C9591; text-align: center; border: 0.5px solid #ddd; padding: 0.8mm 0; }
+  .week-month { background: #FAF7F2; font-size: ${dens.labelPt}pt; font-weight: bold; color: #E8602C; text-align: center; border: 0.5px solid #ddd; padding: ${dens.hdrPadMm}mm 0; }
+  .week-num   { background: #FAFAF9; font-size: ${(dens.labelPt - 1.5).toFixed(1)}pt; color: #9C9591; text-align: center; border: 0.5px solid #ddd; padding: ${(dens.hdrPadMm * 0.8).toFixed(2)}mm 0; }
   .wk-cur     { background: rgba(232,96,44,0.10); color: #E8602C; font-weight: bold; }
   .wk-ms      { border-left: 1.5px solid #bbb; }
 
-  .plabel       { border: 0.5px solid #eee; border-right: 1px solid #ccc; padding: 0 1.5mm; vertical-align: middle; overflow: hidden; white-space: nowrap; height: 8.5mm; }
-  .lbl-moe      { font-weight: bold; font-size: 7pt; color: #1F1B17; }
-  .lbl-moa      { font-weight: normal; font-size: 6.5pt; color: #4b5563; padding-left: 4mm; }
-  .lbl-adm      { font-style: italic; font-size: 6.5pt; color: #92400E; }
-  .lbl-chantier { font-weight: 500; font-size: 7pt; color: #1e40af; }
+  .plabel       { border: 0.5px solid #eee; border-right: 1px solid #ccc; padding: 0 1.5mm; vertical-align: middle; overflow: hidden; white-space: nowrap; height: ${dens.rowMm}mm; }
+  .lbl-moe      { font-weight: bold; font-size: ${dens.labelPt}pt; color: #1F1B17; }
+  .lbl-moa      { font-weight: normal; font-size: ${dens.barLabelPt}pt; color: #4b5563; padding-left: 4mm; }
+  .lbl-adm      { font-style: italic; font-size: ${dens.barLabelPt}pt; color: #92400E; }
+  .lbl-chantier { font-weight: 500; font-size: ${dens.labelPt}pt; color: #1e40af; }
 
-  .pcell    { border: 0.5px solid #f0f0f0; height: 8.5mm; padding: 0; overflow: visible; }
+  .pcell    { border: 0.5px solid #f0f0f0; height: ${dens.rowMm}mm; padding: 0; overflow: visible; }
   .pcell.ms { border-left: 1.5px solid #ccc; }
 
-  .bar          { position: absolute; top: 2mm; bottom: 1mm; z-index: 2; overflow: hidden; }
-  .seg          { position: absolute; top: 0; bottom: 0; display: flex; align-items: center; justify-content: center; font-size: 5.5pt; font-weight: bold; color: white; border-right: 1px solid rgba(255,255,255,0.5); }
+  .bar          { position: absolute; top: ${dens.barPadTopMm}mm; bottom: ${dens.barPadBotMm}mm; z-index: 2; overflow: hidden; }
+  .seg          { position: absolute; top: 0; bottom: 0; display: flex; align-items: center; justify-content: center; font-size: ${dens.barLabelPt}pt; font-weight: bold; color: white; border-right: 1px solid rgba(255,255,255,0.5); }
   .seg-bar      { opacity: 0.85; outline: 1px dashed rgba(255,255,255,0.6); outline-offset: -1px; z-index: 3; }
-  .bar-inner-txt{ position: absolute; inset: 0; display: flex; align-items: center; padding: 0 1.5mm; font-size: 5.5pt; color: white; font-style: italic; text-shadow: 0 1px 3px rgba(0,0,0,0.5); }
+  .bar-inner-txt{ position: absolute; inset: 0; display: flex; align-items: center; padding: 0 1.5mm; font-size: ${dens.barLabelPt}pt; color: white; font-style: italic; text-shadow: 0 1px 3px rgba(0,0,0,0.5); }
 
   .jalon-line  { position: absolute; top: 0; bottom: 0; width: 1.5px; z-index: 5; }
   .jalon-label { position: absolute; top: 1mm; left: 2px; font-size: 5.5pt; font-weight: bold; color: white; white-space: nowrap; padding: 0.3mm 1mm; }

@@ -2,7 +2,7 @@ import { useState, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import {
   Plus, Pencil, GitBranch, Flag, Ban, SlidersHorizontal,
-  Download, ChevronDown, FileText, TableProperties,
+  Download, ChevronDown, FileText, TableProperties, Undo2, Redo2,
 } from 'lucide-react'
 
 const BTN = {
@@ -19,6 +19,7 @@ export function GanttToolbar({
   onToggleConnections, showConnections, onOpenJalons,
   showOptionsPanel, onToggleOptionsPanel,
   drawMode = false, onSetDrawMode,
+  canUndo = false, canRedo = false, onUndo, onRedo, labelUndo, labelRedo,
 }) {
   // Dropdowns rendus via portail (document.body) : la toolbar a overflowX: 'auto',
   // ce qui force implicitement overflowY à cliper (règle CSS : dès qu'un axe
@@ -37,6 +38,33 @@ export function GanttToolbar({
       borderBottom: '0.5px solid #E9E2D6', backgroundColor: 'white',
       overflowX: 'auto', flexWrap: 'nowrap', flexShrink: 0,
     }} data-print="hidden">
+
+      {/* Annuler / rétablir */}
+      <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
+        {[
+          { actif: canUndo, action: onUndo, Icone: Undo2, titre: 'Annuler', raccourci: '⌘Z', label: labelUndo },
+          { actif: canRedo, action: onRedo, Icone: Redo2, titre: 'Rétablir', raccourci: '⌘⇧Z', label: labelRedo },
+        ].map(({ actif, action, Icone, titre, raccourci, label }) => (
+          <button
+            key={titre}
+            onClick={action}
+            disabled={!actif}
+            title={actif && label ? `${titre} : ${label} (${raccourci})` : `${titre} (${raccourci})`}
+            style={{
+              width: 28, height: 28, padding: 0,
+              border: '0.5px solid rgba(0,0,0,0.15)', background: 'transparent',
+              cursor: actif ? 'pointer' : 'not-allowed',
+              opacity: actif ? 1 : 0.4,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: '#5E5854',
+            }}
+          >
+            <Icone size={13} strokeWidth={1.25} />
+          </button>
+        ))}
+      </div>
+
+      <div style={SEPARATOR} />
 
       {/* Actions principales */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>

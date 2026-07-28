@@ -6,6 +6,8 @@ import { propagateAllDependencies, endDateChanged, entityKey } from './propagati
 import { buildRowsByZone } from './groupByZone'
 import { legendeCouleurs, sansDiese } from './legende'
 import { trierZones } from '../../../shared/hooks/ordreZones'
+import { useUndoRedo } from '../../../shared/hooks/useUndoRedo'
+import { diffSnapshots, diffEstVide } from './snapshotDiff'
 import { supabase } from '../../../core/supabase/client'
 import { usePlanningZones } from '../../../shared/hooks/usePlanningZones'
 import { usePlanningSegments } from '../../../shared/hooks/usePlanningSegments'
@@ -96,6 +98,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
 
   const [jalons, setJalons] = useState([])
 
+  const [undoError, setUndoError] = useState(null)
   const [editingTask, setEditingTask] = useState(null)
   const [showTaskModal, setShowTaskModal] = useState(false)
   const [taskModalMode, setTaskModalMode] = useState('edit')
@@ -149,8 +152,23 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
   const zones = useMemo(() => trierZones(zonesBrutes), [zonesBrutes])
   const {
     segments, addSegment, updateSegment, updateSegmentLocal, deleteSegment, getSegmentsForTache,
+    replaceSegments,
   } = usePlanningSegments(affaireId)
   const { dependances, addDependance, deleteDependance } = usePlanningDependances(affaireId)
+
+  // ── Historique annuler / rétablir ───────────────────────────────────────────
+  const historique = useUndoRedo(20)
+  const {
+    saveSnapshot, beginPending, commitPending,
+    undo, redo, reset: resetHistorique, canUndo, canRedo,
+  } = historique
+
+  // Copie de surface : les propriétés d'une tâche sont toutes primitives.
+  const takeSnapshot = useCallback((label = '') => ({
+    tasks: tasks.map((t) => ({ ...t })),
+    segments: segments.map((sg) => ({ ...sg })),
+    label,
+  }), [tasks, segments])
   const {
     periodes, addPeriode, updatePeriode, deletePeriode, getNextWorkingDay, addWorkingDaysWithBlocked,
   } = usePeriodesBloquees(affaireId)
@@ -330,6 +348,10 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
 
   useEffect(() => { fetchAllData() }, [fetchAllData])
 
+  // L'état entier est rechargé quand on change d'affaire : l'historique
+  // précédent ne s'applique plus à rien.
+  useEffect(() => { resetHistorique() }, [affaireId, resetHistorique])
+
   // ── Application et persistance d'une cascade ───────────────────────────────────
   //
   // `cascades` est une Map<cléEntité, { type, id, debut }> : une seule entrée par
@@ -390,6 +412,18 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
       delai_apres: taskData.delai_apres ?? 0,
       label_apres: (taskData.delai_apres ?? 0) > 0 ? (taskData.label_apres ?? null) : null,
     }
+    // Instantané pris seulement si l'enregistrement modifie réellement la tâche :
+    // valider la modale sans rien changer ne doit pas consommer une étape
+    // d'historique, sinon le Ctrl+Z suivant paraîtrait sans effet.
+    const ancienneTache = tasks.find((t) => t.id === taskData.id)
+    const modifie = taskModalMode === 'create' || !ancienneTache
+      || Object.keys(payload).some((c) => (ancienneTache[c] ?? null) !== (payload[c] ?? null))
+    if (modifie) {
+      saveSnapshot(takeSnapshot(
+        taskModalMode === 'create' ? 'Nouvelle tâche' : `Modification « ${taskData.nom} »`
+      ))
+    }
+
     if (taskModalMode === 'create') {
       // Ajoute la tâche à la fin de son lot (même convention que le num_tache auto-incrémenté)
       const ordre = tasks.filter((t) => t.lot_id === payload.lot_id).length
@@ -424,8 +458,13 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
 
   // ── Task delete ────────────────────────────────────────────────────────────────
   const handleDeleteTask = async (taskId) => {
+    saveSnapshot(takeSnapshot(`Suppression « ${tasks.find((t) => t.id === taskId)?.nom ?? ''} »`))
     const { error } = await supabase.from('planning').delete().eq('id', taskId)
     if (error) throw new Error(error.message)
+    // La suppression se propage en base aux segments (on delete cascade) mais
+    // pas au state local, que `fetchAllData` ne recharge pas : sans ce filtre
+    // ils resteraient affichés, et l'annulation ne saurait pas les recréer.
+    replaceSegments(segments.filter((sg) => sg.tache_id !== taskId))
     await fetchAllData()
   }
 
@@ -466,6 +505,14 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
     const movedTask = tasks.find((t) => t.id === taskId)
     if (!movedTask) return
 
+    // L'état local n'a pas encore bougé : le glissement est tenu par la timeline
+    // jusqu'au relâchement, l'instantané pris ici est donc bien celui d'avant.
+    saveSnapshot(takeSnapshot(
+      changes.duree != null && changes.debut == null
+        ? `Redimensionnement « ${movedTask.nom} »`
+        : `Déplacement « ${movedTask.nom} »`
+    ))
+
     const newDebut = changes.debut ?? movedTask.debut
     const newDuree = changes.duree ?? movedTask.duree
 
@@ -496,14 +543,24 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
     await persistCascade(cascades, [
       supabase.from('planning').update(finalChanges).eq('id', taskId),
     ])
-  }, [tasks, segments, dependances, periodes, applyCascadeLocally, persistCascade])
+  }, [tasks, segments, dependances, periodes, applyCascadeLocally, persistCascade, saveSnapshot, takeSnapshot])
 
   // ── Déplacement / redimensionnement d'un segment, avec propagation ─────────────
   // `changes` : { date_debut?, duree_jours? } — un déplacement ne change que la
   // date, un resize peut changer les deux.
+  // Le glissement d'un segment modifie l'état local à chaque frame (cf.
+  // updateSegmentLocal) : l'instantané doit être pris au mousedown. Il n'entre
+  // dans l'historique qu'ici, une fois le geste abouti — un simple clic sur un
+  // segment ne laisse donc pas d'entrée vide.
+  const handleSegmentDragBegin = useCallback((label) => {
+    beginPending(takeSnapshot(label))
+  }, [beginPending, takeSnapshot])
+
   const handleSegmentCommit = useCallback(async (segmentId, changes) => {
     const seg = segments.find((s) => s.id === segmentId)
     if (!seg) return
+
+    commitPending()
 
     const newDebut = changes.date_debut ?? seg.date_debut
     const newDuree = changes.duree_jours ?? seg.duree_jours
@@ -519,17 +576,20 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
     await persistCascade(cascades, [
       updateSegment(segmentId, changes),
     ])
-  }, [tasks, segments, dependances, periodes, updateSegment, applyCascadeLocally, persistCascade])
+  }, [tasks, segments, dependances, periodes, updateSegment, applyCascadeLocally, persistCascade, commitPending])
 
   // ── Avancement inline ─────────────────────────────────────────────────────────
   const handleAvancementChange = useCallback(async (taskId, value) => {
+    saveSnapshot(takeSnapshot('Avancement'))
     setTasks((prev) => prev.map((t) => t.id === taskId ? { ...t, avancement: value } : t))
     await supabase.from('planning').update({ avancement: value }).eq('id', taskId)
-  }, [])
+  }, [saveSnapshot, takeSnapshot])
 
   // ── Réorganisation des tâches par drag & drop (au sein d'un même lot) ──────────
   const handleReorderTask = useCallback(async (draggedTaskId, targetTaskId) => {
     if (!draggedTaskId || draggedTaskId === targetTaskId) return
+
+    saveSnapshot(takeSnapshot('Réorganisation des tâches'))
 
     const dragged = tasks.find((t) => t.id === draggedTaskId)
     const target = tasks.find((t) => t.id === targetTaskId)
@@ -566,7 +626,89 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
     )
     const failed = results.find((r) => r.error)
     if (failed?.error) { console.error('Reorder failed:', failed.error.message); await fetchAllData() }
-  }, [tasks, fetchAllData])
+  }, [tasks, fetchAllData, saveSnapshot, takeSnapshot])
+
+  // ── Application d'un instantané ─────────────────────────────────────────────
+  //
+  // On écrit le strict nécessaire : les lignes modifiées, celles créées depuis
+  // l'instantané (à supprimer) et celles supprimées depuis (à recréer avec leur
+  // identifiant, pour que segments et dépendances continuent de les viser).
+  const appliquerSnapshot = useCallback(async (depuis, vers) => {
+    const diff = diffSnapshots(depuis, vers)
+    if (diffEstVide(diff)) return true
+
+    // Affichage immédiat, écriture ensuite — même principe que la propagation.
+    setTasks(vers.tasks)
+    replaceSegments(vers.segments)
+
+    // Les segments partent en premier : une tâche ne peut être supprimée tant
+    // qu'un segment la référence, et un segment ne peut être recréé avant sa
+    // tâche. L'ordre inverse est appliqué de chaque côté.
+    const resultats = await Promise.all([
+      ...diff.segments.deletions.map((id) =>
+        supabase.from('planning_segments').delete().eq('id', id)),
+      ...diff.tasks.insertions.length
+        ? [supabase.from('planning').insert(
+            diff.tasks.insertions.map((t) => ({ ...t, affaire_id: t.affaire_id ?? affaireId })))]
+        : [],
+    ])
+
+    const resultats2 = await Promise.all([
+      ...diff.tasks.updates.map((u) =>
+        supabase.from('planning').update(u.changes).eq('id', u.id)),
+      ...diff.segments.updates.map((u) =>
+        supabase.from('planning_segments').update(u.changes).eq('id', u.id)),
+      ...diff.segments.insertions.length
+        ? [supabase.from('planning_segments').insert(
+            diff.segments.insertions.map((sg) => ({ ...sg, affaire_id: sg.affaire_id ?? affaireId })))]
+        : [],
+      ...diff.tasks.deletions.map((id) =>
+        supabase.from('planning').delete().eq('id', id)),
+    ])
+
+    const echec = [...resultats, ...resultats2].find((r) => r?.error)
+    if (echec?.error) {
+      console.error('Historique : échec de persistance —', echec.error.message)
+      setUndoError(echec.error.message)
+      await fetchAllData()
+      return false
+    }
+    return true
+  }, [affaireId, replaceSegments, fetchAllData])
+
+  const handleUndo = useCallback(async () => {
+    const courant = takeSnapshot()
+    const precedent = undo(courant)
+    if (!precedent) return
+    await appliquerSnapshot(courant, precedent)
+  }, [undo, takeSnapshot, appliquerSnapshot])
+
+  const handleRedo = useCallback(async () => {
+    const courant = takeSnapshot()
+    const suivant = redo(courant)
+    if (!suivant) return
+    await appliquerSnapshot(courant, suivant)
+  }, [redo, takeSnapshot, appliquerSnapshot])
+
+  // ── Raccourcis clavier ──────────────────────────────────────────────────────
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      // Ni pendant une saisie, ni quand une modale est ouverte : le geste y a
+      // un autre sens (annuler la frappe, pas la dernière action du planning).
+      const tag = document.activeElement?.tagName
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(tag)) return
+      if (document.activeElement?.isContentEditable) return
+      if (e.key.toLowerCase() !== 'z' && e.key.toLowerCase() !== 'y') return
+      if (!e.ctrlKey && !e.metaKey) return
+
+      const versLeFutur = (e.key.toLowerCase() === 'z' && e.shiftKey) || e.key.toLowerCase() === 'y'
+      e.preventDefault()
+      if (versLeFutur) { if (canRedo) handleRedo() }
+      else if (canUndo) handleUndo()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [canUndo, canRedo, handleUndo, handleRedo])
 
   // ── Lots save (couleurs uniquement) ──────────────────────────────────────────
   const handleSaveLots = async (colorDrafts) => {
@@ -1261,7 +1403,28 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
       backgroundColor: '#FAFAF9',
     }}>
       <div data-print="hidden">
+        {undoError && (
+          <div style={{
+            padding: '6px 12px', fontSize: 12, color: '#B8412C',
+            background: 'rgba(184,65,44,0.08)', borderBottom: '0.5px solid rgba(184,65,44,0.2)',
+            display: 'flex', alignItems: 'center', gap: 8,
+          }}>
+            <span>Annulation impossible — {undoError}. Le planning a été rechargé.</span>
+            <button
+              onClick={() => setUndoError(null)}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#B8412C', textDecoration: 'underline' }}
+            >
+              Fermer
+            </button>
+          </div>
+        )}
         <GanttToolbar
+          canUndo={canUndo}
+          canRedo={canRedo}
+          onUndo={handleUndo}
+          onRedo={handleRedo}
+          labelUndo={historique.labelUndo}
+          labelRedo={historique.labelRedo}
           onAddTask={() => handleOpenTaskModal(null, 'create', formatDateISO(getNextAvailableDate(tasks)))}
           onOpenPeriodesBloquees={() => setShowPeriodesModal(true)}
           periodes={periodes}
@@ -1337,6 +1500,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
             segments={segments}
             updateSegmentLocal={updateSegmentLocal}
             onSegmentCommit={handleSegmentCommit}
+            onSegmentDragBegin={handleSegmentDragBegin}
             dependances={dependances}
             onSegmentDependencyCreate={addDependance}
             onSegmentDependencyDelete={deleteDependance}

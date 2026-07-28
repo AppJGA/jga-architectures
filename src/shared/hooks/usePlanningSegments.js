@@ -55,6 +55,10 @@ export function usePlanningSegments(affaireId) {
     return { error }
   }
 
+  // Remplacement complet du state local (pas d'appel Supabase) — utilisé par
+  // l'historique annuler/rétablir, qui restaure la collection entière d'un coup.
+  const replaceSegments = (liste) => { setSegments(liste) }
+
   // Mise à jour du state local uniquement (pas d'appel Supabase) — utilisé pendant le drag
   const updateSegmentLocal = (id, changes) => {
     setSegments((prev) => prev.map((s) => (s.id === id ? { ...s, ...changes } : s)))
@@ -70,7 +74,7 @@ export function usePlanningSegments(affaireId) {
     loading,
     addSegment,
     updateSegment,
-    updateSegmentLocal,
+    updateSegmentLocal, replaceSegments,
     deleteSegment,
     getSegmentsForTache,
     refetch: fetch,

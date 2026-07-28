@@ -434,7 +434,7 @@ export function GanttTimeline({
   jalons = [], onJalonClick,
   onTaskClick, onTaskUpdate, onDependencyCreate, onDependencyDelete,
   zones = [], colorMode = 'lot', viewMode = 'day', zoomLevel = 1,
-  getSegmentsForTache, segments = [], updateSegmentLocal, onSegmentCommit,
+  getSegmentsForTache, segments = [], updateSegmentLocal, onSegmentCommit, onSegmentDragBegin,
   dependances = [], onSegmentDependencyCreate, onSegmentDependencyDelete,
   periodes = [], getNextWorkingDay, dragOverTaskId = null,
   drawMode = false, onDrawCreate, scrollRef = null,
@@ -755,13 +755,14 @@ export function GanttTimeline({
     e.preventDefault()
 
     segmentDragRef.current = { moved: false }
+    onSegmentDragBegin?.('Déplacement d’un segment')
     setDraggingSegment({
       segmentId: segment.id,
       tacheId: segment.tache_id,
       startX: e.clientX,
       originalDateDebut: segment.date_debut,
     })
-  }, [drawMode])
+  }, [drawMode, onSegmentDragBegin])
 
   useEffect(() => {
     if (!draggingSegment) return
@@ -815,6 +816,7 @@ export function GanttTimeline({
     // Même drapeau que le drag : il empêche le clic de fin de geste (qui remonte
     // jusqu'à la barre du segment) de rouvrir la modale de la tâche.
     segmentDragRef.current = { moved: false }
+    onSegmentDragBegin?.('Redimensionnement d’un segment')
     setResizingSegment({
       segmentId: segment.id,
       side,
@@ -822,7 +824,7 @@ export function GanttTimeline({
       originalDateDebut: segment.date_debut,
       originalDuree: segment.duree_jours ?? 1,
     })
-  }, [drawMode])
+  }, [drawMode, onSegmentDragBegin])
 
   useEffect(() => {
     if (!resizingSegment) return

@@ -3,6 +3,7 @@ import { X, ImagePlus } from 'lucide-react'
 import { CollaborateursSection } from '../shared/components/CollaborateursSection'
 import { supabase } from '../core/supabase/client'
 import { useAuth } from '../core/auth/useAuth'
+import { compressImage, COVER_OPTIONS, TAILLE_MAX_OCTETS } from '../shared/utils/compressImage'
 
 // ─── Valeurs par défaut ────────────────────────────────────────────────────
 const DEFAULTS = {
@@ -248,42 +249,17 @@ function RadioRow({ label, value, current, onChange }) {
 const grid2 = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }
 
 // ─── Composant principal ───────────────────────────────────────────────────
-function compressToWebP(file) {
-  return new Promise((resolve) => {
-    const img = new Image()
-    const url = URL.createObjectURL(file)
-
-    img.onload = () => {
-      URL.revokeObjectURL(url)
-      const MAX_WIDTH = 800
-      const MAX_HEIGHT = 600
-      let { width, height } = img
-
-      if (width > MAX_WIDTH) {
-        height = Math.round(height * MAX_WIDTH / width)
-        width = MAX_WIDTH
-      }
-      if (height > MAX_HEIGHT) {
-        width = Math.round(width * MAX_HEIGHT / height)
-        height = MAX_HEIGHT
-      }
-
-      const canvas = document.createElement('canvas')
-      canvas.width = width
-      canvas.height = height
-      const ctx = canvas.getContext('2d')
-      ctx.fillStyle = '#FFFFFF'
-      ctx.fillRect(0, 0, width, height)
-      ctx.drawImage(img, 0, 0, width, height)
-      canvas.toBlob((blob) => resolve(blob), 'image/webp', 0.72)
-    }
-
-    img.onerror = () => resolve(file)
-    img.src = url
-  })
-}
-
+// `file` est déjà compressé (cf. handlePhotoSelect) : cette fonction ne fait
+// plus qu'envoyer et faire le ménage.
 async function uploadPhoto(file, affaireId, oldPhotoUrl) {
+  const path = `${affaireId}/${Date.now()}.webp`
+  const { error } = await supabase.storage
+    .from('affaires-photos')
+    .upload(path, file, { contentType: file.type || 'image/webp', upsert: true })
+  if (error) throw error
+
+  // L'ancienne photo n'est effacée qu'une fois la nouvelle en place : dans
+  // l'ordre inverse, un envoi qui échoue laissait l'affaire sans photo du tout.
   if (oldPhotoUrl) {
     try {
       const parts = oldPhotoUrl.split('/affaires-photos/')
@@ -295,12 +271,6 @@ async function uploadPhoto(file, affaireId, oldPhotoUrl) {
     }
   }
 
-  const compressed = await compressToWebP(file)
-  const path = `${affaireId}/${Date.now()}.webp`
-  const { error } = await supabase.storage
-    .from('affaires-photos')
-    .upload(path, compressed, { contentType: 'image/webp', upsert: true })
-  if (error) throw error
   const { data } = supabase.storage.from('affaires-photos').getPublicUrl(path)
   return data.publicUrl
 }
@@ -318,6 +288,9 @@ export function AffaireFormModal({ affaire = null, onSave, onClose, scrollToSect
   const photoInputRef = useRef(null)
   const [photoPreview, setPhotoPreview] = useState(affaire?.photo_url ?? null)
   const [photoFile, setPhotoFile] = useState(null)
+  const [photoBusy, setPhotoBusy] = useState(false)
+  const [photoError, setPhotoError] = useState(null)
+  const [photoGain, setPhotoGain] = useState(null)
 
   useEffect(() => {
     if (!affaire?.id || !user?.id) return
@@ -379,19 +352,54 @@ export function AffaireFormModal({ affaire = null, onSave, onClose, scrollToSect
   const toggle = (key) => (e) => setForm(f => ({ ...f, [key]: e.target.checked }))
   const setInt = (key) => (e) => setForm(f => ({ ...f, [key]: Number(e.target.value) }))
 
-  const handlePhotoSelect = (e) => {
+  // La compression a lieu ici, à la sélection, et non à l'enregistrement : un
+  // fichier illisible est signalé tout de suite, et la soumission du formulaire
+  // n'a plus qu'un envoi léger à faire.
+  const handlePhotoSelect = async (e) => {
     const file = e.target.files?.[0]
-    if (!file) return
-    if (photoPreview?.startsWith('blob:')) URL.revokeObjectURL(photoPreview)
-    setPhotoFile(file)
-    setPhotoPreview(URL.createObjectURL(file))
     e.target.value = ''
+    if (!file) return
+
+    setPhotoError(null)
+    setPhotoGain(null)
+
+    // `accept` n'est qu'une suggestion : un glisser-déposer ou un sélecteur
+    // réglé sur « tous les fichiers » passe outre.
+    if (!file.type.startsWith('image/')) {
+      setPhotoError('Ce fichier n’est pas une image.')
+      return
+    }
+    if (file.size > TAILLE_MAX_OCTETS) {
+      setPhotoError(`Fichier trop volumineux (${Math.round(file.size / 1024 / 1024)} Mo, maximum ${Math.round(TAILLE_MAX_OCTETS / 1024 / 1024)} Mo).`)
+      return
+    }
+
+    // Aperçu tout de suite, sur le fichier d'origine : la compression peut
+    // prendre un instant sur une grande photo.
+    if (photoPreview?.startsWith('blob:')) URL.revokeObjectURL(photoPreview)
+    setPhotoPreview(URL.createObjectURL(file))
+    setPhotoBusy(true)
+
+    try {
+      const compressed = await compressImage(file, COVER_OPTIONS)
+      setPhotoFile(compressed)
+      setPhotoGain({ avant: file.size, apres: compressed.size })
+    } catch (err) {
+      setPhotoFile(null)
+      if (photoPreview?.startsWith('blob:')) URL.revokeObjectURL(photoPreview)
+      setPhotoPreview(affaire?.photo_url ?? null)
+      setPhotoError(err.message ?? 'Impossible de traiter cette image.')
+    } finally {
+      setPhotoBusy(false)
+    }
   }
 
   const handlePhotoRemove = () => {
     if (photoPreview?.startsWith('blob:')) URL.revokeObjectURL(photoPreview)
     setPhotoFile(null)
     setPhotoPreview(null)
+    setPhotoError(null)
+    setPhotoGain(null)
   }
 
   const handleSubmit = async (e) => {
@@ -512,6 +520,20 @@ export function AffaireFormModal({ affaire = null, onSave, onClose, scrollToSect
                   alt="Couverture"
                   style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                 />
+                {photoBusy && (
+                  <div style={{
+                    position: 'absolute', inset: 0, backgroundColor: 'rgba(255,255,255,0.85)',
+                    display: 'flex', flexDirection: 'column', alignItems: 'center',
+                    justifyContent: 'center', gap: 10, zIndex: 1,
+                  }}>
+                    <div style={{
+                      width: 24, height: 24, borderRadius: '50%',
+                      border: '2px solid #E9E2D6', borderTopColor: 'var(--jga-orange)',
+                      animation: 'jga-spin 0.8s linear infinite',
+                    }} />
+                    <span style={{ fontSize: 12, color: '#5E5854' }}>Compression en cours…</span>
+                  </div>
+                )}
                 <div style={{
                   position: 'absolute', inset: 0,
                   backgroundColor: 'rgba(0,0,0,0)', transition: 'background-color 0.15s',
@@ -565,8 +587,20 @@ export function AffaireFormModal({ affaire = null, onSave, onClose, scrollToSect
               >
                 <ImagePlus size={24} style={{ opacity: 0.5 }} />
                 <span style={{ fontSize: 13, fontWeight: 500 }}>Ajouter une photo de couverture</span>
-                <span style={{ fontSize: 11 }}>JPG, PNG, WEBP — max 5 Mo</span>
+                <span style={{ fontSize: 11 }}>
+                  JPG, PNG, WEBP — redimensionnée automatiquement
+                </span>
               </button>
+            )}
+
+            {photoError && (
+              <p style={{ fontSize: 11, color: '#B8412C', marginTop: 6 }}>{photoError}</p>
+            )}
+            {!photoError && photoGain && (
+              <p style={{ fontSize: 11, color: '#9C9591', marginTop: 6 }}>
+                Compressée : {Math.round(photoGain.avant / 1024)} Ko → {Math.round(photoGain.apres / 1024)} Ko
+                {photoGain.avant > 0 && ` (−${Math.round((1 - photoGain.apres / photoGain.avant) * 100)} %)`}
+              </p>
             )}
           </div>
 

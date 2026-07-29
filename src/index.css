@@ -112,3 +112,7 @@ body {
 
 /* ── Sous-remarques : actions visibles au survol ── */
 .sous-remarque-row:hover .sous-remarque-actions { opacity: 1 !important; }
+
+/* Rotation des indicateurs de chargement. Déclarée globalement : cinq
+   composants la redéfinissaient chacun dans leur propre <style> inline. */
+@keyframes jga-spin { to { transform: rotate(360deg); } }

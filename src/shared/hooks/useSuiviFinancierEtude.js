@@ -1,7 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../../core/supabase/client'
 
-const PHASE_ORDER = { esq: 1, avp: 2, pro: 3, dce: 4, chantier: 5 }
+// Rang par défaut des cinq phases de référence, quand `ordre` n'a jamais été
+// renseigné (lignes créées avant la migration 036).
+const PHASE_ORDER = { esq: 0, avp: 1, pro: 2, dce: 3, chantier: 4 }
+
+const rangDe = (e) => e.ordre ?? PHASE_ORDER[e.phase] ?? 99
 
 export function useSuiviFinancierEtude(affaireId, affaire) {
   const [suiviParPhase, setSuiviParPhase] = useState([])
@@ -42,11 +46,7 @@ export function useSuiviFinancierEtude(affaireId, affaire) {
         .eq('affaire_id', affaireId),
     ])
 
-    setSuiviParPhase(
-      (suiviData ?? []).sort(
-        (a, b) => (PHASE_ORDER[a.phase] ?? 9) - (PHASE_ORDER[b.phase] ?? 9)
-      )
-    )
+    setSuiviParPhase((suiviData ?? []).sort((a, b) => rangDe(a) - rangDe(b)))
     setEstimationsLots(estData ?? [])
     setLotsExistants(lotsData ?? [])
     setMarchesLots(marchesData ?? [])
@@ -69,6 +69,41 @@ export function useSuiviFinancierEtude(affaireId, affaire) {
       .delete()
       .eq('affaire_id', affaireId)
       .eq('phase', phase)
+    if (error) throw error
+    await fetchAll()
+  }, [affaireId, fetchAll])
+
+  // Nom libre d'une phase. Une phase encore vide n'a pas de ligne en base : le
+  // renommage la crée, avec le seul `nom_custom` — `estRenseignee` continue de
+  // la considérer comme non renseignée.
+  const renommerPhase = useCallback(async (code, nom, ordre = null) => {
+    const { error } = await supabase
+      .from('suivi_financier_etude')
+      .upsert(
+        { affaire_id: affaireId, phase: code, nom_custom: nom || null, ...(ordre != null ? { ordre } : {}) },
+        { onConflict: 'affaire_id,phase' }
+      )
+    if (error) throw error
+    await fetchAll()
+  }, [affaireId, fetchAll])
+
+  const ajouterPhase = useCallback(async (code, nom, ordre) => {
+    const { error } = await supabase
+      .from('suivi_financier_etude')
+      .insert({ affaire_id: affaireId, phase: code, nom_custom: nom, ordre })
+    if (error) throw error
+    await fetchAll()
+  }, [affaireId, fetchAll])
+
+  // Une seule écriture par phase, puis un seul rechargement — un upsert par
+  // ligne suivi de son propre fetch multiplierait les allers-retours.
+  const reordonnerPhases = useCallback(async (codesOrdonnes) => {
+    const { error } = await supabase
+      .from('suivi_financier_etude')
+      .upsert(
+        codesOrdonnes.map((code, i) => ({ affaire_id: affaireId, phase: code, ordre: i })),
+        { onConflict: 'affaire_id,phase' }
+      )
     if (error) throw error
     await fetchAll()
   }, [affaireId, fetchAll])
@@ -100,6 +135,7 @@ export function useSuiviFinancierEtude(affaireId, affaire) {
     enveloppeInitiale,
     suiviParPhase, estimationsLots, lotsExistants, marchesLots, loading,
     upsertPhase, deletePhase, upsertEstimation, deleteEstimation,
+    renommerPhase, ajouterPhase, reordonnerPhases,
     refetch: fetchAll,
   }
 }

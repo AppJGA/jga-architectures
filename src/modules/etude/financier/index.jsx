@@ -1,20 +1,12 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Plus, Pencil, Trash2, X } from 'lucide-react'
+import { Plus, Pencil, Trash2, X, GripVertical } from 'lucide-react'
 import { useAffaire } from '../../../shared/hooks/useAffaires'
 import { useSuiviFinancierEtude } from '../../../shared/hooks/useSuiviFinancierEtude'
+import { reordonner } from '../../../shared/hooks/ordreZones'
+import { construirePhases, estRenseignee, prochainCodePhase, nomParDefaut } from './phases'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-
-const PHASES = [
-  { id: 'esq',      label: 'ESQ',      full: 'Esquisse',                 color: '#E8602C', bg: 'rgba(232,96,44,0.10)' },
-  { id: 'avp',      label: 'AVP',      full: 'Avant-Projet',             color: '#E8602C', bg: 'rgba(232,96,44,0.10)' },
-  { id: 'pro',      label: 'PRO',      full: 'Projet',                   color: '#E8602C', bg: 'rgba(232,96,44,0.10)' },
-  { id: 'dce',      label: 'DCE',      full: 'Dossier de Consultation',  color: '#E8602C', bg: 'rgba(232,96,44,0.10)' },
-  { id: 'chantier', label: 'Chantier', full: 'Chantier',                 color: '#2A8A4E', bg: 'rgba(42,138,78,0.12)' },
-]
-
-const PHASES_EST = PHASES.filter(p => p.id !== 'chantier')
 
 const SHOW_EST_FOR = ['avp', 'pro', 'dce', 'chantier']
 
@@ -27,8 +19,58 @@ function euro(v) {
   }).format(v)
 }
 
-function fmtPhase(id) {
-  return PHASES.find(p => p.id === id) ?? { label: id?.toUpperCase() ?? '?', full: id, color: '#9C9591', bg: '#FAF7F2' }
+// La liste des phases n'est plus figée : elle est construite à partir des
+// lignes enregistrées (noms libres, phases ajoutées) et transmise aux
+// composants qui en ont besoin.
+function fmtPhase(phases, id) {
+  return phases.find(p => p.id === id)
+    ?? { label: id?.toUpperCase() ?? '?', full: id, color: '#9C9591', bg: '#FAF7F2' }
+}
+
+// ─── Nom éditable en place ────────────────────────────────────────────────────
+//
+// Édition sur clic, validation à la sortie du champ ou par Entrée, abandon par
+// Échap. Le brouillon reste local : la valeur n'est écrite qu'à la validation.
+function NomEditable({ valeur, onRenommer, style }) {
+  const [edition, setEdition] = useState(false)
+
+  if (edition) {
+    return (
+      <input
+        autoFocus
+        defaultValue={valeur}
+        onFocus={e => e.target.select()}
+        onBlur={async (e) => {
+          const nouveau = e.target.value.trim()
+          setEdition(false)
+          if (nouveau && nouveau !== valeur) await onRenommer(nouveau)
+        }}
+        onKeyDown={e => {
+          if (e.key === 'Enter') e.target.blur()
+          if (e.key === 'Escape') { e.target.value = valeur; e.target.blur() }
+        }}
+        style={{
+          ...style,
+          fontSize: 'inherit', fontWeight: 'inherit', color: 'inherit',
+          border: 'none', borderBottom: '1px solid #E8602C',
+          background: 'transparent', padding: '0 2px', outline: 'none',
+          minWidth: 60, maxWidth: 220,
+        }}
+      />
+    )
+  }
+
+  return (
+    <span
+      onClick={() => setEdition(true)}
+      title="Cliquer pour renommer"
+      style={{ ...style, cursor: 'text', borderBottom: '1px dashed transparent' }}
+      onMouseEnter={e => { e.currentTarget.style.borderBottomColor = '#C9C4C0' }}
+      onMouseLeave={e => { e.currentTarget.style.borderBottomColor = 'transparent' }}
+    >
+      {valeur}
+    </span>
+  )
 }
 
 // ─── Shared styles ────────────────────────────────────────────────────────────
@@ -62,10 +104,10 @@ function focusOff(e) {
 
 // ─── PhaseFormModal ───────────────────────────────────────────────────────────
 
-function PhaseFormModal({ open, onClose, existing, affaire, onSave, onDelete }) {
+function PhaseFormModal({ open, onClose, existing, affaire, phases, onSave, onDelete }) {
   const tva = affaire?.taux_tva ?? 1.20
   const tvaPct = Math.round((tva - 1) * 100)
-  const defaultPhase = PHASES.some(p => p.id === affaire?.phase) ? affaire.phase : 'esq'
+  const defaultPhase = phases.some(p => p.id === affaire?.phase) ? affaire.phase : (phases[0]?.id ?? 'esq')
 
   const [form, setForm] = useState(null)
   const [saving, setSaving] = useState(false)
@@ -166,8 +208,10 @@ function PhaseFormModal({ open, onClose, existing, affaire, onSave, onDelete }) 
                 style={{ ...INPUT, cursor: 'pointer' }}
                 onFocus={focusOn} onBlur={focusOff}
               >
-                {PHASES.map(p => (
-                  <option key={p.id} value={p.id}>{p.label} — {p.full}</option>
+                {phases.map(p => (
+                  <option key={p.id} value={p.id}>
+                    {p.label}{p.full && p.full !== p.label ? ` — ${p.full}` : ''}
+                  </option>
                 ))}
               </select>
             </div>
@@ -278,12 +322,14 @@ function PhaseFormModal({ open, onClose, existing, affaire, onSave, onDelete }) 
 
 // ─── EstimationFormModal ──────────────────────────────────────────────────────
 
-function EstimationFormModal({ open, onClose, existing, affaire, lotsExistants, onSave, onDelete }) {
+function EstimationFormModal({ open, onClose, existing, affaire, phases, lotsExistants, onSave, onDelete }) {
+  // Les estimations ne portent pas sur la phase chantier
+  const phasesEst = phases.filter(p => p.id !== 'chantier')
   const tva = affaire?.taux_tva ?? 1.20
 
   const defaultEstPhase = () => {
     const ap = affaire?.phase
-    return PHASES_EST.some(p => p.id === ap) ? ap : 'avp'
+    return phasesEst.some(p => p.id === ap) ? ap : (phasesEst[0]?.id ?? 'avp')
   }
 
   const [form, setForm] = useState(null)
@@ -440,8 +486,10 @@ function EstimationFormModal({ open, onClose, existing, affaire, lotsExistants, 
                 style={{ ...INPUT, cursor: 'pointer' }}
                 onFocus={focusOn} onBlur={focusOff}
               >
-                {PHASES_EST.map(p => (
-                  <option key={p.id} value={p.id}>{p.label} — {p.full}</option>
+                {phasesEst.map(p => (
+                  <option key={p.id} value={p.id}>
+                    {p.label}{p.full && p.full !== p.label ? ` — ${p.full}` : ''}
+                  </option>
                 ))}
               </select>
             </div>
@@ -518,7 +566,7 @@ function EstimationFormModal({ open, onClose, existing, affaire, lotsExistants, 
 
 // ─── Bandeau enveloppe ────────────────────────────────────────────────────────
 
-function EnveloppeBandeau({ affaire, suiviParPhase }) {
+function EnveloppeBandeau({ affaire, suiviParPhase, phases }) {
   const navigate = useNavigate()
   const { affaireId } = useParams()
 
@@ -542,7 +590,7 @@ function EnveloppeBandeau({ affaire, suiviParPhase }) {
     {
       label: 'Enveloppe actuelle',
       value: enveloppeActuelle ? euro(enveloppeActuelle) : null,
-      sub: derniere ? `Phase ${fmtPhase(derniere.phase).label}` : (enveloppeInitiale ? 'Pas de suivi renseigné' : null),
+      sub: derniere ? `Phase ${fmtPhase(phases, derniere.phase).label}` : (enveloppeInitiale ? 'Pas de suivi renseigné' : null),
     },
     {
       label: 'Évolution',
@@ -593,8 +641,8 @@ function EnveloppeBandeau({ affaire, suiviParPhase }) {
 
 // ─── Phase badge ──────────────────────────────────────────────────────────────
 
-function PhaseBadge({ phaseId }) {
-  const p = fmtPhase(phaseId)
+function PhaseBadge({ phases, phaseId }) {
+  const p = fmtPhase(phases, phaseId)
   return (
     <span style={{
       fontSize: 11, fontWeight: 500, color: p.color,
@@ -627,7 +675,7 @@ function EvoBadge({ current, reference }) {
 
 // ─── Phase card (renseignée) ──────────────────────────────────────────────────
 
-function PhaseCard({ phase, entry, prevEnveloppe, enveloppeInitiale, onEdit }) {
+function PhaseCard({ phase, entry, prevEnveloppe, enveloppeInitiale, onEdit, onRenommer, dragProps }) {
   const ref = prevEnveloppe ?? enveloppeInitiale
 
   const fields = [
@@ -644,7 +692,14 @@ function PhaseCard({ phase, entry, prevEnveloppe, enveloppeInitiale, onEdit }) {
     }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: fields.length > 0 ? 14 : 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <PhaseBadge phaseId={phase.id} />
+          <PoigneeDrag {...dragProps} />
+          <span style={{
+            fontSize: 11, fontWeight: 500, color: phase.color,
+            backgroundColor: phase.bg, borderRadius: 3,
+            padding: '3px 10px', letterSpacing: '0.03em', whiteSpace: 'nowrap',
+          }}>
+            <NomEditable valeur={phase.label} onRenommer={onRenommer} />
+          </span>
           <EvoBadge current={entry.enveloppe_ttc} reference={ref} />
         </div>
         <button
@@ -691,8 +746,8 @@ function PhaseCard({ phase, entry, prevEnveloppe, enveloppeInitiale, onEdit }) {
 
 // ─── Empty phase row ──────────────────────────────────────────────────────────
 
-function EmptyPhaseRow({ phase, onAdd }) {
-  const p = fmtPhase(phase.id)
+function EmptyPhaseRow({ phase, onAdd, onRenommer, onSupprimer, dragProps }) {
+  const p = phase
   return (
     <div style={{
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -700,69 +755,160 @@ function EmptyPhaseRow({ phase, onAdd }) {
       border: `0.5px dashed rgba(0,0,0,0.15)`,
       backgroundColor: 'transparent',
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+        <PoigneeDrag {...dragProps} />
         <span style={{
           width: 8, height: 8, borderRadius: '50%',
           border: `1.5px solid ${p.color}`, display: 'inline-block', flexShrink: 0,
         }} />
-        <span style={{ fontSize: 12, fontWeight: 500, color: p.color }}>{p.label}</span>
+        <span style={{ fontSize: 12, fontWeight: 500, color: p.color }}>
+          <NomEditable valeur={p.label} onRenommer={onRenommer} />
+        </span>
         <span style={{ fontSize: 12, color: '#9C9591' }}>— Non renseignée</span>
       </div>
-      <button
-        onClick={onAdd}
-        style={{
-          display: 'inline-flex', alignItems: 'center', gap: 4,
-          padding: '4px 10px', borderRadius: 3, fontSize: 11,
-          border: `0.5px solid ${p.color}`, backgroundColor: p.bg,
-          color: p.color, cursor: 'pointer',
-        }}
-      >
-        <Plus size={11} />
-      </button>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+        {p.personnalisee && (
+          <button
+            onClick={onSupprimer}
+            title="Supprimer cette phase"
+            style={{
+              display: 'inline-flex', alignItems: 'center',
+              padding: '4px 6px', borderRadius: 3,
+              border: 'none', background: 'none', color: '#9C9591', cursor: 'pointer',
+            }}
+          >
+            <X size={12} />
+          </button>
+        )}
+        <button
+          onClick={onAdd}
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 4,
+            padding: '4px 10px', borderRadius: 3, fontSize: 11,
+            border: `0.5px solid ${p.color}`, backgroundColor: p.bg,
+            color: p.color, cursor: 'pointer',
+          }}
+        >
+          <Plus size={11} />
+        </button>
+      </div>
     </div>
   )
 }
 
 // ─── Phase timeline ───────────────────────────────────────────────────────────
 
-function PhaseTimeline({ suiviParPhase, enveloppeInitiale, onAdd, onEdit }) {
-  const entriesMap = Object.fromEntries(suiviParPhase.map(e => [e.phase, e]))
+function PhaseTimeline({
+  phases, enveloppeInitiale, onAdd, onEdit, onRenommer, onSupprimer, onReordonner,
+}) {
+  // `armeId` : ligne rendue déplaçable par la pression sur sa poignée.
+  // `draggedId` : ligne effectivement en cours de glissement. Les distinguer
+  // évite qu'une simple pression sur la poignée ne grise déjà la ligne, et
+  // laisse le champ de nom sélectionnable le reste du temps.
+  const [armeId, setArmeId] = useState(null)
+  const [draggedId, setDraggedId] = useState(null)
+  const [dragOverId, setDragOverId] = useState(null)
+
+  const indexDe = (id) => phases.findIndex(p => p.id === id)
+
+  // Côté du trait d'insertion : la phase déplacée se pose après sa cible quand
+  // elle descend, avant quand elle monte.
+  const insertionPour = (id) => {
+    if (id !== dragOverId || draggedId == null) return null
+    return indexDe(draggedId) < indexDe(id) ? 'apres' : 'avant'
+  }
+
+  const finDeGeste = () => { setArmeId(null); setDraggedId(null); setDragOverId(null) }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      {PHASES.map((phase, i) => {
-        const entry = entriesMap[phase.id]
-        if (entry) {
-          const prevEntry = suiviParPhase
-            .filter(e => PHASES.findIndex(p => p.id === e.phase) < i)
-            .sort((a, b) => PHASES.findIndex(p => p.id === b.phase) - PHASES.findIndex(p => p.id === a.phase))[0]
-
-          return (
-            <PhaseCard
-              key={phase.id}
-              phase={phase}
-              entry={entry}
-              prevEnveloppe={prevEntry?.enveloppe_ttc ?? null}
-              enveloppeInitiale={enveloppeInitiale}
-              onEdit={onEdit}
-            />
-          )
+      {phases.map((phase, i) => {
+        const insertion = insertionPour(phase.id)
+        const trait = '2px solid #E8602C'
+        const renommer = (nom) => onRenommer(phase, nom)
+        const dragProps = {
+          onMouseDown: () => setArmeId(phase.id),
+          onMouseUp: () => setArmeId(null),
         }
+
         return (
-          <EmptyPhaseRow
+          <div
             key={phase.id}
-            phase={phase}
-            onAdd={() => onAdd(phase.id)}
-          />
+            draggable={armeId === phase.id}
+            onDragStart={(e) => {
+              setDraggedId(phase.id)
+              e.dataTransfer.effectAllowed = 'move'
+              // Firefox n'amorce pas le glissement sans données transportées
+              e.dataTransfer.setData('text/plain', phase.id)
+            }}
+            onDragEnd={finDeGeste}
+            onDragOver={(e) => {
+              e.preventDefault()
+              e.dataTransfer.dropEffect = 'move'
+              setDragOverId(phase.id === draggedId ? null : phase.id)
+            }}
+            onDrop={async (e) => {
+              e.preventDefault()
+              const nouvelOrdre = reordonner(phases, draggedId, phase.id)
+              finDeGeste()
+              if (nouvelOrdre) await onReordonner(nouvelOrdre)
+            }}
+            style={{
+              opacity: draggedId === phase.id ? 0.4 : 1,
+              borderTop: insertion === 'avant' ? trait : '2px solid transparent',
+              borderBottom: insertion === 'apres' ? trait : '2px solid transparent',
+              transition: 'opacity 0.15s',
+            }}
+          >
+            {estRenseignee(phase.entry) ? (
+              <PhaseCard
+                phase={phase}
+                entry={phase.entry}
+                prevEnveloppe={
+                  phases.slice(0, i).reverse()
+                    .find(p => p.entry?.enveloppe_ttc != null)?.entry?.enveloppe_ttc ?? null
+                }
+                enveloppeInitiale={enveloppeInitiale}
+                onEdit={onEdit}
+                onRenommer={renommer}
+                dragProps={dragProps}
+              />
+            ) : (
+              <EmptyPhaseRow
+                phase={phase}
+                onAdd={() => onAdd(phase.id)}
+                onRenommer={renommer}
+                onSupprimer={() => onSupprimer(phase)}
+                dragProps={dragProps}
+              />
+            )}
+          </div>
         )
       })}
     </div>
   )
 }
 
+// ─── Poignée de réordonnancement ──────────────────────────────────────────────
+
+function PoigneeDrag(props) {
+  return (
+    <div
+      {...props}
+      title="Glisser pour réordonner"
+      style={{
+        cursor: 'grab', color: '#C9C4C0', display: 'flex', alignItems: 'center',
+        flexShrink: 0, padding: '0 2px',
+      }}
+    >
+      <GripVertical size={14} strokeWidth={1.25} />
+    </div>
+  )
+}
+
 // ─── Estimations table ────────────────────────────────────────────────────────
 
-function EstimationsTable({ estimationsLots, marchesLots, onEdit, onAdd }) {
+function EstimationsTable({ estimationsLots, marchesLots, phases, onEdit, onAdd }) {
   const marchesMap = Object.fromEntries(
     marchesLots.map(m => [m.lot_id, m.montant_marche_ht])
   )
@@ -827,7 +973,7 @@ function EstimationsTable({ estimationsLots, marchesLots, onEdit, onAdd }) {
               </div>
               {/* Phase */}
               <div style={{ flex: `0 0 ${col('phase')}`, width: col('phase') }}>
-                <PhaseBadge phaseId={row.phase} />
+                <PhaseBadge phases={phases} phaseId={row.phase} />
               </div>
               {/* Estimé HT */}
               <div style={{ flex: `0 0 ${col('est')}`, width: col('est'), textAlign: 'right' }}>
@@ -945,7 +1091,14 @@ export default function FinancierEtudeModule() {
     deletePhase,
     upsertEstimation,
     deleteEstimation,
+    renommerPhase,
+    ajouterPhase,
+    reordonnerPhases,
   } = useSuiviFinancierEtude(affaireId, affaire)
+
+  // Liste affichée : les cinq phases de référence, leurs noms libres, et les
+  // phases ajoutées à la main — dans l'ordre choisi.
+  const phases = construirePhases(suiviParPhase)
 
   const [phaseModal, setPhaseModal] = useState({ open: false, existing: null, defaultPhase: null })
   const [estModal, setEstModal] = useState({ open: false, existing: null })
@@ -956,6 +1109,36 @@ export default function FinancierEtudeModule() {
 
   const openEditPhase = (entry) => {
     setPhaseModal({ open: true, existing: entry, defaultPhase: null })
+  }
+
+  const handleRenommer = async (phase, nom) => {
+    try {
+      await renommerPhase(phase.id, nom, phase.entry?.ordre ?? phase.ordre)
+    } catch (err) { console.error('Renommage de la phase :', err) }
+  }
+
+  const handleAjouterPhase = async () => {
+    try {
+      await ajouterPhase(prochainCodePhase(phases), nomParDefaut(phases), phases.length)
+    } catch (err) { console.error('Ajout d’une phase :', err) }
+  }
+
+  // Seules les phases ajoutées à la main peuvent disparaître : les cinq phases
+  // de référence appartiennent au vocabulaire de l'affaire (`affaires.phase`)
+  // et aux estimations de lots. Les vider se fait depuis leur modale.
+  const handleSupprimerPhase = async (phase) => {
+    if (!phase.personnalisee) return
+    if (estRenseignee(phase.entry)
+      && !window.confirm(`Supprimer « ${phase.label} » et les montants qu'elle contient ?`)) return
+    try {
+      await deletePhase(phase.id)
+    } catch (err) { console.error('Suppression de la phase :', err) }
+  }
+
+  const handleReordonner = async (nouvelOrdre) => {
+    try {
+      await reordonnerPhases(nouvelOrdre.map(p => p.id))
+    } catch (err) { console.error('Réordonnancement des phases :', err) }
   }
 
   const openAddEst = () => setEstModal({ open: true, existing: null })
@@ -986,6 +1169,7 @@ export default function FinancierEtudeModule() {
         affaire={affaire}
         suiviParPhase={suiviParPhase}
         enveloppeInitiale={enveloppeInitiale}
+        phases={phases}
       />
 
       {/* ── Timeline des phases ── */}
@@ -1008,11 +1192,27 @@ export default function FinancierEtudeModule() {
           }
         />
         <PhaseTimeline
-          suiviParPhase={suiviParPhase}
+          phases={phases}
           enveloppeInitiale={enveloppeInitiale}
           onAdd={openAddPhase}
           onEdit={openEditPhase}
+          onRenommer={handleRenommer}
+          onSupprimer={handleSupprimerPhase}
+          onReordonner={handleReordonner}
         />
+
+        <button
+          onClick={handleAjouterPhase}
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 8,
+            padding: '6px 12px', borderRadius: 2, fontSize: 12,
+            border: '0.5px dashed rgba(0,0,0,0.20)', backgroundColor: 'transparent',
+            color: '#5E5854', cursor: 'pointer',
+          }}
+        >
+          <Plus size={12} />
+          Ajouter une phase
+        </button>
       </div>
 
       {/* ── Estimations par lot ── */}
@@ -1042,6 +1242,7 @@ export default function FinancierEtudeModule() {
             <EstimationsTable
               estimationsLots={estimationsLots}
               marchesLots={marchesLots}
+              phases={phases}
               onEdit={openEditEst}
               onAdd={openAddEst}
             />
@@ -1055,6 +1256,7 @@ export default function FinancierEtudeModule() {
         onClose={() => setPhaseModal(s => ({ ...s, open: false }))}
         existing={phaseModal.existing}
         affaire={affaireForModal}
+        phases={phases}
         onSave={upsertPhase}
         onDelete={deletePhase}
       />
@@ -1064,6 +1266,7 @@ export default function FinancierEtudeModule() {
         onClose={() => setEstModal(s => ({ ...s, open: false }))}
         existing={estModal.existing}
         affaire={affaire}
+        phases={phases}
         lotsExistants={lotsExistants}
         onSave={upsertEstimation}
         onDelete={deleteEstimation}

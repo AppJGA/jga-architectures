@@ -8,6 +8,7 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
+    "generate-icons": "node scripts/generateIcons.mjs",
     "server": "node notion-sync-server.mjs",
     "dev:full": "concurrently \"npm run server\" \"npm run dev\""
   },

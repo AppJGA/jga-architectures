@@ -350,7 +350,6 @@ export function AffaireFormModal({ affaire = null, onSave, onClose, scrollToSect
   const set = (key) => (e) => setForm(f => ({ ...f, [key]: e.target.value }))
   const setNum = (key) => (e) => setForm(f => ({ ...f, [key]: e.target.value }))
   const toggle = (key) => (e) => setForm(f => ({ ...f, [key]: e.target.checked }))
-  const setInt = (key) => (e) => setForm(f => ({ ...f, [key]: Number(e.target.value) }))
 
   // La compression a lieu ici, à la sélection, et non à l'enregistrement : un
   // fichier illisible est signalé tout de suite, et la soumission du formulaire

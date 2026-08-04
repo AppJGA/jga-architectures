@@ -7,7 +7,7 @@ import { StatusBadge } from '../../shared/components/Badge'
 import { Button } from '../../shared/components/Button'
 import {
   getRapports, createRapport, getReservesOuvertes,
-  createReserve, updateReserveStatut,
+  updateReserveStatut,
 } from './supabase'
 
 const METEO_OPTIONS = [

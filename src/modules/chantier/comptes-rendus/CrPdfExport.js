@@ -138,7 +138,6 @@ export function generateCrPdf(cr, sections, presences, affaire, { autoPrint = tr
   const num     = String(cr.numero).padStart(2, '0')
   const logoUrl = window.location.origin + '/Logo_JGA_Archi.jpg'
 
-  const dateReunion = fmtDate(cr.date_reunion)
   const prochaine = cr.date_prochaine_reunion
     ? `${fmtDate(cr.date_prochaine_reunion)}${cr.heure_prochaine_reunion ? ' à ' + fmtTime(cr.heure_prochaine_reunion) : ''}`
     : 'À définir'

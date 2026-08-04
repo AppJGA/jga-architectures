@@ -166,8 +166,6 @@ export function FtmFormModal({ open, onClose, ftm, lots = [], affaire, onSave, o
     }
   }
 
-  const activeOrigine = ORIGINE_OPTIONS.find(o => o.value === form.origine)
-
   return (
     <div style={{
       position: 'fixed', inset: 0,

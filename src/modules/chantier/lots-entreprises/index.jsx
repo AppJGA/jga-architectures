@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   Building2, Plus, MoreHorizontal, Phone, Mail,
-  Pencil, Trash2, X, Check, Search,
+  Pencil, X, Check, Search,
 } from 'lucide-react'
 import { useLotsEntreprises, useEntreprises } from '../../../shared/hooks/useLotsEntreprises'
 import { supabase } from '../../../core/supabase/client'

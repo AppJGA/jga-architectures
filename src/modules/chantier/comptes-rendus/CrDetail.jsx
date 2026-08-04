@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import {
-  ArrowLeft, ChevronLeft, Send, FileText, FileDown,
+  ArrowLeft, Send, FileText, FileDown,
   Users, ClipboardList, MessageSquare, Zap, LayoutDashboard,
 } from 'lucide-react'
 import { useCompteRendu } from '../../../shared/hooks/useCompteRendu'

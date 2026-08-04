@@ -7,10 +7,6 @@ const PRESET_COLORS = [
   '#f97316', '#2A8A4E',
 ]
 
-const LABEL = {
-  display: 'block', fontSize: 10, fontWeight: 700, textTransform: 'uppercase',
-  letterSpacing: '0.06em', color: '#9C9591', marginBottom: 4,
-}
 const BTN = {
   display: 'inline-flex', alignItems: 'center', gap: 6,
   padding: '8px 14px', borderRadius: 2, fontSize: 12, cursor: 'pointer',

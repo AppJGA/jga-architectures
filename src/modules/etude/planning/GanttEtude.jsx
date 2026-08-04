@@ -11,7 +11,7 @@ import { usePlanningEtudeSegments } from '../../../shared/hooks/usePlanningEtude
 import { useUndoRedo } from '../../../shared/hooks/useUndoRedo'
 import { diffSnapshotsEtude, diffEstVide, estPhasePersistee } from './snapshotDiffEtude'
 import { usePeriodesBloquees } from '../../../shared/hooks/usePeriodesBloquees'
-import { useNotionSync, etudePhaseToNotion } from '../../../shared/hooks/useNotionSync'
+import { useNotionSync } from '../../../shared/hooks/useNotionSync'
 import { GanttEtudeToolbar } from './GanttEtudeToolbar'
 import { GanttEtudeSidebar } from './GanttEtudeSidebar'
 import { GanttEtudeTimeline } from './GanttEtudeTimeline'

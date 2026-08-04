@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
+    "test": "node --import ./tests/resolve-src.mjs --test \"tests/**/*.test.js\"",
     "preview": "vite preview",
     "generate-icons": "node scripts/generateIcons.mjs",
     "server": "node notion-sync-server.mjs",

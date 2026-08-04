@@ -48,10 +48,6 @@ const TYPE_PLACEHOLDERS = {
   chantier:      "Ex: DET — Direction de l'exécution des travaux",
 }
 
-export function typeToImportance(type) {
-  return { etude: 'moe', validation: 'moa', administratif: 'admin', chantier: 'chantier' }[type] ?? 'moa'
-}
-
 // `defaultSemaine` : première semaine libre du planning, calculée par le parent
 // (dernière phase + périodes bloquantes déduites). Retombe sur la semaine
 // courante si le planning est vide.

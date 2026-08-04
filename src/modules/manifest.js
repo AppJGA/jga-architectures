@@ -103,10 +103,6 @@ export const phases = [
   },
 ]
 
-export function getPhaseActive(affairePhase) {
-  return phases.find(p => p.supabasePhases.includes(affairePhase)) ?? phases[0]
-}
-
 export function getAllModules() {
   return phases.flatMap(p => p.modules)
 }

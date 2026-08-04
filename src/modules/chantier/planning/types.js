@@ -40,20 +40,6 @@ export function applyLag(parentDebut, parentDuree, lag) {
   return addWorkingDays(parentLastDay, lag)
 }
 
-export function calendarOffsetFromRef(refDate, taskStart) {
-  return Math.round((taskStart.getTime() - refDate.getTime()) / (1000 * 3600 * 24))
-}
-
-export function workingDaysToCalendarDays(start, workingDays) {
-  if (workingDays <= 0) return 0
-  // Last working day of the task (0-indexed: duree-1 days from start)
-  const lastDay = addWorkingDays(start, workingDays - 1)
-  // Extend to the right edge of that day (= start of the next calendar day)
-  const dayAfter = new Date(lastDay)
-  dayAfter.setDate(dayAfter.getDate() + 1)
-  return Math.round((dayAfter.getTime() - start.getTime()) / (1000 * 3600 * 24))
-}
-
 export function parseDate(d) {
   if (d instanceof Date) return new Date(d)
   const [y, m, day] = d.split('-').map(Number)

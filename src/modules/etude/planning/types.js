@@ -143,12 +143,6 @@ export function weekOfDate(d) {
   return date ? getISOWeek(date) : null
 }
 
-// Label humain d'une semaine
-export function formatWeekLabel(semaine, annee) {
-  const d = getWeekStart(semaine, annee)
-  return d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })
-}
-
 // ─── Fragments d'une phase autour des périodes bloquantes ─────────────────────
 //
 // Une phase de 5 semaines qui démarre une semaine avant des congés de 2 semaines

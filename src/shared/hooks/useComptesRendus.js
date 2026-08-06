@@ -8,12 +8,25 @@ export function useComptesRendus(affaireId) {
   const fetchAll = useCallback(async () => {
     if (!affaireId) return
     setLoading(true)
-    const { data } = await supabase
-      .from('comptes_rendus')
-      .select('*, profiles:redacteur_id(prenom, nom)')
-      .eq('affaire_id', affaireId)
-      .order('numero', { ascending: false })
-    setComptesRendus(data ?? [])
+    // Les remarques non closes sont comptées par CR en une seule requête, plutôt
+    // qu'un compte par ligne : la liste affiche « points en cours » sur chaque CR.
+    const [{ data }, { data: remarques }] = await Promise.all([
+      supabase
+        .from('comptes_rendus')
+        .select('*, profiles:redacteur_id(prenom, nom)')
+        .eq('affaire_id', affaireId)
+        .order('numero', { ascending: false }),
+      supabase
+        .from('cr_remarques')
+        .select('cr_id')
+        .eq('affaire_id', affaireId)
+        .eq('est_clos', false),
+    ])
+
+    const parCr = new Map()
+    for (const r of remarques ?? []) parCr.set(r.cr_id, (parCr.get(r.cr_id) ?? 0) + 1)
+
+    setComptesRendus((data ?? []).map(cr => ({ ...cr, pointsEnCours: parCr.get(cr.id) ?? 0 })))
     setLoading(false)
   }, [affaireId])
 

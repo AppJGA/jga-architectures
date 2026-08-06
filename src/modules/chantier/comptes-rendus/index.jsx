@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
-import { Plus, Trash2, Users, LayoutList, LayoutGrid } from 'lucide-react'
+import { Plus, Trash2, Users, LayoutList, LayoutGrid, CalendarPlus, ArrowRight } from 'lucide-react'
 import { useAffaire } from '../../../shared/hooks/useAffaires'
 import { useComptesRendus } from '../../../shared/hooks/useComptesRendus'
 import { InterlocuteursModal } from './InterlocuteursModal'
@@ -58,8 +58,7 @@ function CrRow({ cr, onOpen, onDelete }) {
         {fmtDate(cr.date_reunion)}
       </td>
       <td style={{ padding: '12px 16px', fontSize: 12, color: '#5E5854' }}>
-        {cr.date_prochaine_reunion ? fmtDate(cr.date_prochaine_reunion) : '—'}
-        {cr.heure_prochaine_reunion && ` · ${cr.heure_prochaine_reunion.slice(0, 5)}`}
+        {cr.pointsEnCours > 0 ? `${cr.pointsEnCours} en cours` : '—'}
       </td>
       <td style={{ padding: '12px 16px', fontSize: 12, color: '#5E5854' }}>{redacteurName}</td>
       <td style={{ padding: '12px 16px' }}><StatutBadge statut={cr.statut} /></td>
@@ -199,6 +198,102 @@ function DeleteConfirmModal({ cr, onConfirm, onCancel }) {
 
 const TH = { padding: '10px 16px', fontSize: 10, fontWeight: 500, color: '#9C9591', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'left', borderBottom: '0.5px solid rgba(0,0,0,0.1)', whiteSpace: 'nowrap' }
 
+// ─── Bouton « Nouvelle visite » ───────────────────────────────────────────────
+// L'action principale de l'écran : plus grosse que les autres, ombre qui bat,
+// et raccourci clavier N — le badge affiché n'est pas décoratif.
+
+function BoutonNouvelleVisite({ onClick, disabled }) {
+  const [survol, setSurvol] = useState(false)
+  return (
+    <button
+      className="jga-respire"
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 10,
+        padding: '12px 22px 12px 14px', borderRadius: 3, border: 'none',
+        backgroundColor: survol ? '#227341' : '#2A8A4E', color: 'white',
+        fontSize: 14, fontWeight: 600, cursor: 'pointer',
+        opacity: disabled ? 0.6 : 1,
+        transform: survol && !disabled ? 'translateY(-2px)' : 'none',
+        transition: 'transform 0.18s cubic-bezier(0.22,1,0.36,1), background 0.18s ease',
+      }}
+      onMouseEnter={() => setSurvol(true)}
+      onMouseLeave={() => setSurvol(false)}
+    >
+      <span style={{
+        width: 26, height: 26, borderRadius: '50%',
+        background: 'rgba(255,255,255,0.18)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}>
+        <Plus size={16} strokeWidth={2.2} />
+      </span>
+      Nouvelle visite
+      <span style={{
+        fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 500,
+        letterSpacing: '0.06em', color: 'rgba(255,255,255,0.72)',
+        border: '1px solid rgba(255,255,255,0.35)', borderRadius: 3, padding: '1px 5px',
+      }}>
+        N
+      </span>
+    </button>
+  )
+}
+
+// ─── Bandeau « prochaine réunion » ────────────────────────────────────────────
+// Le dernier CR porte la date de la prochaine réunion ; tant qu'aucun CR ne
+// suit, c'est qu'il reste à créer. Le bandeau le rappelle et le crée d'un clic.
+
+function BandeauProchaineReunion({ dernier, onCreer }) {
+  const [survol, setSurvol] = useState(false)
+  const reprises = dernier.pointsEnCours ?? 0
+
+  return (
+    <div
+      onClick={onCreer}
+      onMouseEnter={() => setSurvol(true)}
+      onMouseLeave={() => setSurvol(false)}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 14,
+        background: survol
+          ? 'linear-gradient(90deg, rgba(42,138,78,0.16) 0%, rgba(42,138,78,0.05) 60%, rgba(42,138,78,0) 100%)'
+          : 'linear-gradient(90deg, rgba(42,138,78,0.10) 0%, rgba(42,138,78,0.03) 60%, rgba(42,138,78,0) 100%)',
+        border: '0.5px solid rgba(42,138,78,0.35)',
+        borderLeft: '3px solid #2A8A4E',
+        padding: '14px 18px', marginBottom: 14, cursor: 'pointer',
+        transition: 'background 0.18s ease',
+      }}
+    >
+      <div style={{
+        width: 34, height: 34, borderRadius: '50%', flexShrink: 0,
+        background: 'rgba(42,138,78,0.16)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}>
+        <CalendarPlus size={17} color="#2A8A4E" strokeWidth={1.6} />
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <p style={{ fontSize: 13, fontWeight: 500, color: '#1F1B17' }}>
+          Prochaine réunion le {fmtDate(dernier.date_prochaine_reunion)}
+          {dernier.heure_prochaine_reunion && ` à ${dernier.heure_prochaine_reunion.slice(0, 5)}`}
+          {' '}— le CR n°{dernier.numero + 1} n'est pas encore créé
+        </p>
+        {reprises > 0 && (
+          <p style={{ fontSize: 11, color: '#5E5854', marginTop: 2 }}>
+            La nouvelle visite reprendra automatiquement {reprises === 1 ? 'la remarque non close' : `les ${reprises} remarques non closes`} du CR n°{dernier.numero}.
+          </p>
+        )}
+      </div>
+      <span style={{
+        display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0,
+        fontSize: 12, fontWeight: 500, color: '#2A8A4E',
+      }}>
+        Créer la visite
+        <ArrowRight size={14} strokeWidth={1.8} />
+      </span>
+    </div>
+  )
+}
+
 // ─── Module principal ─────────────────────────────────────────────────────────
 
 export default function ComptesRendusModule() {
@@ -225,6 +320,23 @@ export default function ComptesRendusModule() {
     setCreating(false)
   }
 
+  // Raccourci N, annoncé par le badge du bouton. Ignoré dès qu'on saisit du
+  // texte, qu'un modificateur est enfoncé, ou qu'on n'est plus sur la liste.
+  useEffect(() => {
+    if (selectedCrId || interloOpen || deletingCr) return
+    const onKeyDown = (e) => {
+      if (e.key !== 'n' && e.key !== 'N') return
+      if (e.metaKey || e.ctrlKey || e.altKey) return
+      const cible = e.target
+      if (cible?.isContentEditable) return
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(cible?.tagName)) return
+      e.preventDefault()
+      handleCreate()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }) // sans tableau de dépendances : handleCreate est recréé à chaque rendu
+
   if (selectedCrId) {
     return (
       <>
@@ -239,20 +351,27 @@ export default function ComptesRendusModule() {
   }
 
   const emis = comptesRendus.filter(cr => cr.statut === 'emis').length
+  const brouillons = comptesRendus.length - emis
+  // Trié par numéro décroissant : le premier est le dernier CR de l'affaire.
+  const dernier = comptesRendus[0]
 
   return (
-    <>
+    <div className="jga-entree-vue">
       <style>{`@keyframes jga-spin { to { transform: rotate(360deg); } }`}</style>
 
       {/* En-tête */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, flexWrap: 'wrap', gap: 10 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 18, flexWrap: 'wrap', gap: 14 }}>
         <div>
-          <h2 style={{ fontSize: 15, fontWeight: 500, color: '#1F1B17', margin: 0 }}>Visites de chantier</h2>
+          <h2 style={{ fontFamily: "'Archivo', sans-serif", fontSize: 19, fontWeight: 500, color: '#1F1B17', margin: 0 }}>
+            Visites de chantier
+          </h2>
           <p style={{ fontSize: 12, color: '#9C9591', marginTop: 3 }}>
-            {comptesRendus.length} CR · {emis} émis
+            {comptesRendus.length} compte{comptesRendus.length > 1 ? 's' : ''} rendu{comptesRendus.length > 1 ? 's' : ''}
+            {' · '}{emis} émis
+            {brouillons > 0 && ` · ${brouillons} brouillon${brouillons > 1 ? 's' : ''}`}
           </p>
         </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
           {/* Toggle vue */}
           <div style={{ display: 'flex', border: '0.5px solid rgba(0,0,0,0.12)', borderRadius: 2, overflow: 'hidden' }}>
             {[
@@ -282,17 +401,16 @@ export default function ComptesRendusModule() {
             onClick={() => setInterloOpen(true)}
             style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 2, fontSize: 12, border: '0.5px solid rgba(0,0,0,0.15)', backgroundColor: 'white', color: '#374151', cursor: 'pointer' }}
           >
-            <Users size={13} /> Gérer les interlocuteurs
+            <Users size={13} /> Interlocuteurs
           </button>
-          <button
-            onClick={handleCreate}
-            disabled={creating}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 2, fontSize: 12, fontWeight: 500, border: 'none', backgroundColor: '#2A8A4E', color: 'white', cursor: 'pointer', opacity: creating ? 0.6 : 1 }}
-          >
-            <Plus size={13} /> Nouvelle visite
-          </button>
+          <BoutonNouvelleVisite onClick={handleCreate} disabled={creating} />
         </div>
       </div>
+
+      {/* Rappel de la prochaine réunion, tant que son CR n'existe pas */}
+      {!loading && dernier?.date_prochaine_reunion && (
+        <BandeauProchaineReunion dernier={dernier} onCreer={handleCreate} />
+      )}
 
       {/* Contenu */}
       {loading ? (
@@ -309,7 +427,7 @@ export default function ComptesRendusModule() {
               <tr style={{ backgroundColor: '#FAFAF9' }}>
                 <th style={TH}>N°</th>
                 <th style={TH}>Date réunion</th>
-                <th style={TH}>Prochaine réunion</th>
+                <th style={TH}>Points en cours</th>
                 <th style={TH}>Rédacteur</th>
                 <th style={TH}>Statut</th>
                 <th style={{ ...TH, textAlign: 'right' }}></th>
@@ -351,6 +469,6 @@ export default function ComptesRendusModule() {
           onCancel={() => setDeletingCr(null)}
         />
       )}
-    </>
+    </div>
   )
 }

@@ -158,7 +158,21 @@ body {
 .jga-entree-entete  { animation: jga-head-in    0.45s cubic-bezier(0.22, 1, 0.36, 1) backwards; }
 .jga-entree-photo   { animation: jga-photo-in   0.7s  cubic-bezier(0.22, 1, 0.36, 1) backwards; }
 
+/* ── Visites de chantier ──────────────────────────────────────────────────────
+   Reprises du composant Claude Design « Visites de chantier ». `jga-respire`
+   fait battre l'ombre du bouton « Nouvelle visite », l'action principale de
+   l'écran. */
+@keyframes jga-vue-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes jga-respire {
+  0%, 100% { box-shadow: 0 6px 18px -6px rgba(42,138,78,0.55); }
+  50%      { box-shadow: 0 10px 26px -6px rgba(42,138,78,0.75); }
+}
+
+.jga-entree-vue { animation: jga-vue-in 0.4s cubic-bezier(0.22, 1, 0.36, 1) backwards; }
+.jga-respire    { animation: jga-respire 3.4s ease-in-out infinite; }
+
 @media (prefers-reduced-motion: reduce) {
   .jga-entree-carte, .jga-entree-libelle,
-  .jga-entree-affaire, .jga-entree-entete, .jga-entree-photo { animation: none; }
+  .jga-entree-affaire, .jga-entree-entete, .jga-entree-photo,
+  .jga-entree-vue, .jga-respire { animation: none; }
 }

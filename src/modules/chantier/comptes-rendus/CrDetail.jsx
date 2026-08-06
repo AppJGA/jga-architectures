@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import {
-  ArrowLeft, Send, FileText, FileDown,
+  ArrowLeft, ArrowRight, Send, FileText, FileDown, ChevronRight,
   Users, ClipboardList, MessageSquare, Zap, LayoutDashboard,
 } from 'lucide-react'
 import { useCompteRendu } from '../../../shared/hooks/useCompteRendu'
@@ -208,29 +208,102 @@ function ExportView({ cr, sections, presences, affaire, lotEntreprises, interloc
   )
 }
 
-// ─── Page d'accueil (grille de bulles) ───────────────────────────────────────
+// ─── Page d'accueil du CR ─────────────────────────────────────────────────────
 
-function CrAccueil({ cr, presences, sections, onNavigate, onEmit }) {
-  const num = String(cr.numero).padStart(2, '0')
+// Le statut d'une remarque est du texte libre (voir les suggestions de
+// CrSectionEditor : « À faire », « Fait », « Pour mémoire », « À prévoir »,
+// « En cours », « Urgent », « Annulé »), plus un booléen `est_clos`. Ces quatre
+// familles regroupent ce vocabulaire. L'ordre des tests compte : « Fait » doit
+// être reconnu avant « À faire ».
+const FAMILLES = [
+  { id: 'afaire', label: 'À faire', couleur: '#B8412C' },
+  { id: 'encours', label: 'En cours', couleur: '#D97706' },
+  { id: 'soldees', label: 'Soldées', couleur: '#2A8A4E' },
+  { id: 'sansSuite', label: 'Sans suite donnée', couleur: '#9C9591' },
+]
+
+function familleRemarque(r) {
+  if (r.est_clos) return 'soldees'
+  const s = (r.statut ?? '').toLowerCase()
+  if (/\bfaits?\b|sold|clos/.test(s)) return 'soldees'
+  if (/faire|prévoir|prevoir|urgent/.test(s)) return 'afaire'
+  if (/cours/.test(s)) return 'encours'
+  return 'sansSuite'
+}
+
+function remarquesDeSection(s) {
+  return [
+    ...(s.directRemarques ?? []),
+    ...(s.sousSections ?? []).flatMap(ss => ss.remarques ?? []),
+  ]
+}
+
+// Raccourci vers une autre vue du CR : ligne compacte, icône, chevron.
+function TuileVue({ vue, titre, sousTitre, onClick }) {
+  const [survol, setSurvol] = useState(false)
+  return (
+    <div
+      onClick={onClick}
+      onMouseEnter={() => setSurvol(true)}
+      onMouseLeave={() => setSurvol(false)}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 12,
+        background: 'white', padding: '14px 16px', cursor: 'pointer',
+        border: `0.5px solid ${survol ? vue.couleur : 'rgba(0,0,0,0.08)'}`,
+        transition: 'border-color 0.15s',
+      }}
+    >
+      <div style={{
+        width: 34, height: 34, borderRadius: '50%', flexShrink: 0,
+        background: vue.fondClair,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}>
+        <vue.icon size={17} color={vue.couleur} strokeWidth={1.5} />
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <p style={{ fontSize: 13, fontWeight: 500, color: '#1F1B17' }}>{titre}</p>
+        <p style={{ fontSize: 11, color: '#9C9591', marginTop: 1 }}>{sousTitre}</p>
+      </div>
+      <ChevronRight size={14} color="#C9C4C0" strokeWidth={1.5} style={{ flexShrink: 0 }} />
+    </div>
+  )
+}
+
+function CrAccueil({ cr, affaire, presences, sections, onNavigate, onOuvrirSection, onEmit }) {
+  const [survolEditeur, setSurvolEditeur] = useState(false)
   const dateLabel = cr.date_reunion
     ? new Date(cr.date_reunion + 'T00:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })
     : 'Date non définie'
 
-  const allRemarques = sections.flatMap(s => [
-    ...(s.directRemarques ?? []),
-    ...(s.sousSections ?? []).flatMap(ss => ss.remarques ?? []),
-  ])
-  const enCoursCount = allRemarques.filter(r => !r.est_clos && r.statut && (
-    r.statut.toLowerCase().includes('faire') || r.statut.toLowerCase().includes('cours')
-  )).length
+  const toutesRemarques = sections.flatMap(remarquesDeSection)
+  const parFamille = FAMILLES.map(f => ({
+    ...f,
+    total: toutesRemarques.filter(r => familleRemarque(r) === f.id).length,
+  }))
+
+  const convoques = presences.filter(p => p.convoque).length
+  const presents = presences.filter(p => p.presence === 'P').length
+
+  const vueOrga = VUES.find(v => v.id === 'organisation')
+  const vuePresences = VUES.find(v => v.id === 'presences')
+  const vueExport = VUES.find(v => v.id === 'export')
 
   return (
-    <div style={{ maxWidth: 640 }}>
+    <div>
       {/* En-tête du CR */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 32, flexWrap: 'wrap' }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <p style={{ fontSize: 16, fontWeight: 500, color: '#1F1B17', marginBottom: 3 }}>Réunion n°{num}</p>
-          <p style={{ fontSize: 12, color: '#9C9591' }}>{dateLabel}</p>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', marginBottom: 18 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flex: 1, minWidth: 0 }}>
+          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 28, fontWeight: 600, color: '#E8602C', letterSpacing: '-0.02em' }}>
+            {String(cr.numero).padStart(2, '0')}
+          </span>
+          <div>
+            <p style={{ fontFamily: "'Archivo', sans-serif", fontSize: 16, fontWeight: 500, color: '#1F1B17' }}>
+              Réunion n°{cr.numero}
+            </p>
+            <p style={{ fontSize: 12, color: '#9C9591', marginTop: 2 }}>
+              {dateLabel}{affaire?.nom && ` · ${affaire.nom}`}
+            </p>
+          </div>
         </div>
         <span style={{
           fontSize: 11, fontWeight: 500, borderRadius: 3, padding: '3px 10px',
@@ -243,82 +316,157 @@ function CrAccueil({ cr, presences, sections, onNavigate, onEmit }) {
           onClick={onEmit}
           style={{
             display: 'inline-flex', alignItems: 'center', gap: 6,
-            padding: '6px 14px', borderRadius: 2, fontSize: 12, fontWeight: 500,
-            border: 'none', cursor: 'pointer',
-            backgroundColor: cr.statut === 'emis' ? '#F3F4F6' : '#2A8A4E',
-            color: cr.statut === 'emis' ? '#5E5854' : 'white',
+            padding: '8px 16px', borderRadius: 2, fontSize: 12, fontWeight: 500,
+            border: '0.5px solid rgba(0,0,0,0.15)', backgroundColor: 'white',
+            color: '#1F1B17', cursor: 'pointer',
           }}
+          onMouseEnter={e => { e.currentTarget.style.borderColor = '#2A8A4E'; e.currentTarget.style.color = '#2A8A4E' }}
+          onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(0,0,0,0.15)'; e.currentTarget.style.color = '#1F1B17' }}
         >
           <Send size={13} />
           {cr.statut === 'emis' ? 'Repasser en brouillon' : 'Émettre le CR'}
         </button>
       </div>
 
-      {/* Grille 2×2 */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-        {VUES.map(vue => (
-          <div
-            key={vue.id}
-            onClick={() => onNavigate(vue.id)}
+      {/* Bloc principal : les remarques */}
+      <div style={{
+        background: 'white', padding: 24, marginBottom: 16,
+        border: '0.5px solid rgba(42,138,78,0.35)',
+        borderTop: '3px solid #2A8A4E',
+        boxShadow: '0 14px 34px -22px rgba(31,27,23,0.5)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap', marginBottom: 20 }}>
+          <div style={{
+            width: 48, height: 48, borderRadius: '50%', flexShrink: 0,
+            background: 'rgba(42,138,78,0.12)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <MessageSquare size={24} color="#2A8A4E" strokeWidth={1.5} />
+          </div>
+          <div style={{ flex: 1, minWidth: 200 }}>
+            <h3 style={{ fontFamily: "'Archivo', sans-serif", fontSize: 18, fontWeight: 500, color: '#1F1B17' }}>
+              Remarques
+            </h3>
+            <p style={{ fontSize: 12, color: '#9C9591', marginTop: 4 }}>
+              {toutesRemarques.length === 0
+                ? 'Aucune remarque pour l’instant'
+                : `${toutesRemarques.length} remarque${toutesRemarques.length > 1 ? 's' : ''} réparties en ${sections.length} section${sections.length > 1 ? 's' : ''}`}
+              {cr.numero > 1 && toutesRemarques.length > 0 && ` · reprises du CR n°${cr.numero - 1}`}
+            </p>
+          </div>
+          <button
+            onClick={() => onNavigate('remarques')}
+            onMouseEnter={() => setSurvolEditeur(true)}
+            onMouseLeave={() => setSurvolEditeur(false)}
             style={{
-              background: 'white', borderRadius: 0,
-              border: '0.5px solid rgba(0,0,0,0.08)',
-              padding: '28px 24px', cursor: 'pointer',
-              display: 'flex', flexDirection: 'column',
-              alignItems: 'center', gap: 14, textAlign: 'center',
-              transition: 'all 0.18s',
-            }}
-            onMouseEnter={e => {
-              e.currentTarget.style.borderColor = vue.couleur
-              e.currentTarget.style.background = vue.fondClair
-            }}
-            onMouseLeave={e => {
-              e.currentTarget.style.borderColor = 'rgba(0,0,0,0.08)'
-              e.currentTarget.style.background = 'white'
+              display: 'inline-flex', alignItems: 'center', gap: 8, flexShrink: 0,
+              padding: '10px 20px', borderRadius: 2, border: 'none',
+              backgroundColor: survolEditeur ? '#227341' : '#2A8A4E', color: 'white',
+              fontSize: 13, fontWeight: 600, cursor: 'pointer',
+              boxShadow: '0 6px 16px -8px rgba(42,138,78,0.7)',
+              transform: survolEditeur ? 'translateY(-2px)' : 'none',
+              transition: 'transform 0.18s cubic-bezier(0.22,1,0.36,1), background 0.18s ease',
             }}
           >
-            <div style={{
-              width: 64, height: 64, borderRadius: '50%',
-              background: vue.fondClair,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            Ouvrir l'éditeur
+            <ArrowRight size={15} strokeWidth={1.8} />
+          </button>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10, marginBottom: sections.length > 0 ? 20 : 0 }}>
+          {parFamille.map(f => (
+            <div key={f.id} style={{
+              border: '0.5px solid rgba(0,0,0,0.08)', padding: '12px 14px',
+              display: 'flex', flexDirection: 'column', gap: 3,
             }}>
-              <vue.icon size={28} color={vue.couleur} />
-            </div>
-
-            <div>
-              <div style={{ fontSize: 14, fontWeight: 500, color: '#1F1B17', marginBottom: 6 }}>
-                {vue.label}
-              </div>
-              <div style={{ fontSize: 11, color: '#9C9591', lineHeight: 1.5, whiteSpace: 'pre-line' }}>
-                {vue.description}
-              </div>
-            </div>
-
-            {vue.id === 'presences' && presences.length > 0 && (
-              <span style={{
-                fontSize: 10, color: vue.couleur, background: vue.fondClair,
-                border: `0.5px solid ${vue.couleur}40`, borderRadius: 3, padding: '2px 8px',
-              }}>
-                {presences.length} participant{presences.length > 1 ? 's' : ''}
+              <span style={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: '#C9C4C0' }}>
+                {f.label}
               </span>
-            )}
+              <span style={{ fontSize: 22, fontWeight: 600, color: f.couleur }}>{f.total}</span>
+            </div>
+          ))}
+        </div>
 
-            {vue.id === 'remarques' && allRemarques.length > 0 && (
-              <span style={{
-                fontSize: 10, color: vue.couleur, background: vue.fondClair,
-                border: `0.5px solid ${vue.couleur}40`, borderRadius: 3, padding: '2px 8px',
-              }}>
-                {enCoursCount > 0 ? `${enCoursCount} point${enCoursCount > 1 ? 's' : ''} en cours` : `${allRemarques.length} remarque${allRemarques.length > 1 ? 's' : ''}`}
-              </span>
-            )}
+        {sections.length > 0 && (
+          <div style={{ borderTop: '0.5px solid rgba(0,0,0,0.08)', paddingTop: 14 }}>
+            <p style={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: '#C9C4C0', marginBottom: 8 }}>
+              Sections — accès direct
+            </p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {sections.map((s, i) => {
+                const rems = remarquesDeSection(s)
+                // Une section « chaude » a au moins un point à faire
+                const chaude = rems.some(r => familleRemarque(r) === 'afaire')
+                return (
+                  <button
+                    key={s.id}
+                    onClick={() => onOuvrirSection(s.id)}
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 8,
+                      padding: '7px 12px', borderRadius: 2, cursor: 'pointer',
+                      border: '0.5px solid rgba(0,0,0,0.10)', background: 'white',
+                      fontSize: 12, color: '#374151',
+                      transition: 'border-color 0.15s, background 0.15s',
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.borderColor = '#2A8A4E'; e.currentTarget.style.background = 'rgba(42,138,78,0.06)' }}
+                    onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(0,0,0,0.10)'; e.currentTarget.style.background = 'white' }}
+                  >
+                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: '#C9C4C0' }}>
+                      {String(i + 1).padStart(2, '0')}
+                    </span>
+                    {s.titre}
+                    <span style={{
+                      fontSize: 10, fontWeight: 500, borderRadius: 3, padding: '1px 6px',
+                      color: chaude ? '#B8412C' : '#9C9591',
+                      background: chaude ? 'rgba(184,65,44,0.10)' : '#F1EFE8',
+                    }}>
+                      {rems.length}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
           </div>
-        ))}
+        )}
+      </div>
+
+      {/* Les trois autres vues */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
+        <TuileVue
+          vue={vueOrga}
+          titre="Organisation"
+          sousTitre="Dates, rédacteur, template"
+          onClick={() => onNavigate('organisation')}
+        />
+        <TuileVue
+          vue={vuePresences}
+          titre="Présences"
+          sousTitre={presences.length === 0 ? 'Aucun participant' : `${convoques} convoqué${convoques > 1 ? 's' : ''} · ${presents} présent${presents > 1 ? 's' : ''}`}
+          onClick={() => onNavigate('presences')}
+        />
+        <TuileVue
+          vue={vueExport}
+          titre="Exporter le PDF"
+          sousTitre="Aperçu avant impression"
+          onClick={() => onNavigate('export')}
+        />
       </div>
     </div>
   )
 }
 
 // ─── CrDetail principal ───────────────────────────────────────────────────────
+
+// Fait défiler jusqu'à une section de l'éditeur. L'ancre n'existe qu'une fois
+// l'éditeur monté : on laisse passer une frame, et on réessaie deux fois si le
+// rendu a pris plus longtemps.
+function defilerVersSection(sectionId, essais = 2) {
+  requestAnimationFrame(() => {
+    const cible = document.getElementById(`cr-section-${sectionId}`)
+    if (cible) cible.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    else if (essais > 0) defilerVersSection(sectionId, essais - 1)
+  })
+}
 
 export function CrDetail({ crId, affaire, onBack }) {
   const [activeView, setActiveView] = useState(null)
@@ -408,9 +556,11 @@ export function CrDetail({ crId, affaire, onBack }) {
       {activeView === null && (
         <CrAccueil
           cr={cr}
+          affaire={affaire}
           presences={presences}
           sections={sections}
           onNavigate={setActiveView}
+          onOuvrirSection={(id) => { setActiveView('remarques'); defilerVersSection(id) }}
           onEmit={handleEmit}
         />
       )}

@@ -1020,7 +1020,9 @@ export function CrSectionEditor({ sections, crDate, interlocuteurs, lotEntrepris
 
       {/* Sections */}
       {sections.map((sec) => (
-        <div key={sec.id}>
+        // L'id sert d'ancre : les puces de sections de l'accueil du CR font
+        // défiler jusqu'ici.
+        <div key={sec.id} id={`cr-section-${sec.id}`}>
           {dropBeforeId === sec.id && dragId !== sec.id && (
             <div style={{ height: 3, backgroundColor: '#E8602C', borderRadius: 2, margin: '-2px 0 6px', pointerEvents: 'none' }} />
           )}

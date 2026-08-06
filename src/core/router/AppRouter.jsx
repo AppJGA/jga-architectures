@@ -48,6 +48,18 @@ export function AppRouter() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
 
+        {/* Prévisualisation d'écran, hors authentification et hors AppShell —
+            uniquement pour regarder un rendu en développement.
+
+            `import.meta.env.DEV` est une constante remplacée à la compilation :
+            en production l'expression devient `false && …` et la route disparaît
+            du bundle. Le montage est volontairement nu (ni Topbar ni Sidebar) :
+            AppShell afficherait la barre latérale sur ce chemin, ce que la page
+            d'accueil n'a jamais. */}
+        {import.meta.env.DEV && (
+          <Route path="/_preview/home" element={<Wrap><HomePage /></Wrap>} />
+        )}
+
         <Route
           element={
             <RequireAuth>

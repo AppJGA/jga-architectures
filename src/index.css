@@ -116,3 +116,17 @@ body {
 /* Rotation des indicateurs de chargement. Déclarée globalement : cinq
    composants la redéfinissaient chacun dans leur propre <style> inline. */
 @keyframes jga-spin { to { transform: rotate(360deg); } }
+
+/* ── Page d'accueil : entrées et décor animé ──────────────────────────────────
+   Reprises du composant Claude Design « Accueil JGA ». Les boucles décoratives
+   sont mises en pause quand le système demande moins d'animation ; les entrées,
+   elles, sont retirées côté composant (les mettre en pause les figerait à
+   opacity 0). */
+@keyframes jga-rise  { from { opacity: 0; transform: translateY(22px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes jga-fade  { from { opacity: 0; } to { opacity: 1; } }
+@keyframes jga-ring  { 0% { transform: rotate(45deg) scale(0.82); opacity: 0.55; } 70%, 100% { transform: rotate(45deg) scale(1.25); opacity: 0; } }
+@keyframes jga-orbit { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+@keyframes jga-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
+@keyframes jga-arrow { 0%, 100% { transform: translateX(0); opacity: 0.55; } 50% { transform: translateX(5px); opacity: 1; } }
+@keyframes jga-drift { from { transform: translate3d(0,0,0); } to { transform: translate3d(-40px,-40px,0); } }
+@keyframes jga-sweep { 0% { transform: scaleX(0); transform-origin: left; } 45% { transform: scaleX(1); transform-origin: left; } 55% { transform: scaleX(1); transform-origin: right; } 100% { transform: scaleX(0); transform-origin: right; } }

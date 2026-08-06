@@ -178,36 +178,8 @@ function ModuleRenderer({ mod }) {
 // ─── Photo de l'affaire ───────────────────────────────────────────────────────
 // La photo de couverture (colonne `photo_url`, bucket `affaires-photos`) est
 // déjà téléversée depuis le formulaire d'affaire et affichée sur le tableau de
-// bord ; elle est reprise ici en vignette d'en-tête et en fond lavé.
-
-// Vignette carrée dans l'en-tête, à gauche de la barre de phase.
-function PhotoVignette({ url, nom }) {
-  return (
-    <div
-      style={{
-        position: 'relative', width: 34, height: 34, flexShrink: 0,
-        overflow: 'hidden', backgroundColor: '#F1EFE8',
-        border: '0.5px solid rgba(0,0,0,0.10)',
-      }}
-      title={nom}
-    >
-      <img
-        src={url}
-        alt=""
-        style={{
-          width: '100%', height: '100%', objectFit: 'cover', display: 'block',
-          animation: 'jga-fade 0.5s ease both',
-        }}
-      />
-      {/* Liseré intérieur clair : détache la photo du fond blanc de l'en-tête */}
-      <span
-        aria-hidden="true"
-        style={{ position: 'absolute', inset: 0, boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.35)' }}
-      />
-    </div>
-  )
-}
-
+// bord ; elle habille ici le fond de la vue d'ensemble.
+//
 // Fond lavé de la vue d'ensemble. Deux réglages, à ajuster ensemble : l'opacité
 // de la photo et la force du voile qui la recouvre. Ce que l'on voit réellement
 // de la photo à une hauteur donnée, c'est OPACITE × (1 − voile) — d'où un voile
@@ -296,9 +268,6 @@ function AffaireHeader({ affaire, onEdit, collaborateurs, canEdit, collabLoading
         </button>
 
         <div style={{ width: 1, height: 16, backgroundColor: 'rgba(0,0,0,0.1)', flexShrink: 0 }} />
-
-        {affaire.photo_url && <PhotoVignette url={affaire.photo_url} nom={affaire.nom} />}
-
         <div style={{ width: 3, height: 20, borderRadius: 2, backgroundColor: barColor, flexShrink: 0 }} />
 
         <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--jga-beige)', fontFamily: "'JetBrains Mono', monospace", letterSpacing: '0.04em', flexShrink: 0 }}>
@@ -586,8 +555,15 @@ function ModulesSidebar({ affaireId, moduleId }) {
   )
 }
 
+// ─── Entrées échelonnées ──────────────────────────────────────────────────────
+// Le design fixe les décalages en dur pour ses 6 tuiles ; ici le nombre de
+// modules par phase vient du manifeste, d'où la suite : chaque tuile part
+// 0,07 s après la précédente, et le libellé de phase juste avant sa première.
+const delaiCarte = (rang) => `${(0.10 + 0.07 * rang).toFixed(2)}s`
+const delaiLibelle = (rangPremiereCarte) => `${Math.max(0.04, 0.04 + 0.07 * rangPremiereCarte).toFixed(2)}s`
+
 // ─── Tuile module ─────────────────────────────────────────────────────────────
-function ModuleTile({ icon: Icon, label, phaseColor, active, children, onClick }) {
+function ModuleTile({ icon: Icon, label, phaseColor, active, children, onClick, delai }) {
   const [hovered, setHovered] = useState(false)
 
   const hoverBorder = phaseColor === '#2A8A4E' ? 'var(--jga-green)' : 'var(--jga-orange-mid)'
@@ -596,43 +572,50 @@ function ModuleTile({ icon: Icon, label, phaseColor, active, children, onClick }
     : '#9C9591'
 
   return (
-    <div
-      onClick={active ? onClick : undefined}
-      onMouseEnter={() => active && setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{
-        position: 'relative',
-        backgroundColor: 'white',
-        borderRadius: 0,
-        border: hovered ? `0.5px solid ${hoverBorder}` : '0.5px solid rgba(0,0,0,0.08)',
-        padding: 20,
-        cursor: active ? 'pointer' : 'default',
-        transition: 'border-color 0.15s',
-        opacity: active ? 1 : 0.7,
-      }}
-    >
-      {!active && (
-        <span style={{
-          position: 'absolute', top: 12, right: 12,
-          fontSize: 10, fontWeight: 500,
-          backgroundColor: '#F1EFE8', color: '#9C9591',
-          borderRadius: 3, padding: '2px 7px',
-        }}>
-          Bientôt
-        </span>
-      )}
-
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Icon size={18} strokeWidth={1.25} style={{ color: iconColor }} />
-          <span style={{ fontSize: 13, fontWeight: 500, color: active ? '#1F1B17' : '#9C9591' }}>
-            {label}
+    // L'entrée est portée par l'enveloppe et non par la tuile : l'animation
+    // finit sur opacity 1 et, prioritaire sur le style inline, elle effacerait
+    // l'atténuation des tuiles « Bientôt ».
+    <div className="jga-entree-carte" style={{ display: 'flex', animationDelay: delai }}>
+      <div
+        onClick={active ? onClick : undefined}
+        onMouseEnter={() => active && setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        style={{
+          position: 'relative',
+          flex: 1,
+          minWidth: 0,
+          backgroundColor: 'white',
+          borderRadius: 0,
+          border: hovered ? `0.5px solid ${hoverBorder}` : '0.5px solid rgba(0,0,0,0.08)',
+          padding: 20,
+          cursor: active ? 'pointer' : 'default',
+          transition: 'border-color 0.15s',
+          opacity: active ? 1 : 0.7,
+        }}
+      >
+        {!active && (
+          <span style={{
+            position: 'absolute', top: 12, right: 12,
+            fontSize: 10, fontWeight: 500,
+            backgroundColor: '#F1EFE8', color: '#9C9591',
+            borderRadius: 3, padding: '2px 7px',
+          }}>
+            Bientôt
           </span>
-        </div>
-        {active && <ChevronRight size={14} strokeWidth={1.25} style={{ color: "var(--jga-beige)" }} />}
-      </div>
+        )}
 
-      {children}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Icon size={18} strokeWidth={1.25} style={{ color: iconColor }} />
+            <span style={{ fontSize: 13, fontWeight: 500, color: active ? '#1F1B17' : '#9C9591' }}>
+              {label}
+            </span>
+          </div>
+          {active && <ChevronRight size={14} strokeWidth={1.25} style={{ color: "var(--jga-beige)" }} />}
+        </div>
+
+        {children}
+      </div>
     </div>
   )
 }
@@ -651,20 +634,26 @@ function InfoField({ label, value }) {
   )
 }
 
-function PhaseSection({ phase, affaire, stats, affaireId, navigate }) {
+function PhaseSection({ phase, affaire, stats, affaireId, navigate, rangBase }) {
   const isEtude = phase.id === 'etude'
   const isChantier = phase.id === 'chantier'
 
   return (
     <div>
       {/* Phase label */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+      <div
+        className="jga-entree-libelle"
+        style={{
+          display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10,
+          animationDelay: delaiLibelle(rangBase),
+        }}
+      >
         <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: phase.color }} />
         <span style={{ fontSize: 12, fontWeight: 500, color: COULEUR_LIBELLE_PHASE, fontFamily: "'Archivo', sans-serif" }}>{phase.label}</span>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-        {phase.modules.map(mod => {
+        {phase.modules.map((mod, i) => {
           const Icon = ICON_MAP[mod.icon]
           if (!Icon) return null
 
@@ -675,6 +664,7 @@ function PhaseSection({ phase, affaire, stats, affaireId, navigate }) {
               label={mod.label}
               phaseColor={phase.color}
               active={mod.enabled}
+              delai={delaiCarte(rangBase + i)}
               onClick={() => navigate(`/affaires/${affaireId}/${mod.path}`)}
             >
               {isChantier && mod.id === 'lots-entreprises' && mod.enabled && (
@@ -906,6 +896,13 @@ function PhaseSection({ phase, affaire, stats, affaireId, navigate }) {
 function AffaireOverview({ affaire, stats, affaireId, onEdit, canEdit }) {
   const navigate = useNavigate()
 
+  // Rang de départ de chaque phase dans la suite des décalages d'entrée, pour
+  // qu'ils courent d'une section à l'autre au lieu de redémarrer à chaque phase.
+  const rangs = phases.reduce(
+    (acc, phase) => [...acc, acc[acc.length - 1] + phase.modules.length],
+    [0]
+  )
+
   return (
     <div style={{
       // z-index 1 : le conteneur du fond est positionné, il passerait sinon
@@ -914,7 +911,7 @@ function AffaireOverview({ affaire, stats, affaireId, onEdit, canEdit }) {
       display: 'flex', flexDirection: 'column', gap: 24, maxWidth: 900,
     }}>
       {/* Phase sections */}
-      {phases.map(phase => (
+      {phases.map((phase, i) => (
         <PhaseSection
           key={phase.id}
           phase={phase}
@@ -922,15 +919,17 @@ function AffaireOverview({ affaire, stats, affaireId, onEdit, canEdit }) {
           stats={stats}
           affaireId={affaireId}
           navigate={navigate}
+          rangBase={rangs[i]}
         />
       ))}
 
       {/* Infos affaire */}
-      <div style={{
+      <div className="jga-entree-carte" style={{
         backgroundColor: 'white',
         borderRadius: 0,
         border: '0.5px solid rgba(0,0,0,0.08)',
         padding: 20,
+        animationDelay: delaiCarte(rangs[rangs.length - 1]),
       }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
           <span style={{ fontSize: 13, fontWeight: 500, color: '#1F1B17' }}>Informations de l'affaire</span>

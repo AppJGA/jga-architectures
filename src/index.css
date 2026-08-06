@@ -130,3 +130,19 @@ body {
 @keyframes jga-arrow { 0%, 100% { transform: translateX(0); opacity: 0.55; } 50% { transform: translateX(5px); opacity: 1; } }
 @keyframes jga-drift { from { transform: translate3d(0,0,0); } to { transform: translate3d(-40px,-40px,0); } }
 @keyframes jga-sweep { 0% { transform: scaleX(0); transform-origin: left; } 45% { transform: scaleX(1); transform-origin: left; } 55% { transform: scaleX(1); transform-origin: right; } 100% { transform: scaleX(0); transform-origin: right; } }
+
+/* ── Tableau de bord d'affaire : entrées échelonnées ──────────────────────────
+   Reprises du composant Claude Design « Affaire - Tableau de bord ». Le décalage
+   de chaque élément est posé en style inline (animation-delay) ; la durée et la
+   courbe vivent ici pour que le réglage système puisse retirer l'animation —
+   `animation: none` annule aussi le nom, donc le delay inline devient sans
+   effet, et l'élément s'affiche directement à son état final. */
+@keyframes jga-card-in  { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes jga-label-in { from { opacity: 0; transform: translateX(-6px); } to { opacity: 1; transform: translateX(0); } }
+
+.jga-entree-carte   { animation: jga-card-in  0.55s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.jga-entree-libelle { animation: jga-label-in 0.5s  cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .jga-entree-carte, .jga-entree-libelle { animation: none; }
+}

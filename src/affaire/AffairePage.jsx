@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useState, useCallback } from 'react'
+import { Suspense, useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, ClipboardList, ClipboardCheck, Calendar, CalendarRange,
@@ -208,34 +208,61 @@ function PhotoVignette({ url, nom }) {
   )
 }
 
-// Fond lavé de la vue d'ensemble, posé en arrière-plan du <main> plutôt qu'en
-// calques enfants : un arrière-plan ne compte jamais dans le débordement
-// défilable, et sur un conteneur qui défile il reste fixé au cadre visible —
-// donc l'effet « photo immobile sous le contenu qui glisse » sans la barre de
-// défilement fantôme qu'un calque de 100vh ajoute quand la page est courte.
-//
-// Les couches, du dessus vers le dessous :
-//   1. voile dégradé — lisibilité en haut, fondu dans le beige en bas
-//   2. beige à 78 % — équivaut à afficher la photo à 22 % d'opacité
-//   3. la photo, fondue en `luminosity` sur le beige : elle perd sa couleur
-//   4. beige plein, le fond de la page
-const BEIGE_PAGE = '#F5F1E9'
+// Fond lavé de la vue d'ensemble. Deux réglages, à ajuster ensemble : l'opacité
+// de la photo et la force du voile qui la recouvre. Ce que l'on voit réellement
+// de la photo à une hauteur donnée, c'est OPACITE × (1 − voile) — d'où un voile
+// volontairement léger en haut, sinon la photo disparaît sur le beige.
+const PHOTO_OPACITE = 0.5
+const PHOTO_VOILE =
+  'linear-gradient(180deg, rgba(245,241,233,0.44) 0%, rgba(245,241,233,0.68) 55%, rgba(245,241,233,0.90) 100%)'
 
-function fondPhoto(url) {
-  const beige = `linear-gradient(${BEIGE_PAGE}, ${BEIGE_PAGE})`
-  return {
-    backgroundColor: BEIGE_PAGE,
-    backgroundImage: [
-      `linear-gradient(180deg, rgba(245,241,233,0.55) 0%, rgba(245,241,233,0.80) 55%, ${BEIGE_PAGE} 100%)`,
-      'linear-gradient(rgba(245,241,233,0.78), rgba(245,241,233,0.78))',
-      `url(${JSON.stringify(url)})`,
-      beige,
-    ].join(', '),
-    backgroundSize: '100% 100%, 100% 100%, cover, 100% 100%',
-    backgroundPosition: 'top left, top left, center 45%, top left',
-    backgroundRepeat: 'no-repeat',
-    backgroundBlendMode: 'normal, normal, luminosity, normal',
+// Le libellé de phase est le seul texte posé directement sur le fond. Avec la
+// photo visible à 28 % en haut, le #5E5854 du reste de l'interface tomberait à
+// 3,2:1 sur une zone sombre ; ce ton-ci tient 5,5:1 dans le même pire cas.
+const COULEUR_LIBELLE_PHASE = '#3A342E'
+
+function PhotoFond({ url }) {
+  const ancre = useRef(null)
+  const [hauteur, setHauteur] = useState(0)
+
+  // Le calque doit couvrir exactement la zone visible du <main>. Une hauteur en
+  // 100vh la dépasserait et compterait dans le débordement défilable : barre de
+  // défilement fantôme et beige vide sous le contenu dès que la page est plus
+  // courte que la fenêtre. D'où la mesure — clientHeight est la boîte de
+  // padding, exactement ce que les décalages de -24 px recouvrent.
+  useEffect(() => {
+    const zone = ancre.current?.parentElement
+    if (!zone) return
+    const ro = new ResizeObserver(() => setHauteur(zone.clientHeight))
+    ro.observe(zone)
+    return () => ro.disconnect()
+  }, [])
+
+  const calque = {
+    position: 'absolute', top: -24, left: -24, right: -24, height: hauteur,
+    pointerEvents: 'none',
   }
+
+  return (
+    <div ref={ancre} aria-hidden="true" style={{ position: 'sticky', top: 0, height: 0, zIndex: 0 }}>
+      {hauteur > 0 && (
+        <>
+          <div
+            style={{
+              ...calque,
+              backgroundImage: `url(${JSON.stringify(url)})`,
+              backgroundSize: 'cover', backgroundPosition: 'center 45%',
+              opacity: PHOTO_OPACITE,
+              filter: 'saturate(0.7) contrast(0.95)',
+              animation: 'jga-fade 0.9s ease both',
+            }}
+          />
+          {/* Voile dégradé : lisibilité en haut, fondu dans le beige en bas */}
+          <div style={{ ...calque, background: PHOTO_VOILE }} />
+        </>
+      )}
+    </div>
+  )
 }
 
 // ─── Header ───────────────────────────────────────────────────────────────────
@@ -633,7 +660,7 @@ function PhaseSection({ phase, affaire, stats, affaireId, navigate }) {
       {/* Phase label */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
         <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: phase.color }} />
-        <span style={{ fontSize: 12, fontWeight: 500, color: '#5E5854', fontFamily: "'Archivo', sans-serif" }}>{phase.label}</span>
+        <span style={{ fontSize: 12, fontWeight: 500, color: COULEUR_LIBELLE_PHASE, fontFamily: "'Archivo', sans-serif" }}>{phase.label}</span>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
@@ -880,7 +907,12 @@ function AffaireOverview({ affaire, stats, affaireId, onEdit, canEdit }) {
   const navigate = useNavigate()
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 24, maxWidth: 900 }}>
+    <div style={{
+      // z-index 1 : le conteneur du fond est positionné, il passerait sinon
+      // au-dessus de ce contenu qui, lui, ne l'est pas
+      position: 'relative', zIndex: 1,
+      display: 'flex', flexDirection: 'column', gap: 24, maxWidth: 900,
+    }}>
       {/* Phase sections */}
       {phases.map(phase => (
         <PhaseSection
@@ -1004,14 +1036,18 @@ export function AffairePage() {
             padding: activeModule?.layout === 'fullbleed' ? 0 : 24,
             display: 'flex',
             flexDirection: 'column',
-            // Le fond photo n'habille que la vue d'ensemble, pas les modules
-            ...(!activeModule && affaire.photo_url ? fondPhoto(affaire.photo_url) : null),
           }}>
+            {/* Le fond photo n'habille que la vue d'ensemble, pas les modules —
+                et seule la vue d'ensemble applique le padding de 24 px que les
+                décalages du calque annulent. */}
+            {!activeModule && affaire.photo_url && <PhotoFond url={affaire.photo_url} />}
+
             {!collabLoading && !canEdit && (
               <div style={{
                 background: '#FEF3C7', border: '0.5px solid #D97706',
                 borderRadius: 2, padding: '8px 14px', fontSize: 12, color: '#92400E',
                 display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16,
+                position: 'relative', zIndex: 1,
               }}>
                 <Eye size={14} strokeWidth={1.25} />
                 Vous consultez cette affaire en lecture seule. Contactez le responsable pour obtenir les droits de modification.

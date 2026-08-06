@@ -175,6 +175,69 @@ function ModuleRenderer({ mod }) {
   return <Suspense fallback={<Spinner />}><Comp /></Suspense>
 }
 
+// ─── Photo de l'affaire ───────────────────────────────────────────────────────
+// La photo de couverture (colonne `photo_url`, bucket `affaires-photos`) est
+// déjà téléversée depuis le formulaire d'affaire et affichée sur le tableau de
+// bord ; elle est reprise ici en vignette d'en-tête et en fond lavé.
+
+// Vignette carrée dans l'en-tête, à gauche de la barre de phase.
+function PhotoVignette({ url, nom }) {
+  return (
+    <div
+      style={{
+        position: 'relative', width: 34, height: 34, flexShrink: 0,
+        overflow: 'hidden', backgroundColor: '#F1EFE8',
+        border: '0.5px solid rgba(0,0,0,0.10)',
+      }}
+      title={nom}
+    >
+      <img
+        src={url}
+        alt=""
+        style={{
+          width: '100%', height: '100%', objectFit: 'cover', display: 'block',
+          animation: 'jga-fade 0.5s ease both',
+        }}
+      />
+      {/* Liseré intérieur clair : détache la photo du fond blanc de l'en-tête */}
+      <span
+        aria-hidden="true"
+        style={{ position: 'absolute', inset: 0, boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.35)' }}
+      />
+    </div>
+  )
+}
+
+// Fond lavé de la vue d'ensemble, posé en arrière-plan du <main> plutôt qu'en
+// calques enfants : un arrière-plan ne compte jamais dans le débordement
+// défilable, et sur un conteneur qui défile il reste fixé au cadre visible —
+// donc l'effet « photo immobile sous le contenu qui glisse » sans la barre de
+// défilement fantôme qu'un calque de 100vh ajoute quand la page est courte.
+//
+// Les couches, du dessus vers le dessous :
+//   1. voile dégradé — lisibilité en haut, fondu dans le beige en bas
+//   2. beige à 78 % — équivaut à afficher la photo à 22 % d'opacité
+//   3. la photo, fondue en `luminosity` sur le beige : elle perd sa couleur
+//   4. beige plein, le fond de la page
+const BEIGE_PAGE = '#F5F1E9'
+
+function fondPhoto(url) {
+  const beige = `linear-gradient(${BEIGE_PAGE}, ${BEIGE_PAGE})`
+  return {
+    backgroundColor: BEIGE_PAGE,
+    backgroundImage: [
+      `linear-gradient(180deg, rgba(245,241,233,0.55) 0%, rgba(245,241,233,0.80) 55%, ${BEIGE_PAGE} 100%)`,
+      'linear-gradient(rgba(245,241,233,0.78), rgba(245,241,233,0.78))',
+      `url(${JSON.stringify(url)})`,
+      beige,
+    ].join(', '),
+    backgroundSize: '100% 100%, 100% 100%, cover, 100% 100%',
+    backgroundPosition: 'top left, top left, center 45%, top left',
+    backgroundRepeat: 'no-repeat',
+    backgroundBlendMode: 'normal, normal, luminosity, normal',
+  }
+}
+
 // ─── Header ───────────────────────────────────────────────────────────────────
 function AffaireHeader({ affaire, onEdit, collaborateurs, canEdit, collabLoading, isProprietaire, onCollabClick, onSelfAssign }) {
   const navigate = useNavigate()
@@ -184,7 +247,7 @@ function AffaireHeader({ affaire, onEdit, collaborateurs, canEdit, collabLoading
     <div style={{
       backgroundColor: 'white',
       borderBottom: '0.5px solid rgba(0,0,0,0.08)',
-      padding: '12px 24px',
+      padding: '10px 24px',
       display: 'flex',
       alignItems: 'center',
       gap: 12,
@@ -206,6 +269,9 @@ function AffaireHeader({ affaire, onEdit, collaborateurs, canEdit, collabLoading
         </button>
 
         <div style={{ width: 1, height: 16, backgroundColor: 'rgba(0,0,0,0.1)', flexShrink: 0 }} />
+
+        {affaire.photo_url && <PhotoVignette url={affaire.photo_url} nom={affaire.nom} />}
+
         <div style={{ width: 3, height: 20, borderRadius: 2, backgroundColor: barColor, flexShrink: 0 }} />
 
         <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--jga-beige)', fontFamily: "'JetBrains Mono', monospace", letterSpacing: '0.04em', flexShrink: 0 }}>
@@ -312,7 +378,7 @@ function InfoBandeau({ affaire }) {
     <div style={{
       backgroundColor: 'var(--jga-beige-light)',
       borderBottom: '0.5px solid rgba(0,0,0,0.08)',
-      padding: '8px 24px',
+      padding: '9px 24px',
       display: 'flex', alignItems: 'center', gap: 0,
       flexShrink: 0, flexWrap: 'wrap',
     }}>
@@ -938,6 +1004,8 @@ export function AffairePage() {
             padding: activeModule?.layout === 'fullbleed' ? 0 : 24,
             display: 'flex',
             flexDirection: 'column',
+            // Le fond photo n'habille que la vue d'ensemble, pas les modules
+            ...(!activeModule && affaire.photo_url ? fondPhoto(affaire.photo_url) : null),
           }}>
             {!collabLoading && !canEdit && (
               <div style={{

@@ -4,6 +4,13 @@ import { useAffaires } from '../shared/hooks/useAffaires'
 import { AffaireCard } from './AffaireCard'
 import { AffaireFormModal } from './AffaireFormModal'
 
+// Cadence de la cascade d'entrée, et rang au-delà duquel elle ne s'allonge plus.
+// Le design échelonne 8 cartes ; sans plafond, une agence à trente affaires
+// attendrait une seconde et demie avant de voir la dernière.
+const CADENCE = 0.055
+const RANG_MAX = 12
+const delai = (rang) => `${(Math.min(rang, RANG_MAX) * CADENCE).toFixed(3)}s`
+
 export function DashboardPage() {
   const { affaires, affairesNonAutorisees, loading, error, createAffaire, deleteAffaire } = useAffaires()
   const [search, setSearch] = useState('')
@@ -16,6 +23,11 @@ export function DashboardPage() {
     a.moa_nom?.toLowerCase().includes(search.toLowerCase()) ||
     a.code_affaire?.toLowerCase().includes(search.toLowerCase())
   )
+
+  // Le rang vient de la liste complète, pas de la liste filtrée : sinon taper
+  // dans la recherche changerait l'animation-delay des cartes déjà à l'écran,
+  // ce qui rejouerait leur entrée à chaque frappe.
+  const rangs = new Map(affaires.map((a, i) => [a.id, i]))
 
   const handleSave = async (data) => {
     try {
@@ -63,7 +75,7 @@ export function DashboardPage() {
     <>
       <div style={{ padding: '20px 24px', overflowY: 'auto', height: '100%' }}>
         {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+        <div className="jga-entree-entete" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
           <div>
             <h1 style={{ fontSize: 16, fontWeight: 500, color: '#1F1B17', fontFamily: "'Archivo', sans-serif" }}>Mes affaires</h1>
             <p style={{ fontSize: 12, color: 'var(--jga-beige)', marginTop: 2 }}>
@@ -125,7 +137,13 @@ export function DashboardPage() {
             gap: 12,
           }}>
             {filtered.map(affaire => (
-              <AffaireCard key={affaire.id} affaire={affaire} isAuthorized={true} onDeleteRequest={setDeletingAffaire} />
+              <AffaireCard
+                key={affaire.id}
+                affaire={affaire}
+                isAuthorized={true}
+                delai={delai(rangs.get(affaire.id) ?? 0)}
+                onDeleteRequest={setDeletingAffaire}
+              />
             ))}
           </div>
         )}
@@ -133,7 +151,13 @@ export function DashboardPage() {
         {/* Section affaires non autorisées */}
         {affairesNonAutorisees.length > 0 && (
           <>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '28px 0 16px' }}>
+            <div
+              className="jga-entree-entete"
+              style={{
+                display: 'flex', alignItems: 'center', gap: 12, margin: '28px 0 16px',
+                animationDelay: delai(affaires.length),
+              }}
+            >
               <div style={{ flex: 1, height: '0.5px', background: 'rgba(0,0,0,0.1)' }} />
               <span style={{
                 fontSize: 11, fontWeight: 500, color: '#9C9591',
@@ -151,8 +175,13 @@ export function DashboardPage() {
               gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
               gap: 12,
             }}>
-              {affairesNonAutorisees.map(affaire => (
-                <AffaireCard key={affaire.id} affaire={affaire} isAuthorized={false} />
+              {affairesNonAutorisees.map((affaire, i) => (
+                <AffaireCard
+                  key={affaire.id}
+                  affaire={affaire}
+                  isAuthorized={false}
+                  delai={delai(affaires.length + 1 + i)}
+                />
               ))}
             </div>
           </>

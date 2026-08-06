@@ -70,7 +70,7 @@ function AvatarsStack({ collaborateurs }) {
   )
 }
 
-export function AffaireCard({ affaire, onDeleteRequest, isAuthorized = true }) {
+export function AffaireCard({ affaire, onDeleteRequest, isAuthorized = true, delai }) {
   const navigate = useNavigate()
   const [hovered, setHovered] = useState(false)
   const topColor = TOP_COLORS[affaire.phase] ?? 'var(--jga-beige)'
@@ -94,6 +94,7 @@ export function AffaireCard({ affaire, onDeleteRequest, isAuthorized = true }) {
 
   return (
     <div
+      className="jga-entree-affaire"
       onClick={() => navigate(`/affaires/${affaire.id}`)}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
@@ -108,9 +109,12 @@ export function AffaireCard({ affaire, onDeleteRequest, isAuthorized = true }) {
           ? '0.5px solid var(--jga-orange-mid)'
           : '0.5px solid rgba(0,0,0,0.08)',
         cursor: 'pointer',
-        transition: 'border-color 0.15s',
+        // Le survol soulève la carte ; les affaires en lecture seule y échappent
+        transform: isAuthorized && hovered ? 'translateY(-3px)' : 'none',
+        boxShadow: isAuthorized && hovered ? '0 12px 26px -16px rgba(31,27,23,0.4)' : 'none',
+        transition: 'border-color 0.15s, transform 0.25s cubic-bezier(0.22,1,0.36,1), box-shadow 0.25s ease',
         filter: isAuthorized ? 'none' : 'grayscale(100%)',
-        opacity: isAuthorized ? 1 : 0.6,
+        animationDelay: delai,
       }}
     >
       {/* Badge lecture seule */}
@@ -131,9 +135,10 @@ export function AffaireCard({ affaire, onDeleteRequest, isAuthorized = true }) {
       {affaire.photo_url ? (
         <div style={{ height: 90, borderRadius: 0, overflow: 'hidden', position: 'relative' }}>
           <img
+            className="jga-entree-photo"
             src={affaire.photo_url}
             alt={affaire.nom}
-            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+            style={{ width: '100%', height: '100%', objectFit: 'cover', animationDelay: delai }}
           />
           <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 3, backgroundColor: topColor }} />
         </div>
@@ -175,34 +180,37 @@ export function AffaireCard({ affaire, onDeleteRequest, isAuthorized = true }) {
           {affaire.moa_nom}
         </p>
 
-        <div style={{ marginBottom: 12 }}>
+        {/* Le pied — collaborateurs, livraison, modules — n'a pas de sens sur une
+            affaire qu'on ne peut pas ouvrir : la carte s'arrête au badge. */}
+        <div style={{ marginBottom: isAuthorized ? 12 : 0 }}>
           <PhaseBadge phase={affaire.phase} />
         </div>
 
-        {/* Footer */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <AvatarsStack collaborateurs={collaborateurs} />
-            <span style={{ fontSize: 10, color: 'var(--jga-beige)' }}>
-              {date ? `Livr. ${date}` : '—'}
-            </span>
+        {isAuthorized && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <AvatarsStack collaborateurs={collaborateurs} />
+              <span style={{ fontSize: 10, color: 'var(--jga-beige)' }}>
+                {date ? `Livr. ${date}` : '—'}
+              </span>
+            </div>
+            <div style={{ display: 'flex', gap: 4 }}>
+              {MODULE_ICONS.map(({ id, Icon }) => (
+                <div
+                  key={id}
+                  style={{
+                    width: 18, height: 18, borderRadius: 3,
+                    backgroundColor: iconBg,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    flexShrink: 0,
+                  }}
+                >
+                  <Icon size={11} style={{ color: iconColor }} />
+                </div>
+              ))}
+            </div>
           </div>
-          <div style={{ display: 'flex', gap: 4 }}>
-            {MODULE_ICONS.map(({ id, Icon }) => (
-              <div
-                key={id}
-                style={{
-                  width: 18, height: 18, borderRadius: 3,
-                  backgroundColor: iconBg,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  flexShrink: 0,
-                }}
-              >
-                <Icon size={11} style={{ color: iconColor }} />
-              </div>
-            ))}
-          </div>
-        </div>
+        )}
       </div>
     </div>
   )

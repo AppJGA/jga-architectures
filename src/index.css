@@ -143,6 +143,22 @@ body {
 .jga-entree-carte   { animation: jga-card-in  0.55s cubic-bezier(0.22, 1, 0.36, 1) both; }
 .jga-entree-libelle { animation: jga-label-in 0.5s  cubic-bezier(0.22, 1, 0.36, 1) both; }
 
+/* ── Portail des affaires : entrées échelonnées ───────────────────────────────
+   Reprises du composant Claude Design « Portail des affaires ». Le remplissage
+   est `backwards` et non `both` : une animation prime sur le style inline, donc
+   un `both` figerait la carte sur le `transform: none` de sa dernière image et
+   le soulèvement au survol ne s'appliquerait jamais. En `backwards`, l'état de
+   départ ne vaut que pendant le délai, et la carte revient à ses styles normaux
+   une fois l'entrée jouée. */
+@keyframes jga-portail-in { from { opacity: 0; transform: translateY(16px) scale(0.985); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes jga-head-in    { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes jga-photo-in   { from { opacity: 0; transform: scale(1.06); } to { opacity: 1; transform: scale(1); } }
+
+.jga-entree-affaire { animation: jga-portail-in 0.5s  cubic-bezier(0.22, 1, 0.36, 1) backwards; }
+.jga-entree-entete  { animation: jga-head-in    0.45s cubic-bezier(0.22, 1, 0.36, 1) backwards; }
+.jga-entree-photo   { animation: jga-photo-in   0.7s  cubic-bezier(0.22, 1, 0.36, 1) backwards; }
+
 @media (prefers-reduced-motion: reduce) {
-  .jga-entree-carte, .jga-entree-libelle { animation: none; }
+  .jga-entree-carte, .jga-entree-libelle,
+  .jga-entree-affaire, .jga-entree-entete, .jga-entree-photo { animation: none; }
 }

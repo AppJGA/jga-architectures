@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 93 tests node --test (planning + exports)
+npm test         # 103 tests node --test (planning + exports)
 npx eslint src   # ~79 problèmes préexistants : comparer, ne pas viser zéro
 ```
 

@@ -11,6 +11,9 @@ import {
 } from './types'
 import { assignLabelLanes } from './jalonLayout'
 import {
+  xAtDate,
+  dateForX,
+  redimensionnerBarre,
   weekIndexFromRef,
   xAtDateMonth,
   barreSemaine,
@@ -47,13 +50,6 @@ const JALON_LABEL_MIN_GAP = 80
 const JALON_LABEL_HEIGHT = 20
 
 // ── Fonctions géométrie variable (colonnes week-end réduites) ─────────────────
-
-function xAtDate(date, dateRef, dayPositions) {
-  const offset = Math.round((date.getTime() - dateRef.getTime()) / (1000 * 3600 * 24))
-  if (offset <= 0) return 0
-  if (offset >= dayPositions.length - 1) return dayPositions[dayPositions.length - 1]
-  return dayPositions[offset]
-}
 
 function barWidthAt(startDate, workingDays, dateRef, dayPositions, dayWidth) {
   if (workingDays <= 0) return dayWidth * WEEKEND_RATIO
@@ -210,31 +206,6 @@ function periodeGeometry(dateDebut, dateFinInclusive, geo) {
 
 // ── Création de tâche par cliquer-glisser ──────────────────────────────────────
 
-// Inverse de xAtDate/weekIndexFromRef/xAtDateMonth : convertit une position en
-// pixels (dans le référentiel du contenu de la timeline, pas de la fenêtre) en
-// date, selon le mode de vue actif.
-function dateForX(x, geo) {
-  if (geo.viewMode === 'month') {
-    const idx = Math.floor(x / geo.monthWidth)
-    const m0 = geo.months[0]
-    if (!m0) return new Date(geo.dateRef)
-    return new Date(m0.year, m0.month + idx, 1)
-  }
-  if (geo.viewMode === 'week') {
-    const idx = Math.floor(x / geo.weekWidth)
-    const d = new Date(geo.dateRef)
-    d.setDate(d.getDate() + idx * 7)
-    return d
-  }
-  // Vue jour : recherche dans dayPositions (paliers cumulés, colonnes week-end réduites)
-  const { dayPositions, dateRef } = geo
-  let idx = 0
-  while (idx < dayPositions.length - 1 && dayPositions[idx + 1] <= x) idx++
-  const d = new Date(dateRef)
-  d.setDate(d.getDate() + idx)
-  return d
-}
-
 // Retrouve le lot/zone et le haut de ligne (en px) sous un Y donné, pour amorcer
 // un dessin de tâche. Un clic sur un header (lot ou zone) ou hors de toute ligne
 // ne démarre rien (retourne null).
@@ -333,16 +304,6 @@ function applyDeltaDays(origDate, deltaDays, viewMode) {
     while (!isWorkingDay(raw)) raw.setDate(raw.getDate() + 1)
   }
   return raw
-}
-
-// Recalcule la durée d'un resize par la poignée gauche pour que la date de fin
-// (dernier jour ouvré) reste fixe, même si le décalage traverse un week-end.
-// `origDuree - deltaDays` mélangeait un delta calendaire (pxToDays) avec une
-// durée en jours ouvrés, ce qui faisait dériver la fin dès qu'un week-end
-// était traversé — la barre semblait s'étendre des deux côtés.
-function resizeLeftDuree(origDebut, origDuree, newDebut, minDuree) {
-  const origLastDay = addWorkingDays(origDebut, origDuree - 1)
-  return Math.max(minDuree, workingDaysBetween(newDebut, origLastDay) + 1)
 }
 
 // Aligne une date sur l'unité de la vue active après un drag (lundi en semaine, 1er du mois en mois)
@@ -761,10 +722,8 @@ export function GanttTimeline({
 
   // ── Resize segment (poignées gauche/droite) ───────────────────────────────────
   //
-  // Même géométrie que le resize d'une barre de tâche : `duree_jours` est une
-  // durée en jours OUVRÉS (c'est ainsi que la barre du segment est dessinée),
-  // donc on réutilise applyDeltaDays/resizeLeftDuree plutôt qu'un calcul en jours
-  // calendaires, qui ferait sauter la barre au relâchement.
+  // Même calcul que le resize d'une barre de tâche (redimensionnerBarre) :
+  // `duree_jours` est une durée en jours OUVRÉS.
   const [resizingSegment, setResizingSegment] = useState(null)
 
   const handleSegmentResizeStart = useCallback((e, segment, side) => {
@@ -787,22 +746,15 @@ export function GanttTimeline({
   useEffect(() => {
     if (!resizingSegment) return
     const { segmentId, side, startX, originalDateDebut, originalDuree } = resizingSegment
-    const origDebut = parseDate(originalDateDebut)
     const minDuree = viewMode === 'month' ? 5 : 1
 
     const computeChanges = (dx) => {
-      const deltaDays = pxToDays(dx)
-      if (side === 'right') {
-        return { duree_jours: Math.max(minDuree, originalDuree + deltaDays) }
-      }
-      const shift = Math.min(deltaDays, originalDuree - minDuree)
-      const newDebut = applyDeltaDays(origDebut, shift, viewMode)
-      return {
-        date_debut: formatDateISO(newDebut),
-        duree_jours: viewMode === 'day'
-          ? resizeLeftDuree(origDebut, originalDuree, newDebut, minDuree)
-          : Math.max(minDuree, originalDuree - deltaDays),
-      }
+      const r = redimensionnerBarre({
+        cote: side, debut: originalDateDebut, duree: originalDuree, dx, geo, periodes, minDuree,
+      })
+      return side === 'right'
+        ? { duree_jours: r.duree }
+        : { date_debut: formatDateISO(r.debut), duree_jours: r.duree }
     }
 
     const handleMouseMove = (e) => {
@@ -827,7 +779,7 @@ export function GanttTimeline({
       window.removeEventListener('mousemove', handleMouseMove)
       window.removeEventListener('mouseup', handleMouseUp)
     }
-  }, [resizingSegment, viewMode, pxToDays, updateSegmentLocal, onSegmentCommit])
+  }, [resizingSegment, viewMode, geo, periodes, updateSegmentLocal, onSegmentCommit])
 
   // ── Connexion chemin critique ──────────────────────────────────────────────────
   const [connectingFrom, setConnectingFrom] = useState(null)
@@ -963,26 +915,32 @@ export function GanttTimeline({
   }, [tasks, segments, dependances, rowIndexMap, rowHeight, BAR_PAD, geo, rowY])
 
   // ── Mouse handlers ─────────────────────────────────────────────────────────────
+
+  // Bornes d'une barre pendant un geste. Le redimensionnement est calculé à
+  // l'identique pour l'aperçu et au relâchement, pour que la barre ne saute pas.
+  const bornesGeste = useCallback(({ type, origDebut, origDuree }, dx, relache) => {
+    if (type !== 'move') {
+      return redimensionnerBarre({
+        cote: type === 'resize-right' ? 'right' : 'left',
+        debut: origDebut, duree: origDuree, dx, geo, periodes,
+        minDuree: viewMode === 'month' ? 5 : 1,
+      })
+    }
+    let debut = applyDeltaDays(origDebut, pxToDays(dx), viewMode)
+    if (relache) {
+      debut = snapToView(debut, viewMode)
+      if (getNextWorkingDay) debut = getNextWorkingDay(debut)
+    }
+    return { debut, duree: origDuree }
+  }, [viewMode, geo, periodes, pxToDays, getNextWorkingDay])
+
   const handleMouseMove = useCallback((e) => {
     if (barDragRef.current) {
-      const { type, taskId, startX, origDebut, origDuree } = barDragRef.current
+      const { taskId, startX } = barDragRef.current
       const dx = e.clientX - startX
-      const deltaDays = pxToDays(dx)
       if (Math.abs(dx) > 3) barDragRef.current.moved = true
 
-      const minDuree = viewMode === 'month' ? 5 : 1
-      let newDebut = origDebut, newDuree = origDuree
-      if (type === 'move') {
-        newDebut = applyDeltaDays(origDebut, deltaDays, viewMode)
-      } else if (type === 'resize-right') {
-        newDuree = Math.max(minDuree, origDuree + deltaDays)
-      } else if (type === 'resize-left') {
-        const shift = Math.min(deltaDays, origDuree - minDuree)
-        newDebut = applyDeltaDays(origDebut, shift, viewMode)
-        newDuree = viewMode === 'day'
-          ? resizeLeftDuree(origDebut, origDuree, newDebut, minDuree)
-          : Math.max(minDuree, origDuree - deltaDays)
-      }
+      const { debut: newDebut, duree: newDuree } = bornesGeste(barDragRef.current, dx, false)
       const el = document.querySelector(`[data-taskid="${taskId}"]`)
       if (el) {
         const previewGeo = computeGeometry(newDebut, newDuree, geo)
@@ -994,29 +952,13 @@ export function GanttTimeline({
       const rect = svgRef.current.getBoundingClientRect()
       setMousePos({ x: e.clientX - rect.left, y: e.clientY - rect.top })
     }
-  }, [pxToDays, viewMode, geo, connectingFrom])
+  }, [bornesGeste, geo, connectingFrom])
 
   const handleMouseUp = useCallback((e) => {
     if (barDragRef.current) {
-      const { type, taskId, startX, origDebut, origDuree, moved } = barDragRef.current
+      const { taskId, startX, origDebut, origDuree, moved } = barDragRef.current
       if (moved) {
-        const dx = e.clientX - startX
-        const deltaDays = pxToDays(dx)
-        const minDuree = viewMode === 'month' ? 5 : 1
-        let newDebut = origDebut, newDuree = origDuree
-        if (type === 'move') {
-          newDebut = snapToView(applyDeltaDays(origDebut, deltaDays, viewMode), viewMode)
-          if (getNextWorkingDay) newDebut = getNextWorkingDay(newDebut)
-        } else if (type === 'resize-right') {
-          newDuree = Math.max(minDuree, origDuree + deltaDays)
-        } else if (type === 'resize-left') {
-          const shift = Math.min(deltaDays, origDuree - minDuree)
-          newDebut = applyDeltaDays(origDebut, shift, viewMode)
-          if (getNextWorkingDay) newDebut = getNextWorkingDay(newDebut)
-          newDuree = viewMode === 'day'
-            ? resizeLeftDuree(origDebut, origDuree, newDebut, minDuree)
-            : Math.max(minDuree, origDuree - deltaDays)
-        }
+        const { debut: newDebut, duree: newDuree } = bornesGeste(barDragRef.current, e.clientX - startX, true)
         if (formatDateISO(newDebut) !== formatDateISO(origDebut) || newDuree !== origDuree) {
           onTaskUpdate(taskId, { debut: formatDateISO(newDebut), duree: newDuree })
         }
@@ -1026,7 +968,7 @@ export function GanttTimeline({
       document.body.style.cursor = ''
     }
     if (connectingFrom && !hoveredPoint) setConnectingFrom(null)
-  }, [pxToDays, viewMode, onTaskUpdate, connectingFrom, hoveredPoint, getNextWorkingDay])
+  }, [bornesGeste, onTaskUpdate, connectingFrom, hoveredPoint])
 
   useEffect(() => {
     const h = (e) => { if (e.key === 'Escape') setConnectingFrom(null) }

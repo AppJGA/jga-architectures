@@ -11,12 +11,13 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 74 tests node --test (planning + exports)
+npm test         # 81 tests node --test (planning + exports)
 npx eslint src   # ~79 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
-`npm test` couvre `tests/planning.test.js` (propagation des dépendances) et
-`tests/export.test.js` (PDF et Excel). Rien ne couvre l'interface.
+`npm test` couvre `tests/planning.test.js` (propagation des dépendances),
+`tests/export.test.js` (PDF et Excel) et `tests/geometrie.test.js` (fin des
+barres du Gantt chantier). Rien ne couvre l'interface.
 
 ## Où se trouve quoi
 

@@ -1845,6 +1845,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
         addSegment={addSegment}
         updateSegment={updateSegment}
         deleteSegment={deleteSegment}
+        periodes={periodes}
       />
 
       <ZonesModal

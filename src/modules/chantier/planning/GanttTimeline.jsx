@@ -9,6 +9,13 @@ import {
   computeLag,
 } from './types'
 import { assignLabelLanes } from './jalonLayout'
+import {
+  addWorkingDaysBlocked,
+  weekIndexFromRef,
+  xAtDateMonth,
+  barreSemaine,
+  barreMois,
+} from './geometrie'
 
 // Étendue minimale de la timeline, même sans tâche (la plage réelle est calculée
 // depuis la dernière tâche/segment + une large marge droite — voir `dayCount`).
@@ -64,27 +71,6 @@ function barWidthAt(startDate, workingDays, dateRef, dayPositions, dayWidth) {
 // Seules les périodes bloquantes décalent les barres ; les périodes informatives
 // sont dessinées mais traversées normalement par les tâches.
 
-function isDateInPeriodes(date, periodes) {
-  return periodes.some((p) => {
-    if (p.est_bloquante === false) return false
-    const debut = parseDate(p.date_debut)
-    const fin = parseDate(p.date_fin)
-    return date >= debut && date <= fin
-  })
-}
-
-// Comme addWorkingDays, mais saute aussi les jours tombant dans une période bloquée
-function addWorkingDaysBlocked(date, days, periodes) {
-  if (days === 0) return new Date(date)
-  const result = new Date(date)
-  let added = 0
-  while (added < days) {
-    result.setDate(result.getDate() + 1)
-    if (isWorkingDay(result) && !isDateInPeriodes(result, periodes)) added++
-  }
-  return result
-}
-
 // Largeur d'une barre en vue jour, en tenant compte des périodes bloquées
 // (la barre s'étend visuellement pour « sauter » les congés, comme les week-ends)
 function barWidthAtBlocked(startDate, workingDays, dateRef, dayPositions, dayWidth, periodes) {
@@ -108,24 +94,10 @@ function getISOWeek(date) {
   return 1 + Math.round(((d - week1) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7)
 }
 
-// Index de semaine (snappé) depuis la date de référence (toujours un lundi)
-function weekIndexFromRef(date, dateRef) {
-  const diffDays = Math.floor((date.getTime() - dateRef.getTime()) / (1000 * 3600 * 24))
-  return Math.floor(diffDays / 7)
-}
-
-function xAtDateWeekSnapped(date, dateRef, weekWidth) {
-  return weekIndexFromRef(date, dateRef) * weekWidth
-}
-
 // Position continue (non snappée), utilisée pour les jalons et le marqueur « aujourd'hui »
 function xAtDateWeekContinuous(date, dateRef, weekWidth) {
   const diffDays = (date.getTime() - dateRef.getTime()) / (1000 * 3600 * 24)
   return (diffDays / 7) * weekWidth
-}
-
-function barWidthAtWeek(duree, weekWidth) {
-  return Math.max(1, Math.ceil(duree / 7)) * weekWidth
 }
 
 // ── Fonctions géométrie vue mois ───────────────────────────────────────────────
@@ -174,20 +146,6 @@ function buildMonthsList(tasks, segments, extraMonths = 0) {
   return months
 }
 
-function xAtDateMonth(date, months, monthWidth) {
-  const refMois = months[0]
-  if (!refMois) return 0
-  const totalMonths = (date.getFullYear() - refMois.year) * 12 + (date.getMonth() - refMois.month)
-  const dayOfMonth = date.getDate()
-  const daysInMonth = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate()
-  const fraction = dayOfMonth / daysInMonth
-  return (totalMonths + fraction) * monthWidth
-}
-
-function barWidthAtMonth(dureeJours, monthWidth) {
-  return Math.max(monthWidth * 0.1, ((dureeJours ?? 1) / 30) * monthWidth)
-}
-
 // ── Géométrie unifiée jour / semaine / mois ────────────────────────────────────
 //
 // geo = { viewMode, dateRef, dayPositions, dayWidth, weekWidth, monthWidth, months }
@@ -198,9 +156,9 @@ const MIN_BAR_WIDTH = 2
 function computeGeometry(startDate, duree, geo) {
   let result
   if (geo.viewMode === 'month') {
-    result = { left: xAtDateMonth(startDate, geo.months, geo.monthWidth), width: barWidthAtMonth(duree, geo.monthWidth) }
+    result = barreMois(startDate, duree, geo.months, geo.monthWidth, geo.periodes)
   } else if (geo.viewMode === 'week') {
-    result = { left: xAtDateWeekSnapped(startDate, geo.dateRef, geo.weekWidth), width: barWidthAtWeek(duree, geo.weekWidth) }
+    result = barreSemaine(startDate, duree, geo.dateRef, geo.weekWidth, geo.periodes)
   } else {
     result = {
       left: xAtDate(startDate, geo.dateRef, geo.dayPositions),
@@ -218,7 +176,7 @@ function getTaskGeometry(task, geo) {
 
 // Position/largeur d'une période bloquée. En vue jour, `xAtDate` est déjà précise
 // au jour près. En semaine/mois, les barres de tâches sont alignées sur des
-// colonnes entières (xAtDateWeekSnapped / mois) — une période bloquée doit suivre
+// colonnes entières (barreSemaine / mois) — une période bloquée doit suivre
 // la même convention, sinon elle se rend comme une bande continue plus étroite
 // que sa colonne et désalignée de la grille semaine/mois sous-jacente.
 function periodeGeometry(dateDebut, dateFinInclusive, geo) {
@@ -252,7 +210,7 @@ function periodeGeometry(dateDebut, dateFinInclusive, geo) {
 
 // ── Création de tâche par cliquer-glisser ──────────────────────────────────────
 
-// Inverse de xAtDate/xAtDateWeekSnapped/xAtDateMonth : convertit une position en
+// Inverse de xAtDate/weekIndexFromRef/xAtDateMonth : convertit une position en
 // pixels (dans le référentiel du contenu de la timeline, pas de la fenêtre) en
 // date, selon le mode de vue actif.
 function dateForX(x, geo) {

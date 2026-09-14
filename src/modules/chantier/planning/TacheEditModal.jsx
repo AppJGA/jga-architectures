@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Trash2, Save, X, Plus, Minimize2, Maximize2, ChevronRight } from 'lucide-react'
-import { parseDate, formatDateISO, computeLag, addWorkingDays, workingDaysBetween } from './types'
+import { parseDate, formatDateISO, computeLag, addWorkingDays } from './types'
+import { dernierJourTache, dureeEntre } from './geometrie'
 import { DatePickerISO } from '../../../shared/components/DatePickerISO'
 
 const LABEL = {
@@ -46,16 +47,16 @@ function clampPosition(x, y) {
   }
 }
 
-// Dernier jour ouvré de la tâche (la durée inclut le jour de début)
-function computeDateFin(debut, duree) {
+// Même calcul que la barre du planning, fermetures bloquantes comprises : la
+// date affichée ici est celle où la barre s'arrête.
+function computeDateFin(debut, duree, periodes) {
   if (!debut) return ''
-  return formatDateISO(addWorkingDays(parseDate(debut), Math.max(1, Number(duree) || 1) - 1))
+  return formatDateISO(dernierJourTache(debut, duree, periodes))
 }
 
-// Inverse : durée en jours ouvrés couvrant [début, fin] bornes incluses
-function computeDuree(debut, fin) {
+function computeDuree(debut, fin, periodes) {
   if (!debut || !fin) return 1
-  return Math.max(1, workingDaysBetween(parseDate(debut), parseDate(fin)) + 1)
+  return dureeEntre(debut, fin, periodes)
 }
 
 function emptyForm(lots, defaultDebut, lastUsedLotId) {
@@ -89,7 +90,7 @@ function getNextNumero(lotId, tasks) {
 export function TacheEditModal({
   open, onClose, task, tasks, lots, onSave, onRequestDelete, mode, zones = [], colorMode = 'lot', defaultDebut = null,
   lastUsedLotId = null, createDefaults = null,
-  getSegmentsForTache, addSegment, updateSegment, deleteSegment,
+  getSegmentsForTache, addSegment, updateSegment, deleteSegment, periodes = [],
 }) {
   const [form, setForm] = useState(emptyForm(lots))
   const [saving, setSaving] = useState(false)
@@ -425,8 +426,8 @@ export function TacheEditModal({
                   />
                 ) : (
                   <DatePickerISO
-                    value={computeDateFin(form.debut, form.duree)}
-                    onChange={(v) => set('duree', computeDuree(form.debut, v))}
+                    value={computeDateFin(form.debut, form.duree, periodes)}
+                    onChange={(v) => set('duree', computeDuree(form.debut, v, periodes))}
                     min={form.debut}
                     style={INPUT}
                   />
@@ -436,7 +437,7 @@ export function TacheEditModal({
                 <p style={{ fontSize: 10, color: '#9C9591', marginTop: 4 }}>
                   {inputMode === 'duree'
                     ? `Fin : ${form.debut
-                        ? parseDate(computeDateFin(form.debut, form.duree)).toLocaleDateString('fr-FR')
+                        ? parseDate(computeDateFin(form.debut, form.duree, periodes)).toLocaleDateString('fr-FR')
                         : '—'}`
                     : `Durée : ${form.duree ?? 1} jour(s) ouvré(s)`}
                 </p>

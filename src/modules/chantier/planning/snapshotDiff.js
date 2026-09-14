@@ -14,11 +14,19 @@ export const COLONNES_TACHE = [
 
 export const COLONNES_SEGMENT = [
   'tache_id', 'date_debut', 'duree_jours', 'zone_id', 'delai_appro', 'ordre',
+  'nom', 'afficher_nom',
+]
+
+// Les liens de planning_dependances sont dans l'instantané : leur écart change
+// quand on déplace une tâche liée, et la base les supprime avec leur tâche.
+export const COLONNES_DEPENDANCE = [
+  'source_tache_id', 'source_segment_id', 'cible_tache_id', 'cible_segment_id', 'lag_jours',
 ]
 
 export function diffSnapshots(depuis, vers) {
   return {
     tasks: diffCollection(depuis?.tasks ?? [], vers?.tasks ?? [], COLONNES_TACHE),
     segments: diffCollection(depuis?.segments ?? [], vers?.segments ?? [], COLONNES_SEGMENT),
+    dependances: diffCollection(depuis?.dependances ?? [], vers?.dependances ?? [], COLONNES_DEPENDANCE),
   }
 }

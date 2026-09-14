@@ -6,10 +6,17 @@
 // en semaines (÷ 7) ou en mois (÷ 30) comme s'il s'agissait de jours calendaires :
 // une tâche de trois mois et demi s'arrêtait un mois trop tôt.
 
-import { dernierJourTache, dureeEntre, parseDate } from './types'
+import { dernierJourTache, dureeEntre, parseDate, addWorkingDaysBlocked } from './types'
 import { skipBlockedPeriods } from './propagation'
 
 const JOUR_MS = 24 * 3600 * 1000
+
+// Écart en jours calendaires entre deux dates à minuit. Arrondi, et non tronqué :
+// entre une date d'hiver et une date d'été, l'écart fait N jours moins une heure,
+// et Math.floor faisait tomber chaque lundi dans la semaine précédente.
+export function joursEntre(debut, fin) {
+  return Math.round((fin.getTime() - debut.getTime()) / JOUR_MS)
+}
 
 function lendemain(date) {
   const d = new Date(date)
@@ -31,8 +38,7 @@ export function xAtDate(date, dateRef, dayPositions) {
 
 // Index de semaine depuis la date de référence (toujours un lundi)
 export function weekIndexFromRef(date, dateRef) {
-  const diffDays = Math.floor((date.getTime() - dateRef.getTime()) / JOUR_MS)
-  return Math.floor(diffDays / 7)
+  return Math.floor(joursEntre(dateRef, date) / 7)
 }
 
 // Barre alignée sur des semaines entières : de la semaine du début à celle du
@@ -92,11 +98,11 @@ export function dateForX(x, geo) {
 
 // Jour dont la colonne contient `x` en vue mois, au jour près (dateForX, lui,
 // renvoie le 1er du mois : c'est la maille du dessin d'une nouvelle tâche).
-function jourSousXMois(x, months, monthWidth) {
+function jourSousXMois(x, months, monthWidth, arrondi = Math.floor) {
   const m0 = months[0]
   const idx = Math.floor(x / monthWidth)
   const joursDuMois = new Date(m0.year, m0.month + idx + 1, 0).getDate()
-  const jour = Math.floor((x / monthWidth - idx) * joursDuMois)
+  const jour = arrondi((x / monthWidth - idx) * joursDuMois)
   return new Date(m0.year, m0.month + idx, 1 + jour)
 }
 
@@ -161,4 +167,85 @@ export function redimensionnerBarre({ cote, debut, duree, dx, geo, periodes = []
     debut: nouveauDebut,
     duree: Math.max(minDuree, dureeEntre(nouveauDebut, dernierJour, periodes)),
   }
+}
+
+/**
+ * Nouveau début d'une barre glissée de `dx` pixels, durée inchangée.
+ *
+ * Vue semaine : par semaines entières, calé sur le lundi, et seulement si le
+ * geste atteint une demi-semaine — un tremblement ne déplace rien. Vues jour et
+ * mois : le jour sous le bord gauche de la barre. L'ancienne conversion par une
+ * largeur de jour moyenne, suivie d'un recalage au 1er du mois le plus proche,
+ * pouvait envoyer la barre dans le sens opposé au geste.
+ */
+export function deplacerBarre({ debut, dx, geo, periodes = [] }) {
+  const debutInitial = parseDate(debut)
+  let nouveau
+  if (geo.viewMode === 'week') {
+    const semaines = Math.round(dx / geo.weekWidth)
+    if (semaines === 0) return debutInitial
+    nouveau = decaler(lundi(debutInitial), 7 * semaines)
+  } else if (geo.viewMode === 'month') {
+    const x = xAtDateMonth(debutInitial, geo.months, geo.monthWidth) + dx
+    nouveau = jourSousXMois(x, geo.months, geo.monthWidth, Math.round)
+  } else {
+    nouveau = dateForX(xAtDate(debutInitial, geo.dateRef, geo.dayPositions) + dx, geo)
+  }
+  return skipBlockedPeriods(nouveau, periodes)
+}
+
+// ── Périodes ─────────────────────────────────────────────────────────────────
+
+/**
+ * Position d'une période [début, fin incluse]. Vue semaine : semaines entières,
+ * comme les barres. Vues jour et mois : au jour près, comme les barres — en vue
+ * mois, une fermeture du 3 au 21 août ne doit pas hachurer tout le mois.
+ */
+export function periodeGeometry(dateDebut, dateFinInclusive, geo) {
+  if (geo.viewMode === 'week') {
+    const debutIdx = weekIndexFromRef(dateDebut, geo.dateRef)
+    const finIdx = weekIndexFromRef(dateFinInclusive, geo.dateRef)
+    return { left: debutIdx * geo.weekWidth, width: (finIdx - debutIdx + 1) * geo.weekWidth }
+  }
+  if (geo.viewMode === 'month') {
+    const left = xAtDateMonth(dateDebut, geo.months, geo.monthWidth)
+    return { left, width: Math.max(2, xAtDateMonth(lendemain(dateFinInclusive), geo.months, geo.monthWidth) - left) }
+  }
+  const left = xAtDate(dateDebut, geo.dateRef, geo.dayPositions)
+  return { left, width: Math.max(4, xAtDate(lendemain(dateFinInclusive), geo.dateRef, geo.dayPositions) - left) }
+}
+
+// ── Étendue ──────────────────────────────────────────────────────────────────
+
+/**
+ * Premier et dernier jour occupés du planning : délais avant et après,
+ * segments et jalons compris, fermetures déduites comme sur les barres.
+ * Sert à borner la timeline et les exports ; `null` pour un planning vide.
+ *
+ * @returns { debut: Date, fin: Date } | null — fin incluse
+ */
+export function etenduePlanning({ tasks = [], segments = [], jalons = [], periodes = [] }) {
+  let debut = null
+  let fin = null
+  const inclure = (d, f = d) => {
+    if (!debut || d < debut) debut = new Date(d)
+    if (!fin || f > fin) fin = new Date(f)
+  }
+
+  tasks.forEach((t) => {
+    if (!t.debut) return
+    const dernier = dernierJourTache(t.debut, t.duree, periodes)
+    inclure(parseDate(t.debut), dernier)
+    if (t.appro_actif && t.appro_duree > 0) inclure(addWorkingDaysBlocked(t.debut, -t.appro_duree, periodes))
+    if (t.delai_apres > 0) {
+      const debutDelai = addWorkingDaysBlocked(dernier, 1, periodes)
+      inclure(debutDelai, dernierJourTache(debutDelai, t.delai_apres, periodes))
+    }
+  })
+  segments.forEach((sg) => {
+    if (sg.date_debut) inclure(parseDate(sg.date_debut), dernierJourTache(sg.date_debut, sg.duree_jours, periodes))
+  })
+  jalons.forEach((j) => { if (j.date) inclure(parseDate(String(j.date).split('T')[0])) })
+
+  return debut ? { debut, fin } : null
 }

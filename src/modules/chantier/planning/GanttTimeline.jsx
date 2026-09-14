@@ -1,19 +1,23 @@
-import { useMemo, useRef, useCallback, useState, useEffect } from 'react'
+import { useMemo, useRef, useCallback, useState, useEffect, useLayoutEffect } from 'react'
 import { Pencil, GitBranch } from 'lucide-react'
 import {
   parseDate,
   formatDateISO,
-  isWorkingDay,
-  addWorkingDays,
-  workingDaysBetween,
   computeLag,
   addWorkingDaysBlocked,
+  dernierJourTache,
+  dureeEntre,
 } from './types'
 import { assignLabelLanes } from './jalonLayout'
+import { skipBlockedPeriods, creeraitUnCycle, entityKey } from './propagation'
 import {
   xAtDate,
   dateForX,
   redimensionnerBarre,
+  deplacerBarre,
+  periodeGeometry,
+  etenduePlanning,
+  joursEntre,
   weekIndexFromRef,
   xAtDateMonth,
   barreSemaine,
@@ -49,30 +53,13 @@ const WEEKEND_RATIO = 0.35
 const JALON_LABEL_MIN_GAP = 80
 const JALON_LABEL_HEIGHT = 20
 
-// ── Fonctions géométrie variable (colonnes week-end réduites) ─────────────────
+// ── Vue jour (colonnes week-end réduites) ──────────────────────────────────────
 
-function barWidthAt(startDate, workingDays, dateRef, dayPositions, dayWidth) {
+// La barre s'étend jusqu'au lendemain de son dernier jour : week-ends et
+// fermetures bloquantes traversés sont inclus, comme dans les vues semaine et mois.
+function barWidthAt(startDate, workingDays, dateRef, dayPositions, dayWidth, periodes) {
   if (workingDays <= 0) return dayWidth * WEEKEND_RATIO
-  const lastDay = addWorkingDays(startDate, workingDays - 1)
-  const dayAfter = new Date(lastDay)
-  dayAfter.setDate(dayAfter.getDate() + 1)
-  return Math.max(
-    xAtDate(dayAfter, dateRef, dayPositions) - xAtDate(startDate, dateRef, dayPositions),
-    dayWidth * WEEKEND_RATIO
-  )
-}
-
-// ── Périodes (congés, fermetures, repères informatifs) ─────────────────────────
-//
-// Seules les périodes bloquantes décalent les barres ; les périodes informatives
-// sont dessinées mais traversées normalement par les tâches.
-
-// Largeur d'une barre en vue jour, en tenant compte des périodes bloquées
-// (la barre s'étend visuellement pour « sauter » les congés, comme les week-ends)
-function barWidthAtBlocked(startDate, workingDays, dateRef, dayPositions, dayWidth, periodes) {
-  if (workingDays <= 0) return dayWidth * WEEKEND_RATIO
-  const lastDay = addWorkingDaysBlocked(startDate, workingDays - 1, periodes)
-  const dayAfter = new Date(lastDay)
+  const dayAfter = dernierJourTache(startDate, workingDays, periodes)
   dayAfter.setDate(dayAfter.getDate() + 1)
   return Math.max(
     xAtDate(dayAfter, dateRef, dayPositions) - xAtDate(startDate, dateRef, dayPositions),
@@ -98,29 +85,13 @@ function xAtDateWeekContinuous(date, dateRef, weekWidth) {
 
 // ── Fonctions géométrie vue mois ───────────────────────────────────────────────
 
-// Détermine la liste des mois à afficher (bornée par les tâches + segments, avec
+// Détermine la liste des mois à afficher (bornée par l'étendue du planning, avec
 // une marge droite de MARGIN_RIGHT.month mois, plus `extraMonths` si l'utilisateur
 // a fait défiler jusqu'au bord droit)
-function buildMonthsList(tasks, segments, extraMonths = 0) {
-  let minDate = null, maxDate = null
-  const items = [
-    ...tasks.map((t) => ({ debut: t.debut, duree: t.duree })),
-    ...segments.map((s) => ({ debut: s.date_debut, duree: s.duree_jours })),
-  ]
-  items.forEach(({ debut, duree }) => {
-    if (!debut) return
-    const start = parseDate(debut)
-    const end = new Date(start)
-    end.setDate(end.getDate() + (duree ?? 30))
-    if (!minDate || start < minDate) minDate = start
-    if (!maxDate || end > maxDate) maxDate = end
-  })
-
-  if (!minDate) {
-    const now = new Date()
-    minDate = new Date(now.getFullYear(), now.getMonth(), 1)
-    maxDate = minDate
-  }
+function buildMonthsList(etendue, extraMonths = 0) {
+  const now = new Date()
+  const minDate = etendue?.debut ?? new Date(now.getFullYear(), now.getMonth(), 1)
+  const maxDate = etendue?.fin ?? minDate
 
   let cur = new Date(minDate.getFullYear(), minDate.getMonth() - 1, 1)
   const limit = new Date(
@@ -158,9 +129,7 @@ function computeGeometry(startDate, duree, geo) {
   } else {
     result = {
       left: xAtDate(startDate, geo.dateRef, geo.dayPositions),
-      width: geo.periodes && geo.periodes.length > 0
-        ? barWidthAtBlocked(startDate, duree, geo.dateRef, geo.dayPositions, geo.dayWidth, geo.periodes)
-        : barWidthAt(startDate, duree, geo.dateRef, geo.dayPositions, geo.dayWidth),
+      width: barWidthAt(startDate, duree, geo.dateRef, geo.dayPositions, geo.dayWidth, geo.periodes ?? []),
     }
   }
   return { ...result, width: Math.max(MIN_BAR_WIDTH, result.width) }
@@ -170,41 +139,20 @@ function getTaskGeometry(task, geo) {
   return computeGeometry(parseDate(task.debut), task.duree, geo)
 }
 
-// Position/largeur d'une période bloquée. En vue jour, `xAtDate` est déjà précise
-// au jour près. En semaine/mois, les barres de tâches sont alignées sur des
-// colonnes entières (barreSemaine / mois) — une période bloquée doit suivre
-// la même convention, sinon elle se rend comme une bande continue plus étroite
-// que sa colonne et désalignée de la grille semaine/mois sous-jacente.
-function periodeGeometry(dateDebut, dateFinInclusive, geo) {
-  const WEEK_MS = 7 * 24 * 3600 * 1000
-  if (geo.viewMode === 'week') {
-    const leftIdx = Math.floor((dateDebut.getTime() - geo.dateRef.getTime()) / WEEK_MS)
-    const rightIdx = Math.ceil((dateFinInclusive.getTime() - geo.dateRef.getTime()) / WEEK_MS)
-    return {
-      left: leftIdx * geo.weekWidth,
-      width: Math.max(geo.weekWidth, (rightIdx - leftIdx) * geo.weekWidth),
-    }
-  }
-  if (geo.viewMode === 'month') {
-    const monthIndexOf = (d) => {
-      const m0 = geo.months[0]
-      if (!m0) return 0
-      return (d.getFullYear() - m0.year) * 12 + (d.getMonth() - m0.month)
-    }
-    const leftIdx = monthIndexOf(dateDebut)
-    const finMonthIdx = monthIndexOf(dateFinInclusive)
-    // dateFinInclusive tombant pile le 1er du mois ⇒ ce mois n'est pas couvert
-    const rightIdx = dateFinInclusive.getDate() === 1 ? finMonthIdx : finMonthIdx + 1
-    return {
-      left: leftIdx * geo.monthWidth,
-      width: Math.max(geo.monthWidth, (rightIdx - leftIdx) * geo.monthWidth),
-    }
-  }
-  const left = xAtDate(dateDebut, geo.dateRef, geo.dayPositions)
-  return { left, width: Math.max(4, xAtDate(dateFinInclusive, geo.dateRef, geo.dayPositions) - left) }
-}
-
 // ── Création de tâche par cliquer-glisser ──────────────────────────────────────
+
+// Tâche proposée par un dessin entre deux dates survolées. `dateForX` renvoie le
+// lundi (semaine) ou le 1er (mois) de l'unité survolée : la tâche couvre ces
+// unités entières, comme l'aperçu, fermetures déduites.
+function bornesDessin(dateA, dateB, viewMode, periodes) {
+  const d1 = parseDate(dateA)
+  const d2 = parseDate(dateB)
+  const debut = skipBlockedPeriods(d1 <= d2 ? d1 : d2, periodes)
+  const fin = new Date(d1 <= d2 ? d2 : d1)
+  if (viewMode === 'week') fin.setDate(fin.getDate() + 4)
+  else if (viewMode === 'month') fin.setMonth(fin.getMonth() + 1, 0)
+  return { debut, duree: debut > fin ? 1 : dureeEntre(debut, fin, periodes) }
+}
 
 // Retrouve le lot/zone et le haut de ligne (en px) sous un Y donné, pour amorcer
 // un dessin de tâche. Un clic sur un header (lot ou zone) ou hors de toute ligne
@@ -283,6 +231,23 @@ function resolveEntityGeometry(tacheId, segmentId, tasks, segments, rowIndexMap,
   return { left: tGeo.left, width: tGeo.width, rowIdx }
 }
 
+function cleDePoint(point) {
+  return entityKey(point.type, point.type === 'segment' ? point.segmentId : point.taskId)
+}
+
+// Le lien existe-t-il déjà, dans l'une ou l'autre des deux sources ?
+function lienExiste(source, cible, tasks, dependances) {
+  if (source.type === 'task' && cible.type === 'task'
+    && tasks.some((t) => t.id === cible.taskId && t.depends_on === source.taskId)) return true
+  const sourceCle = cleDePoint(source)
+  const cibleCle = cleDePoint(cible)
+  return dependances.some((d) => {
+    const s = d.source_segment_id != null ? entityKey('segment', d.source_segment_id) : entityKey('task', d.source_tache_id)
+    const c = d.cible_segment_id != null ? entityKey('segment', d.cible_segment_id) : entityKey('task', d.cible_tache_id)
+    return s === sourceCle && c === cibleCle
+  })
+}
+
 function taskLabel(taskId, tasks) {
   const t = tasks.find((x) => x.id === taskId)
   return t ? `${t.num_tache} – ${t.nom}` : '?'
@@ -293,40 +258,6 @@ function segmentLabel(segmentId, tasks, segments) {
   if (!seg) return '?'
   const t = tasks.find((x) => x.id === seg.tache_id)
   return t ? `${t.num_tache} – ${t.nom} (segment)` : 'Segment'
-}
-
-// Décale une date de N jours ; en vue jour uniquement, on évite les week-ends
-// (les vues semaine/mois traitent déjà les durées en jours calendaires simples)
-function applyDeltaDays(origDate, deltaDays, viewMode) {
-  const raw = new Date(origDate)
-  raw.setDate(raw.getDate() + deltaDays)
-  if (viewMode === 'day') {
-    while (!isWorkingDay(raw)) raw.setDate(raw.getDate() + 1)
-  }
-  return raw
-}
-
-// Aligne une date sur l'unité de la vue active après un drag (lundi en semaine, 1er du mois en mois)
-function snapToView(date, viewMode) {
-  if (viewMode === 'week') {
-    const d = new Date(date)
-    const day = d.getDay()
-    if (day !== 1) {
-      const diff = day === 0 ? -6 : 1 - day
-      d.setDate(d.getDate() + diff)
-    }
-    return d
-  }
-  if (viewMode === 'month') {
-    const d = new Date(date)
-    if (d.getDate() > 15) {
-      d.setMonth(d.getMonth() + 1, 1)
-    } else {
-      d.setDate(1)
-    }
-    return d
-  }
-  return date
 }
 
 function getBarColor(task, lot, zones, colorMode) {
@@ -353,29 +284,31 @@ export function GanttTimeline({
   jalons = [], onJalonClick,
   onTaskClick, onTaskUpdate, onDependencyCreate, onDependencyDelete,
   zones = [], colorMode = 'lot', viewMode = 'day', zoomLevel = 1,
-  getSegmentsForTache, segments = [], updateSegmentLocal, onSegmentCommit, onSegmentDragBegin,
+  getSegmentsForTache, segments = [], updateSegmentLocal, onSegmentCommit, onSegmentDragBegin, onSegmentDragCancel,
   dependances = [], onSegmentDependencyCreate, onSegmentDependencyDelete,
-  periodes = [], getNextWorkingDay, dragOverTaskId = null,
+  periodes = [], dragOverTaskId = null,
   drawMode = false, onDrawCreate, scrollRef = null,
 }) {
   const BAR_PAD = barPadFor(rowHeight)
   const weekWidth = WEEK_WIDTH_BASE * zoomLevel
   const monthWidth = MONTH_WIDTH_BASE * zoomLevel
   // ── Date référence ────────────────────────────────────────────────────────────
+  //
+  // Lundi précédant le premier jour occupé : délais avant (fermetures déduites),
+  // segments et jalons compris — sinon ils étaient écrasés au bord gauche ou
+  // dessinés hors champ.
+  const etendue = useMemo(
+    () => etenduePlanning({ tasks, segments, jalons, periodes }),
+    [tasks, segments, jalons, periodes]
+  )
+
   const dateRef = useMemo(() => {
-    if (tasks.length === 0) {
-      const d = new Date(); d.setDate(d.getDate() - 7); return d
-    }
-    // Tenir compte des extensions d'appro (à gauche de la barre)
-    const minDate = tasks.reduce((min, t) => {
-      let d = parseDate(t.debut)
-      if (t.appro_actif && t.appro_duree) d = addWorkingDays(d, -t.appro_duree)
-      return d < min ? d : min
-    }, new Date(8640000000000000))
-    minDate.setDate(minDate.getDate() - 5)
-    while (minDate.getDay() !== 1) minDate.setDate(minDate.getDate() - 1)
-    return minDate
-  }, [tasks])
+    const d = etendue ? new Date(etendue.debut) : new Date()
+    d.setHours(0, 0, 0, 0)
+    d.setDate(d.getDate() - (etendue ? 5 : 7))
+    while (d.getDay() !== 1) d.setDate(d.getDate() - 1)
+    return d
+  }, [etendue])
 
   // ── Étendue de la timeline ────────────────────────────────────────────────────
   //
@@ -387,34 +320,23 @@ export function GanttTimeline({
 
   useEffect(() => { setExtraUnitsRight(0) }, [viewMode])
 
-  // Date de fin la plus tardive parmi les tâches et les segments
   const maxEndDate = useMemo(() => {
-    let maxEnd = new Date()
-    tasks.forEach((task) => {
-      if (!task.debut) return
-      const end = addWorkingDays(parseDate(task.debut), task.duree ?? 0)
-      if (end > maxEnd) maxEnd = new Date(end)
-    })
-    segments.forEach((seg) => {
-      if (!seg.date_debut) return
-      const end = parseDate(seg.date_debut)
-      end.setDate(end.getDate() + (seg.duree_jours ?? 0))
-      if (end > maxEnd) maxEnd = new Date(end)
-    })
-    return maxEnd
-  }, [tasks, segments])
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    return etendue && etendue.fin > today ? etendue.fin : today
+  }, [etendue])
 
   const dayCount = useMemo(() => {
     const end = new Date(maxEndDate)
     end.setDate(end.getDate() + MARGIN_RIGHT.day)
-    const n = Math.ceil((end.getTime() - dateRef.getTime()) / 86400000)
+    const n = joursEntre(dateRef, end)
     return Math.max(TIMELINE_DAYS_MIN, n) + (viewMode === 'day' ? extraUnitsRight : 0)
   }, [maxEndDate, dateRef, viewMode, extraUnitsRight])
 
   const weekCount = useMemo(() => {
     const end = new Date(maxEndDate)
     end.setDate(end.getDate() + MARGIN_RIGHT.week * 7)
-    const n = Math.ceil((end.getTime() - dateRef.getTime()) / (7 * 86400000))
+    const n = Math.ceil(joursEntre(dateRef, end) / 7)
     return Math.max(TIMELINE_WEEKS_MIN, n) + (viewMode === 'week' ? extraUnitsRight : 0)
   }, [maxEndDate, dateRef, viewMode, extraUnitsRight])
 
@@ -474,8 +396,8 @@ export function GanttTimeline({
 
   // ── Mois précalculés (vue mois) ────────────────────────────────────────────────
   const months = useMemo(
-    () => buildMonthsList(tasks, segments, viewMode === 'month' ? extraUnitsRight : 0),
-    [tasks, segments, viewMode, extraUnitsRight]
+    () => buildMonthsList(etendue, viewMode === 'month' ? extraUnitsRight : 0),
+    [etendue, viewMode, extraUnitsRight]
   )
 
   const monthYearSegments = useMemo(() => {
@@ -528,6 +450,45 @@ export function GanttTimeline({
     el.addEventListener('scroll', handleScroll, { passive: true })
     return () => el.removeEventListener('scroll', handleScroll)
   }, [scrollRef, handleScroll])
+
+  // ── Origine de la plage stable à l'écran ──────────────────────────────────────
+  //
+  // Déplacer la première tâche (ou un délai, un segment, un jalon) recule ou
+  // avance `dateRef` : tout le contenu glisse d'autant alors que le défilement
+  // reste sur place, et le planning semblait sauter. On compense le défilement
+  // de la position qu'occupe l'ancienne origine dans la nouvelle géométrie.
+  const origine = viewMode === 'month'
+    ? (months[0] ? formatDateISO(new Date(months[0].year, months[0].month, 1)) : '')
+    : formatDateISO(dateRef)
+  const originePrecedente = useRef({ origine, viewMode })
+
+  useLayoutEffect(() => {
+    const avant = originePrecedente.current
+    originePrecedente.current = { origine, viewMode }
+    const el = scrollRef?.current
+    // Au bord gauche (premier affichage, chargement des segments ou des jalons),
+    // rien à préserver : on laisse le début du planning visible.
+    if (!el || el.scrollLeft === 0 || avant.viewMode !== viewMode || avant.origine === origine || !avant.origine) return
+    const ancienne = parseDate(avant.origine)
+    let decalage
+    if (viewMode === 'month') {
+      decalage = xAtDateMonth(ancienne, months, monthWidth)
+    } else if (viewMode === 'week') {
+      decalage = weekIndexFromRef(ancienne, dateRef) * weekWidth
+    } else {
+      const jours = joursEntre(dateRef, ancienne)
+      if (jours >= 0) {
+        decalage = dayPositions[Math.min(dayCount, jours)]
+      } else {
+        // L'origine a avancé : les jours retirés à gauche, week-ends réduits
+        decalage = 0
+        for (let d = new Date(ancienne); d < dateRef; d.setDate(d.getDate() + 1)) {
+          decalage -= d.getDay() === 0 || d.getDay() === 6 ? dayWidth * WEEKEND_RATIO : dayWidth
+        }
+      }
+    }
+    if (decalage) el.scrollLeft += decalage
+  }, [origine, viewMode, months, monthWidth, dateRef, weekWidth, dayPositions, dayCount, dayWidth, scrollRef])
 
   // Contexte géométrique unifié, passé à computeGeometry/getTaskGeometry
   const geo = useMemo(() => ({
@@ -639,23 +600,18 @@ export function GanttTimeline({
   const barDragRef = useRef(null)
   const [draggingBar, setDraggingBar] = useState(null)
 
-  // Largeur journalière moyenne pondérée (pour conversion px → deltaDays en vue jour)
-  const avgDayWidth = dayWidth * (5 + 2 * WEEKEND_RATIO) / 7
-
-  // Conversion px → jours, quel que soit le mode d'affichage
-  const pxToDays = useCallback((dx) => {
-    if (viewMode === 'month') return Math.round((dx / monthWidth) * 30)
-    if (viewMode === 'week') return Math.round((dx / weekWidth) * 7)
-    return Math.round(dx / avgDayWidth)
-  }, [viewMode, weekWidth, monthWidth, avgDayWidth])
-
   const startBarDrag = useCallback((e, task, type) => {
     if (drawMode) return
     if (e.button !== 0) return
     e.preventDefault(); e.stopPropagation()
+    // L'aperçu modifie le style de la barre dans le DOM : on garde celui rendu
+    // par React pour le rétablir au relâchement, sinon un geste sans effet
+    // laisse la barre dessinée à la position de l'aperçu.
+    const el = document.querySelector(`[data-taskid="${task.id}"]`)
     barDragRef.current = {
       type, taskId: task.id, startX: e.clientX,
       origDebut: parseDate(task.debut), origDuree: task.duree,
+      styleInitial: el ? { left: el.style.left, width: el.style.width } : null,
       moved: false,
     }
     setDraggingBar(task.id)
@@ -685,31 +641,30 @@ export function GanttTimeline({
 
   useEffect(() => {
     if (!draggingSegment) return
+    const { segmentId, startX, originalDateDebut } = draggingSegment
+
+    // Toujours recalculé depuis la date d'origine : revenir au point de départ
+    // remet le segment à sa place.
+    const dateSous = (dx) => formatDateISO(deplacerBarre({ debut: originalDateDebut, dx, geo, periodes }))
 
     const handleMouseMove = (e) => {
-      const dx = e.clientX - draggingSegment.startX
+      const dx = e.clientX - startX
       if (Math.abs(dx) > 3) segmentDragRef.current.moved = true
-
-      const deltaDays = pxToDays(dx)
-      if (deltaDays === 0) return
-
-      const original = parseDate(draggingSegment.originalDateDebut)
-      const newDate = new Date(original)
-      newDate.setDate(newDate.getDate() + deltaDays)
-
-      updateSegmentLocal?.(draggingSegment.segmentId, { date_debut: formatDateISO(newDate) })
+      updateSegmentLocal?.(segmentId, { date_debut: dateSous(dx) })
     }
 
-    const handleMouseUp = async () => {
-      const seg = segments.find((s) => s.id === draggingSegment.segmentId)
-      if (seg) {
-        let finalDate = snapToView(parseDate(seg.date_debut), viewMode)
-        if (getNextWorkingDay) finalDate = getNextWorkingDay(finalDate)
-        const snapped = formatDateISO(finalDate)
-        if (snapped !== seg.date_debut) updateSegmentLocal?.(draggingSegment.segmentId, { date_debut: snapped })
-        await onSegmentCommit?.(draggingSegment.segmentId, { date_debut: snapped })
-      }
+    const handleMouseUp = async (e) => {
       setDraggingSegment(null)
+      const dateFinale = dateSous(e.clientX - startX)
+      // Un simple clic (pour ouvrir la tâche) n'écrit rien et n'entre pas dans
+      // l'historique.
+      if (!segmentDragRef.current.moved || dateFinale === originalDateDebut) {
+        updateSegmentLocal?.(segmentId, { date_debut: originalDateDebut })
+        onSegmentDragCancel?.()
+        return
+      }
+      updateSegmentLocal?.(segmentId, { date_debut: dateFinale })
+      await onSegmentCommit?.(segmentId, { date_debut: dateFinale }, { date_debut: originalDateDebut })
     }
 
     window.addEventListener('mousemove', handleMouseMove)
@@ -718,7 +673,7 @@ export function GanttTimeline({
       window.removeEventListener('mousemove', handleMouseMove)
       window.removeEventListener('mouseup', handleMouseUp)
     }
-  }, [draggingSegment, segments, viewMode, pxToDays, updateSegmentLocal, onSegmentCommit, getNextWorkingDay])
+  }, [draggingSegment, geo, periodes, updateSegmentLocal, onSegmentCommit, onSegmentDragCancel])
 
   // ── Resize segment (poignées gauche/droite) ───────────────────────────────────
   //
@@ -768,9 +723,13 @@ export function GanttTimeline({
       const inchange = changes.duree_jours === originalDuree
         && (changes.date_debut ?? originalDateDebut) === originalDateDebut
       setResizingSegment(null)
-      if (inchange) return
+      if (inchange) {
+        updateSegmentLocal?.(segmentId, { date_debut: originalDateDebut, duree_jours: originalDuree })
+        onSegmentDragCancel?.()
+        return
+      }
       updateSegmentLocal?.(segmentId, changes)
-      await onSegmentCommit?.(segmentId, changes)
+      await onSegmentCommit?.(segmentId, changes, { date_debut: originalDateDebut, duree_jours: originalDuree })
     }
 
     window.addEventListener('mousemove', handleMouseMove)
@@ -779,7 +738,7 @@ export function GanttTimeline({
       window.removeEventListener('mousemove', handleMouseMove)
       window.removeEventListener('mouseup', handleMouseUp)
     }
-  }, [resizingSegment, viewMode, geo, periodes, updateSegmentLocal, onSegmentCommit])
+  }, [resizingSegment, viewMode, geo, periodes, updateSegmentLocal, onSegmentCommit, onSegmentDragCancel])
 
   // ── Connexion chemin critique ──────────────────────────────────────────────────
   const [connectingFrom, setConnectingFrom] = useState(null)
@@ -809,6 +768,10 @@ export function GanttTimeline({
     const rect = container.getBoundingClientRect()
     const x = e.clientX - rect.left
     const y = e.clientY - rect.top - HEADER_HEIGHT
+    // L'en-tête reste collé en haut quand on défile : un clic dessus ne doit pas
+    // démarrer une tâche sur la ligne qu'il recouvre.
+    const hautVisible = scrollRef?.current?.getBoundingClientRect().top ?? rect.top
+    if (e.clientY - hautVisible < HEADER_HEIGHT) return
 
     const ctx = findDrawContext(y, { rows, lotsWithTasks, unassigned, rowHeight })
     if (!ctx) return // clic sur un header ou hors de toute ligne
@@ -816,7 +779,7 @@ export function GanttTimeline({
 
     const startDate = formatDateISO(dateForX(x, geo))
     setDrawState({ startDate, currentDate: startDate, lotId: ctx.lotId, zoneId: ctx.zoneId, rowTop: ctx.rowTop })
-  }, [drawMode, rows, lotsWithTasks, unassigned, rowHeight, geo])
+  }, [drawMode, rows, lotsWithTasks, unassigned, rowHeight, geo, scrollRef])
 
   useEffect(() => {
     if (!drawState) return
@@ -833,15 +796,9 @@ export function GanttTimeline({
     const handleMouseUp = () => {
       setDrawState((prev) => {
         if (prev) {
-          const d1 = parseDate(prev.startDate)
-          const d2 = parseDate(prev.currentDate)
-          const debutDate = d1 <= d2 ? d1 : d2
-          const finDate = d1 <= d2 ? d2 : d1
-          let duree = workingDaysBetween(debutDate, finDate) + (isWorkingDay(debutDate) ? 1 : 0)
-          if (duree < 1) duree = 1
-          const finalDebut = getNextWorkingDay ? getNextWorkingDay(debutDate) : debutDate
+          const { debut, duree } = bornesDessin(prev.startDate, prev.currentDate, viewMode, periodes)
           onDrawCreate?.({
-            debut: formatDateISO(finalDebut),
+            debut: formatDateISO(debut),
             duree,
             lot_id: prev.lotId,
             zone_id: prev.zoneId,
@@ -857,7 +814,7 @@ export function GanttTimeline({
       window.removeEventListener('mousemove', handleMouseMove)
       window.removeEventListener('mouseup', handleMouseUp)
     }
-  }, [drawState, geo, getNextWorkingDay, onDrawCreate])
+  }, [drawState, geo, viewMode, periodes, onDrawCreate])
 
   // ── Flèches permanentes ───────────────────────────────────────────────────────
   // Deux sources : les dépendances tâche→tâche historiques (`depends_on`/`lag_days`)
@@ -916,59 +873,71 @@ export function GanttTimeline({
 
   // ── Mouse handlers ─────────────────────────────────────────────────────────────
 
-  // Bornes d'une barre pendant un geste. Le redimensionnement est calculé à
-  // l'identique pour l'aperçu et au relâchement, pour que la barre ne saute pas.
-  const bornesGeste = useCallback(({ type, origDebut, origDuree }, dx, relache) => {
-    if (type !== 'move') {
-      return redimensionnerBarre({
-        cote: type === 'resize-right' ? 'right' : 'left',
-        debut: origDebut, duree: origDuree, dx, geo, periodes,
-        minDuree: viewMode === 'month' ? 5 : 1,
-      })
+  // Bornes d'une barre pendant un geste : même calcul pour l'aperçu et au
+  // relâchement, pour que la barre ne saute pas.
+  const bornesGeste = useCallback(({ type, origDebut, origDuree }, dx) => {
+    if (type === 'move') {
+      return { debut: deplacerBarre({ debut: origDebut, dx, geo, periodes }), duree: origDuree }
     }
-    let debut = applyDeltaDays(origDebut, pxToDays(dx), viewMode)
-    if (relache) {
-      debut = snapToView(debut, viewMode)
-      if (getNextWorkingDay) debut = getNextWorkingDay(debut)
-    }
-    return { debut, duree: origDuree }
-  }, [viewMode, geo, periodes, pxToDays, getNextWorkingDay])
+    return redimensionnerBarre({
+      cote: type === 'resize-right' ? 'right' : 'left',
+      debut: origDebut, duree: origDuree, dx, geo, periodes,
+      minDuree: viewMode === 'month' ? 5 : 1,
+    })
+  }, [viewMode, geo, periodes])
 
-  const handleMouseMove = useCallback((e) => {
-    if (barDragRef.current) {
-      const { taskId, startX } = barDragRef.current
-      const dx = e.clientX - startX
-      if (Math.abs(dx) > 3) barDragRef.current.moved = true
+  // Glisser une barre s'écoute sur la fenêtre : sortir du planning (sous la
+  // dernière ligne, sur la barre de défilement) ne doit pas valider le geste.
+  useEffect(() => {
+    if (draggingBar == null) return
 
-      const { debut: newDebut, duree: newDuree } = bornesGeste(barDragRef.current, dx, false)
-      const el = document.querySelector(`[data-taskid="${taskId}"]`)
+    const handleMove = (e) => {
+      const drag = barDragRef.current
+      if (!drag) return
+      const dx = e.clientX - drag.startX
+      if (Math.abs(dx) > 3) drag.moved = true
+      const { debut, duree } = bornesGeste(drag, dx)
+      const el = document.querySelector(`[data-taskid="${drag.taskId}"]`)
       if (el) {
-        const previewGeo = computeGeometry(newDebut, newDuree, geo)
-        el.style.left = `${previewGeo.left}px`
-        el.style.width = `${previewGeo.width}px`
+        const apercu = computeGeometry(debut, duree, geo)
+        el.style.left = `${apercu.left}px`
+        el.style.width = `${apercu.width}px`
       }
     }
+
+    const handleUp = (e) => {
+      const drag = barDragRef.current
+      barDragRef.current = null
+      setDraggingBar(null)
+      document.body.style.cursor = ''
+      if (!drag) return
+      const el = document.querySelector(`[data-taskid="${drag.taskId}"]`)
+      if (el && drag.styleInitial) Object.assign(el.style, drag.styleInitial)
+      if (!drag.moved) return
+      const { debut, duree } = bornesGeste(drag, e.clientX - drag.startX)
+      if (formatDateISO(debut) !== formatDateISO(drag.origDebut) || duree !== drag.origDuree) {
+        onTaskUpdate(drag.taskId, { debut: formatDateISO(debut), duree })
+      }
+    }
+
+    window.addEventListener('mousemove', handleMove)
+    window.addEventListener('mouseup', handleUp)
+    return () => {
+      window.removeEventListener('mousemove', handleMove)
+      window.removeEventListener('mouseup', handleUp)
+    }
+  }, [draggingBar, bornesGeste, geo, onTaskUpdate])
+
+  const handleMouseMove = useCallback((e) => {
     if (connectingFrom && svgRef.current) {
       const rect = svgRef.current.getBoundingClientRect()
       setMousePos({ x: e.clientX - rect.left, y: e.clientY - rect.top })
     }
-  }, [bornesGeste, geo, connectingFrom])
+  }, [connectingFrom])
 
-  const handleMouseUp = useCallback((e) => {
-    if (barDragRef.current) {
-      const { taskId, startX, origDebut, origDuree, moved } = barDragRef.current
-      if (moved) {
-        const { debut: newDebut, duree: newDuree } = bornesGeste(barDragRef.current, e.clientX - startX, true)
-        if (formatDateISO(newDebut) !== formatDateISO(origDebut) || newDuree !== origDuree) {
-          onTaskUpdate(taskId, { debut: formatDateISO(newDebut), duree: newDuree })
-        }
-      }
-      barDragRef.current = null
-      setDraggingBar(null)
-      document.body.style.cursor = ''
-    }
+  const handleMouseUp = useCallback(() => {
     if (connectingFrom && !hoveredPoint) setConnectingFrom(null)
-  }, [bornesGeste, onTaskUpdate, connectingFrom, hoveredPoint])
+  }, [connectingFrom, hoveredPoint])
 
   useEffect(() => {
     const h = (e) => { if (e.key === 'Escape') setConnectingFrom(null) }
@@ -980,7 +949,10 @@ export function GanttTimeline({
     e.preventDefault(); e.stopPropagation()
     if (!connectingFrom) {
       if (point.side === 'end') {
-        setConnectingFrom(point)
+        // `point.y` est relatif à la ligne de la barre ; la ligne en pointillés
+        // est tracée dans le repère de tout le planning.
+        const ligne = rowIndexMap[cleDePoint(point)]
+        setConnectingFrom({ ...point, y: (ligne !== undefined ? rowY(ligne) : 0) + point.y })
         if (svgRef.current) {
           const rect = svgRef.current.getBoundingClientRect()
           setMousePos({ x: e.clientX - rect.left, y: e.clientY - rect.top })
@@ -999,15 +971,13 @@ export function GanttTimeline({
         // tâche l'écrasait sans prévenir, et le premier chemin critique disparaissait.
         // Il passe désormais par planning_dependances, qui en accepte plusieurs.
         const lienHistoriqueLibre = connectingFrom.type === 'task' && cible && cible.depends_on == null
-        const dejaLie = connectingFrom.type === 'task' && cible && (
-          cible.depends_on === connectingFrom.taskId
-          || dependances.some((d) => d.source_segment_id == null && d.cible_segment_id == null
-            && d.source_tache_id === connectingFrom.taskId && d.cible_tache_id === cible.id)
-        )
+        const refuse = lienExiste(connectingFrom, point, tasks, dependances)
+          || creeraitUnCycle(cleDePoint(connectingFrom), cleDePoint(point), tasks, dependances)
 
-        if (lienHistoriqueLibre) {
+        // Un lien en double ou une boucle ne sont pas créés
+        if (!refuse && lienHistoriqueLibre) {
           onDependencyCreate(connectingFrom.taskId, point.taskId, lag)
-        } else if (!dejaLie) {
+        } else if (!refuse) {
           onSegmentDependencyCreate?.({
             sourceTacheId: connectingFrom.type === 'task' ? connectingFrom.taskId : null,
             sourceSegmentId: connectingFrom.type === 'segment' ? connectingFrom.segmentId : null,
@@ -1019,7 +989,7 @@ export function GanttTimeline({
       }
       setConnectingFrom(null)
     }
-  }, [connectingFrom, tasks, segments, dependances, periodes, onDependencyCreate, onSegmentDependencyCreate])
+  }, [connectingFrom, tasks, segments, dependances, periodes, rowIndexMap, rowY, onDependencyCreate, onSegmentDependencyCreate])
 
   // Position d'une date, quel que soit le mode d'affichage (jour / semaine / mois)
   const getX = useCallback((date) => {
@@ -1028,14 +998,23 @@ export function GanttTimeline({
     return xAtDate(date, dateRef, dayPositions)
   }, [viewMode, dateRef, dayPositions, weekWidth, monthWidth, months])
 
+  // null quand aujourd'hui est hors de la plage : `xAtDate` ramènerait le
+  // marqueur au bord, où il désignerait une autre date.
   const todayOffset = useMemo(() => {
     const today = new Date(); today.setHours(0, 0, 0, 0)
-    return getX(today)
-  }, [getX])
+    const x = getX(today)
+    const avantDebut = joursEntre(dateRef, today) < 0 && viewMode !== 'month'
+    return avantDebut || x < 0 || x > totalWidth ? null : x
+  }, [getX, dateRef, viewMode, totalWidth])
 
   // Voie verticale de chaque label de jalon (anti-chevauchement)
   const jalonLabelLanes = useMemo(
-    () => assignLabelLanes(jalons.map((j) => getX(parseDate(j.date))), JALON_LABEL_MIN_GAP),
+    () => assignLabelLanes(
+      jalons.map((j) => getX(parseDate(j.date))),
+      JALON_LABEL_MIN_GAP,
+      // Largeur approchée du libellé (corps 10, gras) plus sa marge
+      jalons.map((j) => String(j.label ?? '').length * 6.5 + 16),
+    ),
     [jalons, getX]
   )
 
@@ -1049,7 +1028,6 @@ export function GanttTimeline({
       onMouseDown={handleDrawMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseUp}
     >
       {/* ── HEADER ──────────────────────────────────────────────────────────── */}
       <div style={{
@@ -1313,9 +1291,7 @@ export function GanttTimeline({
         {/* Périodes — hachurées si bloquantes, fond uni si informatives */}
         {periodes.map((periode) => {
           const dateDebut = parseDate(periode.date_debut)
-          const dateFinInclusive = parseDate(periode.date_fin)
-          dateFinInclusive.setDate(dateFinInclusive.getDate() + 1)
-          const { left, width } = periodeGeometry(dateDebut, dateFinInclusive, geo)
+          const { left, width } = periodeGeometry(dateDebut, parseDate(periode.date_fin), geo)
           const couleur = periode.couleur || '#B8412C'
           const bloquante = periode.est_bloquante !== false
           return (
@@ -1363,7 +1339,7 @@ export function GanttTimeline({
           const lot = lots.find((l) => l.id === drawState.lotId)
           const zone = zones.find((z) => z.id === drawState.zoneId)
           const couleur = zone?.couleur ?? lot?.couleur ?? '#E8602C'
-          const dureeAffichee = Math.max(1, workingDaysBetween(startDate, endDate) + (isWorkingDay(startDate) ? 1 : 0))
+          const dureeAffichee = bornesDessin(drawState.startDate, drawState.currentDate, viewMode, periodes).duree
 
           return (
             <div style={{
@@ -1616,7 +1592,7 @@ export function GanttTimeline({
         </svg>
 
         {/* Today marker */}
-        <div style={{
+        {todayOffset != null && <div style={{
           position: 'absolute', top: 0, bottom: 0, zIndex: 20,
           left: todayOffset, pointerEvents: 'none',
         }}>
@@ -1627,7 +1603,7 @@ export function GanttTimeline({
             backgroundColor: '#E8602C', border: '2px solid white',
             boxShadow: '0 1px 4px rgba(0,0,0,0.2)',
           }} />
-        </div>
+        </div>}
       </div>
 
       {/* Toast mode connexion */}
@@ -1941,7 +1917,7 @@ function TaskBarRow({
               }}
               onClick={(e) => {
                 e.stopPropagation()
-                if (segmentDragMovedRef?.current?.moved) return
+                if (drawMode || segmentDragMovedRef?.current?.moved) return
                 onBarClick(task)
               }}
             >
@@ -2091,7 +2067,8 @@ function delaiBarStyle(color, barPad) {
 
 function ApproBar({ task, color, geo, barPad }) {
   const taskStartDate = parseDate(task.debut)
-  const approStartDate = addWorkingDays(taskStartDate, -task.appro_duree)
+  // Fermetures déduites, comme pour la barre : sinon le délai chevauche la tâche
+  const approStartDate = addWorkingDaysBlocked(taskStartDate, -task.appro_duree, geo.periodes ?? [])
   const { left: approLeft, width: approWidth } = computeGeometry(approStartDate, task.appro_duree, geo)
   const largeur = Math.max(approWidth, 4)
   const motif = task.appro_materiau || `Appro. ${task.appro_duree}j`
@@ -2127,8 +2104,9 @@ function ApproBar({ task, color, geo, barPad }) {
 // les deux d'un coup d'œil.
 
 function DelaiApresBar({ task, color, geo, barPad }) {
-  const lastDay = addWorkingDays(parseDate(task.debut), Math.max(1, task.duree) - 1)
-  const debutDelai = addWorkingDays(lastDay, 1)
+  // Part de la fin réelle de la barre, fermetures comprises
+  const lastDay = dernierJourTache(task.debut, task.duree, geo.periodes ?? [])
+  const debutDelai = addWorkingDaysBlocked(lastDay, 1, geo.periodes ?? [])
   const { left, width } = computeGeometry(debutDelai, task.delai_apres, geo)
   const largeur = Math.max(width, 4)
   const motif = task.label_apres ?? ''

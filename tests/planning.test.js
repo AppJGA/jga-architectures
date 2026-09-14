@@ -15,7 +15,10 @@ import {
   endDateChanged,
   reconcilierLienHistorique,
   lagsDependancesCible,
+  creeraitUnCycle,
+  propagerDepuisRacines,
 } from '../src/modules/chantier/planning/propagation.js'
+import { diffSnapshots } from '../src/modules/chantier/planning/snapshotDiff.js'
 import {
   formatDateISO, parseDate, computeLag, applyLag,
 } from '../src/modules/chantier/planning/types.js'
@@ -475,5 +478,105 @@ describe('lagsDependancesCible', () => {
       tasks: [T(1, '2026-03-02'), T(2, '2026-03-06')], segments: [], dependances: [D(1, 2, 0)],
     })
     assert.deepEqual(maj, [])
+  })
+})
+
+// ── Cycles à la création d'un lien ───────────────────────────────────────────
+
+describe('creeraitUnCycle', () => {
+  const tasks = [T(1, '2026-03-02'), T(2, '2026-03-06', 5, { depends_on: 1 }), T(3, '2026-03-12')]
+  const dependances = [D(2, 3)]
+  const cle = (id) => entityKey('task', id)
+
+  test('relier une descendante à son ancêtre est refusé', () => {
+    assert.equal(creeraitUnCycle(cle(3), cle(1), tasks, dependances), true)
+    assert.equal(creeraitUnCycle(cle(2), cle(1), tasks, dependances), true)
+  })
+
+  test('un lien vers soi-même est refusé', () => {
+    assert.equal(creeraitUnCycle(cle(1), cle(1), tasks, dependances), true)
+  })
+
+  test('un lien sans boucle est accepté', () => {
+    assert.equal(creeraitUnCycle(cle(1), cle(3), tasks, dependances), false)
+  })
+
+  test('les segments d’une tâche ne comptent pas comme ses descendants', () => {
+    assert.equal(creeraitUnCycle(entityKey('segment', 's1'), cle(1), tasks, dependances), false)
+  })
+})
+
+// ── Écart proposé par la modale ──────────────────────────────────────────────
+
+describe('reconcilierLienHistorique — écart saisi avec un nouveau lien', () => {
+  const parent = T(1, '2026-03-02')                      // fin ven 6
+
+  test('choisir un parent puis taper un écart replace la tâche', () => {
+    const avant = T(2, '2026-03-20')
+    // La modale a proposé 10 (position actuelle), l'utilisateur tape 0
+    const apres = { ...avant, depends_on: 1, lag_days: 0, lag_propose: 10 }
+    assert.deepEqual(reconcilierLienHistorique(avant, apres, parent),
+      { debut: '2026-03-06', lag_days: 0 })
+  })
+
+  test('choisir un parent sans toucher à l’écart garde la position', () => {
+    const avant = T(2, '2026-03-20')
+    const apres = { ...avant, depends_on: 1, lag_days: 10, lag_propose: 10 }
+    assert.deepEqual(reconcilierLienHistorique(avant, apres, parent),
+      { debut: '2026-03-20', lag_days: 10 })
+  })
+
+  test('en création, un début changé après le choix du parent recalcule l’écart', () => {
+    const apres = { ...T(2, '2026-03-11'), depends_on: 1, lag_days: 10, lag_propose: 10 }
+    assert.deepEqual(reconcilierLienHistorique(null, apres, parent),
+      { debut: '2026-03-11', lag_days: 3 })
+  })
+})
+
+// ── Recalage global (fermeture ajoutée) ──────────────────────────────────────
+
+describe('propagerDepuisRacines', () => {
+  const conges = [{ id: 'p1', date_debut: '2026-03-09', date_fin: '2026-03-13' }]
+
+  test('une fermeture qui allonge A décale toute la chaîne', () => {
+    // A lun 2 → ven 6 (5 j) sans congés ; avec la semaine du 9 fermée elle reste
+    // sur ven 6. Allongée à 6 j, elle finit lun 16 : B puis C suivent.
+    const tasks = [T(1, '2026-03-02', 6), T(2, '2026-03-09', 5), T(3, '2026-03-13', 5)]
+    const u = propagerDepuisRacines({ tasks, segments: [], dependances: [D(1, 2), D(2, 3)], periodes: conges })
+    assert.equal(debutDe(u, 'task', 2), '2026-03-16')
+    assert.equal(debutDe(u, 'task', 3), '2026-03-20')
+  })
+
+  test('rien ne bouge si tout est déjà calé', () => {
+    const tasks = [T(1, '2026-03-02'), T(2, '2026-03-06')]
+    assert.equal(propagerDepuisRacines({ tasks, segments: [], dependances: [D(1, 2)], periodes: [] }).size, 0)
+  })
+
+  test('un cycle ne bloque pas le calcul', () => {
+    const tasks = [T(1, '2026-03-02'), T(2, '2026-03-06')]
+    const u = propagerDepuisRacines({ tasks, segments: [], dependances: [D(1, 2), D(2, 1)], periodes: [] })
+    assert.ok(u instanceof Map)
+  })
+})
+
+// ── Annuler : les dépendances font partie de l'instantané ────────────────────
+
+describe('diffSnapshots — dépendances', () => {
+  test('écart modifié, lien supprimé et lien recréé', () => {
+    const d1 = { ...D(1, 2, 0), affaire_id: 'a' }
+    const d2 = { ...D(2, 3, 0), affaire_id: 'a' }
+    const diff = diffSnapshots(
+      { tasks: [], segments: [], dependances: [d1] },
+      { tasks: [], segments: [], dependances: [{ ...d1, lag_jours: 4 }, d2] },
+    )
+    assert.deepEqual(diff.dependances.updates.map((u) => u.changes.lag_jours), [4])
+    assert.deepEqual(diff.dependances.insertions.map((i) => i.id), [d2.id])
+  })
+
+  test('le nom d’un segment est restauré', () => {
+    const sg = { id: 's1', tache_id: 1, date_debut: '2026-03-02', duree_jours: 3, nom: 'Zone A', afficher_nom: true }
+    const diff = diffSnapshots({ tasks: [], segments: [] }, { tasks: [], segments: [sg] })
+    assert.equal(diff.segments.insertions[0].nom, 'Zone A')
+    assert.equal(diff.segments.insertions[0].afficher_nom, true)
   })
 })

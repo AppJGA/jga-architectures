@@ -1,12 +1,12 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { Trash2, X, ZoomIn, ZoomOut, Calendar, Eye, Layers, Palette } from 'lucide-react'
-import * as XLSX from 'xlsx-js-style'
 import { parseDate, formatDateISO, addWorkingDays } from './types'
 import {
   propagateAllDependencies, endDateChanged, entityKey, reconcilierLienHistorique, lagsDependancesCible,
+  propagerDepuisRacines, skipBlockedPeriods,
 } from './propagation'
 import { buildRowsByZone } from './groupByZone'
-import { legendeCouleurs, sansDiese } from './legende'
+import { exporterPlanningChantierExcel } from './exportPlanningChantierExcel'
 import { trierZones } from '../../../shared/hooks/ordreZones'
 import { useUndoRedo } from '../../../shared/hooks/useUndoRedo'
 import { diffSnapshots, diffEstVide } from './snapshotDiff'
@@ -41,29 +41,6 @@ function getNextAvailableDate(tasks) {
 
   if (!maxEnd) return new Date()
   return addWorkingDays(maxEnd, 1)
-}
-
-// ── Teinte pastel pour Excel ──────────────────────────────────────────────────
-//
-// xlsx-js-style ne gère pas la transparence : on simule l'opacité en mélangeant
-// la couleur avec du blanc. `ratio` = part de la couleur d'origine (0 → blanc).
-function pastel(hex, ratio) {
-  const h = (hex || '#B8412C').replace('#', '')
-  const melange = (i) => {
-    const c = parseInt(h.slice(i, i + 2), 16)
-    return Math.round(255 - (255 - c) * ratio).toString(16).padStart(2, '0')
-  }
-  return `${melange(0)}${melange(2)}${melange(4)}`.toUpperCase()
-}
-
-// ──────────────────────────────────────────────────────────────────────────────
-
-// Hauteurs de ligne (points) et corps de texte de l'export Excel, par densité.
-// `normal` reproduit le rendu historique (16 pt, corps 9).
-const EXCEL_DENSITY = {
-  compact: { headerRow: 14, taskRow: 12, lotRow: 14, legendRow: 12, fontSize: 7 },
-  normal:  { headerRow: 18, taskRow: 16, lotRow: 18, legendRow: 14, fontSize: 9 },
-  confort: { headerRow: 24, taskRow: 22, lotRow: 26, legendRow: 18, fontSize: 11 },
 }
 
 // Densité déduite de la hauteur de ligne active dans l'éditeur
@@ -154,26 +131,37 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
   const zones = useMemo(() => trierZones(zonesBrutes), [zonesBrutes])
   const {
     segments, addSegment, updateSegment, updateSegmentLocal, deleteSegment, getSegmentsForTache,
-    replaceSegments,
+    replaceSegments, refetch: refetchSegments,
   } = usePlanningSegments(affaireId)
-  const { dependances, addDependance, deleteDependance, updateLags } = usePlanningDependances(affaireId)
+  const {
+    dependances, addDependance, deleteDependance, updateLags, replaceDependances, refetch: refetchDependances,
+  } = usePlanningDependances(affaireId)
 
   // ── Historique annuler / rétablir ───────────────────────────────────────────
   const historique = useUndoRedo(20)
   const {
-    saveSnapshot, beginPending, commitPending,
+    saveSnapshot, beginPending, commitPending, cancelPending, retirerDernier,
     undo, redo, reset: resetHistorique, canUndo, canRedo,
   } = historique
 
   // Copie de surface : les propriétés d'une tâche sont toutes primitives.
+  // Les liens de planning_dependances en font partie : leur écart change quand
+  // on déplace une tâche liée, et la base les supprime avec leur tâche.
   const takeSnapshot = useCallback((label = '') => ({
     tasks: tasks.map((t) => ({ ...t })),
     segments: segments.map((sg) => ({ ...sg })),
+    dependances: dependances.map((d) => ({ ...d })),
     label,
-  }), [tasks, segments])
+  }), [tasks, segments, dependances])
   const {
-    periodes, addPeriode, updatePeriode, deletePeriode, getNextWorkingDay, addWorkingDaysWithBlocked,
+    periodes, addPeriode, updatePeriode, deletePeriode,
   } = usePeriodesBloquees(affaireId)
+
+  // Message d'échec d'une écriture, affiché au-dessus de la barre d'outils
+  const [erreurEcriture, setErreurEcriture] = useState(null)
+  // Écritures en cours : on n'annule pas pendant ce temps, sinon les écritures
+  // de l'annulation et celles du geste se croisent sur les mêmes lignes.
+  const ecrituresEnCours = useRef(0)
 
   const [rowHeight, setRowHeight] = useState(() => {
     const saved = parseInt(localStorage.getItem(`planning-row-height-${affaireId}`), 10)
@@ -220,6 +208,19 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
     }
     requestAnimationFrame(() => { isScrolling.current = null })
   }, [])
+
+  // ── Hauteur de la barre de défilement horizontale de la timeline ───────────────
+  // La sidebar n'en a pas : sans cette marge, en bas de défilement ses dernières
+  // lignes restaient décalées de la hauteur de la barre (Windows, ou macOS réglé
+  // pour toujours afficher les barres).
+  const [margeDefilement, setMargeDefilement] = useState(0)
+  useEffect(() => {
+    const el = timelineRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => setMargeDefilement(el.offsetHeight - el.clientHeight))
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [isLoading, error])
 
   // ── Zoom molette (⌘/Ctrl + molette), centré sur le curseur ─────────────────────
   // En vue jour, la géométrie dépend de `dayWidth` ; en vue semaine/mois, de `zoomLevel`.
@@ -310,8 +311,14 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
   }, [drawMode])
 
   // ── Data fetching ──────────────────────────────────────────────────────────────
+  //
+  // L'écran de chargement n'apparaît qu'au premier chargement d'une affaire :
+  // il démonte tout l'arbre (modales ouvertes, défilement vertical remis en haut).
+  const dejaCharge = useRef(false)
+  const affaireCourante = useRef(affaireId)
+
   const fetchAllData = useCallback(async () => {
-    setIsLoading(true)
+    if (!dejaCharge.current) setIsLoading(true)
     setError(null)
     const [
       { data: resLots, error: lotsErr },
@@ -322,6 +329,9 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
       supabase.from('planning').select('*').eq('affaire_id', affaireId).order('id'),
       supabase.from('planning_jalons').select('*').eq('affaire_id', affaireId).order('date'),
     ])
+
+    // Réponse d'une affaire qu'on a quittée entre-temps : on l'ignore
+    if (affaireCourante.current !== affaireId) return
 
     if (lotsErr || tachesErr) {
       setError(lotsErr?.message ?? tachesErr?.message ?? 'Erreur de chargement')
@@ -345,10 +355,26 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
       })))
     }
     setJalons(resJalons ?? [])
+    dejaCharge.current = true
     setIsLoading(false)
   }, [affaireId])
 
-  useEffect(() => { fetchAllData() }, [fetchAllData])
+  useEffect(() => {
+    affaireCourante.current = affaireId
+    dejaCharge.current = false
+    fetchAllData()
+  }, [affaireId, fetchAllData])
+
+  // Recharge tout ce qu'une écriture ratée a pu laisser faux en local
+  const rechargerTout = useCallback(async () => {
+    await Promise.all([fetchAllData(), refetchSegments(), refetchDependances()])
+  }, [fetchAllData, refetchSegments, refetchDependances])
+
+  const signalerEchec = useCallback(async (contexte, message) => {
+    console.error(`${contexte} —`, message)
+    setErreurEcriture(`${contexte} : ${message}`)
+    await rechargerTout()
+  }, [rechargerTout])
 
   // L'état entier est rechargé quand on change d'affaire : l'historique
   // précédent ne s'applique plus à rien.
@@ -375,22 +401,26 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
 
   // Persistance : toutes les lignes en parallèle (lignes distinctes, pas de race)
   const persistCascade = useCallback(async (cascades, ownWrites = []) => {
-    const results = await Promise.all([
-      ...ownWrites,
-      ...[...cascades.values()].map((u) =>
-        u.type === 'segment'
-          ? updateSegment(u.id, { date_debut: u.debut })
-          : supabase.from('planning').update({ debut: u.debut }).eq('id', u.id)
-      ),
-    ])
-    const failed = results.find((r) => r?.error)
-    if (failed?.error) {
-      console.error('Propagation : échec de persistance —', failed.error.message)
-      await fetchAllData()
-      return false
+    ecrituresEnCours.current++
+    try {
+      const results = await Promise.all([
+        ...ownWrites,
+        ...[...cascades.values()].map((u) =>
+          u.type === 'segment'
+            ? updateSegment(u.id, { date_debut: u.debut })
+            : supabase.from('planning').update({ debut: u.debut }).eq('id', u.id)
+        ),
+      ])
+      const failed = results.find((r) => r?.error)
+      if (failed?.error) {
+        await signalerEchec('Enregistrement impossible', failed.error.message)
+        return false
+      }
+      return true
+    } finally {
+      ecrituresEnCours.current--
     }
-    return true
-  }, [updateSegment, fetchAllData])
+  }, [updateSegment, signalerEchec])
 
   // ── Task save ─────────────────────────────────────────────────────────────────
   const handleSaveTask = async (taskData) => {
@@ -414,12 +444,19 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
       delai_apres: taskData.delai_apres ?? 0,
       label_apres: (taskData.delai_apres ?? 0) > 0 ? (taskData.label_apres ?? null) : null,
     }
-    const ancienneTache = tasks.find((t) => t.id === taskData.id)
-    if (taskModalMode !== 'create' && ancienneTache) {
-      // Un écart saisi replace la tâche ; un début modifié recalcule l'écart
-      const parent = tasks.find((t) => t.id === payload.depends_on)
-      Object.assign(payload, reconcilierLienHistorique(ancienneTache, payload, parent, periodes))
-    }
+    const ancienneTache = taskModalMode === 'create' ? null : tasks.find((t) => t.id === taskData.id)
+    // Une tâche ne démarre ni un week-end ni pendant une fermeture
+    payload.debut = formatDateISO(skipBlockedPeriods(parseDate(payload.debut), periodes))
+    // Un écart saisi replace la tâche ; un début modifié ou un nouveau parent
+    // recalcule l'écart — en création comme en modification.
+    const parent = tasks.find((t) => t.id === payload.depends_on)
+    Object.assign(payload, reconcilierLienHistorique(
+      ancienneTache, { ...payload, lag_propose: taskData.lag_propose }, parent, periodes
+    ))
+    // Tâche changée de lot : elle passe en fin du nouveau lot
+    const finDeLot = (lotId) => Math.max(-1, ...tasks.filter((t) => t.lot_id === lotId && t.id !== taskData.id)
+      .map((t) => t.ordre ?? 0)) + 1
+    if (ancienneTache && ancienneTache.lot_id !== payload.lot_id) payload.ordre = finDeLot(payload.lot_id)
     // Instantané pris seulement si l'enregistrement modifie réellement la tâche :
     // valider la modale sans rien changer ne doit pas consommer une étape
     // d'historique, sinon le Ctrl+Z suivant paraîtrait sans effet.
@@ -432,10 +469,13 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
     }
 
     if (taskModalMode === 'create') {
-      // Ajoute la tâche à la fin de son lot (même convention que le num_tache auto-incrémenté)
-      const ordre = tasks.filter((t) => t.lot_id === payload.lot_id).length
-      const { error } = await supabase.from('planning').insert([{ ...payload, ordre }])
-      if (error) throw new Error(error.message)
+      // Ajoute la tâche à la fin de son lot (après la plus grande valeur
+      // d'`ordre`, un simple comptage pouvant reprendre une valeur existante)
+      const { error } = await supabase.from('planning').insert([{ ...payload, ordre: finDeLot(payload.lot_id) }])
+      if (error) {
+        retirerDernier()
+        throw new Error(error.message)
+      }
     } else {
       // Même propagation que le drag : calculée en local depuis l'état courant
       // AVANT toute écriture, puis persistée avec la tâche dans le même lot
@@ -462,7 +502,10 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
             }))
           : []),
       ])
-      if (!ok) throw new Error('Échec de l’enregistrement de la tâche')
+      if (!ok) {
+        if (modifie) retirerDernier()
+        throw new Error('Échec de l’enregistrement de la tâche')
+      }
     }
     if (taskData.lot_id) setLastUsedLotId(taskData.lot_id)
     await fetchAllData()
@@ -472,23 +515,33 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
   const handleDeleteTask = async (taskId) => {
     saveSnapshot(takeSnapshot(`Suppression « ${tasks.find((t) => t.id === taskId)?.nom ?? ''} »`))
     const { error } = await supabase.from('planning').delete().eq('id', taskId)
-    if (error) throw new Error(error.message)
-    // La suppression se propage en base aux segments (on delete cascade) mais
-    // pas au state local, que `fetchAllData` ne recharge pas : sans ce filtre
-    // ils resteraient affichés, et l'annulation ne saurait pas les recréer.
+    if (error) {
+      retirerDernier()
+      await signalerEchec('Suppression impossible', error.message)
+      return false
+    }
+    // La base supprime en cascade les segments et les liens de la tâche, mais
+    // ni le state local ni `fetchAllData` ne le voient : on les recharge.
+    const segmentsSupprimes = segments.filter((sg) => sg.tache_id === taskId).map((sg) => sg.id)
     replaceSegments(segments.filter((sg) => sg.tache_id !== taskId))
+    replaceDependances(dependances.filter((d) => d.source_tache_id !== taskId && d.cible_tache_id !== taskId
+      && !segmentsSupprimes.includes(d.source_segment_id) && !segmentsSupprimes.includes(d.cible_segment_id)))
     await fetchAllData()
+    return true
   }
 
   const handleConfirmDeleteTask = async () => {
     if (!deletingTask) return
-    await handleDeleteTask(deletingTask.id)
+    const ok = await handleDeleteTask(deletingTask.id)
     setDeletingTask(null)
-    handleCloseTaskModal()
+    if (ok) handleCloseTaskModal()
   }
 
   // ── Dépendances ────────────────────────────────────────────────────────────────
+  // Chaque action sur un lien a sa propre étape d'historique : sans elle, le
+  // Ctrl+Z suivant la défaisait en même temps que l'action précédente.
   const handleDependencyCreate = useCallback(async (fromTaskId, toTaskId, lagDays) => {
+    saveSnapshot(takeSnapshot('Nouveau lien'))
     setTasks((prev) => prev.map((t) =>
       t.id === toTaskId ? { ...t, depends_on: fromTaskId, lag_days: lagDays } : t
     ))
@@ -496,10 +549,11 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
       .from('planning')
       .update({ depends_on: fromTaskId, lag_days: lagDays })
       .eq('id', toTaskId)
-    if (error) { console.error('Dependency create failed:', error.message); await fetchAllData() }
-  }, [fetchAllData])
+    if (error) { retirerDernier(); await signalerEchec('Création du lien impossible', error.message) }
+  }, [saveSnapshot, takeSnapshot, retirerDernier, signalerEchec])
 
   const handleDependencyDelete = useCallback(async (fromTaskId, toTaskId) => {
+    saveSnapshot(takeSnapshot('Suppression d’un lien'))
     setTasks((prev) => prev.map((t) =>
       t.id === toTaskId && t.depends_on === fromTaskId
         ? { ...t, depends_on: null, lag_days: 0 }
@@ -509,8 +563,20 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
       .from('planning')
       .update({ depends_on: null, lag_days: 0 })
       .eq('id', toTaskId)
-    if (error) { console.error('Dependency delete failed:', error.message); await fetchAllData() }
-  }, [fetchAllData])
+    if (error) { retirerDernier(); await signalerEchec('Suppression du lien impossible', error.message) }
+  }, [saveSnapshot, takeSnapshot, retirerDernier, signalerEchec])
+
+  const handleLienEtenduCreate = useCallback(async (lien) => {
+    saveSnapshot(takeSnapshot('Nouveau lien'))
+    const { error } = await addDependance(lien)
+    if (error) { retirerDernier(); await signalerEchec('Création du lien impossible', error.message) }
+  }, [addDependance, saveSnapshot, takeSnapshot, retirerDernier, signalerEchec])
+
+  const handleLienEtenduDelete = useCallback(async (id) => {
+    saveSnapshot(takeSnapshot('Suppression d’un lien'))
+    const { error } = await deleteDependance(id)
+    if (error) { retirerDernier(); await signalerEchec('Suppression du lien impossible', error.message) }
+  }, [deleteDependance, saveSnapshot, takeSnapshot, retirerDernier, signalerEchec])
 
   // ── Drag/resize avec propagation en cascade ────────────────────────────────────
   const handleTaskUpdate = useCallback(async (taskId, changes) => {
@@ -574,12 +640,10 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
     beginPending(takeSnapshot(label))
   }, [beginPending, takeSnapshot])
 
-  const handleSegmentCommit = useCallback(async (segmentId, changes) => {
-    const seg = segments.find((s) => s.id === segmentId)
-    if (!seg) return
-
-    commitPending()
-
+  // `avant` : dates du segment au début du geste. L'état local a déjà suivi
+  // la souris, le comparer à `seg` ne détecterait jamais de déplacement.
+  const enregistrerSegment = useCallback(async (seg, changes, avant) => {
+    const segmentId = seg.id
     const newDebut = changes.date_debut ?? seg.date_debut
     const newDuree = changes.duree_jours ?? seg.duree_jours
 
@@ -591,28 +655,118 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
 
     applyCascadeLocally(cascades)
 
-    await persistCascade(cascades, [
+    return persistCascade(cascades, [
       updateSegment(segmentId, changes),
-      ...(changes.date_debut && changes.date_debut !== seg.date_debut
+      ...(changes.date_debut && changes.date_debut !== (avant?.date_debut ?? seg.date_debut)
         ? updateLags(lagsDependancesCible({
             type: 'segment', id: segmentId, debut: newDebut, tasks, segments, dependances, periodes,
           }))
         : []),
     ])
-  }, [tasks, segments, dependances, periodes, updateSegment, updateLags, applyCascadeLocally, persistCascade, commitPending])
+  }, [tasks, segments, dependances, periodes, updateSegment, updateLags, applyCascadeLocally, persistCascade])
+
+  const handleSegmentCommit = useCallback(async (segmentId, changes, avant) => {
+    const seg = segments.find((s) => s.id === segmentId)
+    if (!seg) return
+    commitPending()
+    await enregistrerSegment(seg, changes, avant)
+  }, [segments, commitPending, enregistrerSegment])
+
+  // ── Segments modifiés depuis la modale de tâche ────────────────────────────────
+  // Mêmes règles que sur la timeline : une étape d'historique, et une date ou
+  // une durée modifiées décalent les suivantes et mettent à jour les écarts.
+  const handleSegmentAjout = useCallback(async (tacheId, data) => {
+    saveSnapshot(takeSnapshot('Nouveau segment'))
+    const { error } = await addSegment(tacheId, {
+      ...data, date_debut: formatDateISO(skipBlockedPeriods(parseDate(data.date_debut), periodes)),
+    })
+    if (error) { retirerDernier(); await signalerEchec('Ajout du segment impossible', error.message) }
+  }, [addSegment, periodes, saveSnapshot, takeSnapshot, retirerDernier, signalerEchec])
+
+  const handleSegmentModif = useCallback(async (segmentId, changes) => {
+    const seg = segments.find((s) => s.id === segmentId)
+    if (!seg) return
+    const aChange = Object.keys(changes).some((c) => (seg[c] ?? null) !== (changes[c] ?? null))
+    if (!aChange) return
+    saveSnapshot(takeSnapshot('Modification d’un segment'))
+    if (changes.date_debut != null || changes.duree_jours != null) {
+      const corriges = changes.date_debut != null
+        ? { ...changes, date_debut: formatDateISO(skipBlockedPeriods(parseDate(changes.date_debut), periodes)) }
+        : changes
+      if (!await enregistrerSegment(seg, corriges)) retirerDernier()
+      return
+    }
+    const { error } = await updateSegment(segmentId, changes)
+    if (error) { retirerDernier(); await signalerEchec('Modification du segment impossible', error.message) }
+  }, [segments, periodes, enregistrerSegment, updateSegment, saveSnapshot, takeSnapshot, retirerDernier, signalerEchec])
+
+  const handleSegmentSuppression = useCallback(async (segmentId) => {
+    saveSnapshot(takeSnapshot('Suppression d’un segment'))
+    const { error } = await deleteSegment(segmentId)
+    if (error) { retirerDernier(); await signalerEchec('Suppression du segment impossible', error.message); return }
+    // Liens supprimés en cascade par la base
+    replaceDependances(dependances.filter((d) => d.source_segment_id !== segmentId && d.cible_segment_id !== segmentId))
+  }, [deleteSegment, dependances, replaceDependances, saveSnapshot, takeSnapshot, retirerDernier, signalerEchec])
+
+  // ── Zones ─────────────────────────────────────────────────────────────────────
+  // La base remet `zone_id` à null sur les tâches et segments de la zone
+  // supprimée ; sans le faire aussi en local, ils disparaissaient du groupement
+  // par zone et un enregistrement suivant échouait sur la clé étrangère.
+  const handleZoneSuppression = useCallback(async (id) => {
+    const resultat = await deleteZone(id)
+    if (resultat?.error) return resultat
+    setTasks((prev) => prev.map((t) => (t.zone_id === id ? { ...t, zone_id: null } : t)))
+    replaceSegments(segments.map((sg) => (sg.zone_id === id ? { ...sg, zone_id: null } : sg)))
+    return resultat
+  }, [deleteZone, segments, replaceSegments])
+
+  // ── Périodes ──────────────────────────────────────────────────────────────────
+  // Une fermeture ajoutée, modifiée ou supprimée allonge ou raccourcit les
+  // barres qu'elle traverse : les tâches liées sont recalées dans la foulée.
+  const recalerApresPeriodes = useCallback(async (nouvellesPeriodes, label) => {
+    const cascades = propagerDepuisRacines({ tasks, segments, dependances, periodes: nouvellesPeriodes })
+    if (cascades.size === 0) return
+    saveSnapshot(takeSnapshot(label))
+    applyCascadeLocally(cascades)
+    if (!await persistCascade(cascades)) retirerDernier()
+  }, [tasks, segments, dependances, applyCascadeLocally, persistCascade, saveSnapshot, takeSnapshot, retirerDernier])
+
+  const handlePeriodeAjout = useCallback(async (data) => {
+    const resultat = await addPeriode(data)
+    if (!resultat.error && resultat.data) await recalerApresPeriodes([...periodes, resultat.data], 'Nouvelle période')
+    return resultat
+  }, [addPeriode, periodes, recalerApresPeriodes])
+
+  const handlePeriodeModif = useCallback(async (id, changes) => {
+    const resultat = await updatePeriode(id, changes)
+    if (!resultat.error) {
+      await recalerApresPeriodes(periodes.map((p) => (p.id === id ? { ...p, ...changes } : p)), 'Modification d’une période')
+    }
+    return resultat
+  }, [updatePeriode, periodes, recalerApresPeriodes])
+
+  const handlePeriodeSuppression = useCallback(async (id) => {
+    const resultat = await deletePeriode(id)
+    if (!resultat.error) await recalerApresPeriodes(periodes.filter((p) => p.id !== id), 'Suppression d’une période')
+    return resultat
+  }, [deletePeriode, periodes, recalerApresPeriodes])
 
   // ── Avancement inline ─────────────────────────────────────────────────────────
+  // Appelé une fois la saisie terminée (sortie du champ ou Entrée), pas à
+  // chaque frappe : une seule étape d'historique et une seule écriture.
   const handleAvancementChange = useCallback(async (taskId, value) => {
+    const avancement = Math.max(0, Math.min(100, Math.round(Number(value) || 0)))
+    const tache = tasks.find((t) => t.id === taskId)
+    if (!tache || tache.avancement === avancement) return
     saveSnapshot(takeSnapshot('Avancement'))
-    setTasks((prev) => prev.map((t) => t.id === taskId ? { ...t, avancement: value } : t))
-    await supabase.from('planning').update({ avancement: value }).eq('id', taskId)
-  }, [saveSnapshot, takeSnapshot])
+    setTasks((prev) => prev.map((t) => t.id === taskId ? { ...t, avancement } : t))
+    const { error } = await supabase.from('planning').update({ avancement }).eq('id', taskId)
+    if (error) { retirerDernier(); await signalerEchec('Avancement non enregistré', error.message) }
+  }, [tasks, saveSnapshot, takeSnapshot, retirerDernier, signalerEchec])
 
   // ── Réorganisation des tâches par drag & drop (au sein d'un même lot) ──────────
   const handleReorderTask = useCallback(async (draggedTaskId, targetTaskId) => {
     if (!draggedTaskId || draggedTaskId === targetTaskId) return
-
-    saveSnapshot(takeSnapshot('Réorganisation des tâches'))
 
     const dragged = tasks.find((t) => t.id === draggedTaskId)
     const target = tasks.find((t) => t.id === targetTaskId)
@@ -625,6 +779,8 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
     const dragIdx = lotTasks.findIndex((t) => t.id === draggedTaskId)
     const targetIdx = lotTasks.findIndex((t) => t.id === targetTaskId)
     if (dragIdx === -1 || targetIdx === -1) return
+
+    saveSnapshot(takeSnapshot('Réorganisation des tâches'))
 
     const reordered = [...lotTasks]
     const [removed] = reordered.splice(dragIdx, 1)
@@ -648,8 +804,8 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
       )
     )
     const failed = results.find((r) => r.error)
-    if (failed?.error) { console.error('Reorder failed:', failed.error.message); await fetchAllData() }
-  }, [tasks, fetchAllData, saveSnapshot, takeSnapshot])
+    if (failed?.error) await signalerEchec('Réorganisation impossible', failed.error.message)
+  }, [tasks, signalerEchec, saveSnapshot, takeSnapshot])
 
   // ── Application d'un instantané ─────────────────────────────────────────────
   //
@@ -663,11 +819,15 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
     // Affichage immédiat, écriture ensuite — même principe que la propagation.
     setTasks(vers.tasks)
     replaceSegments(vers.segments)
+    if (vers.dependances) replaceDependances(vers.dependances)
+    ecrituresEnCours.current++
 
     // Les segments partent en premier : une tâche ne peut être supprimée tant
     // qu'un segment la référence, et un segment ne peut être recréé avant sa
     // tâche. L'ordre inverse est appliqué de chaque côté.
     const resultats = await Promise.all([
+      ...diff.dependances.deletions.map((id) =>
+        supabase.from('planning_dependances').delete().eq('id', id)),
       ...diff.segments.deletions.map((id) =>
         supabase.from('planning_segments').delete().eq('id', id)),
       ...diff.tasks.insertions.length
@@ -687,19 +847,29 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
         : [],
       ...diff.tasks.deletions.map((id) =>
         supabase.from('planning').delete().eq('id', id)),
+      ...diff.dependances.updates.map((u) =>
+        supabase.from('planning_dependances').update(u.changes).eq('id', u.id)),
     ])
 
-    const echec = [...resultats, ...resultats2].find((r) => r?.error)
+    // Les liens en dernier : leurs tâches et segments doivent exister
+    const resultats3 = diff.dependances.insertions.length
+      ? [await supabase.from('planning_dependances').insert(
+          diff.dependances.insertions.map((d) => ({ ...d, affaire_id: d.affaire_id ?? affaireId })))]
+      : []
+    ecrituresEnCours.current--
+
+    const echec = [...resultats, ...resultats2, ...resultats3].find((r) => r?.error)
     if (echec?.error) {
       console.error('Historique : échec de persistance —', echec.error.message)
       setUndoError(echec.error.message)
-      await fetchAllData()
+      await rechargerTout()
       return false
     }
     return true
-  }, [affaireId, replaceSegments, fetchAllData])
+  }, [affaireId, replaceSegments, replaceDependances, rechargerTout])
 
   const handleUndo = useCallback(async () => {
+    if (ecrituresEnCours.current > 0) return
     const courant = takeSnapshot()
     const precedent = undo(courant)
     if (!precedent) return
@@ -707,6 +877,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
   }, [undo, takeSnapshot, appliquerSnapshot])
 
   const handleRedo = useCallback(async () => {
+    if (ecrituresEnCours.current > 0) return
     const courant = takeSnapshot()
     const suivant = redo(courant)
     if (!suivant) return
@@ -735,602 +906,27 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
 
   // ── Lots save (couleurs uniquement) ──────────────────────────────────────────
   const handleSaveLots = async (colorDrafts) => {
-    await Promise.all(
+    const resultats = await Promise.all(
       colorDrafts.map((d) =>
         supabase.from('lots').update({ couleur: d.couleur }).eq('id', d.id)
       )
     )
     await fetchAllData()
+    // Levée pour que la modale reste ouverte et affiche l'échec
+    const echec = resultats.find((r) => r.error)
+    if (echec) throw new Error(echec.error.message)
   }
 
   // ── Export Excel ──────────────────────────────────────────────────────────────
-  // `density` vient de la modale d'export ; à défaut (bouton Excel direct de la
-  // barre d'outils), on reprend la densité affichée à l'écran.
-  const handleExportExcel = ({ density } = {}) => {
-    const dens = EXCEL_DENSITY[density] ?? EXCEL_DENSITY[densityFromRowHeight(rowHeight)]
-    const fontSize = dens.fontSize
-    // Hauteur de chaque ligne, renseignée au fil des émissions
-    const rowHeights = []
-    const noteHauteur = (idx, hpt) => { rowHeights[idx] = { hpt } }
-    // ── 1. Déterminer la plage de dates et les unités de temps (jour/semaine/mois) ──
-    let minDate = null
-    let maxDate = null
-
-    tasks.forEach((task) => {
-      if (!task.debut) return
-      const debut = parseDate(task.debut)
-      if (!minDate || debut < minDate) minDate = new Date(debut)
-      const fin = addWorkingDaysWithBlocked
-        ? addWorkingDaysWithBlocked(debut, task.duree ?? 0)
-        : addWorkingDays(debut, task.duree ?? 0)
-      if (!maxDate || fin > maxDate) maxDate = new Date(fin)
+  // Depuis la barre d'outils : le planning tel qu'affiché. Depuis la modale
+  // d'export : période, vue, couleurs et groupement choisis dans la modale.
+  const handleExportExcel = (options = {}) => {
+    exporterPlanningChantierExcel({
+      tasks: sortedTasks, lots, zones, segments, jalons, periodes, affaire,
+      viewMode, colorMode, groupMode,
+      density: densityFromRowHeight(rowHeight),
+      ...(options?.nativeEvent ? {} : options),
     })
-
-    if (!minDate || !maxDate) return
-
-    minDate.setDate(minDate.getDate() - 3)
-    maxDate.setDate(maxDate.getDate() + 5)
-
-    const timeUnits = []
-    if (viewMode === 'day') {
-      const cur = new Date(minDate)
-      while (cur <= maxDate) {
-        timeUnits.push(new Date(cur))
-        cur.setDate(cur.getDate() + 1)
-      }
-    } else if (viewMode === 'week') {
-      const cur = new Date(minDate)
-      const day = cur.getDay()
-      cur.setDate(cur.getDate() - (day === 0 ? 6 : day - 1))
-      while (cur <= maxDate) {
-        timeUnits.push(new Date(cur))
-        cur.setDate(cur.getDate() + 7)
-      }
-    } else {
-      const cur = new Date(minDate.getFullYear(), minDate.getMonth(), 1)
-      while (cur <= maxDate) {
-        timeUnits.push(new Date(cur))
-        cur.setMonth(cur.getMonth() + 1)
-      }
-    }
-
-    // ── 2. Construire la feuille cellule par cellule ──
-    const ws = {}
-    const merges = []
-    let rowIdx = 0
-    const FIXED_COLS = 3 // N°, Tâche, Av.%
-    // Teintes de la légende (les cellules, elles, prennent la couleur de chaque période)
-    const BLOQUANTE_FILL = pastel('#B8412C', 0.22)
-    const INFORMATIVE_FILL = pastel('#B8412C', 0.08)
-
-    const setCell = (col, row, value, style) => {
-      const addr = XLSX.utils.encode_cell({ c: col, r: row })
-      ws[addr] = { v: value, s: style ?? {} }
-      if (typeof value === 'string') ws[addr].t = 's'
-      else if (typeof value === 'number') ws[addr].t = 'n'
-    }
-
-    // ── Bordures ────────────────────────────────────────────────────────────
-    // Toutes noires : fines par défaut, épaisses pour les séparateurs (mois,
-    // sidebar/timeline, groupes de lots), tiretées entre les lignes de tâches.
-    const B_THIN = { style: 'thin', color: { rgb: '000000' } }
-    const B_THICK = { style: 'medium', color: { rgb: '000000' } }
-    const B_DASH = { style: 'dashed', color: { rgb: '000000' } }
-
-    const borderThin = { top: B_THIN, bottom: B_THIN, left: B_THIN, right: B_THIN }
-
-    // En-têtes (mois / semaines / jours) : haut et bas épais
-    const borderHeader = (leftThick, rightThick) => ({
-      top: B_THICK, bottom: B_THICK,
-      left: leftThick ? B_THICK : B_THIN,
-      right: rightThick ? B_THICK : B_THIN,
-    })
-
-    // Lignes de tâches : séparateurs horizontaux tiretés
-    const borderTask = (leftThick, rightThick) => ({
-      top: B_DASH, bottom: B_DASH,
-      left: leftThick ? B_THICK : B_THIN,
-      right: rightThick ? B_THICK : B_THIN,
-    })
-
-    // En-tête de lot : bas épais pour détacher les groupes
-    const borderLot = (rightThick) => ({
-      top: B_THIN, bottom: B_THICK,
-      left: B_THIN,
-      right: rightThick ? B_THICK : B_THIN,
-    })
-
-    // Dernière colonne de la sidebar (Av.%) : séparation épaisse avec la timeline
-    const LAST_SIDEBAR_COL = 2
-
-    const styleHeader = (col) => ({
-      font: { bold: true, sz: fontSize, color: { rgb: 'FFFFFF' } },
-      fill: { fgColor: { rgb: '1F1B17' } },
-      alignment: { horizontal: 'center', vertical: 'center' },
-      border: borderHeader(false, col === LAST_SIDEBAR_COL),
-    })
-
-    const styleMonthHeader = (isCurrentMonth) => ({
-      font: { bold: true, sz: fontSize, color: { rgb: isCurrentMonth ? 'E8602C' : '1F1B17' } },
-      fill: { fgColor: { rgb: isCurrentMonth ? 'FAF0EB' : 'F5F2F0' } },
-      alignment: { horizontal: 'center', vertical: 'center' },
-      // Chaque cellule de mois est un groupe fusionné : encadré épais des deux côtés
-      border: borderHeader(true, true),
-    })
-
-    const styleLotHeader = (couleur, col) => {
-      const hex = couleur?.replace('#', '') ?? 'E8602C'
-      return {
-        font: { bold: true, sz: fontSize, color: { rgb: hex } },
-        fill: { fgColor: { rgb: 'FAF7F2' } },
-        border: borderLot(col === LAST_SIDEBAR_COL),
-      }
-    }
-
-    const styleSidebar = (bold, col) => ({
-      font: { bold: bold ?? false, sz: fontSize, color: { rgb: '1F1B17' } },
-      fill: { fgColor: { rgb: 'FFFFFF' } },
-      alignment: { vertical: 'center' },
-      border: borderTask(false, col === LAST_SIDEBAR_COL),
-    })
-
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-
-    // ── Headers selon viewMode ──
-    if (viewMode === 'day') {
-      const monthGroups = []
-      timeUnits.forEach((d) => {
-        const key = `${d.getFullYear()}-${d.getMonth()}`
-        const last = monthGroups[monthGroups.length - 1]
-        if (last && last.key === key) {
-          last.count++
-        } else {
-          monthGroups.push({
-            key,
-            label: d.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' }),
-            count: 1,
-            month: d.getMonth(),
-            year: d.getFullYear(),
-          })
-        }
-      })
-
-      setCell(0, 0, '', styleHeader(0))
-      setCell(1, 0, '', styleHeader(1))
-      setCell(2, 0, '', styleHeader(2))
-      merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: 2 } })
-
-      let colOff = FIXED_COLS
-      monthGroups.forEach((mg) => {
-        const isCur = mg.month === today.getMonth() && mg.year === today.getFullYear()
-        setCell(colOff, 0, mg.label.charAt(0).toUpperCase() + mg.label.slice(1), styleMonthHeader(isCur))
-        if (mg.count > 1) merges.push({ s: { r: 0, c: colOff }, e: { r: 0, c: colOff + mg.count - 1 } })
-        colOff += mg.count
-      })
-      rowIdx = 1
-
-      setCell(0, rowIdx, 'N°', styleHeader(0))
-      setCell(1, rowIdx, 'Tâche', styleHeader(1))
-      setCell(2, rowIdx, 'Av.%', styleHeader(2))
-      noteHauteur(0, dens.headerRow)
-      noteHauteur(rowIdx, dens.headerRow)
-
-      timeUnits.forEach((d, i) => {
-        const isWE = d.getDay() === 0 || d.getDay() === 6
-        const isTod = d.getTime() === today.getTime()
-        const isMonthStart = d.getDate() === 1
-        setCell(FIXED_COLS + i, rowIdx, d.getDate(), {
-          font: {
-            bold: isTod, sz: Math.max(6, fontSize - 1),
-            color: { rgb: isTod ? 'E8602C' : isWE ? '9C9591' : '5E5854' },
-          },
-          fill: { fgColor: { rgb: isTod ? 'FAF0EB' : isWE ? 'F0EDE8' : 'FAFAF9' } },
-          alignment: { horizontal: 'center' },
-          border: borderHeader(isMonthStart, false),
-        })
-      })
-      rowIdx = 2
-    } else if (viewMode === 'week') {
-      setCell(0, 0, '', styleHeader(0))
-      setCell(1, 0, '', styleHeader(1))
-      setCell(2, 0, '', styleHeader(2))
-      merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: 2 } })
-
-      const monthGroups = []
-      timeUnits.forEach((monday) => {
-        const m = monday.getMonth()
-        const y = monday.getFullYear()
-        const key = `${y}-${m}`
-        const last = monthGroups[monthGroups.length - 1]
-        if (last && last.key === key) {
-          last.count++
-        } else {
-          monthGroups.push({
-            key, count: 1,
-            label: monday.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' }),
-            month: m, year: y,
-          })
-        }
-      })
-
-      let colOff = FIXED_COLS
-      monthGroups.forEach((mg) => {
-        const isCur = mg.month === today.getMonth() && mg.year === today.getFullYear()
-        setCell(colOff, 0, mg.label.charAt(0).toUpperCase() + mg.label.slice(1), styleMonthHeader(isCur))
-        if (mg.count > 1) merges.push({ s: { r: 0, c: colOff }, e: { r: 0, c: colOff + mg.count - 1 } })
-        colOff += mg.count
-      })
-
-      setCell(0, 1, 'N°', styleHeader(0))
-      setCell(1, 1, 'Tâche', styleHeader(1))
-      setCell(2, 1, 'Av.%', styleHeader(2))
-      noteHauteur(0, dens.headerRow)
-      noteHauteur(1, dens.headerRow)
-
-      timeUnits.forEach((monday, i) => {
-        const d = new Date(monday)
-        d.setHours(0, 0, 0, 0)
-        d.setDate(d.getDate() + 3 - (d.getDay() + 6) % 7)
-        const w1 = new Date(d.getFullYear(), 0, 4)
-        const wNum = 1 + Math.round(((d - w1) / 86400000 - 3 + (w1.getDay() + 6) % 7) / 7)
-
-        const isMonthStart = i > 0 && monday.getMonth() !== timeUnits[i - 1].getMonth()
-        const isCurWeek = monday <= today && today < new Date(monday.getTime() + 7 * 24 * 3600 * 1000)
-
-        setCell(FIXED_COLS + i, 1, `S${wNum}`, {
-          font: { bold: isCurWeek, sz: Math.max(6, fontSize - 1), color: { rgb: isCurWeek ? 'E8602C' : '5E5854' } },
-          fill: { fgColor: { rgb: isCurWeek ? 'FAF0EB' : 'FAFAF9' } },
-          alignment: { horizontal: 'center' },
-          border: borderHeader(isMonthStart, false),
-        })
-      })
-      rowIdx = 2
-    } else {
-      setCell(0, 0, 'N°', styleHeader(0))
-      setCell(1, 0, 'Tâche', styleHeader(1))
-      setCell(2, 0, 'Av.%', styleHeader(2))
-      noteHauteur(0, dens.headerRow)
-
-      timeUnits.forEach((d, i) => {
-        const isCur = d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear()
-        const label = d.toLocaleDateString('fr-FR', { month: 'short' })
-        setCell(FIXED_COLS + i, 0, label.charAt(0).toUpperCase() + label.slice(1), styleMonthHeader(isCur))
-      })
-      rowIdx = 1
-    }
-
-    // ── Lignes de données, groupées par lot ──
-    const tasksByLot = {}
-    const lotOrder = []
-    tasks.forEach((task) => {
-      const lotId = task.lot_id ?? '__no_lot__'
-      if (!tasksByLot[lotId]) {
-        tasksByLot[lotId] = []
-        lotOrder.push(lotId)
-      }
-      tasksByLot[lotId].push(task)
-    })
-
-    // Une unité de temps chevauche-t-elle [début, fin[ ? (fin exclusive, jours ouvrés
-    // hors périodes bloquées comme dans la timeline)
-    const overlaps = (unit, debut, fin) => {
-      if (viewMode === 'day') {
-        const d = new Date(unit); d.setHours(0, 0, 0, 0)
-        const s = new Date(debut); s.setHours(0, 0, 0, 0)
-        const e = new Date(fin); e.setHours(0, 0, 0, 0)
-        return d >= s && d < e
-      }
-      if (viewMode === 'week') {
-        const wEnd = new Date(unit)
-        wEnd.setDate(wEnd.getDate() + 7)
-        return unit < fin && wEnd > debut
-      }
-      const mEnd = new Date(unit.getFullYear(), unit.getMonth() + 1, 1)
-      return unit < fin && mEnd > debut
-    }
-
-    const isInTask = (unit, task) => {
-      if (!task.debut) return false
-      const debut = parseDate(task.debut)
-      const fin = addWorkingDaysWithBlocked
-        ? addWorkingDaysWithBlocked(debut, task.duree ?? 0)
-        : addWorkingDays(debut, task.duree ?? 0)
-      return overlaps(unit, debut, fin)
-    }
-
-    const isInSegment = (unit, seg) => {
-      if (!seg.date_debut) return false
-      const debut = parseDate(seg.date_debut)
-      const fin = addWorkingDaysWithBlocked
-        ? addWorkingDaysWithBlocked(debut, seg.duree_jours ?? 0)
-        : addWorkingDays(debut, seg.duree_jours ?? 0)
-      return overlaps(unit, debut, fin)
-    }
-
-    // Délais avant (appro) et après (séchage…) : mêmes bornes que les barres
-    // hachurées de la timeline, en jours ouvrés, fin exclusive.
-    const isInDelaiAvant = (unit, task) => {
-      if (!task.appro_actif || !(task.appro_duree > 0) || !task.debut) return false
-      const debut = parseDate(task.debut)
-      return overlaps(unit, addWorkingDays(debut, -task.appro_duree), debut)
-    }
-
-    const isInDelaiApres = (unit, task) => {
-      if (!(task.delai_apres > 0) || !task.debut) return false
-      const dernierJour = addWorkingDays(parseDate(task.debut), Math.max(1, task.duree) - 1)
-      const debut = addWorkingDays(dernierJour, 1)
-      return overlaps(unit, debut, addWorkingDays(debut, task.delai_apres))
-    }
-
-    // date_fin est incluse dans la période ; overlaps() attend une borne de fin
-    // exclusive (comme pour les tâches/segments), d'où le +1 jour.
-    const isInPeriode = (unit, periode) => {
-      if (!periode.date_debut || !periode.date_fin) return false
-      const debut = parseDate(periode.date_debut)
-      const finExclusive = parseDate(periode.date_fin)
-      finExclusive.setDate(finExclusive.getDate() + 1)
-      return overlaps(unit, debut, finExclusive)
-    }
-
-    // En mode zone, une tâche sans zone (ou dont la zone a été supprimée) sort en
-    // gris — pas dans la couleur de son lot, qui ferait lire une zone inexistante.
-    const getTaskColor = (task) => {
-      if (colorMode === 'zone') {
-        if (!task.zone_id) return '#C9C4C0'
-        return zones.find((z) => z.id === task.zone_id)?.couleur ?? '#C9C4C0'
-      }
-      return lots.find((l) => l.id === task.lot_id)?.couleur ?? '#C9C4C0'
-    }
-
-    const getSegColor = (seg, task) => {
-      if (seg.zone_id) {
-        return zones.find((z) => z.id === seg.zone_id)?.couleur ?? getTaskColor(task)
-      }
-      return getTaskColor(task)
-    }
-
-    // ── Émission d'une ligne de tâche ──
-    // Partagée par les deux groupements : en mode zone, `rowInfo` vient de
-    // buildRowsByZone (barre principale masquée, segments filtrés, libellé
-    // propre à la ligne), exactement comme dans la timeline.
-    const emitTaskRow = (task, rowInfo) => {
-      const showMainBar = rowInfo?.showMainBar !== false
-      const visibleSegmentIds = rowInfo?.visibleSegmentIds ?? null
-      const libelle = rowInfo?.displayName ?? task.nom ?? ''
-      const suffixe = rowInfo?.suffixe ? ` · ${rowInfo.suffixe}` : ''
-
-      const taskColor = getTaskColor(task)
-      const taskHex = taskColor.replace('#', '')
-      const segsTous = getSegmentsForTache ? getSegmentsForTache(task.id) : []
-      const segs = visibleSegmentIds
-        ? segsTous.filter((sg) => visibleSegmentIds.includes(sg.id))
-        : segsTous
-
-      setCell(0, rowIdx, rowInfo?.numero ?? task.num_tache ?? '', styleSidebar(false, 0))
-      setCell(1, rowIdx, `${libelle}${suffixe}`, styleSidebar(false, 1))
-      setCell(2, rowIdx, task.avancement ?? 0, { ...styleSidebar(false, 2), alignment: { horizontal: 'center' } })
-
-      timeUnits.forEach((unit, i) => {
-        const inMain = showMainBar && isInTask(unit, task)
-        const inSeg = segs.find((sg) => isInSegment(unit, sg))
-        const active = inMain || inSeg
-        // En cas de chevauchement, la période bloquante prime sur l'informative
-        const couvrantes = periodes.filter((pp) => isInPeriode(unit, pp))
-        const periode = couvrantes.find((pp) => pp.est_bloquante !== false) ?? couvrantes[0] ?? null
-
-        let fillHex = 'FFFFFF'
-
-        if (active) {
-          fillHex = inSeg ? getSegColor(inSeg, task).replace('#', '') : taskHex
-        } else if (showMainBar && (isInDelaiAvant(unit, task) || isInDelaiApres(unit, task))) {
-          // Délais : même couleur que la barre mais très atténuée, pour les
-          // distinguer de la tâche elle-même (Excel ne gère pas la transparence).
-          fillHex = pastel(taskColor, 0.4)
-        } else if (periode) {
-          // Teinte dérivée de la couleur de la période : plus soutenue si
-          // elle est bloquante, très pâle si elle est informative.
-          fillHex = pastel(periode.couleur, periode.est_bloquante !== false ? 0.22 : 0.08)
-        } else if (viewMode === 'day') {
-          const d = new Date(unit)
-          if (d.getDay() === 0 || d.getDay() === 6) fillHex = 'F0EDE8'
-        }
-
-        const isMonthStart = viewMode === 'day'
-          ? unit.getDate() === 1
-          : viewMode === 'week'
-            ? (i > 0 && unit.getMonth() !== timeUnits[i - 1]?.getMonth())
-            : true // en vue mois, chaque colonne est un début de mois
-
-        setCell(FIXED_COLS + i, rowIdx, '', {
-          fill: { fgColor: { rgb: fillHex } },
-          border: borderTask(isMonthStart, false),
-        })
-      })
-
-      noteHauteur(rowIdx, dens.taskRow)
-      rowIdx++
-    }
-
-    // ── En-tête de groupe (lot ou zone) ──
-    const emitGroupHeader = (couleur, libelle) => {
-      const hexGroupe = (couleur ?? '#E8602C').replace('#', '')
-      setCell(0, rowIdx, '', styleLotHeader(couleur, 0))
-      setCell(1, rowIdx, libelle, {
-        ...styleLotHeader(couleur, 1),
-        font: { bold: true, sz: fontSize, color: { rgb: hexGroupe } },
-      })
-      setCell(2, rowIdx, '', styleLotHeader(couleur, 2))
-      timeUnits.forEach((_, i) => {
-        setCell(FIXED_COLS + i, rowIdx, '', {
-          fill: { fgColor: { rgb: 'FAF7F2' } },
-          border: borderLot(false),
-        })
-      })
-      noteHauteur(rowIdx, dens.lotRow)
-      rowIdx++
-    }
-
-    if (groupMode === 'zone') {
-      // Mêmes lignes que la vue « Par zone » de l'éditeur
-      buildRowsByZone(sortedTasks, zones, segments).forEach((row) => {
-        if (row.type === 'header-zone') {
-          emitGroupHeader(row.couleur ?? '#C9C4C0', (row.displayName ?? '').toUpperCase())
-          return
-        }
-        const lot = lots.find((l) => l.id === row.lotId) ?? null
-        emitTaskRow(row.task, {
-          showMainBar: row.showMainBar,
-          visibleSegmentIds: row.visibleSegmentIds,
-          displayName: row.displayName,
-          numero: row.numero,
-          suffixe: lot ? `${lot.num_lot ?? ''} ${lot.nom}`.trim() : null,
-        })
-      })
-    } else {
-      lotOrder.forEach((lotId) => {
-        const lot = lots.find((l) => l.id === lotId)
-        const lotTasks = tasksByLot[lotId]
-        emitGroupHeader(
-          lot?.couleur ?? '#E8602C',
-          `${lot?.numero ? String(lot.numero).padStart(2, '0') : ''} – ${lot?.nom ?? 'Sans lot'}`.trim()
-        )
-        lotTasks
-          .sort((a, b) => (a.num_tache ?? '').localeCompare(b.num_tache ?? ''))
-          .forEach((task) => emitTaskRow(task, null))
-      })
-    }
-
-    // ── Jalons ──
-    if (jalons && jalons.length > 0) {
-      setCell(0, rowIdx, '', { border: borderThin })
-      setCell(1, rowIdx, 'JALONS', { font: { bold: true, sz: fontSize }, border: borderThin })
-      rowIdx++
-
-      jalons.forEach((jalon) => {
-        setCell(0, rowIdx, '', styleSidebar(false, 0))
-        setCell(1, rowIdx, jalon.label ?? '', styleSidebar(true, 1))
-        setCell(2, rowIdx, '', styleSidebar(false, 2))
-
-        const jalonDate = jalon.date ? parseDate(jalon.date) : null
-
-        timeUnits.forEach((unit, i) => {
-          let isJalon = false
-          if (jalonDate) {
-            if (viewMode === 'day') {
-              isJalon = unit.toDateString() === jalonDate.toDateString()
-            } else if (viewMode === 'week') {
-              const wEnd = new Date(unit)
-              wEnd.setDate(wEnd.getDate() + 7)
-              isJalon = jalonDate >= unit && jalonDate < wEnd
-            } else {
-              isJalon = unit.getMonth() === jalonDate.getMonth() && unit.getFullYear() === jalonDate.getFullYear()
-            }
-          }
-
-          const jHex = jalon.couleur?.replace('#', '') ?? 'E8602C'
-
-          setCell(FIXED_COLS + i, rowIdx, isJalon ? '▼' : '', {
-            fill: { fgColor: { rgb: isJalon ? jHex : 'FFFFFF' } },
-            font: { color: { rgb: 'FFFFFF' }, sz: 8 },
-            alignment: { horizontal: 'center' },
-            border: borderTask(false, false),
-          })
-        })
-        noteHauteur(rowIdx, dens.taskRow)
-        rowIdx++
-      })
-    }
-
-    // ── Légende ──
-    rowIdx += 2
-
-    // Couleurs de barres (zones ou lots) — même source que l'export PDF.
-    // Disposées comme les entrées ci-dessous : paires pastille + libellé, par
-    // rangs de six pour qu'une opération à douze zones ne parte pas hors page.
-    const legCouleurs = legendeCouleurs({ tasks, lots, zones, colorMode, groupMode })
-    const PAIRES_PAR_RANG = 6
-    let colMax = FIXED_COLS
-
-    if (legCouleurs.entrees.length) {
-      setCell(0, rowIdx, legCouleurs.titre, {
-        font: { bold: true, sz: Math.max(6, fontSize - 1), color: { rgb: '1F1B17' } },
-        alignment: { vertical: 'center' },
-        border: borderThin,
-      })
-      legCouleurs.entrees.forEach((e, i) => {
-        const rang = Math.floor(i / PAIRES_PAR_RANG)
-        const col = FIXED_COLS + (i % PAIRES_PAR_RANG) * 2
-        setCell(col, rowIdx + rang, '', {
-          fill: { fgColor: { rgb: sansDiese(e.couleur) } },
-          border: borderThin,
-        })
-        setCell(col + 1, rowIdx + rang, e.label, {
-          font: { sz: Math.max(6, fontSize - 1), color: { rgb: '5E5854' } },
-          alignment: { vertical: 'center' },
-          border: borderThin,
-        })
-        colMax = Math.max(colMax, col + 1)
-      })
-      const rangs = Math.ceil(legCouleurs.entrees.length / PAIRES_PAR_RANG)
-      for (let r = 0; r < rangs; r++) noteHauteur(rowIdx + r, dens.legendRow)
-      rowIdx += rangs + 1   // rang vide de séparation
-    }
-
-    const legendItems = [
-      { color: 'E8602C', label: `Tâche (couleur ${colorMode === 'zone' ? 'de la zone' : 'du lot'})` },
-      { color: pastel('#E8602C', 0.4), label: 'Délai avant / après' },
-      { color: BLOQUANTE_FILL, label: 'Période bloquante' },
-      { color: INFORMATIVE_FILL, label: 'Période informative' },
-      { color: 'F0EDE8', label: 'Week-end' },
-    ]
-    legendItems.forEach((item, i) => {
-      setCell(FIXED_COLS + i * 2, rowIdx, '', {
-        fill: { fgColor: { rgb: item.color } },
-        border: borderThin,
-      })
-      setCell(FIXED_COLS + i * 2 + 1, rowIdx, item.label, {
-        font: { sz: Math.max(6, fontSize - 1), color: { rgb: '5E5854' } },
-        alignment: { vertical: 'center' },
-        border: borderThin,
-      })
-    })
-    colMax = Math.max(colMax, FIXED_COLS + legendItems.length * 2 - 1)
-    noteHauteur(rowIdx, dens.legendRow)
-    rowIdx++
-
-    if (legCouleurs.note) {
-      setCell(0, rowIdx, legCouleurs.note, {
-        font: { italic: true, sz: Math.max(6, fontSize - 1), color: { rgb: '9C9591' } },
-        alignment: { vertical: 'center' },
-      })
-      noteHauteur(rowIdx, dens.legendRow)
-      rowIdx++
-    }
-
-    // ── Finaliser la feuille ──
-    ws['!ref'] = XLSX.utils.encode_range({
-      s: { r: 0, c: 0 },
-      e: { r: rowIdx - 1, c: Math.max(FIXED_COLS + timeUnits.length - 1, colMax) },
-    })
-    ws['!merges'] = merges
-
-    const colWidths = [{ wch: 6 }, { wch: 22 }, { wch: 5 }]
-    timeUnits.forEach(() => {
-      colWidths.push({ wch: viewMode === 'day' ? 3.5 : viewMode === 'week' ? 6 : 10 })
-    })
-    ws['!cols'] = colWidths
-    // Toute ligne non renseignée (séparateurs, lignes vides) reprend la hauteur
-    // d'une ligne de tâche.
-    ws['!rows'] = Array.from({ length: rowIdx }, (_, i) => rowHeights[i] ?? { hpt: dens.taskRow })
-
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, 'Planning')
-
-    const nomAffaire = affaire?.nom ?? affaire?.code_affaire ?? 'planning'
-    const date = formatDateISO(new Date())
-
-    XLSX.writeFile(wb, `Planning_${nomAffaire}_${date}.xlsx`)
   }
 
   // ── Zoom (panneau d'options) — un seul contrôle +/- dont l'effet dépend de la
@@ -1426,6 +1022,21 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
       backgroundColor: '#FAFAF9',
     }}>
       <div data-print="hidden">
+        {erreurEcriture && (
+          <div style={{
+            padding: '6px 12px', fontSize: 12, color: '#B8412C',
+            background: 'rgba(184,65,44,0.08)', borderBottom: '0.5px solid rgba(184,65,44,0.2)',
+            display: 'flex', alignItems: 'center', gap: 8,
+          }}>
+            <span>{erreurEcriture}. Le planning a été rechargé.</span>
+            <button
+              onClick={() => setErreurEcriture(null)}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#B8412C', textDecoration: 'underline' }}
+            >
+              Fermer
+            </button>
+          </div>
+        )}
         {undoError && (
           <div style={{
             padding: '6px 12px', fontSize: 12, color: '#B8412C',
@@ -1448,7 +1059,11 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
           onRedo={handleRedo}
           labelUndo={historique.labelUndo}
           labelRedo={historique.labelRedo}
-          onAddTask={() => handleOpenTaskModal(null, 'create', formatDateISO(getNextAvailableDate(tasks)))}
+          onAddTask={() => {
+            // Les valeurs d'un dessin précédent ne doivent pas préremplir la création
+            setCreateDefaults(null)
+            handleOpenTaskModal(null, 'create', formatDateISO(getNextAvailableDate(tasks)))
+          }}
           onOpenPeriodesBloquees={() => setShowPeriodesModal(true)}
           periodes={periodes}
           onExportPdf={() => setShowExportModal(true)}
@@ -1487,6 +1102,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
             dragOverTaskId={dragOverTaskId}
             onDragOverTaskChange={setDragOverTaskId}
           />
+          <div style={{ height: margeDefilement }} />
         </div>
 
         <div
@@ -1524,11 +1140,11 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
             updateSegmentLocal={updateSegmentLocal}
             onSegmentCommit={handleSegmentCommit}
             onSegmentDragBegin={handleSegmentDragBegin}
+            onSegmentDragCancel={cancelPending}
             dependances={dependances}
-            onSegmentDependencyCreate={addDependance}
-            onSegmentDependencyDelete={deleteDependance}
+            onSegmentDependencyCreate={handleLienEtenduCreate}
+            onSegmentDependencyDelete={handleLienEtenduDelete}
             periodes={periodes}
-            getNextWorkingDay={getNextWorkingDay}
             dragOverTaskId={dragOverTaskId}
           />
         </div>
@@ -1853,8 +1469,11 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
       <TacheEditModal
         open={showTaskModal}
         onClose={handleCloseTaskModal}
-        task={editingTask}
+        // Relue dans `tasks` : la modale n'est pas bloquante, la tâche peut
+        // bouger (glissement, propagation) pendant qu'elle est ouverte.
+        task={editingTask ? (tasks.find((t) => t.id === editingTask.id) ?? editingTask) : null}
         tasks={tasks}
+        dependances={dependances}
         lots={lots}
         onSave={handleSaveTask}
         onRequestDelete={(t) => setDeletingTask(t)}
@@ -1865,9 +1484,9 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
         lastUsedLotId={lastUsedLotId}
         createDefaults={createDefaults}
         getSegmentsForTache={getSegmentsForTache}
-        addSegment={addSegment}
-        updateSegment={updateSegment}
-        deleteSegment={deleteSegment}
+        addSegment={handleSegmentAjout}
+        updateSegment={handleSegmentModif}
+        deleteSegment={handleSegmentSuppression}
         periodes={periodes}
       />
 
@@ -1878,7 +1497,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
         createZone={createZone}
         updateZone={updateZone}
         reorderZones={reorderZones}
-        deleteZone={deleteZone}
+        deleteZone={handleZoneSuppression}
       />
 
       <LotsColorModal
@@ -1892,7 +1511,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
         open={showExportModal}
         onClose={() => setShowExportModal(false)}
         lots={lots}
-        tasks={tasks}
+        tasks={sortedTasks}
         jalons={jalons}
         affaire={affaire}
         zones={zones}
@@ -1918,9 +1537,9 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
         open={showPeriodesModal}
         onClose={() => setShowPeriodesModal(false)}
         periodes={periodes}
-        addPeriode={addPeriode}
-        updatePeriode={updatePeriode}
-        deletePeriode={deletePeriode}
+        addPeriode={handlePeriodeAjout}
+        updatePeriode={handlePeriodeModif}
+        deletePeriode={handlePeriodeSuppression}
       />
 
       {/* Modale confirmation suppression tâche */}

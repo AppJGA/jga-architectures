@@ -19,6 +19,7 @@ const BTN_PRIMARY = {
 export function LotsColorModal({ open, onClose, lots, onSave }) {
   const [draft, setDraft] = useState([])
   const [saving, setSaving] = useState(false)
+  const [erreur, setErreur] = useState(null)
 
   useEffect(() => {
     if (open) {
@@ -32,9 +33,12 @@ export function LotsColorModal({ open, onClose, lots, onSave }) {
 
   const handleSave = async () => {
     setSaving(true)
+    setErreur(null)
     try {
       await onSave(draft)
       onClose()
+    } catch (e) {
+      setErreur(`Enregistrement impossible : ${e.message}`)
     } finally {
       setSaving(false)
     }
@@ -73,6 +77,8 @@ export function LotsColorModal({ open, onClose, lots, onSave }) {
             Vous pouvez personnaliser ici leur couleur d'affichage.
           </p>
         </div>
+
+        {erreur && <p style={{ fontSize: 12, color: '#B8412C', marginBottom: 10 }}>{erreur}</p>}
 
         {/* Lots list */}
         <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10, paddingRight: 4 }}>

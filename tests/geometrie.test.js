@@ -3,15 +3,21 @@
 // La modale exprime la durée en jours ouvrés ; chaque vue (jour, semaine, mois)
 // doit arrêter la barre sur la date de fin que la modale affiche.
 
+// Les calculs en millisecondes cassent au changement d'heure : les tests
+// tournent dans le fuseau des utilisateurs.
+process.env.TZ = 'Europe/Paris'
+
 import assert from 'node:assert/strict'
 import { test, describe } from 'node:test'
 
 import {
   barreSemaine, barreMois, xAtDateMonth, redimensionnerBarre,
+  weekIndexFromRef, periodeGeometry, etenduePlanning, deplacerBarre,
 } from '../src/modules/chantier/planning/geometrie.js'
 import {
   formatDateISO, parseDate, dernierJourTache, dureeEntre,
 } from '../src/modules/chantier/planning/types.js'
+import { assignLabelLanes } from '../src/modules/chantier/planning/jalonLayout.js'
 
 const MOIS = (debutAnnee, debutMois, nb) => Array.from({ length: nb }, (_, i) => {
   const d = new Date(debutAnnee, debutMois + i, 1)
@@ -164,5 +170,119 @@ describe('redimensionnerBarre', () => {
       const r = redimensionnerBarre({ cote: 'right', debut: '2026-03-02', duree: 10, dx: -300, geo, minDuree: 5 })
       assert.equal(r.duree, 5)
     })
+  })
+})
+
+// ── Changement d'heure ───────────────────────────────────────────────────────
+
+describe('heure d’été', () => {
+  test('un lundi d’été reste dans sa semaine quand la référence est en hiver', () => {
+    assert.equal(weekIndexFromRef(parseDate('2026-03-30'), parseDate('2026-03-23')), 1)
+    assert.equal(weekIndexFromRef(parseDate('2026-11-02'), parseDate('2026-10-19')), 2)
+  })
+
+  test('une barre qui commence un lundi d’été ne déborde pas sur la semaine d’avant', () => {
+    const r = barreSemaine(parseDate('2026-03-30'), 5, parseDate('2026-03-23'), 40)
+    assert.deepEqual(r, { left: 40, width: 40 })
+  })
+})
+
+// ── Périodes ─────────────────────────────────────────────────────────────────
+
+describe('periodeGeometry', () => {
+  test('vue semaine : semaines entières, sans semaine de trop autour du changement d’heure', () => {
+    const geo = { viewMode: 'week', dateRef: parseDate('2026-03-23'), weekWidth: 40 }
+    const r = periodeGeometry(parseDate('2026-08-03'), parseDate('2026-08-23'), geo)
+    assert.deepEqual(r, { left: 19 * 40, width: 3 * 40 })
+  })
+
+  test('vue mois : au jour près, comme les barres', () => {
+    const months = MOIS(2026, 7, 6)
+    const geo = { viewMode: 'month', months, monthWidth: 80 }
+    const r = periodeGeometry(parseDate('2026-08-03'), parseDate('2026-08-21'), geo)
+    assert.equal(r.left, xAtDateMonth(parseDate('2026-08-03'), months, 80))
+    assert.equal(r.left + r.width, xAtDateMonth(parseDate('2026-08-22'), months, 80))
+  })
+})
+
+// ── Étendue du planning ──────────────────────────────────────────────────────
+
+describe('etenduePlanning', () => {
+  const T = (debut, duree, extra = {}) => ({ debut, duree, ...extra })
+
+  test('compte délais, segments et jalons', () => {
+    const e = etenduePlanning({
+      tasks: [T('2026-03-02', 5, { appro_actif: true, appro_duree: 5, delai_apres: 5 })],
+      segments: [{ date_debut: '2026-04-06', duree_jours: 2 }],
+      jalons: [{ date: '2026-02-16' }],
+    })
+    assert.equal(formatDateISO(e.debut), '2026-02-16')
+    assert.equal(formatDateISO(e.fin), '2026-04-07')
+  })
+
+  test('le délai avant saute les fermetures', () => {
+    const e = etenduePlanning({
+      tasks: [T('2027-01-04', 10, { appro_actif: true, appro_duree: 10 })],
+      periodes: [NOEL],
+    })
+    assert.equal(formatDateISO(e.debut), '2026-12-07')
+  })
+
+  test('planning vide : null', () => {
+    assert.equal(etenduePlanning({ tasks: [] }), null)
+  })
+})
+
+// ── Glisser une barre ────────────────────────────────────────────────────────
+
+describe('deplacerBarre', () => {
+  const dateRef = parseDate('2026-03-02')
+
+  test('vue semaine : par semaines entières, calé sur le lundi, dans le sens du geste', () => {
+    const geo = { viewMode: 'week', dateRef, weekWidth: 40 }
+    assert.equal(formatDateISO(deplacerBarre({ debut: '2026-03-11', dx: 40, geo })), '2026-03-16')
+    assert.equal(formatDateISO(deplacerBarre({ debut: '2026-03-11', dx: -40, geo })), '2026-03-02')
+    assert.equal(formatDateISO(deplacerBarre({ debut: '2026-03-11', dx: 10, geo })), '2026-03-11',
+      'un tremblement ne déplace rien')
+  })
+
+  test('vue mois : suit le curseur au jour près, sans sauter au 1er du mois', () => {
+    const geo = { viewMode: 'month', months: MOIS(2026, 2, 6), monthWidth: 80 }
+    // 8 px vers la gauche depuis le ven 20 mars ≈ 3 jours plus tôt → mar 17
+    assert.equal(formatDateISO(deplacerBarre({ debut: '2026-03-20', dx: -8, geo })), '2026-03-17')
+  })
+
+  test('vue jour : la colonne sous le bord gauche, week-end repoussé au lundi', () => {
+    const dayPositions = [0]
+    for (let i = 0; i < 40; i++) {
+      const d = new Date(2026, 2, 2 + i)
+      dayPositions.push(dayPositions[i] + (d.getDay() % 6 === 0 ? 14 : 40))
+    }
+    const geo = { viewMode: 'day', dateRef, dayPositions, dayWidth: 40 }
+    // lun 9 (x=228) − 68 px = ven 6
+    assert.equal(formatDateISO(deplacerBarre({ debut: '2026-03-09', dx: -68, geo })), '2026-03-06')
+    // lun 2 + 160 px = ven 6
+    assert.equal(formatDateISO(deplacerBarre({ debut: '2026-03-02', dx: 160, geo })), '2026-03-06')
+    // lâcher sur le samedi → lundi
+    assert.equal(formatDateISO(deplacerBarre({ debut: '2026-03-02', dx: 205, geo })), '2026-03-09')
+  })
+
+  test('une fermeture repousse le début', () => {
+    const geo = { viewMode: 'week', dateRef, weekWidth: 40 }
+    const conges = [{ date_debut: '2026-03-09', date_fin: '2026-03-10' }]
+    assert.equal(formatDateISO(deplacerBarre({ debut: '2026-03-02', dx: 40, geo, periodes: conges })), '2026-03-11')
+  })
+})
+
+// ── Libellés de jalons ───────────────────────────────────────────────────────
+
+describe('assignLabelLanes avec largeurs', () => {
+  test('un long libellé repousse le jalon suivant sur une autre ligne', () => {
+    // 100 px d'écart, mais le premier libellé en fait 150
+    assert.deepEqual(assignLabelLanes([0, 100], 80, [150, 60]), [0, 1])
+  })
+
+  test('sans largeurs, l’écart minimal suffit comme avant', () => {
+    assert.deepEqual(assignLabelLanes([0, 100], 80), [0, 0])
   })
 })

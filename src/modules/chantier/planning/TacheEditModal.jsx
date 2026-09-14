@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Trash2, Save, X, Plus, Minimize2, Maximize2, ChevronRight } from 'lucide-react'
-import { parseDate, formatDateISO, computeLag, addWorkingDays, dernierJourTache, dureeEntre } from './types'
+import { parseDate, formatDateISO, computeLag, dernierJourTache, dureeEntre, addWorkingDaysBlocked } from './types'
+import { creeraitUnCycle, entityKey } from './propagation'
 import { DatePickerISO } from '../../../shared/components/DatePickerISO'
 
 const LABEL = {
@@ -70,12 +71,39 @@ function emptyForm(lots, defaultDebut, lastUsedLotId) {
     zone_id: null,
     depends_on: null,
     lag_days: null,
+    lag_propose: undefined,
     appro_actif: false,
     appro_duree: 0,
     appro_materiau: null,
     delai_apres: 0,
     label_apres: null,
   }
+}
+
+// Champ enregistré en sortant du champ ou sur Entrée, pas à chaque frappe :
+// chaque frappe lançait une écriture et le champ, piloté par la valeur en base,
+// perdait des lettres en attendant la réponse.
+function ChampDiffere({ valeur, onValider, ...props }) {
+  const [brouillon, setBrouillon] = useState(valeur)
+  const [actif, setActif] = useState(false)
+  const [valeurVue, setValeurVue] = useState(valeur)
+  if (!actif && valeur !== valeurVue) {
+    setValeurVue(valeur)
+    setBrouillon(valeur)
+  }
+  return (
+    <input
+      {...props}
+      value={brouillon}
+      onChange={(e) => setBrouillon(e.target.value)}
+      onFocus={() => setActif(true)}
+      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur() } }}
+      onBlur={() => {
+        setActif(false)
+        if (brouillon !== valeur) onValider(brouillon)
+      }}
+    />
+  )
 }
 
 // Prochain numéro disponible pour un lot donné (ex : "01" → "02")
@@ -88,11 +116,16 @@ function getNextNumero(lotId, tasks) {
 
 export function TacheEditModal({
   open, onClose, task, tasks, lots, onSave, onRequestDelete, mode, zones = [], colorMode = 'lot', defaultDebut = null,
-  lastUsedLotId = null, createDefaults = null,
+  lastUsedLotId = null, createDefaults = null, dependances = [],
   getSegmentsForTache, addSegment, updateSegment, deleteSegment, periodes = [],
 }) {
   const [form, setForm] = useState(emptyForm(lots))
+  // Formulaire tel qu'à l'ouverture : à l'enregistrement, un champ que
+  // l'utilisateur n'a pas touché reprend la valeur courante de la tâche, qui a
+  // pu bouger entre-temps (glissement, propagation) — la modale n'est pas bloquante.
+  const formInitial = useRef(null)
   const [saving, setSaving] = useState(false)
+  const [erreur, setErreur] = useState(null)
   // Saisir la fin de la tâche par sa durée ou par sa date — les deux restent
   // synchronisées, seule la façon de l'exprimer change.
   const [inputMode, setInputMode] = useState('duree')
@@ -136,31 +169,26 @@ export function TacheEditModal({
     return () => window.removeEventListener('resize', handleResize)
   }, [])
 
+  // Initialisé à l'ouverture, au changement de tâche ou de mode — pas à chaque
+  // changement de `tasks` : glisser une barre pendant la saisie effaçait le
+  // formulaire, et l'enregistrer réécrivait l'ancien début.
   useEffect(() => {
     if (!open) return
+    let initial
     if (task) {
-      setForm({
-        ...task,
-        debut: typeof task.debut === 'string'
-          ? task.debut.split('T')[0]
-          : formatDateISO(parseDate(task.debut)),
-      })
+      initial = { ...task, debut: String(task.debut).split('T')[0], lag_propose: undefined }
     } else {
       const base = emptyForm(lots, defaultDebut, lastUsedLotId)
       // Valeurs issues d'un dessin cliquer-glisser dans la timeline (debut/duree/
       // lot_id/zone_id) — remplacent les valeurs par défaut correspondantes.
       const merged = createDefaults ? { ...base, ...createDefaults } : base
-      setForm({ ...merged, num_tache: merged.lot_id ? getNextNumero(merged.lot_id, tasks) : '' })
+      initial = { ...merged, num_tache: merged.lot_id ? getNextNumero(merged.lot_id, tasks) : '' }
     }
-  }, [task, open, lots, defaultDebut, lastUsedLotId, tasks, createDefaults])
-
-  // Si le dernier lot utilisé change pendant que la modale de création est déjà
-  // ouverte, ne patcher que le champ lot (sans écraser le reste du formulaire).
-  useEffect(() => {
-    if (mode === 'create' && lastUsedLotId) {
-      setForm((f) => ({ ...f, lot_id: lastUsedLotId }))
-    }
-  }, [lastUsedLotId, mode])
+    formInitial.current = initial
+    setForm(initial)
+    setErreur(null)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, task?.id, mode, createDefaults])
 
   const set = (key, value) => setForm((f) => ({ ...f, [key]: value }))
 
@@ -169,18 +197,14 @@ export function TacheEditModal({
   const handleAddSegment = async () => {
     if (!task?.id || !addSegment) return
 
-    // Lendemain ouvré de la fin de la tâche principale
-    let defaultDate = addWorkingDays(
-      addWorkingDays(parseDate(form.debut), (form.duree ?? 5) - 1),
-      1
-    )
+    // Lendemain ouvré de la fin de la tâche principale, fermetures comprises
+    const lendemainOuvre = (debut, duree) =>
+      addWorkingDaysBlocked(dernierJourTache(debut, duree ?? 5, periodes), 1, periodes)
+    let defaultDate = lendemainOuvre(form.debut, form.duree)
 
     if (segmentsDeTache.length > 0) {
       const last = segmentsDeTache[segmentsDeTache.length - 1]
-      const lastNext = addWorkingDays(
-        addWorkingDays(parseDate(last.date_debut), (last.duree_jours ?? 5) - 1),
-        1
-      )
+      const lastNext = lendemainOuvre(last.date_debut, last.duree_jours)
       if (lastNext > defaultDate) defaultDate = lastNext
     }
 
@@ -191,27 +215,47 @@ export function TacheEditModal({
     })
   }
 
+  // Nouveau lot : prochain numéro libre de ce lot (modifiable), en création
+  // comme en modification — sinon deux « 03 » cohabitaient dans le lot d'arrivée
   const handleLotChange = (lotId) => {
-    if (mode === 'create') {
-      setForm((f) => ({ ...f, lot_id: lotId, num_tache: getNextNumero(lotId, tasks) }))
-    } else {
-      set('lot_id', lotId)
-    }
+    const lotInitial = formInitial.current?.lot_id
+    setForm((f) => ({
+      ...f,
+      lot_id: lotId,
+      num_tache: mode !== 'create' && lotId === lotInitial
+        ? formInitial.current.num_tache
+        : getNextNumero(lotId, tasks.filter((t) => t.id !== task?.id)),
+    }))
   }
 
   const handleDependencyChange = (v) => {
     const newDependsOn = v === 'none' ? null : Number(v)
     if (newDependsOn == null) {
-      setForm((f) => ({ ...f, depends_on: null, lag_days: null }))
+      setForm((f) => ({ ...f, depends_on: null, lag_days: null, lag_propose: undefined }))
       return
     }
     const parentTask = tasks.find((t) => t.id === newDependsOn)
     if (!parentTask || !form.debut) {
-      setForm((f) => ({ ...f, depends_on: newDependsOn }))
+      setForm((f) => ({ ...f, depends_on: newDependsOn, lag_propose: undefined }))
       return
     }
+    // L'écart proposé est mémorisé : s'il est retouché avant d'enregistrer,
+    // c'est une saisie, et la tâche sera replacée d'après lui.
     const lag = computeLag(parentTask.debut, parentTask.duree, form.debut, periodes)
-    setForm((f) => ({ ...f, depends_on: newDependsOn, lag_days: lag }))
+    setForm((f) => ({ ...f, depends_on: newDependsOn, lag_days: lag, lag_propose: lag }))
+  }
+
+  // Champs non modifiés dans la modale : valeur courante de la tâche
+  const formAEnvoyer = () => {
+    const initial = formInitial.current
+    if (!task || !initial) return form
+    const envoi = { ...form }
+    Object.keys(form).forEach((c) => {
+      if (c !== 'lag_propose' && form[c] === initial[c] && c in task) envoi[c] = task[c]
+    })
+    envoi.debut = String(envoi.debut).split('T')[0]
+    if (form.lag_days === initial.lag_days && form.depends_on === initial.depends_on) envoi.lag_propose = undefined
+    return envoi
   }
 
   const handleSubmit = async (e) => {
@@ -220,9 +264,13 @@ export function TacheEditModal({
     // HTML native (`required` y est sans effet), d'où ce contrôle explicite.
     if (!form.debut) return
     setSaving(true)
+    setErreur(null)
     try {
-      await onSave(form)
+      await onSave(formAEnvoyer())
       onClose()
+    } catch (err) {
+      // La modale reste ouverte avec la saisie : rien n'est perdu
+      setErreur(err?.message ?? 'Enregistrement impossible')
     } finally {
       setSaving(false)
     }
@@ -265,7 +313,10 @@ export function TacheEditModal({
     }
   }, [isDraggingModal])
 
-  const dependencyOptions = tasks.filter((t) => t.id !== task?.id)
+  // Ni la tâche elle-même, ni ses descendantes : un lien vers l'une d'elles
+  // fermerait une boucle.
+  const dependencyOptions = tasks.filter((t) => t.id !== task?.id
+    && (!task?.id || !creeraitUnCycle(entityKey('task', t.id), entityKey('task', task.id), tasks, dependances)))
 
   if (!open) return null
 
@@ -544,7 +595,7 @@ export function TacheEditModal({
                 <label style={LABEL}>Délai après fin de la tâche précédente (j. ouvrés)</label>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   <input
-                    type="number" min={-30} value={form.lag_days ?? 0}
+                    type="number" value={form.lag_days ?? 0}
                     onChange={(e) => set('lag_days', Number(e.target.value))}
                     style={{ ...INPUT, width: 96, fontVariantNumeric: 'tabular-nums' }}
                     onFocus={e => { e.target.style.borderColor = '#E8602C'; e.target.style.boxShadow = '0 0 0 3px rgba(232,96,44,0.12)' }}
@@ -721,10 +772,9 @@ export function TacheEditModal({
                           NOM (optionnel)
                         </label>
                       )}
-                      <input
-                        type="text"
-                        value={seg.nom ?? ''}
-                        onChange={(e) => updateSegment(seg.id, { nom: e.target.value || null })}
+                      <ChampDiffere
+                        valeur={seg.nom ?? ''}
+                        onValider={(v) => updateSegment(seg.id, { nom: v || null })}
                         placeholder={task.nom}
                         style={{
                           width: '100%', padding: '6px 8px', fontSize: 12,
@@ -740,11 +790,11 @@ export function TacheEditModal({
                           DURÉE (j)
                         </label>
                       )}
-                      <input
+                      <ChampDiffere
                         type="number"
                         min={1}
-                        value={seg.duree_jours}
-                        onChange={(e) => updateSegment(seg.id, { duree_jours: Math.max(1, parseInt(e.target.value, 10) || 1) })}
+                        valeur={String(seg.duree_jours ?? 1)}
+                        onValider={(v) => updateSegment(seg.id, { duree_jours: Math.max(1, parseInt(v, 10) || 1) })}
                         style={{
                           width: '100%', padding: '6px 8px', fontSize: 12,
                           border: '0.5px solid rgba(0,0,0,0.12)', borderRadius: 2,
@@ -794,7 +844,9 @@ export function TacheEditModal({
                     {/* Supprimer */}
                     <button
                       type="button"
-                      onClick={() => deleteSegment(seg.id)}
+                      onClick={() => {
+                        if (window.confirm('Supprimer ce segment et ses liens ?')) deleteSegment(seg.id)
+                      }}
                       style={{
                         width: 28, height: 28,
                         border: '0.5px solid rgba(220,38,38,0.3)',
@@ -813,6 +865,11 @@ export function TacheEditModal({
           </div>
 
           {/* Pied fixe — toujours visible, quelle que soit la hauteur du formulaire */}
+          {erreur && (
+            <p style={{ flexShrink: 0, fontSize: 12, color: '#B8412C', padding: '8px 16px 0', margin: 0 }}>
+              {erreur}
+            </p>
+          )}
           <div style={{
             flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
             gap: 8, padding: '10px 16px', background: 'white',

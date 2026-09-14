@@ -25,36 +25,43 @@ function PeriodeRow({ periode, onUpdate, onDelete, onPastilleClick, autoFocus })
     if (autoFocus && inputRef.current) inputRef.current.focus()
   }, [autoFocus])
 
-  const error = !label.trim()
-    ? 'Le label est requis'
-    : (dateDebut && dateFin && dateFin < dateDebut)
-      ? 'La date de fin doit être postérieure ou égale à la date de début'
-      : null
+  const error = !label.trim() ? 'Le label est requis' : null
+
+  // Dernière date modifiée : c'est l'autre qui suit si elles se croisent
+  const dernierChamp = useRef(null)
 
   // Persiste au blur uniquement (pas à chaque onChange) : des commits concurrents
   // par frappe pouvaient se résoudre dans le désordre et écraser une saisie plus
   // récente par une valeur plus ancienne, donnant l'impression que la date « revient »
   // toujours à la même valeur.
+  //
+  // L'ajustement croisé des dates se fait ici aussi, pas pendant la frappe : un
+  // champ date émet des valeurs intermédiaires (« 0002-08-15 » en tapant l'année)
+  // qui déplaçaient l'autre date.
   const commit = () => {
-    if (!label.trim() || !dateDebut || !dateFin || dateFin < dateDebut) return
-    onUpdate(periode.id, { label, date_debut: dateDebut, date_fin: dateFin })
+    let debut = dateDebut
+    let fin = dateFin
+    if (debut && fin && fin < debut) {
+      if (dernierChamp.current === 'fin') debut = fin
+      else fin = debut
+      setDateDebut(debut)
+      setDateFin(fin)
+    }
+    if (!label.trim() || !debut || !fin) return
+    if (label === periode.label && debut === periode.date_debut && fin === periode.date_fin) return
+    onUpdate(periode.id, { label, date_debut: debut, date_fin: fin })
   }
 
   const handleLabelChange = (e) => setLabel(e.target.value)
 
   const handleDateDebutChange = (e) => {
-    const value = e.target.value
-    setDateDebut(value)
-    // Si le début dépasse la fin actuelle, la fin suit pour rester valide —
-    // sans ça, décaler le début d'une période nouvellement créée (où début = fin)
-    // était silencieusement bloqué par la validation.
-    if (dateFin && value > dateFin) setDateFin(value)
+    dernierChamp.current = 'debut'
+    setDateDebut(e.target.value)
   }
 
   const handleDateFinChange = (e) => {
-    const value = e.target.value
-    setDateFin(value)
-    if (dateDebut && value < dateDebut) setDateDebut(value)
+    dernierChamp.current = 'fin'
+    setDateFin(e.target.value)
   }
 
   const handleDelete = () => {
@@ -164,23 +171,39 @@ function PeriodeRow({ periode, onUpdate, onDelete, onPastilleClick, autoFocus })
 export function PeriodesBloqueesModal({ open, onClose, periodes, addPeriode, updatePeriode, deletePeriode }) {
   const [focusNewId, setFocusNewId] = useState(null)
   const [pickerState, setPickerState] = useState(null)
+  // Nouvelle période pas encore enregistrée : insérée seulement une fois son
+  // libellé saisi. L'insérer aussitôt créait une fermeture bloquante sur
+  // aujourd'hui, qui allongeait les barres même si l'on refermait sans remplir.
+  const [brouillon, setBrouillon] = useState(null)
 
-  useEffect(() => { if (!open) setPickerState(null) }, [open])
+  useEffect(() => { if (!open) { setPickerState(null); setBrouillon(null) } }, [open])
 
   if (!open) return null
 
-  const handleAdd = async () => {
+  const handleAdd = () => {
     const today = todayISO()
-    const { data } = await addPeriode({ label: '', date_debut: today, date_fin: today, couleur: '#B8412C' })
-    if (data) setFocusNewId(data.id)
+    setBrouillon({ id: 'brouillon', label: '', date_debut: today, date_fin: today, couleur: '#B8412C', est_bloquante: true })
+    setFocusNewId('brouillon')
   }
+
+  const majBrouillon = async (_id, changes) => {
+    const complet = { ...brouillon, ...changes }
+    if (!complet.label?.trim()) { setBrouillon(complet); return }
+    // eslint-disable-next-line no-unused-vars
+    const { id, ...data } = complet
+    const { data: cree, error } = await addPeriode(data)
+    if (!error) { setBrouillon(null); setFocusNewId(cree?.id ?? null) }
+  }
+
+  const liste = brouillon ? [...periodes, brouillon] : periodes
+  const miseAJour = (id, changes) => (id === 'brouillon' ? majBrouillon(id, changes) : updatePeriode(id, changes))
 
   const handlePastilleClick = (e, periode) => {
     const rect = e.currentTarget.getBoundingClientRect()
     setPickerState({ periodeId: periode.id, x: rect.left, y: rect.bottom + 8 })
   }
 
-  const pickerPeriode = pickerState ? periodes.find((p) => p.id === pickerState.periodeId) : null
+  const pickerPeriode = pickerState ? liste.find((p) => p.id === pickerState.periodeId) : null
 
   return (
     <div style={{
@@ -207,17 +230,17 @@ export function PeriodesBloqueesModal({ open, onClose, periodes, addPeriode, upd
 
         {/* List */}
         <div style={{ flex: 1, overflowY: 'auto', marginBottom: 16 }}>
-          {periodes.length === 0 ? (
+          {liste.length === 0 ? (
             <p style={{ fontSize: 12, color: '#9C9591', textAlign: 'center', padding: '24px 0' }}>
               Aucune période — ajoutez-en une ci-dessous.
             </p>
           ) : (
-            periodes.map((periode) => (
+            liste.map((periode) => (
               <PeriodeRow
                 key={periode.id}
                 periode={periode}
-                onUpdate={updatePeriode}
-                onDelete={deletePeriode}
+                onUpdate={miseAJour}
+                onDelete={periode.id === 'brouillon' ? () => setBrouillon(null) : deletePeriode}
                 onPastilleClick={handlePastilleClick}
                 autoFocus={periode.id === focusNewId}
               />
@@ -253,7 +276,7 @@ export function PeriodesBloqueesModal({ open, onClose, periodes, addPeriode, upd
           }}>
             <ColorPickerField
               value={pickerPeriode.couleur ?? '#B8412C'}
-              onChange={(couleur) => updatePeriode(pickerState.periodeId, { couleur })}
+              onChange={(couleur) => miseAJour(pickerState.periodeId, { couleur })}
             />
           </div>
         </>,

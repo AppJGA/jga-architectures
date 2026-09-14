@@ -66,16 +66,28 @@ function JalonRow({ jalon, onUpdate, onDelete }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState({ label: jalon.label, date: jalon.date, couleur: jalon.couleur })
   const [confirming, setConfirming] = useState(false)
+  const [erreur, setErreur] = useState(null)
 
   const handleSave = async () => {
     if (!draft.label.trim() || !draft.date) return
-    await onUpdate(jalon.id, { label: draft.label.trim(), date: draft.date, couleur: draft.couleur })
+    const { error } = await onUpdate(jalon.id, { label: draft.label.trim(), date: draft.date, couleur: draft.couleur })
+    if (error) { setErreur(`Modification impossible : ${error.message}`); return }
+    setErreur(null)
     setEditing(false)
   }
 
   const handleDelete = async () => {
     if (!confirming) { setConfirming(true); return }
-    await onDelete(jalon.id)
+    const { error } = await onDelete(jalon.id)
+    if (error) setErreur(`Suppression impossible : ${error.message}`)
+  }
+
+  // Rouvrir l'édition repart du jalon enregistré, pas d'une saisie abandonnée
+  const ouvrirEdition = () => {
+    setDraft({ label: jalon.label, date: jalon.date, couleur: jalon.couleur })
+    setErreur(null)
+    setEditing(true)
+    setConfirming(false)
   }
 
   if (editing) {
@@ -120,11 +132,13 @@ function JalonRow({ jalon, onUpdate, onDelete }) {
             <X size={13} />
           </button>
         </div>
+        {erreur && <p style={{ fontSize: 11, color: '#B8412C', margin: '4px 0 0', gridColumn: '1 / -1' }}>{erreur}</p>}
       </div>
     )
   }
 
   return (
+    <>
     <div style={{
       display: 'flex', alignItems: 'center', gap: 10,
       padding: '8px 0', borderBottom: '0.5px solid rgba(0,0,0,0.06)',
@@ -134,7 +148,7 @@ function JalonRow({ jalon, onUpdate, onDelete }) {
         {jalon.label}
       </span>
       <span style={{ fontSize: 12, color: '#9C9591', flexShrink: 0 }}>{formatDate(jalon.date)}</span>
-      <button type="button" onClick={() => { setEditing(true); setConfirming(false) }}
+      <button type="button" onClick={ouvrirEdition}
         style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9C9591', padding: 4, borderRadius: 3, display: 'flex' }}
         onMouseEnter={e => e.currentTarget.style.color = '#E8602C'}
         onMouseLeave={e => e.currentTarget.style.color = '#9C9591'}
@@ -158,6 +172,8 @@ function JalonRow({ jalon, onUpdate, onDelete }) {
         {confirming && 'Confirmer'}
       </button>
     </div>
+    {erreur && <p style={{ fontSize: 11, color: '#B8412C', margin: '4px 0 0', gridColumn: '1 / -1' }}>{erreur}</p>}
+    </>
   )
 }
 
@@ -187,13 +203,15 @@ export function JalonModal({ open, onClose, jalons, affaireId, onRefetch }) {
   }
 
   const handleUpdate = async (id, changes) => {
-    await supabase.from('planning_jalons').update(changes).eq('id', id)
+    const resultat = await supabase.from('planning_jalons').update(changes).eq('id', id)
     await onRefetch()
+    return resultat
   }
 
   const handleDelete = async (id) => {
-    await supabase.from('planning_jalons').delete().eq('id', id)
+    const resultat = await supabase.from('planning_jalons').delete().eq('id', id)
     await onRefetch()
+    return resultat
   }
 
   if (!open) return null

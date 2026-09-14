@@ -16,7 +16,11 @@ function ZoneRow({
   const debounceRef = useRef(null)
   const inputRef = useRef(null)
 
-  useEffect(() => { setNom(zone.nom) }, [zone.nom])
+  // Resynchronisé seulement hors saisie : le retour d'un enregistrement
+  // différé écrasait sinon les lettres tapées entre-temps.
+  useEffect(() => {
+    if (document.activeElement !== inputRef.current) setNom(zone.nom)
+  }, [zone.nom])
 
   useEffect(() => {
     if (autoFocus && inputRef.current) inputRef.current.focus()

@@ -91,6 +91,31 @@ function buildChildEdges(parentEdges) {
 
 // ── Propagation ───────────────────────────────────────────────────────────────
 
+// Dates de toutes les entités, sous une forme commune tâche / segment
+function instantaneDates(tasks, segments) {
+  const snapshot = new Map()
+  tasks.forEach((t) => snapshot.set(entityKey('task', t.id), {
+    type: 'task', id: t.id, debut: t.debut, duree: t.duree,
+  }))
+  segments.forEach((s) => snapshot.set(entityKey('segment', s.id), {
+    type: 'segment', id: s.id, debut: s.date_debut, duree: s.duree_jours,
+  }))
+  return snapshot
+}
+
+// Début au plus tôt d'une entité, contraint par l'ensemble de ses parents
+function debutAuPlusTot(key, parentEdges, snapshot, periodes) {
+  let best = null
+  ;(parentEdges.get(key) ?? []).forEach(({ parentKey, lag }) => {
+    const parent = snapshot.get(parentKey)
+    if (!parent?.debut) return
+    const duree = Math.max(1, Number(parent.duree) || 1)
+    const start = skipBlockedPeriods(applyLag(parent.debut, duree, lag, periodes), periodes)
+    if (!best || start > best) best = start
+  })
+  return best
+}
+
 /**
  * Calcule toutes les entités à décaler après le déplacement/redimensionnement
  * d'une tâche ou d'un segment.
@@ -103,14 +128,7 @@ export function propagateAllDependencies({
   changedType, changedId, newDebut, newDuree,
   periodes = [],
 }) {
-  // Snapshot mutable des dates de toutes les entités
-  const snapshot = new Map()
-  tasks.forEach((t) => snapshot.set(entityKey('task', t.id), {
-    type: 'task', id: t.id, debut: t.debut, duree: t.duree,
-  }))
-  segments.forEach((s) => snapshot.set(entityKey('segment', s.id), {
-    type: 'segment', id: s.id, debut: s.date_debut, duree: s.duree_jours,
-  }))
+  const snapshot = instantaneDates(tasks, segments)
 
   const changedKey = entityKey(changedType, changedId)
   const changed = snapshot.get(changedKey)
@@ -119,19 +137,7 @@ export function propagateAllDependencies({
 
   const parentEdges = buildParentEdges(tasks, dependances)
   const childEdges = buildChildEdges(parentEdges)
-
-  // Début au plus tôt d'une entité, contraint par l'ensemble de ses parents
-  const earliestStart = (key) => {
-    let best = null
-    ;(parentEdges.get(key) ?? []).forEach(({ parentKey, lag }) => {
-      const parent = snapshot.get(parentKey)
-      if (!parent?.debut) return
-      const duree = Math.max(1, Number(parent.duree) || 1)
-      const start = skipBlockedPeriods(applyLag(parent.debut, duree, lag, periodes), periodes)
-      if (!best || start > best) best = start
-    })
-    return best
-  }
+  const earliestStart = (key) => debutAuPlusTot(key, parentEdges, snapshot, periodes)
 
   const updates = new Map()
   const queue = [changedKey]
@@ -203,7 +209,8 @@ export function endDateChanged(avant, apres) {
 
 /**
  * Lien historique `depends_on` / `lag_days` : un écart saisi (modale) replace
- * la tâche, un début modifié (glissement ou modale) recalcule l'écart.
+ * la tâche, un début modifié (glissement ou modale) ou un nouveau parent
+ * recalcule l'écart. `avant` vaut null à la création.
  *
  * @returns { debut, lag_days } à enregistrer
  */
@@ -212,7 +219,11 @@ export function reconcilierLienHistorique(avant, apres, parent, periodes = []) {
   if (apres.depends_on == null || !parent?.debut || !apres.debut) return resultat
 
   const memeLien = avant != null && avant.depends_on === apres.depends_on
-  const lagSaisi = memeLien && (apres.lag_days ?? 0) !== (avant.lag_days ?? 0)
+  // L'écart de référence : celui que la modale a proposé au choix du parent
+  // (`lag_propose`), sinon celui du lien existant. S'il a été modifié, c'est
+  // une saisie — y compris quand le parent vient d'être choisi.
+  const reference = apres.lag_propose !== undefined ? apres.lag_propose : (memeLien ? avant.lag_days : undefined)
+  const lagSaisi = reference !== undefined && (apres.lag_days ?? 0) !== (reference ?? 0)
   if (lagSaisi) {
     const debut = skipBlockedPeriods(applyLag(parent.debut, parent.duree, apres.lag_days, periodes), periodes)
     return { debut: formatDateISO(debut), lag_days: apres.lag_days }
@@ -247,4 +258,66 @@ export function lagsDependancesCible({ type, id, debut, tasks, segments, dependa
       return lag === (dep.lag_jours ?? 0) ? null : { id: dep.id, lag_jours: lag }
     })
     .filter(Boolean)
+}
+
+/**
+ * Un lien source → cible fermerait-il une boucle ? C'est le cas si la source
+ * descend déjà de la cible (ou si c'est la même entité). Une boucle fait
+ * avancer les tâches par à-coups à chaque propagation.
+ *
+ * @param sourceKey, cibleKey — clés `entityKey`
+ */
+export function creeraitUnCycle(sourceKey, cibleKey, tasks, dependances) {
+  if (sourceKey === cibleKey) return true
+  const enfants = buildChildEdges(buildParentEdges(tasks, dependances))
+  const vus = new Set([cibleKey])
+  const file = [cibleKey]
+  while (file.length > 0) {
+    const cle = file.shift()
+    for (const enfant of enfants.get(cle) ?? []) {
+      if (enfant === sourceKey) return true
+      if (!vus.has(enfant)) { vus.add(enfant); file.push(enfant) }
+    }
+  }
+  return false
+}
+
+/**
+ * Recale tout le planning sur ses liens, sans entité de départ : sert quand ce
+ * qui change n'est pas une tâche mais le calendrier (fermeture ajoutée,
+ * modifiée ou supprimée). Les entités sont traitées parents d'abord ; celles
+ * prises dans un cycle sont laissées en place.
+ *
+ * @returns Map<cléEntité, { type, id, debut }> — les entités à décaler
+ */
+export function propagerDepuisRacines({ tasks, segments, dependances, periodes = [] }) {
+  const snapshot = instantaneDates(tasks, segments)
+  const parentEdges = buildParentEdges(tasks, dependances)
+  const childEdges = buildChildEdges(parentEdges)
+
+  // Ordre topologique (Kahn) : un enfant n'est calculé qu'une fois tous ses
+  // parents recalés.
+  const restants = new Map()
+  snapshot.forEach((_, cle) => {
+    restants.set(cle, (parentEdges.get(cle) ?? []).filter(({ parentKey }) => snapshot.has(parentKey)).length)
+  })
+  const file = [...restants].filter(([, n]) => n === 0).map(([cle]) => cle)
+  const updates = new Map()
+
+  while (file.length > 0) {
+    const cle = file.shift()
+    const entite = snapshot.get(cle)
+    const debut = debutAuPlusTot(cle, parentEdges, snapshot, periodes)
+    if (debut && formatDateISO(debut) !== entite.debut) {
+      const maj = { ...entite, debut: formatDateISO(debut) }
+      snapshot.set(cle, maj)
+      updates.set(cle, maj)
+    }
+    ;(childEdges.get(cle) ?? []).forEach((enfant) => {
+      if (!restants.has(enfant)) return
+      restants.set(enfant, restants.get(enfant) - 1)
+      if (restants.get(enfant) === 0) file.push(enfant)
+    })
+  }
+  return updates
 }

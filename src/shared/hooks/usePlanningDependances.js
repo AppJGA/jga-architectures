@@ -55,5 +55,9 @@ export function usePlanningDependances(affaireId) {
       supabase.from('planning_dependances').update({ lag_jours: m.lag_jours }).eq('id', m.id))
   }
 
-  return { dependances, loading, addDependance, deleteDependance, updateLags, refetch: fetch }
+  // Remplacement complet du state local (pas d'appel Supabase) : annuler/rétablir,
+  // et liens supprimés en cascade par la base avec leur tâche ou segment.
+  const replaceDependances = useCallback((liste) => { setDependances(liste) }, [])
+
+  return { dependances, loading, addDependance, deleteDependance, updateLags, replaceDependances, refetch: fetch }
 }

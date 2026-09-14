@@ -26,6 +26,38 @@ function rowMetrics(rowHeight) {
   }
 }
 
+// Avancement saisi au clavier : brouillon local, enregistré en sortant du champ
+// ou sur Entrée. À chaque frappe, « 100 » créait trois étapes d'historique et
+// trois écritures concurrentes dont la plus lente pouvait l'emporter.
+function ChampAvancement({ valeur, onValider, style, onFocus, onBlur }) {
+  const [brouillon, setBrouillon] = useState(String(valeur ?? 0))
+  const [actif, setActif] = useState(false)
+  // Valeur venue d'ailleurs (annulation, rechargement) : reprise hors saisie
+  const [valeurVue, setValeurVue] = useState(valeur)
+  if (!actif && valeur !== valeurVue) {
+    setValeurVue(valeur)
+    setBrouillon(String(valeur ?? 0))
+  }
+
+  const valider = () => {
+    const v = Math.max(0, Math.min(100, Math.round(Number(brouillon) || 0)))
+    setBrouillon(String(v))
+    setValeurVue(v)
+    if (v !== valeur) onValider(v)
+  }
+
+  return (
+    <input
+      type="number" min={0} max={100} value={brouillon}
+      onChange={(e) => setBrouillon(e.target.value)}
+      onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
+      onFocus={(e) => { setActif(true); onFocus?.(e) }}
+      onBlur={(e) => { setActif(false); valider(); onBlur?.(e) }}
+      style={style}
+    />
+  )
+}
+
 export function GanttSidebar({
   tasks, lots, rows = null, rowHeight, headerHeight, onEdit, onAvancementChange, zones = [], colorMode = 'lot',
   onReorderTask, dragOverTaskId = null, onDragOverTaskChange,
@@ -216,12 +248,9 @@ function TaskRow({
 
       {/* Avancement input */}
       <div style={{ width: 56, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <input
-          type="number" min={0} max={100} value={task.avancement}
-          onChange={(e) => {
-            const v = Math.max(0, Math.min(100, Number(e.target.value)))
-            onAvancementChange(task.id, v)
-          }}
+        <ChampAvancement
+          valeur={task.avancement}
+          onValider={(v) => onAvancementChange(task.id, v)}
           style={{
             width: 46, height: inputHeight, borderRadius: 3, textAlign: 'center', fontSize: compact ? 10 : 11,
             border: '0.5px solid rgba(0,0,0,0.15)', backgroundColor: '#FAFAF9',
@@ -341,12 +370,9 @@ function ZoneGroupedSidebar({ rows, lots, rowHeight, headerHeight, onEdit, onAva
             {/* Avancement — seulement sur la ligne principale de la tâche */}
             <div style={{ width: 56, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               {!isDuplicate && (
-                <input
-                  type="number" min={0} max={100} value={row.task.avancement}
-                  onChange={(e) => {
-                    const v = Math.max(0, Math.min(100, Number(e.target.value)))
-                    onAvancementChange(row.task.id, v)
-                  }}
+                <ChampAvancement
+                  valeur={row.task.avancement}
+                  onValider={(v) => onAvancementChange(row.task.id, v)}
                   style={{
                     width: 46, height: inputHeight, borderRadius: 3, textAlign: 'center', fontSize: compact ? 10 : 11,
                     border: '0.5px solid rgba(0,0,0,0.15)', backgroundColor: '#FAFAF9',

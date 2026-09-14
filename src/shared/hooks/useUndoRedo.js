@@ -40,6 +40,12 @@ export function useUndoRedo(maxHistory = 20) {
 
   const cancelPending = useCallback(() => { pending.current = null }, [])
 
+  // Retire la dernière étape quand l'action qu'elle précédait a échoué : sans
+  // quoi le Ctrl+Z suivant « annulerait » une action qui n'a jamais eu lieu.
+  const retirerDernier = useCallback(() => {
+    setPast((prev) => prev.slice(0, -1))
+  }, [])
+
   // Renvoie l'instantané à restaurer, ou null. L'état courant part dans la pile
   // opposée pour que le mouvement inverse reste possible.
   const undo = useCallback((courant) => {
@@ -70,6 +76,7 @@ export function useUndoRedo(maxHistory = 20) {
     beginPending,
     commitPending,
     cancelPending,
+    retirerDernier,
     undo,
     redo,
     reset,

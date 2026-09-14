@@ -1,7 +1,8 @@
-import { parseDate, formatDateISO, addWorkingDays } from './types'
+import { parseDate, formatDateISO, addWorkingDaysBlocked, dernierJourTache } from './types'
 import { assignLabelLanes } from './jalonLayout'
 import { buildRowsByZone } from './groupByZone'
 import { legendeCouleurs } from './legende'
+import { echapperHtml } from '../../../shared/echapperHtml'
 
 // ─── Densité des lignes ───────────────────────────────────────────────────────
 //
@@ -67,20 +68,62 @@ function computeDayWidths(days, contentMm, viewMode = 'day') {
   return days.map(d => isWeekend(d) ? normalMm * WEEKEND_RATIO : normalMm)
 }
 
+// Les couleurs finissent dans des attributs style="…" : échappées elles aussi,
+// une valeur contenant un guillemet sortirait de l'attribut.
 function getBarColor(task, lot, zones, colorMode) {
   if (colorMode === 'zone') {
     const zone = zones.find(z => z.id === task.zone_id)
-    return zone?.couleur ?? '#C9C4C0'
+    return echapperHtml(zone?.couleur ?? '#C9C4C0')
   }
-  return lot?.couleur ?? '#94a3b8'
+  return echapperHtml(lot?.couleur ?? '#94a3b8')
 }
 
 function getSegColor(seg, taskColor, zones) {
   if (seg.zone_id) {
     const zone = zones.find(z => z.id === seg.zone_id)
-    if (zone?.couleur) return zone.couleur
+    if (zone?.couleur) return echapperHtml(zone.couleur)
   }
   return taskColor
+}
+
+// Les dates arrivent en 'YYYY-MM-DD', parfois suivies d'une heure
+function dateSeule(valeur) {
+  return parseDate(typeof valeur === 'string' ? valeur.split('T')[0] : valeur)
+}
+
+// Bornes calendaires d'une tâche, toutes incluses. Les fermetures bloquantes
+// allongent la tâche comme ses délais : c'est ce que dessine l'écran, et c'est
+// sur ces bornes que la modale choisit sa plage et filtre les tâches.
+function bornesTache(task, periodes = []) {
+  const debut = dateSeule(task.debut)
+  const dernierJour = dernierJourTache(debut, task.duree, periodes)
+  const avecDelaiAvant = !!task.appro_actif && task.appro_duree > 0
+  const avecDelaiApres = task.delai_apres > 0
+  const debutApres = avecDelaiApres ? addWorkingDaysBlocked(dernierJour, 1, periodes) : null
+  return {
+    debut,
+    dernierJour,
+    debutAvant: avecDelaiAvant ? addWorkingDaysBlocked(debut, -task.appro_duree, periodes) : null,
+    debutApres,
+    finApres: avecDelaiApres ? dernierJourTache(debutApres, task.delai_apres, periodes) : null,
+  }
+}
+
+// Intervalles [debut, fin] (bornes incluses) qu'une tâche occupe sur le
+// planning : la tâche avec ses délais avant/après, puis chacun de ses segments.
+export function intervallesTache(task, segments = [], periodes = []) {
+  const intervalles = []
+  if (task?.debut) {
+    const b = bornesTache(task, periodes)
+    intervalles.push({ debut: b.debutAvant ?? b.debut, fin: b.finApres ?? b.dernierJour })
+  }
+  segments
+    .filter(s => s.tache_id === task?.id && s.date_debut)
+    .forEach(s => {
+      const debut = dateSeule(s.date_debut)
+      intervalles.push({ debut, fin: dernierJourTache(debut, s.duree_jours, periodes) })
+    })
+  return intervalles
 }
 
 // Regroupe des jours consécutifs par année/mois/semaine et rend un <th colspan="N">
@@ -120,7 +163,11 @@ function buildWeekHeaders(days) {
   const weeks = []
   days.forEach((d) => {
     const wn = getISOWeek(d)
-    const wKey = `${d.getFullYear()}-${wn}`
+    // Le lundi identifie la semaine : l'année civile coupait en deux la S1 ou
+    // la S53 qui chevauche le nouvel an.
+    const lundi = new Date(d)
+    lundi.setDate(d.getDate() - (d.getDay() + 6) % 7)
+    const wKey = formatDateISO(lundi)
     const last = weeks[weeks.length - 1]
     if (last && last.key === wKey) last.count++
     else weeks.push({ key: wKey, wn, count: 1 })
@@ -167,20 +214,39 @@ function fondPeriode(periode) {
     : pastelPdf(periode.couleur ?? '#9C9591', 0.10)
 }
 
-// Position + largeur (en mm) d'une barre tâche/segment, exprimées relativement à la
-// cellule <td> de son propre jour de début — cf. buildTaskRow : la barre est un enfant
-// de ce <td> positionné en left:0 et déborde vers la droite grâce à overflow:visible,
-// donc aucun décalage absolu par rapport au début de la ligne n'est nécessaire.
-function computeBarGeometry(days, dayWidths, startStr, duree) {
-  const startIdx = days.findIndex(d => formatDateISO(d) === startStr)
-  if (startIdx < 0) return null
-  const endDate = addWorkingDays(parseDate(startStr), duree)
-  const endDateStr = formatDateISO(endDate)
-  const endIdx = days.findIndex(d => formatDateISO(d) === endDateStr)
-  const actualEnd = endIdx >= 0 ? endIdx : days.length
+// Index d'une date dans `days`, liste de jours consécutifs à minuit : l'arrondi
+// absorbe l'heure gagnée ou perdue au changement d'heure.
+function indexJour(days, date) {
+  const d = new Date(date)
+  d.setHours(0, 0, 0, 0)
+  return Math.round((d.getTime() - days[0].getTime()) / 86400000)
+}
+
+// Portion visible d'un intervalle [debut, fin], bornes incluses : premier et
+// dernier index affichés, et largeur (mm) cumulée. La barre est un enfant du
+// <td> de `startIdx`, positionnée en left:0 et débordant vers la droite grâce
+// à overflow:visible. Un intervalle commencé avant la plage s'ancre sur le
+// premier jour affiché : sans cela, une tâche en cours au début de l'export
+// n'aurait aucune barre.
+function plageVisible(days, dayWidths, debut, fin) {
+  if (!days.length || !debut || !fin) return null
+  const debutIdx = indexJour(days, debut)
+  const finIdx = indexJour(days, fin)
+  if (Number.isNaN(debutIdx) || Number.isNaN(finIdx)) return null
+  const startIdx = Math.max(0, debutIdx)
+  const endIdx = Math.min(days.length - 1, finIdx)
+  if (endIdx < startIdx) return null
   let widthMm = 0
-  for (let i = startIdx; i < actualEnd && i < days.length; i++) widthMm += dayWidths[i]
-  return { startIdx, widthMm }
+  for (let i = startIdx; i <= endIdx; i++) widthMm += dayWidths[i]
+  return { startIdx, endIdx, widthMm }
+}
+
+// Barre d'une tâche ou d'un segment : la durée est en jours ouvrés, fermetures
+// bloquantes non comptées, et la barre s'arrête sur le dernier jour travaillé —
+// ni avant une fermeture qu'elle traverse, ni sur le week-end qui suit.
+function computeBarGeometry(days, dayWidths, debut, duree, periodes = []) {
+  const d = dateSeule(debut)
+  return plageVisible(days, dayWidths, d, dernierJourTache(d, duree, periodes))
 }
 
 // ─── Bande de jalons ──────────────────────────────────────────────────────────
@@ -213,11 +279,11 @@ function buildJalonBand(jalons, days, dayWidths) {
   const hauteurMm = nbLignes * JALON_LABEL_HEIGHT_MM + 5
 
   const marqueurs = places.map(({ jalon, x }, i) => {
-    const couleur = jalon.couleur ?? '#E8602C'
+    const couleur = echapperHtml(jalon.couleur ?? '#E8602C')
     const topLabel = lanes[i] * JALON_LABEL_HEIGHT_MM
     const topTrait = (lanes[i] + 1) * JALON_LABEL_HEIGHT_MM
     return `<div style="position:absolute;left:${x.toFixed(2)}mm;top:0;bottom:0;width:0">
-      <div style="position:absolute;top:${topLabel.toFixed(2)}mm;left:1.2mm;font-size:5pt;font-weight:bold;color:${couleur};white-space:nowrap;line-height:${JALON_LABEL_HEIGHT_MM}mm">${jalon.label ?? ''}</div>
+      <div style="position:absolute;top:${topLabel.toFixed(2)}mm;left:1.2mm;font-size:5pt;font-weight:bold;color:${couleur};white-space:nowrap;line-height:${JALON_LABEL_HEIGHT_MM}mm">${echapperHtml(jalon.label)}</div>
       <div style="position:absolute;top:${topTrait.toFixed(2)}mm;bottom:1.6mm;left:0;width:1.5px;background:${couleur}"></div>
       <div style="position:absolute;bottom:0;left:-2.5px;width:0;height:0;border-left:2.5px solid transparent;border-right:2.5px solid transparent;border-top:1.6mm solid ${couleur}"></div>
     </div>`
@@ -249,60 +315,77 @@ function buildTaskRow(task, color, days, dayWidths, jalons, todayStr, ctx, rowIn
   // buildRowsByZone, la même source que la timeline interactive.
   const showMainBar = rowInfo?.showMainBar !== false
   const visibleSegmentIds = rowInfo?.visibleSegmentIds ?? null
-  const labelLigne = rowInfo?.displayName ?? task.nom
+  const labelLigne = echapperHtml(rowInfo?.displayName ?? task.nom)
 
-  const taskStartStr = typeof task.debut === 'string' ? task.debut.split('T')[0] : formatDateISO(parseDate(task.debut))
-  const mainGeo = showMainBar ? computeBarGeometry(days, dayWidths, taskStartStr, task.duree) : null
-  const startIdx = mainGeo?.startIdx ?? -1
-  const barWidthMm = mainGeo?.widthMm ?? 0
+  const bornes = task.debut ? bornesTache(task, periodes) : null
+
+  // Chaque élément est un enfant du <td> de son premier jour visible, et non de
+  // celui du début de la tâche : un délai ou un segment reste dessiné même quand
+  // la barre principale sort de la plage exportée.
+  const parJour = new Map()
+  const ajouter = (idx, html) => parJour.set(idx, (parJour.get(idx) ?? '') + html)
 
   // Délais avant / après : mêmes hachures à 45° et même hauteur que la barre de
   // tâche (top/bottom 1mm), comme dans la timeline interactive.
   const fondDelai = `repeating-linear-gradient(45deg, ${color}28, ${color}28 4px, ${color}55 4px, ${color}55 8px)`
 
-  let approHtml = ''
-  if (task.appro_actif && task.appro_duree > 0 && startIdx >= 0) {
-    const approStart = addWorkingDays(parseDate(taskStartStr), -task.appro_duree)
-    const approStartStr = formatDateISO(approStart)
-    const approIdx = days.findIndex(d => formatDateISO(d) === approStartStr)
-    let approWidthMm = 0
-    for (let i = (approIdx >= 0 ? approIdx : 0); i < startIdx && i < days.length; i++) approWidthMm += dayWidths[i]
-    if (approWidthMm > 0) {
+  if (showMainBar && bornes?.debutAvant) {
+    const veille = new Date(bornes.debut)
+    veille.setDate(veille.getDate() - 1)
+    const geoAvant = plageVisible(days, dayWidths, bornes.debutAvant, veille)
+    if (geoAvant && geoAvant.widthMm > 0) {
       // Motif à l'intérieur de la barre, aligné à gauche et tronqué si trop long
-      const lbl = task.appro_materiau || `Appro. ${task.appro_duree}j`
-      approHtml = `<div style="position:absolute;left:-${approWidthMm.toFixed(2)}mm;width:${approWidthMm.toFixed(2)}mm;top:${dens.barPadMm}mm;bottom:${dens.barPadMm}mm;background:${fondDelai};border:1px dashed ${color}80;display:flex;align-items:center;overflow:hidden;z-index:3;pointer-events:none">
+      const lbl = echapperHtml(task.appro_materiau || `Appro. ${task.appro_duree}j`)
+      ajouter(geoAvant.startIdx, `<div style="position:absolute;left:0;width:${geoAvant.widthMm.toFixed(2)}mm;top:${dens.barPadMm}mm;bottom:${dens.barPadMm}mm;background:${fondDelai};border:1px dashed ${color}80;display:flex;align-items:center;overflow:hidden;z-index:3;pointer-events:none">
         <span style="font-size:5pt;font-style:italic;color:${color};filter:brightness(0.6);white-space:nowrap;overflow:hidden;padding:0 1mm">${lbl}</span>
-      </div>`
+      </div>`)
     }
   }
 
-  // Délai après la tâche (séchage, livraison…) : prolongement à droite de la
-  // barre, motif écrit à l'extérieur — même convention que le nom d'une tâche.
-  let delaiApresHtml = ''
-  if (task.delai_apres > 0 && startIdx >= 0 && barWidthMm > 0) {
-    const lastDay = addWorkingDays(parseDate(taskStartStr), Math.max(1, task.duree) - 1)
-    const geoDelai = computeBarGeometry(days, dayWidths, formatDateISO(addWorkingDays(lastDay, 1)), task.delai_apres)
-    if (geoDelai && geoDelai.widthMm > 0) {
-      const finDelaiMm = barWidthMm + geoDelai.widthMm
-      delaiApresHtml = `<div style="position:absolute;left:${barWidthMm.toFixed(2)}mm;width:${geoDelai.widthMm.toFixed(2)}mm;top:${dens.barPadMm}mm;bottom:${dens.barPadMm}mm;background:${fondDelai};border:1px dashed ${color}80;z-index:3;pointer-events:none"></div>`
+  // Délai après la tâche (séchage, livraison…) : il reprend au jour ouvré qui
+  // suit la tâche ; motif écrit à l'extérieur, même convention que le nom d'une tâche.
+  if (showMainBar && bornes?.debutApres) {
+    const geoApres = plageVisible(days, dayWidths, bornes.debutApres, bornes.finApres)
+    if (geoApres && geoApres.widthMm > 0) {
+      let html = `<div style="position:absolute;left:0;width:${geoApres.widthMm.toFixed(2)}mm;top:${dens.barPadMm}mm;bottom:${dens.barPadMm}mm;background:${fondDelai};border:1px dashed ${color}80;z-index:3;pointer-events:none"></div>`
       if (task.label_apres) {
-        delaiApresHtml += `<div style="position:absolute;left:${finDelaiMm.toFixed(2)}mm;padding-left:3px;top:0;bottom:0;display:flex;align-items:center;white-space:nowrap;font-size:5.5pt;font-style:italic;color:#9C9591;z-index:10">${task.label_apres}</div>`
+        html += `<div style="position:absolute;left:${geoApres.widthMm.toFixed(2)}mm;padding-left:3px;top:0;bottom:0;display:flex;align-items:center;white-space:nowrap;font-size:5.5pt;font-style:italic;color:#9C9591;z-index:10">${echapperHtml(task.label_apres)}</div>`
       }
+      ajouter(geoApres.startIdx, html)
     }
   }
 
-  // Segments supplémentaires de la tâche : chacun est rendu comme sa propre barre,
-  // enfant du <td> de son propre jour de début (même technique que la barre principale
-  // et l'extension d'appro ci-dessus).
-  const segGeoms = segments
-    .filter(s => s.tache_id === task.id)
+  const mainGeo = showMainBar && bornes
+    ? plageVisible(days, dayWidths, bornes.debut, bornes.dernierJour)
+    : null
+  if (mainGeo && mainGeo.widthMm > 0) {
+    const avancement = Number(task.avancement) || 0
+    const progressBar = avancement > 0
+      ? `<div style="position:absolute;left:0;top:0;bottom:0;width:${avancement}%;background:rgba(0,0,0,0.22);z-index:2"></div>`
+      : ''
+    const labelAvancement = avancement > 0 && avancement < 100
+      ? `<span style="margin-left:1.5mm;font-size:5.5pt;color:#9C9591">${avancement}%</span>`
+      : ''
+    ajouter(mainGeo.startIdx, `
+        <div data-task-id="${echapperHtml(task.id)}" data-type="task" style="position:absolute;left:0;width:${mainGeo.widthMm.toFixed(2)}mm;top:${dens.barPadMm}mm;bottom:${dens.barPadMm}mm;background:${color};z-index:4;overflow:hidden">${progressBar}</div>
+        <div style="position:absolute;left:${mainGeo.widthMm.toFixed(2)}mm;padding-left:3px;top:0;bottom:0;display:flex;align-items:center;white-space:nowrap;font-size:${dens.barLabelPt}pt;color:#1F1B17;z-index:10">${labelLigne}${labelAvancement}</div>`)
+  }
+
+  // Segments supplémentaires : le nom n'est écrit que si « afficher le nom » est
+  // coché, à droite du segment — la règle de la timeline interactive.
+  segments
+    .filter(s => s.tache_id === task.id && s.date_debut)
     .filter(s => !visibleSegmentIds || visibleSegmentIds.includes(s.id))
-    .map(seg => {
-      const segStartStr = typeof seg.date_debut === 'string' ? seg.date_debut.split('T')[0] : formatDateISO(parseDate(seg.date_debut))
-      const geo = computeBarGeometry(days, dayWidths, segStartStr, seg.duree_jours ?? 0)
-      return geo ? { seg, ...geo } : null
+    .forEach(seg => {
+      const geo = computeBarGeometry(days, dayWidths, seg.date_debut, seg.duree_jours, periodes)
+      if (!geo || geo.widthMm <= 0) return
+      const segColor = getSegColor(seg, color, zones)
+      let html = `<div data-segment-id="${echapperHtml(seg.id)}" data-task-id="${echapperHtml(task.id)}" data-type="segment" style="position:absolute;left:0;width:${geo.widthMm.toFixed(2)}mm;top:${dens.barPadMm}mm;bottom:${dens.barPadMm}mm;background:${segColor};outline:1px dashed rgba(255,255,255,0.6);outline-offset:-1px;z-index:3;overflow:hidden"></div>`
+      if (seg.afficher_nom) {
+        html += `<div style="position:absolute;left:${geo.widthMm.toFixed(2)}mm;padding-left:3px;top:0;bottom:0;display:flex;align-items:center;white-space:nowrap;font-size:5.5pt;color:#1F1B17;z-index:10">${echapperHtml(seg.nom ?? task.nom)}</div>`
+      }
+      ajouter(geo.startIdx, html)
     })
-    .filter(Boolean)
 
   const cells = days.map((d, idx) => {
     const isWE = isWeekend(d)
@@ -325,50 +408,29 @@ function buildTaskRow(task, color, days, dayWidths, jalons, todayStr, ctx, rowIn
     // continue hors cadre et ne doit pas sembler s'y arrêter.
     let bordsPeriode = ''
     if (periode && periode.est_bloquante !== false) {
-      const trait = `1.5px solid ${periode.couleur ?? '#B8412C'}66`
+      const trait = `1.5px solid ${echapperHtml(periode.couleur ?? '#B8412C')}66`
       const jour = formatDateISO(d)
       if (jour === periode.date_debut) bordsPeriode += `border-left:${trait};`
       if (jour === periode.date_fin) bordsPeriode += `border-right:${trait};`
     }
-
-    let barContent = ''
-    if (idx === startIdx && startIdx >= 0 && barWidthMm > 0) {
-      const progressBar = task.avancement > 0
-        ? `<div style="position:absolute;left:0;top:0;bottom:0;width:${task.avancement}%;background:rgba(0,0,0,0.22);z-index:2"></div>`
-        : ''
-      const labelAvancement = task.avancement > 0 && task.avancement < 100
-        ? `<span style="margin-left:1.5mm;font-size:5.5pt;color:#9C9591">${task.avancement}%</span>`
-        : ''
-      barContent = `${approHtml}${delaiApresHtml}
-        <div data-task-id="${task.id}" data-type="task" style="position:absolute;left:0;width:${barWidthMm.toFixed(2)}mm;top:${dens.barPadMm}mm;bottom:${dens.barPadMm}mm;background:${color};z-index:4;overflow:hidden">${progressBar}</div>
-        <div style="position:absolute;left:${barWidthMm.toFixed(2)}mm;padding-left:3px;top:0;bottom:0;display:flex;align-items:center;white-space:nowrap;font-size:${dens.barLabelPt}pt;color:#1F1B17;z-index:10">${labelLigne}${labelAvancement}</div>`
-    }
-
-    let segContent = ''
-    segGeoms.forEach(({ seg, startIdx: segStartIdx, widthMm: segWidthMm }) => {
-      if (segStartIdx !== idx || segWidthMm <= 0) return
-      const segColor = getSegColor(seg, color, zones)
-      const segLabel = seg.nom ? `<span style="margin-left:1.5mm;font-size:5.5pt;color:#1F1B17">${seg.nom}</span>` : ''
-      segContent += `<div data-segment-id="${seg.id}" data-task-id="${task.id}" data-type="segment" style="position:absolute;left:0;width:${segWidthMm.toFixed(2)}mm;top:${dens.barPadMm}mm;bottom:${dens.barPadMm}mm;background:${segColor};outline:1px dashed rgba(255,255,255,0.6);outline-offset:-1px;z-index:3;overflow:hidden;display:flex;align-items:center">${segLabel}</div>`
-    })
 
     // Repère vertical du jalon, sans libellé : celui-ci est rendu une seule fois
     // dans la bande dédiée au-dessus du tableau (buildJalonBand).
     const dayStr = formatDateISO(d)
     const jalonLines = (jalons ?? [])
       .filter(j => (j.date ?? '').split('T')[0] === dayStr)
-      .map(j => `<div style="position:absolute;top:0;bottom:0;left:50%;width:1.5px;background:${j.couleur};opacity:0.55;z-index:5"></div>`)
+      .map(j => `<div style="position:absolute;top:0;bottom:0;left:50%;width:1.5px;background:${echapperHtml(j.couleur)};opacity:0.55;z-index:5"></div>`)
       .join('')
 
-    return `<td style="width:${dayWidths[idx].toFixed(2)}mm;border-bottom:0.5px solid #f0f0f0;border-left:${borderLeft};height:${dens.rowMm}mm;padding:0;overflow:visible;position:relative;background:${bg};${bordsPeriode}">${barContent}${segContent}${jalonLines}</td>`
+    return `<td style="width:${dayWidths[idx].toFixed(2)}mm;border-bottom:0.5px solid #f0f0f0;border-left:${borderLeft};height:${dens.rowMm}mm;padding:0;overflow:visible;position:relative;background:${bg};${bordsPeriode}">${parJour.get(idx) ?? ''}${jalonLines}</td>`
   }).join('')
 
   const suffixe = rowInfo?.suffixe
-    ? `<span style="color:#9C9591;font-size:5.5pt;margin-left:1.5mm">${rowInfo.suffixe}</span>`
+    ? `<span style="color:#9C9591;font-size:5.5pt;margin-left:1.5mm">${echapperHtml(rowInfo.suffixe)}</span>`
     : ''
 
   return `<tr>
-    <td class="plabel">${task.num_tache ? `<span style="color:#9C9591;margin-right:1.5mm">${task.num_tache}</span>` : ''}${labelLigne}${suffixe}</td>
+    <td class="plabel">${task.num_tache ? `<span style="color:#9C9591;margin-right:1.5mm">${echapperHtml(task.num_tache)}</span>` : ''}${labelLigne}${suffixe}</td>
     ${cells}
   </tr>`
 }
@@ -405,9 +467,9 @@ function buildHtml({
   const depsJson = JSON.stringify(allDeps).replace(/</g, '\\u003c')
 
   const logoUrl = window.location.origin + '/Logo_JGA_Archi.jpg'
-  const nomAffaire  = affaire?.nom ?? ''
-  const moaNom      = affaire?.moa_nom ?? ''
-  const codeAffaire = affaire?.code_affaire ?? affaire?.numero ?? ''
+  const nomAffaire  = echapperHtml(affaire?.nom)
+  const moaNom      = echapperHtml(affaire?.moa_nom)
+  const codeAffaire = echapperHtml(affaire?.code_affaire ?? affaire?.numero)
   const dateStr = new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })
   // L'en-tête peut annoncer une période distincte de la plage imprimée
   // (dates contractuelles, par exemple) ; à défaut, il reprend la plage.
@@ -440,10 +502,10 @@ function buildHtml({
     // fois par ses seuls segments.
     buildRowsByZone(tasks, zones, segments).forEach(row => {
       if (row.type === 'header-zone') {
-        const couleur = row.couleur ?? '#C9C4C0'
+        const couleur = echapperHtml(row.couleur ?? '#C9C4C0')
         lotsRows += `<tr>
           <td colspan="${1 + days.length}" style="background:${couleur}18;color:${couleur};font-weight:bold;font-size:${dens.groupPt}pt;padding:0 2mm;height:${dens.groupMm}mm;border-bottom:1px solid ${couleur}">
-            ${(row.displayName ?? '').toUpperCase()}
+            ${echapperHtml((row.displayName ?? '').toUpperCase())}
           </td>
         </tr>`
         return
@@ -467,9 +529,10 @@ function buildHtml({
     sortedLots.forEach(lot => {
       const lotTasks = tasks.filter(t => t.lot_id === lot.id)
       if (!lotTasks.length) return
+      const couleurLot = echapperHtml(lot.couleur)
       lotsRows += `<tr>
-        <td colspan="${1 + days.length}" style="background:${lot.couleur}18;color:${lot.couleur};font-weight:bold;font-size:${dens.groupPt}pt;padding:0 2mm;height:${dens.groupMm}mm;border-bottom:0.5px solid rgba(0,0,0,0.08)">
-          ${lot.num_lot ?? ''} – ${lot.nom}
+        <td colspan="${1 + days.length}" style="background:${couleurLot}18;color:${couleurLot};font-weight:bold;font-size:${dens.groupPt}pt;padding:0 2mm;height:${dens.groupMm}mm;border-bottom:0.5px solid rgba(0,0,0,0.08)">
+          ${echapperHtml(lot.num_lot)} – ${echapperHtml(lot.nom)}
         </td>
       </tr>`
       lotTasks.forEach(t => { lotsRows += buildTaskRow(t, getBarColor(t, lot, zones, colorMode), days, dayWidths, jalons, todayStr, rowCtx) })
@@ -484,14 +547,14 @@ function buildHtml({
   // Légende des couleurs de barres — source commune avec l'export Excel
   const legCouleurs = legendeCouleurs({ tasks, lots, zones, colorMode, groupMode })
   const legCouleursHtml = legCouleurs.entrees.length
-    ? `<span class="leg-sous-titre">${legCouleurs.titre}</span>` + legCouleurs.entrees.map(e => `
+    ? `<span class="leg-sous-titre">${echapperHtml(legCouleurs.titre)}</span>` + legCouleurs.entrees.map(e => `
   <div class="leg-item">
-    <div class="leg-swatch" style="background:${e.couleur}"></div>
-    ${e.label}
+    <div class="leg-swatch" style="background:${echapperHtml(e.couleur)}"></div>
+    ${echapperHtml(e.label)}
   </div>`).join('') + '<div style="border-left:0.5px solid #ddd;height:8px;margin:0 2mm"></div>'
     : ''
   const legNoteHtml = legCouleurs.note
-    ? `<div class="leg-item" style="font-style:italic;color:#9C9591">${legCouleurs.note}</div>`
+    ? `<div class="leg-item" style="font-style:italic;color:#9C9591">${echapperHtml(legCouleurs.note)}</div>`
     : ''
 
   return `<!DOCTYPE html>

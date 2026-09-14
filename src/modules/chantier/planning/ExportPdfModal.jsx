@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react'
 import { FileDown, X } from 'lucide-react'
 import { parseDate, formatDateISO, addWorkingDays } from './types'
-import { generatePlanningChantierPdf } from './generatePlanningChantierPdf'
+import { generatePlanningChantierPdf, intervallesTache } from './generatePlanningChantierPdf'
 
 const LABEL = {
   fontSize: 10, fontWeight: 700, textTransform: 'uppercase',
@@ -44,24 +44,21 @@ function densityFromRowHeight(rowHeight) {
   return 'normal'
 }
 
-function computeRange(tasks) {
-  if (!tasks.length) {
+// Plage par défaut : l'étendue réelle de ce que l'export dessinera — délais,
+// segments et fermetures compris —, bordée d'une semaine de marge.
+function computeRange(tasks, segments, periodes) {
+  const intervalles = tasks.flatMap(t => intervallesTache(t, segments, periodes))
+  if (!intervalles.length) {
     const d = new Date()
     const end = new Date(d)
     end.setMonth(end.getMonth() + 3)
     return { debut: formatDateISO(addWorkingDays(d, -5)), fin: formatDateISO(addWorkingDays(end, 5)) }
   }
-  let minDate = parseDate(tasks[0].debut)
-  let maxEnd = addWorkingDays(parseDate(tasks[0].debut), tasks[0].duree)
-  for (const t of tasks) {
-    const d = parseDate(t.debut)
-    if (d < minDate) minDate = d
-    const end = addWorkingDays(d, t.duree)
-    if (end > maxEnd) maxEnd = end
-    if (t.appro_actif && t.appro_duree) {
-      const approStart = addWorkingDays(d, -t.appro_duree)
-      if (approStart < minDate) minDate = approStart
-    }
+  let minDate = intervalles[0].debut
+  let maxEnd = intervalles[0].fin
+  for (const { debut, fin } of intervalles) {
+    if (debut < minDate) minDate = debut
+    if (fin > maxEnd) maxEnd = fin
   }
   return {
     debut: formatDateISO(addWorkingDays(minDate, -5)),
@@ -69,13 +66,17 @@ function computeRange(tasks) {
   }
 }
 
+// Valeur par défaut stable : un `[]` recréé à chaque rendu relancerait le calcul
+// de la plage, et l'effet d'ouverture écraserait les dates saisies.
+const AUCUN = []
+
 export function ExportPdfModal({
   open, onClose, lots = [], tasks = [], jalons = [], affaire = {},
   zones = [], colorMode = 'lot', viewMode = 'day', groupMode = 'lot', rowHeight = 36,
   onExportExcel,
-  segments = [], dependances = [], periodes = [],
+  segments = AUCUN, dependances = [], periodes = AUCUN,
 }) {
-  const computed = useMemo(() => computeRange(tasks), [tasks])
+  const computed = useMemo(() => computeRange(tasks, segments, periodes), [tasks, segments, periodes])
 
   const [dateDebut,   setDateDebut]   = useState(computed.debut)
   const [dateFin,     setDateFin]     = useState(computed.fin)
@@ -118,14 +119,14 @@ export function ExportPdfModal({
 
   const tachesInPeriod = useMemo(() => {
     if (!dateDebut || !dateFin) return []
-    const start = parseDate(dateDebut).getTime()
-    const end = parseDate(dateFin).getTime()
-    return tasks.filter(t => {
-      const tStart = parseDate(t.debut).getTime()
-      const tEnd = addWorkingDays(parseDate(t.debut), t.duree).getTime()
-      return tStart <= end && tEnd >= start
-    })
-  }, [tasks, dateDebut, dateFin])
+    const start = parseDate(dateDebut)
+    const end = parseDate(dateFin)
+    // Fins incluses : une tâche finie la veille de la plage n'y figure pas,
+    // mais un délai ou un segment qui y déborde suffit à la garder.
+    return tasks.filter(t =>
+      intervallesTache(t, segments, periodes).some(({ debut, fin }) => debut <= end && fin >= start)
+    )
+  }, [tasks, segments, periodes, dateDebut, dateFin])
 
   const finalFormat = formatTab === 'standard'
     ? PAGE_FORMATS[fmtIdx]

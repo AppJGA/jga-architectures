@@ -1,15 +1,17 @@
-import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
+import { useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo } from 'react'
 import { X, ZoomIn, ZoomOut } from 'lucide-react'
 import { supabase } from '../../../core/supabase/client'
 import {
-  calculerModificationPhase, addWeeks, weeksBetween, getCurrentWeek,
+  calculerModificationPhase, recalerPhasesDependantes, creeraitUnCycle,
+  addWeeks, weeksBetween, getCurrentWeek,
   getNextAvailableSemaine, TYPE_COLORS, adminGradient, densityFromRowHeight,
 } from './types'
 import { computeCriticalPath } from './computeCriticalPath'
 import { usePlanningEtude } from '../../../shared/hooks/usePlanningEtude'
 import { usePlanningEtudeSegments } from '../../../shared/hooks/usePlanningEtudeSegments'
 import { useUndoRedo } from '../../../shared/hooks/useUndoRedo'
-import { diffSnapshotsEtude, diffEstVide, estPhasePersistee } from './snapshotDiffEtude'
+import { diffSnapshotsEtude, diffEstVide, estPhasePersistee, clePhase } from './snapshotDiffEtude'
+import { rapprocherPhasesNotion } from './rapprochementNotion'
 import { usePeriodesBloquees } from '../../../shared/hooks/usePeriodesBloquees'
 import { useNotionSync } from '../../../shared/hooks/useNotionSync'
 import { GanttEtudeToolbar } from './GanttEtudeToolbar'
@@ -54,7 +56,8 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
 
   // ── Local optimistic state (fusionne Supabase + Notion) ───────────────────────
   const [phases, setPhases] = useState([])
-  const [undoError, setUndoError] = useState(null)
+  // Message du bandeau d'erreur : écriture refusée par la base, planning rechargé
+  const [erreurBandeau, setErreurBandeau] = useState(null)
 
   // ── Historique annuler / rétablir ───────────────────────────────────────────
   const historique = useUndoRedo(20)
@@ -73,25 +76,10 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
 
   useEffect(() => {
     if (notionSync.notionEnabled && notionSync.notionPhases.length > 0) {
-      // Construire la map supabase id → notion id
-      const map = new Map()
-      notionSync.notionPhases.forEach(np => {
-        const match = hookPhases.find(p =>
-          (np._codePhase && p.nom?.toLowerCase().includes(np._codePhase.toLowerCase())) ||
-          p.ordre === np.ordre
-        )
-        if (match && np.notion_id) map.set(match.id, np.notion_id)
-      })
-      notionIdMapRef.current = map
-
-      // Ajouter uniquement les phases Notion sans équivalent en Supabase
-      const unmatched = notionSync.notionPhases.filter(np =>
-        !hookPhases.some(p =>
-          (np._codePhase && p.nom?.toLowerCase().includes(np._codePhase.toLowerCase())) ||
-          p.ordre === np.ordre
-        )
-      )
-      setPhases([...hookPhases, ...unmatched])
+      const { correspondances, nonRapprochees } = rapprocherPhasesNotion(hookPhases, notionSync.notionPhases)
+      notionIdMapRef.current = correspondances
+      // Seules les phases Notion sans équivalent en base s'ajoutent à l'affichage
+      setPhases([...hookPhases, ...nonRapprochees])
     } else {
       setPhases(hookPhases)
     }
@@ -108,7 +96,7 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
   useEffect(() => { resetHistorique() }, [affaireId, resetHistorique])
 
   // ── CPM (chemin critique, recalculé après chaque changement de phases) ────────
-  const criticalIds = useMemo(() => computeCriticalPath(phases), [phases])
+  const criticalIds = useMemo(() => computeCriticalPath(phases, periodes), [phases, periodes])
 
   // ── Phases triées par ordre — passées aux deux sous-composants ────────────────
   const sortedPhases = useMemo(
@@ -276,22 +264,52 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
     }
   }, [isPanning])
 
-  // Centrer la vue sur la semaine courante à chaque changement de refDate/zoom
-  useEffect(() => {
-    if (!timelineRef.current || phases.length === 0) return
-    const cw = getCurrentWeek()
-    const currentX = weeksBetween(refDate.semaine, refDate.annee, cw.semaine, cw.annee) * semWidth
-    timelineRef.current.scrollLeft = Math.max(0, currentX - 8 * semWidth)
-  }, [refDate.semaine, refDate.annee, semWidth])
+  // Centrage sur la semaine courante au premier affichage seulement. Recentrer
+  // à chaque changement de la semaine de référence faisait sauter la vue dès
+  // qu'on glissait la première phase. Quand cette référence bouge, le
+  // défilement est compensé pour que le contenu reste à sa place à l'écran.
+  // Mise en page synchrone : la compensation doit précéder l'affichage.
+  const refVueRef = useRef(null)
+  const aDesPhases = phases.length > 0
+  useLayoutEffect(() => {
+    const el = timelineRef.current
+    if (!el || !aDesPhases) return
+    const precedente = refVueRef.current
+    refVueRef.current = { semaine: refDate.semaine, annee: refDate.annee }
+    if (!precedente) {
+      const cw = getCurrentWeek()
+      const currentX = weeksBetween(refDate.semaine, refDate.annee, cw.semaine, cw.annee) * semWidth
+      el.scrollLeft = Math.max(0, currentX - 8 * semWidth)
+      return
+    }
+    const decalage = weeksBetween(precedente.semaine, precedente.annee, refDate.semaine, refDate.annee)
+    if (decalage !== 0) el.scrollLeft = Math.max(0, el.scrollLeft - decalage * semWidth)
+  // `semWidth` est lu sans être une dépendance : zoomer ne doit pas recentrer.
+  // `loading` : la timeline n'existe pas encore pendant le chargement.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refDate.semaine, refDate.annee, aDesPhases, loading])
+
+  // Une autre affaire se centre à nouveau sur la semaine courante
+  useEffect(() => { refVueRef.current = null }, [affaireId])
+
+  const signalerErreur = useCallback((message) => {
+    console.error('Planning étude —', message)
+    setErreurBandeau(message)
+  }, [])
 
   // ── Enregistrement d'une modification et de ses décalages ────────────────────
   //
   // Supabase ne lève pas d'exception en cas d'échec : l'erreur est dans la
   // réponse. Sans ce contrôle, un échec laissait l'écran afficher des dates que
   // la base n'avait pas, jusqu'au rechargement suivant.
+  //
+  // `phaseId` nul : seules les phases décalées sont écrites (recalage après un
+  // changement de périodes).
   const persistUpdates = useCallback(async (phaseId, changes, cascades) => {
     const resultats = await Promise.all([
-      supabase.from('planning_etude_phases').update(changes).eq('id', phaseId),
+      ...(phaseId != null
+        ? [supabase.from('planning_etude_phases').update(changes).eq('id', phaseId)]
+        : []),
       ...cascades.map((c) =>
         supabase.from('planning_etude_phases')
           .update({ semaine_debut: c.semaine_debut, annee_debut: c.annee_debut })
@@ -300,58 +318,113 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
     ])
     const echec = resultats.find((r) => r?.error)
     if (echec) {
-      console.error('Planning étude : échec d’enregistrement —', echec.error.message)
+      signalerErreur(`Enregistrement impossible — ${echec.error.message}`)
       await refetch()
       return false
     }
     return true
+  }, [refetch, signalerErreur])
+
+  // Les gestes appliqués d'abord à l'écran (glisser, réordonner, recaler)
+  // doivent aussi recharger `hookPhases` : la fusion avec Notion repart de lui
+  // à chaque mise à jour Notion et ramènerait sinon les phases à leur ancienne
+  // place — et le geste suivant calculerait ses dates sur ces données périmées.
+  // Le rechargement attend la fin de toutes les écritures en cours, pour ne
+  // pas ramener brièvement à l'écran un geste encore en vol.
+  const ecrituresEnCoursRef = useRef(0)
+  const ecrireEtRecharger = useCallback(async (ecriture) => {
+    ecrituresEnCoursRef.current += 1
+    let ok
+    try {
+      ok = await ecriture()
+    } finally {
+      ecrituresEnCoursRef.current -= 1
+    }
+    if (ok && ecrituresEnCoursRef.current === 0) await refetch()
+    return ok
   }, [refetch])
 
   // ── Phase CRUD ─────────────────────────────────────────────────────────────────
+  // Renvoie false en cas d'échec : la modale reste alors ouverte.
   const handleSavePhase = useCallback(async (data) => {
     if (phaseModalMode === 'create') {
+      // Sans ordre explicite, la base met 0 : la phase s'insérait en tête (ou
+      // en deuxième ligne) au lieu de s'ajouter à la fin.
+      const ordre = phases.reduce((max, p) => {
+        const o = Number(p.ordre)
+        return Number.isFinite(o) ? Math.max(max, o) : max
+      }, -1) + 1
       saveSnapshot(takeSnapshot('Nouvelle phase'))
-      await addPhase(data)
-    } else {
-      const { id, ...changes } = data
-      const cible = id ?? editingPhase?.id
-      // Instantané pris seulement si l'enregistrement modifie réellement la
-      // phase : valider la modale sans rien changer ne doit pas consommer une
-      // étape d'historique, sinon le Ctrl+Z suivant paraîtrait sans effet.
-      const ancienne = phases.find((ph) => ph.id === cible)
-      const modifie = !ancienne
-        || Object.keys(changes).some((c) => (ancienne[c] ?? null) !== (changes[c] ?? null))
-      if (modifie) saveSnapshot(takeSnapshot(`Modification « ${data.nom ?? ancienne?.nom ?? ''} »`))
-      // Même calcul que le glissement : une durée ou un début changés dans la
-      // modale décalent aussi les phases suivantes.
-      const { changes: finalChanges, cascades } = calculerModificationPhase(phases, cible, changes, periodes)
-      if (await persistUpdates(cible, finalChanges, cascades)) await refetch()
+      const { error: err } = await addPhase({ ...data, ordre })
+      if (err) {
+        signalerErreur(`Création impossible — ${err.message}`)
+        await refetch()
+        return false
+      }
+      return true
     }
-  }, [phaseModalMode, addPhase, editingPhase, phases, periodes, persistUpdates, refetch, saveSnapshot, takeSnapshot])
+
+    const { id: cible, ...changes } = data
+    // Phase venue de Notion : rien en base à modifier
+    if (cible == null) return false
+    // La phase est relue par id dans l'état courant : la modale, flottante,
+    // a pu rester ouverte pendant que la phase était glissée ou liée.
+    const ancienne = phases.find((ph) => ph.id === cible)
+    if (!ancienne) {
+      signalerErreur('Enregistrement impossible — la phase n’existe plus')
+      await refetch()
+      return false
+    }
+    // Instantané pris seulement si l'enregistrement modifie réellement la
+    // phase : valider la modale sans rien changer ne doit pas consommer une
+    // étape d'historique, sinon le Ctrl+Z suivant paraîtrait sans effet.
+    const modifie = Object.keys(changes).some((c) => (ancienne[c] ?? null) !== (changes[c] ?? null))
+    if (!modifie) return true
+    saveSnapshot(takeSnapshot(`Modification « ${changes.nom ?? ancienne.nom ?? ''} »`))
+    // Même calcul que le glissement : une durée ou un début changés dans la
+    // modale décalent aussi les phases suivantes.
+    const { changes: finalChanges, cascades } = calculerModificationPhase(phases, cible, changes, periodes)
+    const ok = await persistUpdates(cible, finalChanges, cascades)
+    if (ok) await refetch()
+    return ok
+  }, [phaseModalMode, addPhase, phases, periodes, persistUpdates, refetch, saveSnapshot, takeSnapshot, signalerErreur])
 
   const handleDeletePhase = useCallback(async (id) => {
+    if (id == null) return false
     saveSnapshot(takeSnapshot(`Suppression « ${phases.find((ph) => ph.id === id)?.nom ?? ''} »`))
-    await deletePhase(id)
+    const { error: err } = await deletePhase(id)
+    if (err) {
+      signalerErreur(`Suppression impossible — ${err.message}`)
+      await refetch()
+      return false
+    }
     // La suppression se propage en base aux segments (on delete cascade) mais
     // pas au state local : sans ce filtre ils resteraient affichés, et
     // l'annulation ne saurait pas les recréer.
     replaceSegments(segments.filter((sg) => sg.phase_id !== id))
-  }, [deletePhase, phases, segments, replaceSegments, saveSnapshot, takeSnapshot])
+    return true
+  }, [deletePhase, phases, segments, replaceSegments, saveSnapshot, takeSnapshot, refetch, signalerErreur])
 
   // ── Réordonnancement par drag & drop ─────────────────────────────────────────
   const handleReorder = useCallback(async (reorderedPhases) => {
+    const ordreActuel = new Map(phases.map((p) => [p.id, p.ordre]))
+    const aEcrire = reorderedPhases.filter((p) => estPhasePersistee(p) && ordreActuel.get(p.id) !== p.ordre)
+    if (aEcrire.length === 0) return
     saveSnapshot(takeSnapshot('Réorganisation des phases'))
     setPhases(reorderedPhases)
-    try {
-      await Promise.all(
-        reorderedPhases.map(p =>
+    await ecrireEtRecharger(async () => {
+      const resultats = await Promise.all(
+        aEcrire.map((p) =>
           supabase.from('planning_etude_phases').update({ ordre: p.ordre }).eq('id', p.id)
         )
       )
-    } catch {
+      const echec = resultats.find((r) => r?.error)
+      if (!echec) return true
+      signalerErreur(`Réorganisation impossible — ${echec.error.message}`)
       await refetch()
-    }
-  }, [refetch, saveSnapshot, takeSnapshot])
+      return false
+    })
+  }, [phases, refetch, saveSnapshot, takeSnapshot, ecrireEtRecharger, signalerErreur])
 
   // ── Drag/resize avec cascade optimiste ────────────────────────────────────────
   //
@@ -362,6 +435,8 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
   // suivantes bougeaient à l'écran mais pas en base, et revenaient à leur place
   // au premier rechargement.
   const handlePhaseUpdate = useCallback((phaseId, changes) => {
+    // Sans id, `p.id === phaseId` viserait toutes les phases Notion à la fois
+    if (phaseId == null) return
     // L'aperçu du glissement se fait en manipulant le DOM : l'état local n'a
     // pas encore bougé, l'instantané pris ici est donc bien celui d'avant.
     saveSnapshot(takeSnapshot(
@@ -379,14 +454,14 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
     })
     setPhases(next)
 
-    persistUpdates(phaseId, finalChanges, cascades)
+    ecrireEtRecharger(() => persistUpdates(phaseId, finalChanges, cascades))
 
     const notionId = notionIdMapRef.current.get(phaseId)
     const phaseModifiee = next.find((p) => p.id === phaseId)
     if (notionId && phaseModifiee) {
       notionSync.pushToNotion(notionId, phaseModifiee)
     }
-  }, [phases, persistUpdates, notionSync.pushToNotion, periodes, saveSnapshot, takeSnapshot])
+  }, [phases, persistUpdates, ecrireEtRecharger, notionSync.pushToNotion, periodes, saveSnapshot, takeSnapshot])
 
   // ── Commit d'un segment après drag/resize dans la timeline ────────────────────
   // Le geste sur un segment applique `updateSegmentLocal` juste avant le commit :
@@ -399,8 +474,39 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
 
   const handleSegmentCommit = useCallback(async (segmentId, changes) => {
     commitPending()
-    await updateSegment(segmentId, changes)
-  }, [updateSegment, commitPending])
+    const { error: err } = await updateSegment(segmentId, changes)
+    // Le segment a déjà été déplacé à l'écran : le recharger le remet à la
+    // position que la base a gardée.
+    if (err) {
+      signalerErreur(`Déplacement du segment impossible — ${err.message}`)
+      await refetchSegments()
+    }
+  }, [updateSegment, commitPending, refetchSegments, signalerErreur])
+
+  // ── Segments modifiés depuis la modale ───────────────────────────────────────
+  // Chaque action crée son étape d'historique : sans elle, Ctrl+Z défaisait en
+  // même temps l'action précédente et celle-ci.
+  const avecErreurSegment = useCallback(async (label, action) => {
+    saveSnapshot(takeSnapshot(label))
+    const resultat = await action()
+    if (resultat?.error) {
+      signalerErreur(`${label} impossible — ${resultat.error.message}`)
+      await refetchSegments()
+    }
+    return resultat
+  }, [saveSnapshot, takeSnapshot, signalerErreur, refetchSegments])
+
+  const handleAddSegment = useCallback((phaseId, data) =>
+    avecErreurSegment('Ajout d’un segment', () => addSegment(phaseId, data)),
+  [avecErreurSegment, addSegment])
+
+  const handleUpdateSegment = useCallback((id, changes) =>
+    avecErreurSegment('Modification d’un segment', () => updateSegment(id, changes)),
+  [avecErreurSegment, updateSegment])
+
+  const handleDeleteSegment = useCallback((id) =>
+    avecErreurSegment('Suppression d’un segment', () => deleteSegment(id)),
+  [avecErreurSegment, deleteSegment])
 
   // ── Application d'un instantané ─────────────────────────────────────────────
   //
@@ -441,16 +547,13 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
     ])
 
     const echec = [...vague1, ...vague2].find((r) => r?.error)
-    if (echec?.error) {
-      console.error('Historique : échec de persistance —', echec.error.message)
-      setUndoError(echec.error.message)
-    }
+    if (echec?.error) signalerErreur(`Annulation impossible — ${echec.error.message}`)
     // `phases` local dérive de `hookPhases` (fusion Notion) : sans ce
     // rechargement, la prochaine opération du hook repartirait de son état
     // d'avant l'annulation et la réappliquerait.
     await Promise.all([refetch(), refetchSegments()])
     return !echec?.error
-  }, [affaireId, replaceSegments, refetch, refetchSegments])
+  }, [affaireId, replaceSegments, refetch, refetchSegments, signalerErreur])
 
   const handleUndo = useCallback(async () => {
     const courant = takeSnapshot()
@@ -499,19 +602,78 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
   }, [sortedPhases, segments, jalons, periodes, affaire, refDate, rowHeight])
 
   // ── Dependencies ──────────────────────────────────────────────────────────────
+  // Chaque liaison crée son étape d'historique : sans elle, Ctrl+Z défaisait
+  // aussi l'action précédente.
   const handleDependencyCreate = useCallback(async (fromPhaseId, toPhaseId, lagSemaines) => {
-    await supabase.from('planning_etude_phases')
+    if (fromPhaseId == null || toPhaseId == null) return
+    // Une boucle rendrait la propagation des dates indéterminée
+    if (creeraitUnCycle(phases, toPhaseId, fromPhaseId)) return
+    saveSnapshot(takeSnapshot('Ajout d’une dépendance'))
+    const { error: err } = await supabase.from('planning_etude_phases')
       .update({ depends_on: fromPhaseId, lag_semaines: lagSemaines })
       .eq('id', toPhaseId)
+    if (err) signalerErreur(`Liaison impossible — ${err.message}`)
     await refetch()
-  }, [refetch])
+  }, [phases, refetch, saveSnapshot, takeSnapshot, signalerErreur])
 
   const handleDependencyDelete = useCallback(async (fromPhaseId, toPhaseId) => {
-    await supabase.from('planning_etude_phases')
+    if (toPhaseId == null) return
+    saveSnapshot(takeSnapshot('Suppression d’une dépendance'))
+    const { error: err } = await supabase.from('planning_etude_phases')
       .update({ depends_on: null, lag_semaines: 0 })
       .eq('id', toPhaseId)
+    if (err) signalerErreur(`Suppression de la liaison impossible — ${err.message}`)
     await refetch()
-  }, [refetch])
+  }, [refetch, saveSnapshot, takeSnapshot, signalerErreur])
+
+  // ── Périodes bloquantes ───────────────────────────────────────────────────────
+  //
+  // Ajouter, modifier ou retirer une période déplace la fin effective des
+  // phases qu'elle touche, sans qu'aucune phase n'ait été modifiée : les phases
+  // dépendantes doivent être recalées, sinon elles resteraient à leur ancienne
+  // place jusqu'au prochain geste sur leur prédécesseur. Le hook de périodes
+  // est partagé avec le planning chantier : ses fonctions sont enveloppées ici.
+  //
+  // La liste des périodes après l'action est reconstruite localement : l'état
+  // du hook ne sera à jour qu'au rendu suivant.
+  const recalerApresPeriodes = useCallback(async (nouvellesPeriodes) => {
+    const decalages = recalerPhasesDependantes(phases, nouvellesPeriodes)
+    if (decalages.length === 0) return
+    saveSnapshot(takeSnapshot('Recalage après modification des périodes'))
+    const parId = new Map(decalages.map((d) => [d.id, d]))
+    setPhases(phases.map((p) => {
+      const d = parId.get(p.id)
+      return d ? { ...p, semaine_debut: d.semaine_debut, annee_debut: d.annee_debut } : p
+    }))
+    await ecrireEtRecharger(() => persistUpdates(null, null, decalages))
+  }, [phases, saveSnapshot, takeSnapshot, ecrireEtRecharger, persistUpdates])
+
+  const handleAddPeriode = async (data) => {
+    const resultat = await addPeriode(data)
+    if (!resultat.error && resultat.data) await recalerApresPeriodes([...periodes, resultat.data])
+    return resultat
+  }
+
+  const handleUpdatePeriode = async (id, changes) => {
+    const resultat = await updatePeriode(id, changes)
+    if (!resultat.error) {
+      await recalerApresPeriodes(periodes.map((p) => (p.id === id ? { ...p, ...changes } : p)))
+    }
+    return resultat
+  }
+
+  const handleDeletePeriode = async (id) => {
+    const resultat = await deletePeriode(id)
+    if (!resultat.error) await recalerApresPeriodes(periodes.filter((p) => p.id !== id))
+    return resultat
+  }
+
+  // La modale d'édition reçoit la phase relue dans l'état courant, pas l'objet
+  // figé au clic : titre, segments et lecture seule restent à jour.
+  const phaseEnEdition = useMemo(() => {
+    if (!editingPhase) return null
+    return phases.find((p) => clePhase(p) === clePhase(editingPhase)) ?? editingPhase
+  }, [editingPhase, phases])
 
   // ── Loading / error ───────────────────────────────────────────────────────────
   if (loading) {
@@ -542,15 +704,15 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 52px)', overflow: 'hidden', backgroundColor: '#FAFAF9' }}>
       <div data-print="hidden">
-        {undoError && (
+        {erreurBandeau && (
           <div style={{
             padding: '6px 12px', fontSize: 12, color: '#B8412C',
             background: 'rgba(184,65,44,0.08)', borderBottom: '0.5px solid rgba(184,65,44,0.2)',
             display: 'flex', alignItems: 'center', gap: 8,
           }}>
-            <span>Annulation impossible — {undoError}. Le planning a été rechargé.</span>
+            <span>{erreurBandeau}. Le planning a été rechargé.</span>
             <button
-              onClick={() => setUndoError(null)}
+              onClick={() => setErreurBandeau(null)}
               style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#B8412C', textDecoration: 'underline' }}
             >
               Fermer
@@ -841,17 +1003,18 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
       <PhaseEtudeModal
         open={showPhaseModal}
         onClose={() => { setShowPhaseModal(false); setCreateDefaults(null) }}
-        phase={editingPhase}
+        phase={phaseEnEdition}
         phases={phases}
+        periodes={periodes}
         onSave={handleSavePhase}
         onDelete={handleDeletePhase}
         mode={phaseModalMode}
         defaultSemaine={prochaineSemaine}
         createDefaults={createDefaults}
         getSegmentsForPhase={getSegmentsForPhase}
-        addSegment={addSegment}
-        updateSegment={updateSegment}
-        deleteSegment={deleteSegment}
+        addSegment={handleAddSegment}
+        updateSegment={handleUpdateSegment}
+        deleteSegment={handleDeleteSegment}
       />
 
       <JalonEtudeModal
@@ -878,9 +1041,9 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
         open={showPeriodesModal}
         onClose={() => setShowPeriodesModal(false)}
         periodes={periodes}
-        addPeriode={addPeriode}
-        updatePeriode={updatePeriode}
-        deletePeriode={deletePeriode}
+        addPeriode={handleAddPeriode}
+        updatePeriode={handleUpdatePeriode}
+        deletePeriode={handleDeletePeriode}
       />
 
       {notionToast && (

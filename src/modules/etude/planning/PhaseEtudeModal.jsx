@@ -2,8 +2,9 @@ import { useState, useEffect, useRef } from 'react'
 import { X, Trash2, Plus, Minimize2, Maximize2, ChevronRight } from 'lucide-react'
 import {
   getWeekStart, getCurrentWeek, addWeeks, weeksBetween,
-  computeLagSemaines, getPhaseCouleur,
+  computeLagSemaines, getPhaseCouleur, descendantsPhase, normaliserSemaine,
 } from './types'
+import { construirePayloadPhase, champsModifiesPhase } from './formulairePhaseEtude'
 import { ColorPickerField } from '../../../shared/components/ColorPicker'
 
 const LABEL = {
@@ -118,9 +119,12 @@ function SegmentRow({ seg, premier, placeholderNom, onUpdate, onDelete }) {
           value={semaine}
           onChange={e => setSemaine(e.target.value)}
           onBlur={() => {
-            const v = Math.min(53, Math.max(1, Number(semaine) || 1))
-            setSemaine(v)
-            if (v !== seg.semaine_debut) commit({ semaine_debut: v })
+            const v = normaliserSemaine(Number(semaine) || 1, seg.annee_debut)
+            setSemaine(v.semaine)
+            setAnnee(v.annee)
+            if (v.semaine !== seg.semaine_debut || v.annee !== seg.annee_debut) {
+              commit({ semaine_debut: v.semaine, annee_debut: v.annee })
+            }
           }}
           style={CHAMP}
         />
@@ -132,9 +136,12 @@ function SegmentRow({ seg, premier, placeholderNom, onUpdate, onDelete }) {
           value={annee}
           onChange={e => setAnnee(e.target.value)}
           onBlur={() => {
-            const v = Number(annee) || seg.annee_debut
-            setAnnee(v)
-            if (v !== seg.annee_debut) commit({ annee_debut: v })
+            const v = normaliserSemaine(seg.semaine_debut, Number(annee) || seg.annee_debut)
+            setSemaine(v.semaine)
+            setAnnee(v.annee)
+            if (v.semaine !== seg.semaine_debut || v.annee !== seg.annee_debut) {
+              commit({ semaine_debut: v.semaine, annee_debut: v.annee })
+            }
           }}
           style={CHAMP}
         />
@@ -171,14 +178,42 @@ function SegmentRow({ seg, premier, placeholderNom, onUpdate, onDelete }) {
   )
 }
 
+// Valeurs du formulaire pour une phase existante
+function formDepuisPhase(phase) {
+  return {
+    nom:           phase.nom ?? '',
+    type_tache:    phase.type_tache ?? 'etude',
+    semaine_debut: phase.semaine_debut,
+    annee_debut:   phase.annee_debut,
+    duree_semaines: phase.duree_semaines ?? 1,
+    duree_arch:    phase.duree_arch ?? '',
+    duree_bet:     phase.duree_bet  ?? '',
+    duree_econ:    phase.duree_econ ?? '',
+    label_barre:   phase.label_barre ?? '',
+    couleur_custom: phase.couleur_custom ?? null,
+    depends_on:    phase.depends_on ?? null,
+    lag_semaines:  phase.lag_semaines ?? 0,
+  }
+}
+
 export function PhaseEtudeModal({
   open, onClose, phase, phases, onSave, onDelete, mode,
-  defaultSemaine = null, createDefaults = null,
+  defaultSemaine = null, createDefaults = null, periodes = [],
   getSegmentsForPhase, addSegment, updateSegment, deleteSegment,
 }) {
   const [form, setForm] = useState(() => emptyForm(defaultSemaine, createDefaults))
   const [saving, setSaving] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  // Valeurs à l'ouverture : seuls les champs qui s'en écartent sont enregistrés
+  const ouvertureRef = useRef(null)
+  // Battement proposé au dernier choix de prédécesseur (cf. champsModifiesPhase)
+  const battementProposeRef = useRef(null)
+
+  // Une phase venue de Notion n'existe pas en base : rien ne peut y être écrit
+  const lectureSeule = mode === 'edit' && !!phase && phase.id == null
+  // Le parent passe la phase relue à chaque rendu : le formulaire ne doit être
+  // réinitialisé qu'en changeant de phase, pas à chaque mise à jour de celle-ci.
+  const clePhase = phase ? (phase.id ?? `notion-${phase.notion_id}`) : null
   // Sections repliables : dépliées d'office seulement si elles portent une valeur
   const [showCouleur, setShowCouleur] = useState(false)
   const [showSegments, setShowSegments] = useState(false)
@@ -246,29 +281,19 @@ export function PhaseEtudeModal({
 
   useEffect(() => {
     if (!open) return
-    if (phase) {
-      setForm({
-        nom:           phase.nom ?? '',
-        type_tache:    phase.type_tache ?? 'etude',
-        semaine_debut: phase.semaine_debut,
-        annee_debut:   phase.annee_debut,
-        duree_semaines: phase.duree_semaines ?? 1,
-        duree_arch:    phase.duree_arch ?? '',
-        duree_bet:     phase.duree_bet  ?? '',
-        duree_econ:    phase.duree_econ ?? '',
-        label_barre:   phase.label_barre ?? '',
-        couleur_custom: phase.couleur_custom ?? null,
-        depends_on:    phase.depends_on ?? null,
-        lag_semaines:  phase.lag_semaines ?? 0,
-      })
-    } else {
-      setForm(emptyForm(
-        semDefaut ? { semaine: semDefaut, annee: anneeDefaut } : null,
-        cdSemaine ? { semaine_debut: cdSemaine, annee_debut: cdAnnee, duree_semaines: cdDuree } : null,
-      ))
-    }
+    const valeurs = phase
+      ? formDepuisPhase(phase)
+      : emptyForm(
+          semDefaut ? { semaine: semDefaut, annee: anneeDefaut } : null,
+          cdSemaine ? { semaine_debut: cdSemaine, annee_debut: cdAnnee, duree_semaines: cdDuree } : null,
+        )
+    setForm(valeurs)
+    ouvertureRef.current = valeurs
+    battementProposeRef.current = null
     setConfirmDelete(false)
-  }, [open, phase, semDefaut, anneeDefaut, cdSemaine, cdAnnee, cdDuree])
+  // `phase` est volontairement lue sans être une dépendance : cf. `clePhase`
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, clePhase, semDefaut, anneeDefaut, cdSemaine, cdAnnee, cdDuree])
 
   if (!open) return null
 
@@ -291,12 +316,16 @@ export function PhaseEtudeModal({
     const newDep = val === 'none' ? null : Number(val)
     if (!newDep) { set('depends_on', null); set('lag_semaines', 0); return }
     const parent = phases.find(p => p.id === newDep)
-    if (!parent) { set('depends_on', newDep); return }
+    if (!parent) { battementProposeRef.current = null; set('depends_on', newDep); return }
+    // Même calcul que l'enregistrement (fin effective du parent) et sans
+    // plancher à 0 : un battement négatif est une superposition réelle, le
+    // tronquer déplacerait la phase dès l'enregistrement.
     const lag = computeLagSemaines(
       parent.semaine_debut, parent.annee_debut, parent.duree_semaines,
-      form.semaine_debut, form.annee_debut
+      form.semaine_debut, form.annee_debut, periodes
     )
-    setForm(f => ({ ...f, depends_on: newDep, lag_semaines: Math.max(0, lag) }))
+    battementProposeRef.current = lag
+    setForm(f => ({ ...f, depends_on: newDep, lag_semaines: lag }))
   }
 
   const subTotal = (Number(form.duree_arch) || 0) + (Number(form.duree_bet) || 0) + (Number(form.duree_econ) || 0)
@@ -313,40 +342,38 @@ export function PhaseEtudeModal({
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (!form.nom.trim()) return
+    if (!form.nom.trim() || lectureSeule) return
     setSaving(true)
-    const isMoe = form.type_tache === 'etude'
-    // importance : uniquement 'moe'/'moa' tant que la migration 013 n'est pas appliquée
-    const importance = isMoe ? 'moe' : 'moa'
-    const payload = {
-      nom:            form.nom.trim(),
-      type_tache:     form.type_tache,
-      importance,
-      semaine_debut:  Number(form.semaine_debut),
-      annee_debut:    Number(form.annee_debut),
-      duree_semaines: Math.max(1, Number(form.duree_semaines)),
-      duree_arch:  isMoe && form.duree_arch !== '' ? Number(form.duree_arch) : null,
-      duree_bet:   isMoe && form.duree_bet  !== '' ? Number(form.duree_bet)  : null,
-      duree_econ:  isMoe && form.duree_econ !== '' ? Number(form.duree_econ) : null,
-      label_barre: form.type_tache === 'administratif' ? (form.label_barre || null) : null,
-      couleur_custom: form.couleur_custom || null,
-      depends_on:  form.depends_on ?? null,
-      lag_semaines: form.depends_on ? lagSem : 0,
-    }
-    await onSave({ ...phase, ...payload })
+    const payload = construirePayloadPhase(form)
+    const donnees = phase
+      ? {
+          id: phase.id,
+          ...champsModifiesPhase(
+            construirePayloadPhase(ouvertureRef.current ?? form), payload, battementProposeRef.current
+          ),
+        }
+      : payload
+    const ok = await onSave(donnees)
     setSaving(false)
-    onClose()
+    // En cas d'échec, la saisie reste à l'écran pour pouvoir réessayer
+    if (ok !== false) onClose()
   }
 
   const handleDelete = async () => {
+    if (lectureSeule) return
     if (!confirmDelete) { setConfirmDelete(true); return }
     setSaving(true)
-    await onDelete(phase.id)
+    const ok = await onDelete(phase.id)
     setSaving(false)
-    onClose()
+    if (ok !== false) onClose()
   }
 
-  const otherPhases = phases.filter(p => p.id !== phase?.id)
+  // Une descendante ne peut pas devenir le prédécesseur : la boucle rendrait
+  // la propagation des dates indéterminée.
+  const descendantes = phase?.id != null ? descendantsPhase(phases, phase.id) : new Set()
+  const otherPhases = phases.filter(p =>
+    p.id != null && p.id !== phase?.id && !descendantes.has(p.id)
+  )
 
   // ── Segments supplémentaires ────────────────────────────────────────────────
   const segmentsDePhase = (phase?.id && getSegmentsForPhase) ? getSegmentsForPhase(phase.id) : []
@@ -726,7 +753,12 @@ export function PhaseEtudeModal({
             flexShrink: 0, display: 'flex', gap: 8, justifyContent: 'flex-end', alignItems: 'center',
             padding: '10px 16px', background: 'white', borderTop: '0.5px solid #E9E2D6',
           }}>
-            {mode === 'edit' && phase && (
+            {lectureSeule && (
+              <span style={{ fontSize: 11, color: '#9C9591', fontStyle: 'italic', marginRight: 'auto' }}>
+                Phase issue de Notion — à modifier dans Notion
+              </span>
+            )}
+            {mode === 'edit' && phase && !lectureSeule && (
               <button type="button" onClick={handleDelete} disabled={saving}
                 style={{
                   display: 'inline-flex', alignItems: 'center', gap: 6,
@@ -746,12 +778,13 @@ export function PhaseEtudeModal({
             >
               Annuler
             </button>
-            <button type="submit" disabled={saving || !form.nom.trim()}
+            <button type="submit" disabled={saving || lectureSeule || !form.nom.trim()}
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 6,
                 padding: '8px 16px', borderRadius: 2, fontSize: 12, fontWeight: 500,
-                border: 'none', backgroundColor: '#2A8A4E', color: 'white', cursor: 'pointer',
-                opacity: saving || !form.nom.trim() ? 0.6 : 1,
+                border: 'none', backgroundColor: '#2A8A4E', color: 'white',
+                cursor: lectureSeule ? 'default' : 'pointer',
+                opacity: saving || lectureSeule || !form.nom.trim() ? 0.6 : 1,
               }}
             >
               {saving ? 'Enregistrement…' : 'Enregistrer'}

@@ -1,7 +1,8 @@
 import { useState, useMemo, useEffect } from 'react'
 import { FileDown, X } from 'lucide-react'
-import { addWeeks, weeksBetween, getCurrentWeek, densityFromRowHeight } from './types'
+import { weeksBetween, densityFromRowHeight, normaliserSemaine } from './types'
 import { generatePlanningEtudePdf } from './generatePlanningEtudePdf'
+import { calculerPeriodeExport, phasesDansPeriode, segmentsDansPeriode } from './periodeExportEtude'
 
 const LABEL = {
   fontSize: 10, fontWeight: 700, textTransform: 'uppercase',
@@ -36,29 +37,21 @@ const DENSITY_OPTIONS = [
   { label: 'Confort', value: 'confort' },
 ]
 
-function computeRange(taches) {
-  if (!taches.length) {
-    const cw = getCurrentWeek()
-    const end = addWeeks(cw.semaine, cw.annee, 12)
-    return { semDebut: cw.semaine, anneeDebut: cw.annee, semFin: end.semaine, anneeFin: end.annee }
-  }
-  let minS = taches[0].semaine_debut, minA = taches[0].annee_debut
-  let maxEnd = addWeeks(taches[0].semaine_debut, taches[0].annee_debut, taches[0].duree_semaines)
-  for (const t of taches) {
-    if (weeksBetween(t.semaine_debut, t.annee_debut, minS, minA) > 0) { minS = t.semaine_debut; minA = t.annee_debut }
-    const end = addWeeks(t.semaine_debut, t.annee_debut, t.duree_semaines)
-    if (weeksBetween(maxEnd.semaine, maxEnd.annee, end.semaine, end.annee) > 0) maxEnd = end
-  }
-  const start = addWeeks(minS, minA, -1)
-  const fin   = addWeeks(maxEnd.semaine, maxEnd.annee, 1)
-  return { semDebut: start.semaine, anneeDebut: start.annee, semFin: fin.semaine, anneeFin: fin.annee }
-}
+// Une saisie est exploitable si ce sont des entiers plausibles ; la semaine
+// est ensuite ramenée sur une semaine ISO réelle (S53 d'une année à 52
+// semaines → S1 de l'année suivante).
+const saisieValide = (semaine, annee) =>
+  Number.isInteger(semaine) && semaine >= 1 && semaine <= 53
+  && Number.isInteger(annee) && annee >= 2000 && annee <= 2100
 
 export function ExportEtudeModal({
   open, onClose, taches = [], jalons = [], affaire = {}, segments = [], periodes = [],
   rowHeight = 36, onExportExcel,
 }) {
-  const computed = useMemo(() => computeRange(taches), [taches])
+  const computed = useMemo(
+    () => calculerPeriodeExport(taches, segments, periodes),
+    [taches, segments, periodes]
+  )
 
   const [semDebut,     setSemDebut]     = useState(computed.semDebut)
   const [anneeDebut,   setAnneeDebut]   = useState(computed.anneeDebut)
@@ -80,43 +73,46 @@ export function ExportEtudeModal({
     setExportDensity(densityFromRowHeight(rowHeight))
   }, [open, computed, rowHeight])
 
-  const periodSemaines = useMemo(() =>
-    Math.max(0, weeksBetween(semDebut, anneeDebut, semFin, anneeFin)),
-    [semDebut, anneeDebut, semFin, anneeFin]
+  const saisiesValides = saisieValide(semDebut, anneeDebut) && saisieValide(semFin, anneeFin)
+  const debut = useMemo(
+    () => (saisiesValides ? normaliserSemaine(semDebut, anneeDebut) : null),
+    [saisiesValides, semDebut, anneeDebut]
+  )
+  const fin = useMemo(
+    () => (saisiesValides ? normaliserSemaine(semFin, anneeFin) : null),
+    [saisiesValides, semFin, anneeFin]
   )
 
-  const tachesInPeriod = useMemo(() =>
-    taches.filter(t => {
-      const end = addWeeks(t.semaine_debut, t.annee_debut, t.duree_semaines)
-      return weeksBetween(t.semaine_debut, t.annee_debut, semFin, anneeFin) >= 0 &&
-             weeksBetween(semDebut, anneeDebut, end.semaine, end.annee) >= 0
-    }),
-    [taches, semDebut, anneeDebut, semFin, anneeFin]
+  const periodSemaines = debut && fin
+    ? Math.max(0, weeksBetween(debut.semaine, debut.annee, fin.semaine, fin.annee))
+    : 0
+
+  const tachesInPeriod = useMemo(
+    () => (debut && fin ? phasesDansPeriode(taches, periodes, debut, fin) : []),
+    [taches, periodes, debut, fin]
   )
 
   const jalonInPeriod = useMemo(() =>
-    jalons.filter(j =>
-      weeksBetween(j.semaine, j.annee, semFin, anneeFin) >= 0 &&
-      weeksBetween(semDebut, anneeDebut, j.semaine, j.annee) >= 0
-    ),
-    [jalons, semDebut, anneeDebut, semFin, anneeFin]
+    debut && fin
+      ? jalons.filter(j =>
+          weeksBetween(j.semaine, j.annee, fin.semaine, fin.annee) >= 0 &&
+          weeksBetween(debut.semaine, debut.annee, j.semaine, j.annee) >= 0
+        )
+      : [],
+    [jalons, debut, fin]
   )
 
   // Segments recoupant la période exportée (mêmes bornes que les phases)
-  const segmentsInPeriod = useMemo(() =>
-    segments.filter(sg => {
-      const end = addWeeks(sg.semaine_debut, sg.annee_debut, sg.duree_semaines)
-      return weeksBetween(sg.semaine_debut, sg.annee_debut, semFin, anneeFin) >= 0 &&
-             weeksBetween(semDebut, anneeDebut, end.semaine, end.annee) >= 0
-    }),
-    [segments, semDebut, anneeDebut, semFin, anneeFin]
+  const segmentsInPeriod = useMemo(
+    () => (debut && fin ? segmentsDansPeriode(segments, debut, fin) : []),
+    [segments, debut, fin]
   )
 
   const finalFormat = formatTab === 'standard'
     ? PAGE_FORMATS[fmtIdx]
     : { w: Math.max(100, Math.min(2000, customW)), h: Math.max(100, Math.min(2000, customH)) }
 
-  const isValid = semDebut >= 1 && semDebut <= 53 && semFin >= 1 && semFin <= 53 && periodSemaines > 0
+  const isValid = periodSemaines > 0
 
   const handleOrientationToggle = () => {
     setIsLandscape(v => !v)
@@ -130,10 +126,10 @@ export function ExportEtudeModal({
       phases: tachesInPeriod,
       jalons: jalonInPeriod,
       affaire,
-      semaineDebut: semDebut,
-      anneeDebut,
-      semaineFin: semFin,
-      anneeFin,
+      semaineDebut: debut.semaine,
+      anneeDebut: debut.annee,
+      semaineFin: fin.semaine,
+      anneeFin: fin.annee,
       largeurMm: finalFormat.w,
       hauteurMm: finalFormat.h,
       segments: segmentsInPeriod,
@@ -308,7 +304,9 @@ export function ExportEtudeModal({
               {segmentsInPeriod.length > 0 && ` · ${segmentsInPeriod.length} segment${segmentsInPeriod.length > 1 ? 's' : ''}`}
               {periodes.length > 0 && ` · ${periodes.length} période${periodes.length > 1 ? 's' : ''}`}
               <br />
-              Période : S{semDebut} {anneeDebut} → S{semFin} {anneeFin}<br />
+              {debut && fin
+                ? <>Période : S{debut.semaine} {debut.annee} → S{fin.semaine} {fin.annee}<br /></>
+                : <>Période invalide<br /></>}
               Format : {finalFormat.w} mm × {finalFormat.h} mm
               {' · '}
               {DENSITY_OPTIONS.find(o => o.value === exportDensity)?.label}

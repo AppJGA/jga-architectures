@@ -4,6 +4,7 @@ import {
   getPhaseCouleur, adminGradient, TYPE_COLORS,
 } from './types'
 import { assignLabelLanes } from '../../chantier/planning/jalonLayout'
+import { echapperHtml } from '../../../shared/echapperHtml'
 
 function isFirstWeekOfMonth(semaine, annee) {
   const date = getWeekStart(semaine, annee)
@@ -87,11 +88,39 @@ function fondPeriode(periode) {
     : `rgba(${rgb},0.06)`
 }
 
+// Répartition ①②③ d'un fragment dont seules les semaines [debut, debut + duree[
+// sont visibles : les sous-durées tombées hors de la période sont retirées.
+function decouperSousDurees(sousDurees, debut, duree) {
+  const visibles = []
+  let position = 0
+  sousDurees.forEach(sub => {
+    const de = Math.max(position, debut)
+    const a = Math.min(position + sub.duree, debut + duree)
+    if (a > de) visibles.push({ num: sub.num, duree: a - de })
+    position += sub.duree
+  })
+  return visibles
+}
+
+// Place un élément dans la grille des semaines exportées, découpé aux bornes :
+// une phase commencée avant la période doit garder la partie qui s'y trouve,
+// et une barre qui la dépasse ne doit pas déborder de la page.
+function placerDansPeriode(weeks, semaine, annee, duree) {
+  if (weeks.length === 0) return null
+  const debut = weeksBetween(weeks[0].semaine, weeks[0].annee, semaine, annee)
+  const idx = Math.max(0, debut)
+  const fin = Math.min(weeks.length, debut + duree)
+  if (fin <= idx) return null
+  return { idx, duree: fin - idx, masquees: idx - debut }
+}
+
 function buildPhaseRows(phases, weeks, jalons, segments = [], periodes = [], density = 'normal') {
   const dens = densityConfig(density)
   return phases.map(phase => {
-    // Couleur effective : personnalisée si définie, sinon celle du type
-    const color = getPhaseCouleur(phase)
+    // Couleur effective : personnalisée si définie, sinon celle du type.
+    // Échappée, car elle finit dans un attribut `style`.
+    const color = echapperHtml(getPhaseCouleur(phase))
+    const nom = echapperHtml(phase.nom)
     // Phases administratives : bariolé rouge et trait noir épais, pour qu'elles
     // ressortent nettement de l'ambre MOE une fois imprimées.
     const fondBarre = phase.type_tache === 'administratif'
@@ -107,15 +136,25 @@ function buildPhaseRows(phases, weeks, jalons, segments = [], periodes = [], den
     // Fragments : les semaines bloquantes coupent la barre (même règle qu'à l'écran)
     const fragments = computePhaseFragments(phase, periodes)
     const segsParFragment = distributeSegmentsAcrossFragments(phase, fragments)
-    const fragsIndexes = fragments.map((f, fi) => ({
-      idx: weeks.findIndex(w => w.semaine === f.semaine_debut && w.annee === f.annee_debut),
-      duree: f.duree_semaines,
-      sousDurees: segsParFragment[fi] ?? [],
-    })).filter(f => f.idx >= 0)
+    const fragsIndexes = fragments.map((f, fi) => {
+      const place = placerDansPeriode(weeks, f.semaine_debut, f.annee_debut, f.duree_semaines)
+      return place && {
+        idx: place.idx,
+        duree: place.duree,
+        sousDurees: decouperSousDurees(segsParFragment[fi] ?? [], place.masquees, place.duree),
+      }
+    }).filter(Boolean)
     const dernierFrag = fragsIndexes[fragsIndexes.length - 1] ?? null
 
-    // Segments de la phase : chacun démarre dans sa propre cellule
-    const segsDePhase = segments.filter(s => s.phase_id === phase.id)
+    // Segments de la phase : chacun démarre dans sa propre cellule — la
+    // première de la période s'il a commencé avant
+    const segsDePhase = segments
+      .filter(s => s.phase_id === phase.id)
+      .map(seg => ({
+        seg,
+        place: placerDansPeriode(weeks, seg.semaine_debut, seg.annee_debut, Math.max(1, seg.duree_semaines)),
+      }))
+      .filter(({ place }) => place)
 
     const cells = weeks.map((w, idx) => {
       const ms = isFirstWeekOfMonth(w.semaine, w.annee)
@@ -140,7 +179,7 @@ function buildPhaseRows(phases, weeks, jalons, segments = [], periodes = [], den
         }
 
         const barText = phase.type_tache === 'administratif' && phase.label_barre
-          ? `<span class="bar-inner-txt">${phase.label_barre}</span>`
+          ? `<span class="bar-inner-txt">${echapperHtml(phase.label_barre)}</span>`
           : ''
 
         const isMoe = phase.type_tache === 'etude'
@@ -148,18 +187,18 @@ function buildPhaseRows(phases, weeks, jalons, segments = [], periodes = [], den
 
         content = `<div class="bar" style="${barStyle}">${segments}${barText}</div>`
         if (estDernier) {
-          content += `<div style="position:absolute;left:calc(${spanCount * 100}% + 3px);top:0;bottom:0;display:flex;align-items:center;white-space:nowrap;font-size:${dens.barLabelPt}pt;font-weight:${isMoe ? 'bold' : 'normal'};color:#1F1B17;z-index:10;">${phase.nom}</div>`
+          content += `<div style="position:absolute;left:calc(${spanCount * 100}% + 3px);top:0;bottom:0;display:flex;align-items:center;white-space:nowrap;font-size:${dens.barLabelPt}pt;font-weight:${isMoe ? 'bold' : 'normal'};color:#1F1B17;z-index:10;">${nom}</div>`
         }
       }
 
       // Barres de segment (mêmes couleur et géométrie que dans la timeline)
       let segContent = ''
-      segsDePhase.forEach(seg => {
-        if (seg.semaine_debut !== w.semaine || seg.annee_debut !== w.annee) return
-        const span = Math.max(1, seg.duree_semaines)
-        const texteSeg = phase.type_tache === 'administratif'
+      segsDePhase.forEach(({ seg, place }) => {
+        if (place.idx !== idx) return
+        const span = place.duree
+        const texteSeg = echapperHtml(phase.type_tache === 'administratif'
           ? (seg.nom ?? phase.label_barre ?? '')
-          : (seg.nom ?? '')
+          : (seg.nom ?? ''))
         segContent += `<div class="bar seg-bar" style="left:0;width:${span * 100}%;${fondBarre}">
           ${texteSeg ? `<span class="bar-inner-txt">${texteSeg}</span>` : ''}
         </div>`
@@ -167,7 +206,7 @@ function buildPhaseRows(phases, weeks, jalons, segments = [], periodes = [], den
 
       const jalonsSemaine = (jalons ?? []).filter(j => j.semaine === w.semaine && j.annee === w.annee)
       const jalonLines = jalonsSemaine.map(j =>
-        `<div class="jalon-line" style="background:${j.couleur};left:50%"></div>`
+        `<div class="jalon-line" style="background:${echapperHtml(j.couleur)};left:50%"></div>`
       ).join('')
 
       const periode = periodeDeLaSemaine(w, periodes)
@@ -176,7 +215,7 @@ function buildPhaseRows(phases, weeks, jalons, segments = [], periodes = [], den
       return `<td class="pcell${ms ? ' ms' : ''}" style="position:relative;${bg}">${content}${segContent}${jalonLines}</td>`
     }).join('')
 
-    return `<tr><td class="plabel ${labelCls}">${phase.nom}</td>${cells}</tr>`
+    return `<tr><td class="plabel ${labelCls}">${nom}</td>${cells}</tr>`
   }).join('')
 }
 
@@ -201,11 +240,11 @@ function buildJalonBand(jalons, weeks, labelColMm, weekWidthMm) {
   const hauteurMm = (Math.max(...lanes) + 1) * JALON_LIGNE_MM + 5
 
   const marqueurs = places.map(({ jalon, x }, i) => {
-    const couleur = jalon.couleur ?? '#8B5CF6'
+    const couleur = echapperHtml(jalon.couleur ?? '#8B5CF6')
     const topLabel = lanes[i] * JALON_LIGNE_MM
     const topTrait = (lanes[i] + 1) * JALON_LIGNE_MM
     return `<div style="position:absolute;left:${x.toFixed(2)}mm;top:0;bottom:0;width:0">
-      <div style="position:absolute;top:${topLabel.toFixed(2)}mm;left:1.2mm;font-size:5pt;font-weight:bold;color:${couleur};white-space:nowrap;line-height:${JALON_LIGNE_MM}mm">${jalon.label ?? ''}</div>
+      <div style="position:absolute;top:${topLabel.toFixed(2)}mm;left:1.2mm;font-size:5pt;font-weight:bold;color:${couleur};white-space:nowrap;line-height:${JALON_LIGNE_MM}mm">${echapperHtml(jalon.label)}</div>
       <div style="position:absolute;top:${topTrait.toFixed(2)}mm;bottom:1.6mm;left:0;width:1.5px;background:${couleur}"></div>
       <div style="position:absolute;bottom:0;left:-2.5px;width:0;height:0;border-left:2.5px solid transparent;border-right:2.5px solid transparent;border-top:1.6mm solid ${couleur}"></div>
     </div>`
@@ -233,9 +272,9 @@ function buildHtml({
   const jalonBand    = buildJalonBand(jalons, weeks, labelColMm, weekWidthMm)
 
   const dateStr    = new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })
-  const nomAffaire  = affaire?.nom ?? ''
-  const moaNom      = affaire?.moa_nom ?? ''
-  const codeAffaire = affaire?.code_affaire ?? affaire?.numero ?? ''
+  const nomAffaire  = echapperHtml(affaire?.nom)
+  const moaNom      = echapperHtml(affaire?.moa_nom)
+  const codeAffaire = echapperHtml(affaire?.code_affaire ?? affaire?.numero)
 
   return `<!DOCTYPE html>
 <html lang="fr">

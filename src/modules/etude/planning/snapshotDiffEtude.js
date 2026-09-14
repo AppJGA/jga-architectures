@@ -20,6 +20,10 @@ export const COLONNES_SEGMENT_ETUDE = [
 // insertion sans identifiant.
 export const estPhasePersistee = (p) => p?.id != null
 
+// Clé de rendu d'une phase : sans `id`, toutes les phases Notion partageraient
+// la même clé et React confondrait leurs lignes.
+export const clePhase = (p) => (p?.id != null ? p.id : `notion-${p?.notion_id}`)
+
 export function diffSnapshotsEtude(depuis, vers) {
   const phases = (s) => (s?.phases ?? []).filter(estPhasePersistee)
   return {

@@ -1,6 +1,15 @@
 import { useState, useMemo, useCallback } from 'react'
 import { useNotionGantt } from './useNotionGantt'
-import { getISOWeek, getWeekStart, weeksBetween } from '../../modules/etude/planning/types'
+import { getISOWeek, getWeekStart, weeksBetween, parseDateLocale } from '../../modules/etude/planning/types'
+
+// Notion échange des dates 'YYYY-MM-DD' sans heure. `toISOString()` convertit
+// en UTC : le minuit local d'un lundi devient le dimanche en France. Formatage
+// et relecture se font donc tous deux en heure locale.
+function formaterDateLocale(date) {
+  const mois = String(date.getMonth() + 1).padStart(2, '0')
+  const jour = String(date.getDate()).padStart(2, '0')
+  return `${date.getFullYear()}-${mois}-${jour}`
+}
 
 // ── codePhase → type_tache interne ────────────────────────────────────────────
 const CODE_TO_TYPE = {
@@ -15,15 +24,18 @@ export function notionPhaseToEtude(np) {
   let annee_debut   = new Date().getFullYear()
   let duree_semaines = 1
 
-  if (np.dateDebut) {
-    const iso = getISOWeek(new Date(np.dateDebut))
+  const dateDebut = parseDateLocale(np.dateDebut)
+  const dateFin = parseDateLocale(np.dateFinPrevue)
+
+  if (dateDebut) {
+    const iso = getISOWeek(dateDebut)
     semaine_debut = iso.semaine
     annee_debut   = iso.annee
   }
 
-  if (np.dateDebut && np.dateFinPrevue) {
-    const d = getISOWeek(new Date(np.dateDebut))
-    const f = getISOWeek(new Date(np.dateFinPrevue))
+  if (dateDebut && dateFin) {
+    const d = getISOWeek(dateDebut)
+    const f = getISOWeek(dateFin)
     duree_semaines = Math.max(1, weeksBetween(d.semaine, d.annee, f.semaine, f.annee))
   }
 
@@ -51,11 +63,11 @@ export function notionPhaseToEtude(np) {
 // ── GanttEtude → Notion ───────────────────────────────────────────────────────
 export function etudePhaseToNotion(phase) {
   const debutDate = getWeekStart(phase.semaine_debut, phase.annee_debut)
-  const debutISO  = debutDate.toISOString().slice(0, 10)
+  const debutISO  = formaterDateLocale(debutDate)
 
   const finDate = new Date(debutDate)
   finDate.setDate(finDate.getDate() + (phase.duree_semaines ?? 1) * 7)
-  const finISO = finDate.toISOString().slice(0, 10)
+  const finISO = formaterDateLocale(finDate)
 
   return {
     dateDebut:      debutISO,

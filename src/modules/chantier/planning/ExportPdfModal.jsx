@@ -523,8 +523,15 @@ export function ExportPdfModal({
           {onExportExcel && (
             <button
               style={{ ...BTN, marginRight: 'auto' }}
-              onClick={() => { onExportExcel({ density: exportDensity }); onClose() }}
-              title="Exporter le tableau avec les mêmes options de densité"
+              onClick={() => {
+                onExportExcel({
+                  density: exportDensity, dateDebut, dateFin, tasks: tachesInPeriod,
+                  viewMode: exportViewMode, colorMode: exportColorMode,
+                  groupMode: zones.length > 0 ? exportGroupMode : 'lot',
+                })
+                onClose()
+              }}
+              title="Exporter le tableau avec la période et les options choisies"
             >
               <FileDown size={13} /> Excel
             </button>

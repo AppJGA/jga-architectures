@@ -122,6 +122,13 @@ export function weeksBetween(s1, a1, s2, a2) {
   return Math.round((d2.getTime() - d1.getTime()) / (7 * 86400000))
 }
 
+// Ramène une saisie hors bornes (S53 d'une année qui n'en compte que 52, S0)
+// sur la semaine ISO réelle : enregistrée brute, elle serait affichée à une
+// position que `getISOWeek` ne renvoie jamais et fausserait les comparaisons.
+export function normaliserSemaine(semaine, annee) {
+  return addWeeks(Number(semaine), Number(annee), 0)
+}
+
 // Semaine ISO courante
 export function getCurrentWeek() {
   return getISOWeek(new Date())
@@ -293,6 +300,44 @@ export function distributeSegmentsAcrossFragments(phase, fragments) {
   return parFragment
 }
 
+// ─── Arbre des dépendances ────────────────────────────────────────────────────
+//
+// Chaque phase n'a qu'un parent : ses ancêtres forment une chaîne. Les ensembles
+// visités servent de garde-fou si la base contient déjà une boucle.
+
+export function ancetresPhase(phases, phaseId) {
+  const parParId = new Map((phases ?? []).map((p) => [p.id, p]))
+  const ancetres = new Set()
+  let courant = parParId.get(phaseId)?.depends_on
+  while (courant != null && !ancetres.has(courant) && parParId.has(courant)) {
+    ancetres.add(courant)
+    courant = parParId.get(courant).depends_on
+  }
+  return ancetres
+}
+
+export function descendantsPhase(phases, phaseId) {
+  const descendants = new Set()
+  const file = [phaseId]
+  while (file.length > 0) {
+    const parentId = file.shift()
+    ;(phases ?? []).forEach((p) => {
+      if (p.depends_on !== parentId || p.id === phaseId || descendants.has(p.id)) return
+      descendants.add(p.id)
+      file.push(p.id)
+    })
+  }
+  return descendants
+}
+
+// Faire dépendre `enfantId` de `parentId` fermerait-il une boucle ? C'est le cas
+// si le parent visé est la phase elle-même ou l'une de ses descendantes : la
+// propagation ne pourrait plus déterminer de date.
+export function creeraitUnCycle(phases, enfantId, parentId) {
+  if (parentId == null) return false
+  return parentId === enfantId || ancetresPhase(phases, parentId).has(enfantId)
+}
+
 // ─── Propagation chemin critique ──────────────────────────────────────────────
 
 export function propagateEtudeDependencies(taches, changedId, newSemaine, newAnnee, newDuree, periodes = []) {
@@ -319,6 +364,10 @@ export function propagateEtudeDependencies(taches, changedId, newSemaine, newAnn
 
     snapshot.forEach(child => {
       if (child.depends_on !== parentId) return
+      // Dans une boucle de dépendances héritée de données anciennes, la phase
+      // modifiée redeviendrait sa propre descendante : elle recevrait ici une
+      // seconde écriture contradictoire avec celle de ses propres champs.
+      if (child.id === changedId) return
       const newStart = addWeeks(parentEnd.semaine, parentEnd.annee, child.lag_semaines ?? 0)
       if (newStart.semaine !== child.semaine_debut || newStart.annee !== child.annee_debut) {
         snapshot.set(child.id, { ...child, semaine_debut: newStart.semaine, annee_debut: newStart.annee })
@@ -365,7 +414,12 @@ export function calculerModificationPhase(phases, phaseId, changes, periodes = [
 
   if (parent) {
     const memeLien = apres.depends_on === phase.depends_on
-    const lagSaisi = memeLien && Number(apres.lag_semaines ?? 0) !== Number(phase.lag_semaines ?? 0)
+    // Nouveau prédécesseur : un battement fourni en même temps est une saisie
+    // (la modale ne l'envoie que s'il diffère de celui qu'elle a proposé).
+    // Sans lui, le battement se déduit de la position actuelle.
+    const lagSaisi = memeLien
+      ? Number(apres.lag_semaines ?? 0) !== Number(phase.lag_semaines ?? 0)
+      : changes.lag_semaines != null
     const debutModifie = apres.semaine_debut !== phase.semaine_debut || apres.annee_debut !== phase.annee_debut
 
     if (lagSaisi) {
@@ -386,4 +440,41 @@ export function calculerModificationPhase(phases, phaseId, changes, periodes = [
     phases, phaseId, cible.semaine_debut, cible.annee_debut, cible.duree_semaines, periodes
   )
   return { changes: finalChanges, cascades }
+}
+
+/**
+ * Replace toutes les phases dépendantes après un changement de périodes
+ * bloquantes : la fin effective d'un prédécesseur a pu reculer ou avancer sans
+ * qu'aucune phase n'ait été touchée. Les phases sans prédécesseur gardent leur
+ * début ; chaque descendante est recalée sur la fin effective de son parent
+ * augmentée de son battement, en partant des racines.
+ *
+ * @returns [{ id, semaine_debut, annee_debut }] — seulement les phases qui bougent
+ */
+export function recalerPhasesDependantes(phases, periodes = []) {
+  const persistees = (phases ?? []).filter((p) => p?.id != null)
+  const etat = new Map(persistees.map((p) => [p.id, { ...p }]))
+  const racines = persistees.filter((p) => p.depends_on == null || !etat.has(p.depends_on))
+
+  const updates = new Map()
+  const visites = new Set()
+  const file = racines.map((p) => p.id)
+
+  while (file.length > 0) {
+    const parentId = file.shift()
+    if (visites.has(parentId)) continue
+    visites.add(parentId)
+    const fin = finEffectivePhase(etat.get(parentId), periodes)
+
+    etat.forEach((enfant) => {
+      if (enfant.depends_on !== parentId || visites.has(enfant.id)) return
+      const debut = addWeeks(fin.semaine, fin.annee, Number(enfant.lag_semaines ?? 0))
+      if (debut.semaine !== enfant.semaine_debut || debut.annee !== enfant.annee_debut) {
+        etat.set(enfant.id, { ...enfant, semaine_debut: debut.semaine, annee_debut: debut.annee })
+        updates.set(enfant.id, { id: enfant.id, semaine_debut: debut.semaine, annee_debut: debut.annee })
+      }
+      file.push(enfant.id)
+    })
+  }
+  return [...updates.values()]
 }

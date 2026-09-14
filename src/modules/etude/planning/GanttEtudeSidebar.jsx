@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react'
 import { Pencil, GripVertical } from 'lucide-react'
 import { getPhaseCouleur, rowMetrics } from './types'
+import { clePhase } from './snapshotDiffEtude'
 
 export const HEADER_HEIGHT = 56
 
@@ -19,6 +20,7 @@ export function GanttEtudeSidebar({ phases, onEdit, criticalIds, onReorder, rowH
   }, [])
 
   const handleDragOver = useCallback((e, phaseId) => {
+    if (phaseId == null) return
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
     if (phaseId !== draggedId) setDragOverId(phaseId)
@@ -26,7 +28,7 @@ export function GanttEtudeSidebar({ phases, onEdit, criticalIds, onReorder, rowH
 
   const handleDrop = useCallback((e, targetId) => {
     e.preventDefault()
-    if (!draggedId || draggedId === targetId) return
+    if (draggedId == null || targetId == null || draggedId === targetId) return
     const next = [...phases]
     const fromIdx = next.findIndex(p => p.id === draggedId)
     const toIdx   = next.findIndex(p => p.id === targetId)
@@ -56,7 +58,7 @@ export function GanttEtudeSidebar({ phases, onEdit, criticalIds, onReorder, rowH
 
       {phases.map(phase => (
         <PhaseRow
-          key={phase.id}
+          key={clePhase(phase)}
           phase={phase}
           rowHeight={rowHeight}
           onEdit={onEdit}
@@ -93,7 +95,8 @@ function PhaseRow({
 
   return (
     <div
-      draggable
+      // Une phase venue de Notion n'a pas de ligne en base où écrire son ordre
+      draggable={phase.id != null}
       onDragStart={e => onDragStart(e, phase.id)}
       onDragEnd={onDragEnd}
       onDragOver={e => onDragOver(e, phase.id)}

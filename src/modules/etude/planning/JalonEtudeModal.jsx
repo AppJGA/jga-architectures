@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { X, Flag, Pencil, Check, Trash2, Plus } from 'lucide-react'
 import { supabase } from '../../../core/supabase/client'
-import { getWeekStart } from './types'
+import { getWeekStart, normaliserSemaine } from './types'
 
 const JALONS_SUGGERES = [
   "Validation ESQ",
@@ -65,7 +65,8 @@ function JalonRow({ jalon, onUpdate, onDelete }) {
 
   const handleSave = async () => {
     if (!draft.label.trim() || !draft.semaine || !draft.annee) return
-    await onUpdate(jalon.id, { label: draft.label.trim(), semaine: Number(draft.semaine), annee: Number(draft.annee), couleur: draft.couleur })
+    const { semaine, annee } = normaliserSemaine(draft.semaine, draft.annee)
+    await onUpdate(jalon.id, { label: draft.label.trim(), semaine, annee, couleur: draft.couleur })
     setEditing(false)
   }
 
@@ -150,11 +151,12 @@ export function JalonEtudeModal({ open, onClose, jalons, affaireId, onRefetch })
     e.preventDefault()
     if (!newLabel.trim() || !newSemaine || !newAnnee) return
     setSaving(true)
+    const { semaine, annee } = normaliserSemaine(newSemaine, newAnnee)
     const { error } = await supabase.from('planning_etude_jalons').insert([{
       affaire_id: affaireId,
       label: newLabel.trim(),
-      semaine: Number(newSemaine),
-      annee: Number(newAnnee),
+      semaine,
+      annee,
       couleur: newCouleur,
     }])
     if (!error) {

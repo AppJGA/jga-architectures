@@ -1,3 +1,5 @@
+import { weeksBetween, finEffectivePhase } from './types'
+
 /**
  * computeCriticalPath — Méthode CPM sur les phases étude.
  *
@@ -6,13 +8,40 @@
  * deux branches sans lien entre elles peuvent toutes deux être critiques
  * si leurs EF atteignent la fin de projet.
  *
- * @param {Array} phases — phases avec { id, duree_semaines, depends_on, lag_semaines }
+ * Les dates sont exprimées en semaines depuis la première phase du planning.
+ * Faire démarrer toute phase sans prédécesseur à 0 comparait deux branches
+ * décalées de plusieurs mois comme si elles commençaient ensemble.
+ *
+ * @param {Array} phases — phases avec { id, semaine_debut, annee_debut, duree_semaines, depends_on, lag_semaines }
+ * @param {Array} periodes — périodes bloquantes : elles repoussent la fin effective
  * @returns {Set} criticalIds — IDs des phases sur le chemin critique
  */
-export function computeCriticalPath(phases) {
-  if (phases.length === 0) return new Set()
+export function computeCriticalPath(phases, periodes = []) {
+  // Les phases sans identifiant (venues de Notion) ne peuvent pas servir de clé
+  const valides = (phases ?? []).filter(p => p?.id != null && p.semaine_debut && p.annee_debut)
+  if (valides.length === 0) return new Set()
 
-  const phaseMap = new Map(phases.map(p => [p.id, p]))
+  const phaseMap = new Map(valides.map(p => [p.id, p]))
+
+  let reference = valides[0]
+  valides.forEach(p => {
+    if (weeksBetween(reference.semaine_debut, reference.annee_debut, p.semaine_debut, p.annee_debut) < 0) {
+      reference = p
+    }
+  })
+  const indexDe = (semaine, annee) =>
+    weeksBetween(reference.semaine_debut, reference.annee_debut, semaine, annee)
+
+  // Position réelle de chaque phase : début et fin effective (semaines bloquées
+  // déduites), l'écart des deux étant l'étendue occupée sur le calendrier.
+  const DEBUT = new Map()
+  const FIN = new Map()
+  valides.forEach(p => {
+    const fin = finEffectivePhase(p, periodes)
+    DEBUT.set(p.id, indexDe(p.semaine_debut, p.annee_debut))
+    FIN.set(p.id, indexDe(fin.semaine, fin.annee))
+  })
+  const etendue = (id) => FIN.get(id) - DEBUT.get(id)
 
   // ── Tri topologique (DFS post-order) ────────────────────────────────────────
   const visited  = new Set()
@@ -32,7 +61,7 @@ export function computeCriticalPath(phases) {
     order.push(id)
   }
 
-  phases.forEach(p => dfs(p.id))
+  valides.forEach(p => dfs(p.id))
 
   // ── Forward pass : ES (Early Start) et EF (Early Finish) en semaines ────────
   const ES = new Map()
@@ -40,19 +69,19 @@ export function computeCriticalPath(phases) {
 
   for (const id of order) {
     const phase = phaseMap.get(id)
-    let es = 0
+    let es = DEBUT.get(id)
     if (phase.depends_on != null && EF.has(phase.depends_on)) {
       es = EF.get(phase.depends_on) + (phase.lag_semaines ?? 0)
     }
     ES.set(id, es)
-    EF.set(id, es + (phase.duree_semaines ?? 1))
+    EF.set(id, es + etendue(id))
   }
 
   const projectEnd = EF.size > 0 ? Math.max(...EF.values()) : 0
 
   // ── Carte des successeurs ───────────────────────────────────────────────────
-  const successors = new Map(phases.map(p => [p.id, []]))
-  phases.forEach(p => {
+  const successors = new Map(valides.map(p => [p.id, []]))
+  valides.forEach(p => {
     if (p.depends_on != null && successors.has(p.depends_on)) {
       successors.get(p.depends_on).push(p)
     }
@@ -63,7 +92,6 @@ export function computeCriticalPath(phases) {
   const LF = new Map()
 
   for (const id of [...order].reverse()) {
-    const phase = phaseMap.get(id)
     const succs = successors.get(id) ?? []
 
     const lf = succs.length === 0
@@ -71,12 +99,12 @@ export function computeCriticalPath(phases) {
       : Math.min(...succs.map(s => (LS.get(s.id) ?? projectEnd) - (s.lag_semaines ?? 0)))
 
     LF.set(id, lf)
-    LS.set(id, lf - (phase.duree_semaines ?? 1))
+    LS.set(id, lf - etendue(id))
   }
 
   // ── Float = LS − ES ; chemin critique = float ≈ 0 ──────────────────────────
   const criticalIds = new Set()
-  for (const phase of phases) {
+  for (const phase of valides) {
     const float = (LS.get(phase.id) ?? 0) - (ES.get(phase.id) ?? 0)
     if (Math.abs(float) < 0.001) criticalIds.add(phase.id)
   }

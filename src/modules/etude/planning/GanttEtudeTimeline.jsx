@@ -4,7 +4,9 @@ import {
   getWeekStart, addWeeks, weeksBetween, getCurrentWeek, computeLagSemaines,
   getPhaseCouleur, adminGradient, rowMetrics,
   weekOfDate, computePhaseFragments, finEffectivePhase, distributeSegmentsAcrossFragments,
+  ancetresPhase, creeraitUnCycle,
 } from './types'
+import { clePhase } from './snapshotDiffEtude'
 
 function hexToRgba(hex, alpha) {
   const h = (hex || '#B8412C').replace('#', '')
@@ -91,7 +93,7 @@ export function GanttEtudeTimeline({
     const offsets = {}
     let y = 0
     for (const p of phases) {
-      offsets[p.id] = y
+      offsets[clePhase(p)] = y
       y += rowHeight
     }
     return offsets
@@ -147,6 +149,8 @@ export function GanttEtudeTimeline({
 
   const startBarDrag = useCallback((e, phase, type) => {
     if (drawMode) return   // en mode dessin, le geste crée une phase
+    // Phase venue de Notion, absente de la base : il n'y a rien à enregistrer
+    if (phase.id == null) return
     e.preventDefault(); e.stopPropagation()
     dragState.moved = false
     barDragRef.current = {
@@ -369,12 +373,15 @@ export function GanttEtudeTimeline({
   )
 
   // ── Mouse handlers ─────────────────────────────────────────────────────────────
+  // Le geste compte comme un déplacement dès qu'il change de semaine : à fort
+  // dézoom, une semaine fait moins que le seuil de 4 px, et l'aperçu avançait
+  // sans que rien ne soit enregistré.
   const handleMouseMove = useCallback((e) => {
     if (barDragRef.current) {
       const drag = barDragRef.current
       const dx = e.clientX - drag.startX
-      if (Math.abs(dx) > 4) dragState.moved = true
       const delta = Math.round(dx / semWidth)
+      if (Math.abs(dx) > 4 || delta !== 0) dragState.moved = true
       if (delta !== drag.lastDelta) {
         drag.lastDelta = delta
         setDragPreview({ id: drag.phaseId, ...phaseChangesFor(drag, delta) })
@@ -383,8 +390,8 @@ export function GanttEtudeTimeline({
     if (segDragRef.current) {
       const drag = segDragRef.current
       const dx = e.clientX - drag.startX
-      if (Math.abs(dx) > 4) dragState.moved = true
       const delta = Math.round(dx / semWidth)
+      if (Math.abs(dx) > 4 || delta !== 0) dragState.moved = true
       const el = document.querySelector(`[data-segid="${drag.segId}"]`)
       if (el) {
         const c = segChangesFor(drag, delta)
@@ -405,8 +412,8 @@ export function GanttEtudeTimeline({
     if (barDragRef.current) {
       const drag = barDragRef.current
       const { phaseId, startX, origSemaine, origAnnee, origDuree } = drag
-      if (dragState.moved) {
-        const delta = Math.round((e.clientX - startX) / semWidth)
+      const delta = Math.round((e.clientX - startX) / semWidth)
+      if (delta !== 0) {
         const c = phaseChangesFor(drag, delta)
         const newSem = c.semaine_debut ?? origSemaine
         const newAnn = c.annee_debut ?? origAnnee
@@ -424,15 +431,22 @@ export function GanttEtudeTimeline({
 
     if (segDragRef.current) {
       const drag = segDragRef.current
-      if (dragState.moved) {
-        const delta = Math.round((e.clientX - drag.startX) / semWidth)
-        const changes = segChangesFor(drag, delta)
-        const bouge = (changes.semaine_debut != null && changes.semaine_debut !== drag.origSemaine)
-          || (changes.annee_debut != null && changes.annee_debut !== drag.origAnnee)
-          || (changes.duree_semaines != null && changes.duree_semaines !== drag.origDuree)
-        if (bouge) {
-          updateSegmentLocal?.(drag.segId, changes)
-          onSegmentCommit?.(drag.segId, changes)
+      const delta = Math.round((e.clientX - drag.startX) / semWidth)
+      const changes = segChangesFor(drag, delta)
+      const bouge = (changes.semaine_debut != null && changes.semaine_debut !== drag.origSemaine)
+        || (changes.annee_debut != null && changes.annee_debut !== drag.origAnnee)
+        || (changes.duree_semaines != null && changes.duree_semaines !== drag.origDuree)
+      if (bouge) {
+        dragState.moved = true
+        updateSegmentLocal?.(drag.segId, changes)
+        onSegmentCommit?.(drag.segId, changes)
+      } else {
+        // L'aperçu a déplacé l'élément directement dans le DOM. Sans geste
+        // abouti, l'état ne change pas et React ne le remettrait pas en place.
+        const el = document.querySelector(`[data-segid="${drag.segId}"]`)
+        if (el) {
+          el.style.left = `${drag.origLeft}px`
+          el.style.width = `${Math.max(drag.origDuree, 1) * semWidth}px`
         }
       }
       segDragRef.current = null
@@ -459,7 +473,7 @@ export function GanttEtudeTimeline({
   const handleConnectionPointClick = useCallback((e, point) => {
     e.preventDefault(); e.stopPropagation()
     if (!connectingFrom) {
-      if (point.side === 'end') {
+      if (point.side === 'end' && point.phaseId != null) {
         connectionState.pending = true
         setConnectingFrom(point)
         if (svgRef.current) {
@@ -468,7 +482,10 @@ export function GanttEtudeTimeline({
         }
       }
     } else {
-      if (point.side === 'start' && point.phaseId !== connectingFrom.phaseId) {
+      if (
+        point.side === 'start' && point.phaseId != null
+        && !creeraitUnCycle(phases, point.phaseId, connectingFrom.phaseId)
+      ) {
         const exists = phases.find(p => p.id === point.phaseId && p.depends_on === connectingFrom.phaseId)
         if (!exists) {
           const fromPhase = phases.find(p => p.id === connectingFrom.phaseId)
@@ -483,6 +500,14 @@ export function GanttEtudeTimeline({
       setConnectingFrom(null)
     }
   }, [connectingFrom, phases, onDependencyCreate, periodes])
+
+  // Pendant une connexion, les ancêtres de la phase source ne sont pas des
+  // cibles possibles : les lier fermerait une boucle. Leur pastille est masquée
+  // plutôt que de laisser un clic sans effet.
+  const ancetresSource = useMemo(
+    () => (connectingFrom ? ancetresPhase(phases, connectingFrom.phaseId) : null),
+    [connectingFrom, phases]
+  )
 
   return (
     <div
@@ -652,11 +677,14 @@ export function GanttEtudeTimeline({
         {/* Phase rows — la phase affichée intègre l'aperçu du geste en cours */}
         {phases.map((phase) => (
           <PhaseBarRow
-            key={phase.id}
-            phase={dragPreview?.id === phase.id ? { ...phase, ...dragPreview } : phase}
+            key={clePhase(phase)}
+            phase={dragPreview && dragPreview.id === phase.id ? { ...phase, ...dragPreview } : phase}
             periodes={periodes}
             rowHeight={rowHeight}
-            rowOffset={rowOffsets[phase.id] ?? 0}
+            rowOffset={rowOffsets[clePhase(phase)] ?? 0}
+            cibleInterdite={!!connectingFrom && (
+              phase.id == null || phase.id === connectingFrom.phaseId || !!ancetresSource?.has(phase.id)
+            )}
             semWidth={semWidth}
             refSemaine={refWeek.semaine}
             refAnnee={refWeek.annee}
@@ -820,7 +848,7 @@ export function GanttEtudeTimeline({
 
 function PhaseBarRow({
   phase, periodes = [], rowOffset, semWidth, refSemaine, refAnnee, rowHeight = 44,
-  isDragging, isConnecting, connectingFromId, hoveredPoint,
+  isDragging, isConnecting, connectingFromId, hoveredPoint, cibleInterdite = false,
   onBarDragStart, onBarClick, onConnectionPointClick, onConnectionPointHover,
   isCritical,
   segments = [], draggingSegId, onSegmentDragStart,
@@ -862,8 +890,10 @@ function PhaseBarRow({
   const isSource = connectingFromId === phase.id
   const isStartHov = hoveredPoint?.phaseId === phase.id && hoveredPoint?.side === 'start'
   const isEndHov = hoveredPoint?.phaseId === phase.id && hoveredPoint?.side === 'end'
-  const showStartDot = isConnecting && connectingFromId !== phase.id
-  const showEndDot = !isConnecting && isHovered
+  // Une phase venue de Notion n'est pas en base : elle ne peut pas être liée
+  const modifiable = phase.id != null
+  const showStartDot = isConnecting && connectingFromId !== phase.id && !cibleInterdite
+  const showEndDot = !isConnecting && isHovered && modifiable
 
   const startPoint = { phaseId: phase.id, side: 'start', x: left, y: connectionY }
   const endPoint = { phaseId: phase.id, side: 'end', x: finLeft, y: connectionY }
@@ -903,7 +933,7 @@ function PhaseBarRow({
                   : '0 1px 3px rgba(0,0,0,0.15)',
               zIndex: isDragging ? 30 : 10,
               opacity: isDragging ? 0.9 : 1,
-              cursor: isConnecting && !isSource ? 'crosshair' : 'grab',
+              cursor: isConnecting && !isSource ? 'crosshair' : modifiable ? 'grab' : 'default',
             }}
             onMouseDown={(e) => {
               if (e.target.dataset.handle || e.target.dataset.editbtn || isConnecting) return
@@ -914,7 +944,7 @@ function PhaseBarRow({
             {premier && (
               <div
                 data-handle="left"
-                style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: HANDLE_W, cursor: 'ew-resize', flexShrink: 0, borderRadius: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: HANDLE_W, cursor: modifiable ? 'ew-resize' : 'default', flexShrink: 0, borderRadius: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                 onMouseDown={(e) => { e.stopPropagation(); onBarDragStart(e, phase, 'resize-left') }}
                 onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.2)'}
                 onMouseLeave={e => e.currentTarget.style.backgroundColor = ''}
@@ -992,7 +1022,7 @@ function PhaseBarRow({
 
                 <div
                   data-handle="right"
-                  style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: HANDLE_W, cursor: 'ew-resize', flexShrink: 0, borderRadius: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: HANDLE_W, cursor: modifiable ? 'ew-resize' : 'default', flexShrink: 0, borderRadius: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                   onMouseDown={(e) => { e.stopPropagation(); onBarDragStart(e, phase, 'resize-right') }}
                   onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.2)'}
                   onMouseLeave={e => e.currentTarget.style.backgroundColor = ''}

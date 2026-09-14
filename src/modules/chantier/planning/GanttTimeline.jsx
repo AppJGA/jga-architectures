@@ -7,10 +7,10 @@ import {
   addWorkingDays,
   workingDaysBetween,
   computeLag,
+  addWorkingDaysBlocked,
 } from './types'
 import { assignLabelLanes } from './jalonLayout'
 import {
-  addWorkingDaysBlocked,
   weekIndexFromRef,
   xAtDateMonth,
   barreSemaine,
@@ -1049,13 +1049,23 @@ export function GanttTimeline({
         const fromInfo = getEntityDateDuree(connectingFrom, tasks, segments)
         const toInfo = getEntityDateDuree(point, tasks, segments)
         const lag = (fromInfo && toInfo)
-          ? computeLag(parseDate(fromInfo.debut), fromInfo.duree, parseDate(toInfo.debut))
+          ? computeLag(fromInfo.debut, fromInfo.duree, toInfo.debut, periodes)
           : 1
 
-        if (connectingFrom.type === 'task' && point.type === 'task') {
-          const exists = tasks.find((t) => t.id === point.taskId && t.depends_on === connectingFrom.taskId)
-          if (!exists) onDependencyCreate(connectingFrom.taskId, point.taskId, lag)
-        } else {
+        const cible = point.type === 'task' ? tasks.find((t) => t.id === point.taskId) : null
+        // `depends_on` ne porte qu'un prédécesseur : un second lien vers la même
+        // tâche l'écrasait sans prévenir, et le premier chemin critique disparaissait.
+        // Il passe désormais par planning_dependances, qui en accepte plusieurs.
+        const lienHistoriqueLibre = connectingFrom.type === 'task' && cible && cible.depends_on == null
+        const dejaLie = connectingFrom.type === 'task' && cible && (
+          cible.depends_on === connectingFrom.taskId
+          || dependances.some((d) => d.source_segment_id == null && d.cible_segment_id == null
+            && d.source_tache_id === connectingFrom.taskId && d.cible_tache_id === cible.id)
+        )
+
+        if (lienHistoriqueLibre) {
+          onDependencyCreate(connectingFrom.taskId, point.taskId, lag)
+        } else if (!dejaLie) {
           onSegmentDependencyCreate?.({
             sourceTacheId: connectingFrom.type === 'task' ? connectingFrom.taskId : null,
             sourceSegmentId: connectingFrom.type === 'segment' ? connectingFrom.segmentId : null,
@@ -1067,7 +1077,7 @@ export function GanttTimeline({
       }
       setConnectingFrom(null)
     }
-  }, [connectingFrom, tasks, segments, onDependencyCreate, onSegmentDependencyCreate])
+  }, [connectingFrom, tasks, segments, dependances, periodes, onDependencyCreate, onSegmentDependencyCreate])
 
   // Position d'une date, quel que soit le mode d'affichage (jour / semaine / mois)
   const getX = useCallback((date) => {

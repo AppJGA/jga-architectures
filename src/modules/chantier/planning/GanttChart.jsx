@@ -1,8 +1,10 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { Trash2, X, ZoomIn, ZoomOut, Calendar, Eye, Layers, Palette } from 'lucide-react'
 import * as XLSX from 'xlsx-js-style'
-import { parseDate, formatDateISO, computeLag, addWorkingDays } from './types'
-import { propagateAllDependencies, endDateChanged, entityKey } from './propagation'
+import { parseDate, formatDateISO, addWorkingDays } from './types'
+import {
+  propagateAllDependencies, endDateChanged, entityKey, reconcilierLienHistorique, lagsDependancesCible,
+} from './propagation'
 import { buildRowsByZone } from './groupByZone'
 import { legendeCouleurs, sansDiese } from './legende'
 import { trierZones } from '../../../shared/hooks/ordreZones'
@@ -154,7 +156,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
     segments, addSegment, updateSegment, updateSegmentLocal, deleteSegment, getSegmentsForTache,
     replaceSegments,
   } = usePlanningSegments(affaireId)
-  const { dependances, addDependance, deleteDependance } = usePlanningDependances(affaireId)
+  const { dependances, addDependance, deleteDependance, updateLags } = usePlanningDependances(affaireId)
 
   // ── Historique annuler / rétablir ───────────────────────────────────────────
   const historique = useUndoRedo(20)
@@ -412,10 +414,15 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
       delai_apres: taskData.delai_apres ?? 0,
       label_apres: (taskData.delai_apres ?? 0) > 0 ? (taskData.label_apres ?? null) : null,
     }
+    const ancienneTache = tasks.find((t) => t.id === taskData.id)
+    if (taskModalMode !== 'create' && ancienneTache) {
+      // Un écart saisi replace la tâche ; un début modifié recalcule l'écart
+      const parent = tasks.find((t) => t.id === payload.depends_on)
+      Object.assign(payload, reconcilierLienHistorique(ancienneTache, payload, parent, periodes))
+    }
     // Instantané pris seulement si l'enregistrement modifie réellement la tâche :
     // valider la modale sans rien changer ne doit pas consommer une étape
     // d'historique, sinon le Ctrl+Z suivant paraîtrait sans effet.
-    const ancienneTache = tasks.find((t) => t.id === taskData.id)
     const modifie = taskModalMode === 'create' || !ancienneTache
       || Object.keys(payload).some((c) => (ancienneTache[c] ?? null) !== (payload[c] ?? null))
     if (modifie) {
@@ -449,6 +456,11 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
 
       const ok = await persistCascade(cascades, [
         supabase.from('planning').update(payload).eq('id', taskData.id),
+        ...(payload.debut !== ancienne?.debut
+          ? updateLags(lagsDependancesCible({
+              type: 'task', id: taskData.id, debut: payload.debut, tasks, segments, dependances, periodes,
+            }))
+          : []),
       ])
       if (!ok) throw new Error('Échec de l’enregistrement de la tâche')
     }
@@ -516,15 +528,20 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
     const newDebut = changes.debut ?? movedTask.debut
     const newDuree = changes.duree ?? movedTask.duree
 
-    // Si la tâche déplacée est un enfant (a une dépendance) et que son début change,
-    // recalculer le lag depuis la position actuelle de sa parente et le persister.
+    // Tâche déplacée à la main : ses liens entrants prennent l'écart
+    // correspondant à sa nouvelle position, sinon elle reviendrait à l'ancienne
+    // au prochain décalage de son prédécesseur.
     let finalChanges = changes
-    if (movedTask.depends_on && changes.debut) {
+    let lagsEntrants = []
+    if (changes.debut && changes.debut !== movedTask.debut) {
       const parentTask = tasks.find((t) => t.id === movedTask.depends_on)
       if (parentTask) {
-        const newLag = computeLag(parseDate(parentTask.debut), parentTask.duree, parseDate(newDebut))
-        finalChanges = { ...changes, lag_days: newLag }
+        const { lag_days } = reconcilierLienHistorique(movedTask, { ...movedTask, debut: newDebut }, parentTask, periodes)
+        finalChanges = { ...changes, lag_days }
       }
+      lagsEntrants = lagsDependancesCible({
+        type: 'task', id: taskId, debut: newDebut, tasks, segments, dependances, periodes,
+      })
     }
 
     // Scénario resize gauche : le début recule et la durée augmente d'autant, donc
@@ -542,8 +559,9 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
 
     await persistCascade(cascades, [
       supabase.from('planning').update(finalChanges).eq('id', taskId),
+      ...updateLags(lagsEntrants),
     ])
-  }, [tasks, segments, dependances, periodes, applyCascadeLocally, persistCascade, saveSnapshot, takeSnapshot])
+  }, [tasks, segments, dependances, periodes, applyCascadeLocally, persistCascade, updateLags, saveSnapshot, takeSnapshot])
 
   // ── Déplacement / redimensionnement d'un segment, avec propagation ─────────────
   // `changes` : { date_debut?, duree_jours? } — un déplacement ne change que la
@@ -575,8 +593,13 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
 
     await persistCascade(cascades, [
       updateSegment(segmentId, changes),
+      ...(changes.date_debut && changes.date_debut !== seg.date_debut
+        ? updateLags(lagsDependancesCible({
+            type: 'segment', id: segmentId, debut: newDebut, tasks, segments, dependances, periodes,
+          }))
+        : []),
     ])
-  }, [tasks, segments, dependances, periodes, updateSegment, applyCascadeLocally, persistCascade, commitPending])
+  }, [tasks, segments, dependances, periodes, updateSegment, updateLags, applyCascadeLocally, persistCascade, commitPending])
 
   // ── Avancement inline ─────────────────────────────────────────────────────────
   const handleAvancementChange = useCallback(async (taskId, value) => {

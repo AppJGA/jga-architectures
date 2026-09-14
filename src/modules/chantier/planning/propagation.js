@@ -12,6 +12,8 @@
 //     (A→C, B→C) et de diamant (A→B→D, A→C→D) : l'enfant se cale sur la
 //     contrainte la plus tardive, et ne recule que si TOUTES ses contraintes
 //     reculent ;
+//   - la fin d'un parent inclut les fermetures bloquantes qu'il traverse, comme
+//     sa barre à l'écran ;
 //   - la date obtenue est repoussée hors des week-ends et des périodes bloquées.
 //
 // Deux graphes de dépendances sont fusionnés :
@@ -22,7 +24,7 @@
 // la liste des entités à décaler, à charge de l'appelant de l'appliquer au state
 // puis de la persister.
 
-import { parseDate, formatDateISO, addWorkingDays, applyLag } from './types'
+import { parseDate, formatDateISO, addWorkingDays, applyLag, computeLag, estBloque } from './types'
 
 // Garde-fou contre les dépendances cycliques (A→B→A) : au-delà, on s'arrête en
 // signalant plutôt que de boucler indéfiniment.
@@ -32,21 +34,11 @@ export function entityKey(type, id) { return `${type}:${id}` }
 
 // ── Périodes bloquées ─────────────────────────────────────────────────────────
 
-// Seules les périodes marquées bloquantes décalent les tâches ; les périodes
-// informatives sont affichées mais n'ont aucun effet sur les dates.
-function isDateBloquee(date, periodes) {
-  return periodes.some((p) => {
-    if (p.est_bloquante === false) return false
-    if (!p.date_debut || !p.date_fin) return false
-    return date >= parseDate(p.date_debut) && date <= parseDate(p.date_fin)
-  })
-}
-
 // Première date ouvrée à partir de `date`, hors week-end et hors période bloquée
 export function skipBlockedPeriods(date, periodes = []) {
   const d = new Date(date)
   let guard = 0
-  while (d.getDay() === 0 || d.getDay() === 6 || isDateBloquee(d, periodes)) {
+  while (d.getDay() === 0 || d.getDay() === 6 || estBloque(d, periodes)) {
     d.setDate(d.getDate() + 1)
     if (++guard > 400) break
   }
@@ -135,7 +127,7 @@ export function propagateAllDependencies({
       const parent = snapshot.get(parentKey)
       if (!parent?.debut) return
       const duree = Math.max(1, Number(parent.duree) || 1)
-      const start = skipBlockedPeriods(applyLag(parseDate(parent.debut), duree, lag), periodes)
+      const start = skipBlockedPeriods(applyLag(parent.debut, duree, lag, periodes), periodes)
       if (!best || start > best) best = start
     })
     return best
@@ -200,4 +192,59 @@ export function finTache({ debut, duree }) {
  */
 export function endDateChanged(avant, apres) {
   return finTache(avant).getTime() !== finTache(apres).getTime()
+}
+
+// ── Déplacement manuel d'une entité liée ──────────────────────────────────────
+//
+// La propagation replace les descendantes d'après l'écart mémorisé sur chaque
+// lien. Quand l'utilisateur déplace lui-même une tâche liée, cet écart doit
+// suivre : sinon, au décalage suivant du prédécesseur, la tâche revient se
+// coller à son ancienne position au lieu d'être décalée.
+
+/**
+ * Lien historique `depends_on` / `lag_days` : un écart saisi (modale) replace
+ * la tâche, un début modifié (glissement ou modale) recalcule l'écart.
+ *
+ * @returns { debut, lag_days } à enregistrer
+ */
+export function reconcilierLienHistorique(avant, apres, parent, periodes = []) {
+  const resultat = { debut: apres.debut, lag_days: apres.lag_days }
+  if (apres.depends_on == null || !parent?.debut || !apres.debut) return resultat
+
+  const memeLien = avant != null && avant.depends_on === apres.depends_on
+  const lagSaisi = memeLien && (apres.lag_days ?? 0) !== (avant.lag_days ?? 0)
+  if (lagSaisi) {
+    const debut = skipBlockedPeriods(applyLag(parent.debut, parent.duree, apres.lag_days, periodes), periodes)
+    return { debut: formatDateISO(debut), lag_days: apres.lag_days }
+  }
+  if (!memeLien || apres.debut !== avant.debut) {
+    return { debut: apres.debut, lag_days: computeLag(parent.debut, parent.duree, apres.debut, periodes) }
+  }
+  return resultat
+}
+
+/**
+ * Liens de `planning_dependances` qui visent l'entité déplacée, avec l'écart
+ * correspondant à sa nouvelle position. Seuls les écarts qui changent sont
+ * renvoyés.
+ *
+ * @returns [{ id, lag_jours }]
+ */
+export function lagsDependancesCible({ type, id, debut, tasks, segments, dependances, periodes = [] }) {
+  return dependances
+    .filter((dep) => (type === 'segment'
+      ? dep.cible_segment_id === id
+      : dep.cible_segment_id == null && dep.cible_tache_id === id))
+    .map((dep) => {
+      const source = dep.source_segment_id != null
+        ? segments.find((sg) => sg.id === dep.source_segment_id)
+        : tasks.find((t) => t.id === dep.source_tache_id)
+      if (!source) return null
+      const sourceDebut = dep.source_segment_id != null ? source.date_debut : source.debut
+      const sourceDuree = dep.source_segment_id != null ? source.duree_jours : source.duree
+      if (!sourceDebut) return null
+      const lag = computeLag(sourceDebut, sourceDuree, debut, periodes)
+      return lag === (dep.lag_jours ?? 0) ? null : { id: dep.id, lag_jours: lag }
+    })
+    .filter(Boolean)
 }

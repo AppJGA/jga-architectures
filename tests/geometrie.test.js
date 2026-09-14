@@ -6,14 +6,10 @@
 import assert from 'node:assert/strict'
 import { test, describe } from 'node:test'
 
+import { barreSemaine, barreMois, xAtDateMonth } from '../src/modules/chantier/planning/geometrie.js'
 import {
-  dernierJourTache,
-  dureeEntre,
-  barreSemaine,
-  barreMois,
-  xAtDateMonth,
-} from '../src/modules/chantier/planning/geometrie.js'
-import { formatDateISO, parseDate } from '../src/modules/chantier/planning/types.js'
+  formatDateISO, parseDate, dernierJourTache, dureeEntre,
+} from '../src/modules/chantier/planning/types.js'
 
 const MOIS = (debutAnnee, debutMois, nb) => Array.from({ length: nb }, (_, i) => {
   const d = new Date(debutAnnee, debutMois + i, 1)

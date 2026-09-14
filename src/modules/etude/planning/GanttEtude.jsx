@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { X, ZoomIn, ZoomOut } from 'lucide-react'
 import { supabase } from '../../../core/supabase/client'
 import {
-  propagateEtudeDependencies, computeLagSemaines, addWeeks, weeksBetween, getCurrentWeek,
+  calculerModificationPhase, addWeeks, weeksBetween, getCurrentWeek,
   getNextAvailableSemaine, TYPE_COLORS, adminGradient, densityFromRowHeight,
 } from './types'
 import { computeCriticalPath } from './computeCriticalPath'
@@ -36,7 +36,7 @@ const SEM_WIDTH_MAX = 120
 const SEM_WIDTH_DEFAUT = 40
 
 export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', affaire = {} }) {
-  const { phases: hookPhases, jalons, loading, error, addPhase, updatePhase, deletePhase, refetch } = usePlanningEtude(affaireId)
+  const { phases: hookPhases, jalons, loading, error, addPhase, deletePhase, refetch } = usePlanningEtude(affaireId)
 
   // ── Segments (une phase peut réapparaître à d'autres périodes) ────────────────
   const {
@@ -284,6 +284,29 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
     timelineRef.current.scrollLeft = Math.max(0, currentX - 8 * semWidth)
   }, [refDate.semaine, refDate.annee, semWidth])
 
+  // ── Enregistrement d'une modification et de ses décalages ────────────────────
+  //
+  // Supabase ne lève pas d'exception en cas d'échec : l'erreur est dans la
+  // réponse. Sans ce contrôle, un échec laissait l'écran afficher des dates que
+  // la base n'avait pas, jusqu'au rechargement suivant.
+  const persistUpdates = useCallback(async (phaseId, changes, cascades) => {
+    const resultats = await Promise.all([
+      supabase.from('planning_etude_phases').update(changes).eq('id', phaseId),
+      ...cascades.map((c) =>
+        supabase.from('planning_etude_phases')
+          .update({ semaine_debut: c.semaine_debut, annee_debut: c.annee_debut })
+          .eq('id', c.id)
+      ),
+    ])
+    const echec = resultats.find((r) => r?.error)
+    if (echec) {
+      console.error('Planning étude : échec d’enregistrement —', echec.error.message)
+      await refetch()
+      return false
+    }
+    return true
+  }, [refetch])
+
   // ── Phase CRUD ─────────────────────────────────────────────────────────────────
   const handleSavePhase = useCallback(async (data) => {
     if (phaseModalMode === 'create') {
@@ -299,9 +322,12 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
       const modifie = !ancienne
         || Object.keys(changes).some((c) => (ancienne[c] ?? null) !== (changes[c] ?? null))
       if (modifie) saveSnapshot(takeSnapshot(`Modification « ${data.nom ?? ancienne?.nom ?? ''} »`))
-      await updatePhase(cible, changes)
+      // Même calcul que le glissement : une durée ou un début changés dans la
+      // modale décalent aussi les phases suivantes.
+      const { changes: finalChanges, cascades } = calculerModificationPhase(phases, cible, changes, periodes)
+      if (await persistUpdates(cible, finalChanges, cascades)) await refetch()
     }
-  }, [phaseModalMode, addPhase, updatePhase, editingPhase, phases, saveSnapshot, takeSnapshot])
+  }, [phaseModalMode, addPhase, editingPhase, phases, periodes, persistUpdates, refetch, saveSnapshot, takeSnapshot])
 
   const handleDeletePhase = useCallback(async (id) => {
     saveSnapshot(takeSnapshot(`Suppression « ${phases.find((ph) => ph.id === id)?.nom ?? ''} »`))
@@ -327,23 +353,14 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
     }
   }, [refetch, saveSnapshot, takeSnapshot])
 
-  // ── Persist en arrière-plan (découplé du state updater) ──────────────────────
-  const persistUpdates = useCallback(async (phaseId, changes, cascades) => {
-    try {
-      await supabase.from('planning_etude_phases').update(changes).eq('id', phaseId)
-      if (cascades.length > 0) {
-        await Promise.all(cascades.map(c =>
-          supabase.from('planning_etude_phases')
-            .update({ semaine_debut: c.semaine_debut, annee_debut: c.annee_debut })
-            .eq('id', c.id)
-        ))
-      }
-    } catch {
-      await refetch()
-    }
-  }, [refetch])
-
   // ── Drag/resize avec cascade optimiste ────────────────────────────────────────
+  //
+  // Le calcul se fait AVANT setPhases, depuis l'état courant. Il était auparavant
+  // fait dans la fonction passée à setPhases, dont on récupérait le résultat pour
+  // l'enregistrer : React n'exécute cette fonction qu'au rendu suivant, donc
+  // l'enregistrement partait avec une liste de décalages vide. Les phases
+  // suivantes bougeaient à l'écran mais pas en base, et revenaient à leur place
+  // au premier rechargement.
   const handlePhaseUpdate = useCallback((phaseId, changes) => {
     // L'aperçu du glissement se fait en manipulant le DOM : l'état local n'a
     // pas encore bougé, l'instantané pris ici est donc bien celui d'avant.
@@ -353,58 +370,23 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
         : 'Déplacement d’une phase'
     ))
 
-    // Variables capturées depuis l'updater pour les effets de bord
-    let capturedChanges  = changes
-    let capturedCascades = []
-    let capturedPhase    = null
-
-    setPhases(prev => {
-      const phase = prev.find(p => p.id === phaseId)
-      if (!phase) return prev
-
-      const newSem   = changes.semaine_debut  ?? phase.semaine_debut
-      const newAnn   = changes.annee_debut    ?? phase.annee_debut
-      const newDuree = changes.duree_semaines ?? phase.duree_semaines
-
-      // Recalcul du lag quand l'enfant est déplacé manuellement
-      let finalChanges = { ...changes }
-      if (phase.depends_on && (changes.semaine_debut != null || changes.annee_debut != null)) {
-        const parent = prev.find(p => p.id === phase.depends_on)
-        if (parent) {
-          finalChanges = {
-            ...finalChanges,
-            lag_semaines: computeLagSemaines(
-              parent.semaine_debut, parent.annee_debut, parent.duree_semaines,
-              newSem, newAnn, periodes
-            ),
-          }
-        }
-      }
-
-      const cascades   = propagateEtudeDependencies(prev, phaseId, newSem, newAnn, newDuree, periodes)
-      const cascadeMap = new Map(cascades.map(u => [u.id, u]))
-
-      const next = prev.map(p => {
-        if (p.id === phaseId) return { ...p, ...finalChanges }
-        const c = cascadeMap.get(p.id)
-        return c ? { ...p, semaine_debut: c.semaine_debut, annee_debut: c.annee_debut } : p
-      })
-
-      // Capture pour les effets hors updater
-      capturedChanges  = finalChanges
-      capturedCascades = cascades
-      capturedPhase    = next.find(p => p.id === phaseId) ?? null
-      return next
+    const { changes: finalChanges, cascades } = calculerModificationPhase(phases, phaseId, changes, periodes)
+    const cascadeMap = new Map(cascades.map((c) => [c.id, c]))
+    const next = phases.map((p) => {
+      if (p.id === phaseId) return { ...p, ...finalChanges }
+      const c = cascadeMap.get(p.id)
+      return c ? { ...p, semaine_debut: c.semaine_debut, annee_debut: c.annee_debut } : p
     })
+    setPhases(next)
 
-    // Effets de bord APRÈS le state update — jamais dans l'updater
-    persistUpdates(phaseId, capturedChanges, capturedCascades)
+    persistUpdates(phaseId, finalChanges, cascades)
 
     const notionId = notionIdMapRef.current.get(phaseId)
-    if (notionId && capturedPhase) {
-      notionSync.pushToNotion(notionId, capturedPhase)
+    const phaseModifiee = next.find((p) => p.id === phaseId)
+    if (notionId && phaseModifiee) {
+      notionSync.pushToNotion(notionId, phaseModifiee)
     }
-  }, [persistUpdates, notionSync.pushToNotion, periodes, saveSnapshot, takeSnapshot])
+  }, [phases, persistUpdates, notionSync.pushToNotion, periodes, saveSnapshot, takeSnapshot])
 
   // ── Commit d'un segment après drag/resize dans la timeline ────────────────────
   // Le geste sur un segment applique `updateSegmentLocal` juste avant le commit :

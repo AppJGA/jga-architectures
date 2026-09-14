@@ -44,5 +44,16 @@ export function usePlanningDependances(affaireId) {
     return { error }
   }
 
-  return { dependances, loading, addDependance, deleteDependance, refetch: fetch }
+  // Nouveaux écarts après le déplacement manuel d'une tâche ou d'un segment liés.
+  // Les réponses sont renvoyées telles quelles, à charge de l'appelant d'en
+  // vérifier les erreurs avec le reste de ses écritures.
+  const updateLags = (maj) => {
+    if (maj.length === 0) return []
+    const parId = new Map(maj.map((m) => [m.id, m.lag_jours]))
+    setDependances((prev) => prev.map((d) => (parId.has(d.id) ? { ...d, lag_jours: parId.get(d.id) } : d)))
+    return maj.map((m) =>
+      supabase.from('planning_dependances').update({ lag_jours: m.lag_jours }).eq('id', m.id))
+  }
+
+  return { dependances, loading, addDependance, deleteDependance, updateLags, refetch: fetch }
 }

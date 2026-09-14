@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { Trash2, Save, X, Plus, Minimize2, Maximize2, ChevronRight } from 'lucide-react'
-import { parseDate, formatDateISO, computeLag, addWorkingDays } from './types'
-import { dernierJourTache, dureeEntre } from './geometrie'
+import { parseDate, formatDateISO, computeLag, addWorkingDays, dernierJourTache, dureeEntre } from './types'
 import { DatePickerISO } from '../../../shared/components/DatePickerISO'
 
 const LABEL = {
@@ -211,11 +210,7 @@ export function TacheEditModal({
       setForm((f) => ({ ...f, depends_on: newDependsOn }))
       return
     }
-    const lag = computeLag(
-      parseDate(parentTask.debut),
-      parentTask.duree,
-      parseDate(form.debut)
-    )
+    const lag = computeLag(parentTask.debut, parentTask.duree, form.debut, periodes)
     setForm((f) => ({ ...f, depends_on: newDependsOn, lag_days: lag }))
   }
 

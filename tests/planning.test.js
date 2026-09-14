@@ -13,8 +13,12 @@ import {
   entityKey,
   finTache,
   endDateChanged,
+  reconcilierLienHistorique,
+  lagsDependancesCible,
 } from '../src/modules/chantier/planning/propagation.js'
-import { formatDateISO, parseDate } from '../src/modules/chantier/planning/types.js'
+import {
+  formatDateISO, parseDate, computeLag, applyLag,
+} from '../src/modules/chantier/planning/types.js'
 
 // Convention de lag du projet (cf. applyLag dans types.js) :
 //   debut(enfant) = dernier jour ouvré du parent + lag jours ouvrés
@@ -397,5 +401,79 @@ describe('finTache et endDateChanged', () => {
   test('un simple déplacement change la fin', () => {
     assert.equal(endDateChanged({ debut: '2026-03-02', duree: 5 },
                                 { debut: '2026-03-09', duree: 5 }), true)
+  })
+})
+
+// ── Fermetures traversées par le parent ──────────────────────────────────────
+
+describe('parent allongé par une fermeture', () => {
+  const conges = [{ id: 'p1', date_debut: '2026-03-09', date_fin: '2026-03-13' }]
+
+  test('l’enfant attend la fin réelle du parent, congés compris', () => {
+    // A : 10 jours ouvrés dès le lun 2, la semaine du 9 est fermée → fin ven 20
+    const u = propager({
+      tasks: [T(1, '2026-03-02', 10), T(2, '2026-03-02')],
+      dependances: [D(1, 2, 1)],
+      periodes: conges,
+      changedType: 'task', changedId: 1,
+      newDebut: '2026-03-02', newDuree: 10,
+    })
+    assert.equal(debutDe(u, 'task', 2), '2026-03-23')
+  })
+
+  test('computeLag et applyLag restent inverses avec une fermeture', () => {
+    const lag = computeLag('2026-03-02', 10, '2026-03-25', conges)
+    assert.equal(lag, 3)
+    assert.equal(formatDateISO(applyLag('2026-03-02', 10, lag, conges)), '2026-03-25')
+  })
+})
+
+// ── Déplacement manuel d'une tâche liée ──────────────────────────────────────
+//
+// Déplacer à la main une tâche qui a un prédécesseur doit mettre à jour l'écart
+// du lien : sinon, au prochain décalage du prédécesseur, elle revient se coller
+// à son ancienne position.
+
+describe('reconcilierLienHistorique', () => {
+  const parent = T(1, '2026-03-02')                      // fin ven 6
+
+  test('un nouveau début recalcule l’écart', () => {
+    const avant = T(2, '2026-03-06', 5, { depends_on: 1, lag_days: 0 })
+    const apres = { ...avant, debut: '2026-03-11' }
+    assert.deepEqual(reconcilierLienHistorique(avant, apres, parent),
+      { debut: '2026-03-11', lag_days: 3 })
+  })
+
+  test('un écart saisi replace la tâche', () => {
+    const avant = T(2, '2026-03-06', 5, { depends_on: 1, lag_days: 0 })
+    const apres = { ...avant, lag_days: 5 }
+    assert.deepEqual(reconcilierLienHistorique(avant, apres, parent),
+      { debut: '2026-03-13', lag_days: 5 })
+  })
+
+  test('sans prédécesseur, rien ne change', () => {
+    const avant = T(2, '2026-03-06')
+    const apres = { ...avant, debut: '2026-03-11' }
+    assert.deepEqual(reconcilierLienHistorique(avant, apres, null),
+      { debut: '2026-03-11', lag_days: undefined })
+  })
+})
+
+describe('lagsDependancesCible', () => {
+  test('les liens qui visent la tâche déplacée reçoivent leur nouvel écart', () => {
+    const tasks = [T(1, '2026-03-02'), T(2, '2026-03-06'), T(3, '2026-03-20')]
+    const dependances = [D(1, 2, 0), D(3, 1, 0), D(2, 3, 4)]
+    const maj = lagsDependancesCible({
+      type: 'task', id: 2, debut: '2026-03-11', tasks, segments: [], dependances,
+    })
+    assert.deepEqual(maj, [{ id: 'd-1-2', lag_jours: 3 }])
+  })
+
+  test('un écart déjà juste n’est pas réécrit', () => {
+    const maj = lagsDependancesCible({
+      type: 'task', id: 2, debut: '2026-03-06',
+      tasks: [T(1, '2026-03-02'), T(2, '2026-03-06')], segments: [], dependances: [D(1, 2, 0)],
+    })
+    assert.deepEqual(maj, [])
   })
 })

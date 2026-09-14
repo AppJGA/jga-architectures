@@ -11,13 +11,14 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 81 tests node --test (planning + exports)
+npm test         # 93 tests node --test (planning + exports)
 npx eslint src   # ~79 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
-`npm test` couvre `tests/planning.test.js` (propagation des dépendances),
-`tests/export.test.js` (PDF et Excel) et `tests/geometrie.test.js` (fin des
-barres du Gantt chantier). Rien ne couvre l'interface.
+`npm test` couvre `tests/planning.test.js` (chemins critiques chantier),
+`tests/planning-etude.test.js` (chemins critiques étude), `tests/export.test.js`
+(PDF et Excel) et `tests/geometrie.test.js` (fin des barres du Gantt chantier).
+Rien ne couvre l'interface.
 
 ## Où se trouve quoi
 
@@ -69,6 +70,12 @@ barres du Gantt chantier). Rien ne couvre l'interface.
   arrière-plan.
 - **`mix-blend-mode` est isolé par un contexte d'empilement.** Un parent avec
   `position: relative` *et* `z-index` suffit à le neutraliser.
+- **Rien de ce qui doit être enregistré ne se calcule dans un `setState(prev => …)`.**
+  React n'exécute cette fonction qu'au rendu suivant : une valeur « capturée »
+  dedans est encore vide quand l'écriture Supabase part. Calculer d'abord depuis
+  l'état courant, puis appliquer et enregistrer le même résultat.
+- **Supabase ne lève pas d'exception** : l'échec est dans `{ error }` de la
+  réponse. Un `try/catch` seul laisse passer les écritures ratées.
 - Un décalage d'animation calculé sur une liste **filtrée** rejoue l'entrée à
   chaque frappe dans la recherche. Le calculer sur la liste complète.
 

@@ -340,3 +340,50 @@ export function computeLagSemaines(parentSemaine, parentAnnee, parentDuree, chil
   )
   return weeksBetween(parentEnd.semaine, parentEnd.annee, childSemaine, childAnnee)
 }
+
+/**
+ * Tout ce qu'implique la modification d'une phase (glissement ou modale) :
+ * les champs à écrire sur la phase elle-même et les phases suivantes à décaler.
+ *
+ * Calculé depuis l'état courant, hors de tout `setState` : les deux résultats
+ * servent à la fois à l'affichage et à l'enregistrement, qui ne peuvent donc
+ * plus diverger.
+ *
+ * Lien avec le prédécesseur : un battement saisi replace la phase, un début
+ * modifié recalcule le battement — sans quoi la phase reviendrait à son ancienne
+ * position au décalage suivant du prédécesseur.
+ *
+ * @returns { changes, cascades: [{ id, semaine_debut, annee_debut }] }
+ */
+export function calculerModificationPhase(phases, phaseId, changes, periodes = []) {
+  const phase = phases.find((p) => p.id === phaseId)
+  if (!phase) return { changes, cascades: [] }
+
+  const apres = { ...phase, ...changes }
+  const finalChanges = { ...changes }
+  const parent = apres.depends_on != null ? phases.find((p) => p.id === apres.depends_on) : null
+
+  if (parent) {
+    const memeLien = apres.depends_on === phase.depends_on
+    const lagSaisi = memeLien && Number(apres.lag_semaines ?? 0) !== Number(phase.lag_semaines ?? 0)
+    const debutModifie = apres.semaine_debut !== phase.semaine_debut || apres.annee_debut !== phase.annee_debut
+
+    if (lagSaisi) {
+      const fin = finEffectivePhase(parent, periodes)
+      const debut = addWeeks(fin.semaine, fin.annee, Number(apres.lag_semaines ?? 0))
+      finalChanges.semaine_debut = debut.semaine
+      finalChanges.annee_debut = debut.annee
+    } else if (!memeLien || debutModifie) {
+      finalChanges.lag_semaines = computeLagSemaines(
+        parent.semaine_debut, parent.annee_debut, parent.duree_semaines,
+        apres.semaine_debut, apres.annee_debut, periodes
+      )
+    }
+  }
+
+  const cible = { ...phase, ...finalChanges }
+  const cascades = propagateEtudeDependencies(
+    phases, phaseId, cible.semaine_debut, cible.annee_debut, cible.duree_semaines, periodes
+  )
+  return { changes: finalChanges, cascades }
+}

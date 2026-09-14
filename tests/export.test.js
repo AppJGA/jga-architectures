@@ -28,7 +28,7 @@ const XLSX = require_('xlsx-js-style')
 let classeur = null
 XLSX.writeFile = (wb, nom) => { classeur = { wb, nom } }
 
-const { generatePlanningChantierPdf } =
+const { generatePlanningChantierPdf, intervallesTache } =
   await import('../src/modules/chantier/planning/generatePlanningChantierPdf.js')
 const { generatePlanningEtudePdf } =
   await import('../src/modules/etude/planning/generatePlanningEtudePdf.js')
@@ -212,6 +212,114 @@ describe('PDF chantier — légende et groupement', () => {
     const normal = hauteur()
     generatePlanningChantierPdf(paramsPdfChantier({ density: 'énorme' }))
     assert.equal(hauteur(), normal)
+  })
+})
+
+describe('PDF chantier — géométrie des barres', () => {
+  // Vue semaine : toutes les colonnes de jour ont la même largeur, ce qui
+  // ramène la largeur d'une barre à un nombre de jours calendaires.
+  const CONTENU_MM = 420 - 20 - 45
+  const nbJours = (debut, fin) => Math.round((new Date(fin) - new Date(debut)) / 86400000) + 1
+
+  // Colonne du jour qui porte la barre, et largeur de celle-ci
+  const barre = (attribut) => {
+    const ligne = corpsPdf().split('<tr>').find(tr => tr.includes(attribut))
+    assert.ok(ligne, `aucune barre ${attribut}`)
+    const cellules = ligne.split('<td style="width:')
+    const idx = cellules.findIndex(c => c.includes(attribut)) - 1
+    const largeur = Number(ligne.slice(ligne.indexOf(attribut)).match(/;width:([\d.]+)mm/)[1])
+    return { idx, largeur }
+  }
+  const proche = (reel, attendu) => assert.ok(Math.abs(reel - attendu) < 0.05, `${reel} ≠ ${attendu}`)
+
+  test('une barre traverse une fermeture et s’arrête sur son dernier jour ouvré', () => {
+    const plage = { dateDebut: '2026-07-27', dateFin: '2026-09-04' }
+    generatePlanningChantierPdf(paramsPdfChantier({
+      ...plage, viewMode: 'week',
+      tasks: [{ id: 1, nom: 'Enduits', debut: '2026-07-27', duree: 10, lot_id: 7 }],
+      periodes: [{ id: 'p', date_debut: '2026-08-03', date_fin: '2026-08-21', couleur: '#B8412C' }],
+    }))
+    const { idx, largeur } = barre('data-task-id="1" data-type="task"')
+    assert.equal(idx, 0)
+    // 5 jours avant la fermeture, 5 après : fin le vendredi 28 août
+    const uniforme = CONTENU_MM / nbJours(plage.dateDebut, plage.dateFin)
+    proche(largeur, nbJours('2026-07-27', '2026-08-28') * uniforme)
+  })
+
+  test('une barre du lundi au vendredi ne couvre pas le week-end', () => {
+    const plage = { dateDebut: '2026-03-02', dateFin: '2026-03-20' }
+    generatePlanningChantierPdf(paramsPdfChantier({ ...plage, viewMode: 'week' }))
+    const { idx, largeur } = barre('data-task-id="1" data-type="task"')
+    assert.equal(idx, 0)
+    proche(largeur, 5 * CONTENU_MM / nbJours(plage.dateDebut, plage.dateFin))
+  })
+
+  test('une tâche commencée avant la plage a bien une barre, ancrée au premier jour', () => {
+    const plage = { dateDebut: '2026-03-02', dateFin: '2026-03-20' }
+    generatePlanningChantierPdf(paramsPdfChantier({
+      ...plage, viewMode: 'week',
+      tasks: [{ id: 1, nom: 'Démolition', debut: '2026-02-23', duree: 10, lot_id: 7 }],
+    }))
+    const { idx, largeur } = barre('data-task-id="1" data-type="task"')
+    assert.equal(idx, 0)
+    // Seuls les jours visibles comptent : du 2 au vendredi 6 mars
+    proche(largeur, 5 * CONTENU_MM / nbJours(plage.dateDebut, plage.dateFin))
+  })
+
+  test('le délai après reprend au jour ouvré suivant la fermeture', () => {
+    const plage = { dateDebut: '2026-07-27', dateFin: '2026-09-04' }
+    generatePlanningChantierPdf(paramsPdfChantier({
+      ...plage, viewMode: 'week',
+      tasks: [{ id: 1, nom: 'Chape', debut: '2026-07-27', duree: 5, delai_apres: 3, label_apres: 'Séchage', lot_id: 7 }],
+      periodes: [{ id: 'p', date_debut: '2026-08-03', date_fin: '2026-08-21', couleur: '#B8412C' }],
+    }))
+    const ligne = corpsPdf().split('<tr>').find(tr => tr.includes('Séchage'))
+    const cellules = ligne.split('<td style="width:')
+    // Lundi 24 août : 28e jour de la plage
+    assert.equal(cellules.findIndex(c => c.includes('dashed')) - 1, nbJours('2026-07-27', '2026-08-24') - 1)
+  })
+
+  test('le nom d’un segment n’est écrit que si « afficher le nom » est coché', () => {
+    const seg = { id: 's1', tache_id: 1, nom: 'Reprise', date_debut: '2026-03-16', duree_jours: 3 }
+    generatePlanningChantierPdf(paramsPdfChantier({ segments: [seg] }))
+    assert.ok(corpsPdf().includes('data-segment-id="s1"'))
+    assert.ok(!corpsPdf().includes('Reprise'))
+    generatePlanningChantierPdf(paramsPdfChantier({ segments: [{ ...seg, afficher_nom: true }] }))
+    assert.ok(corpsPdf().includes('Reprise'))
+  })
+})
+
+describe('PDF chantier — textes et en-têtes', () => {
+  test('un nom de tâche est échappé', () => {
+    generatePlanningChantierPdf(paramsPdfChantier({
+      tasks: [{ ...TACHES[0], nom: '<b>x</b> & co' }],
+      affaire: { nom: 'Maison <script>' },
+    }))
+    assert.ok(corpsPdf().includes('&lt;b&gt;x&lt;/b&gt; &amp; co'))
+    assert.ok(!htmlGenere.includes('<b>x</b>'))
+    assert.ok(!htmlGenere.includes('Maison <script>'))
+  })
+
+  test('pas de doublon S1 au nouvel an', () => {
+    generatePlanningChantierPdf(paramsPdfChantier({
+      dateDebut: '2024-12-30', dateFin: '2025-01-12', viewMode: 'week',
+    }))
+    const semaines = [...htmlGenere.matchAll(/class="hdr-week"[^>]*>(S\d+)</g)].map(m => m[1])
+    assert.deepEqual(semaines, ['S1', 'S2'])
+  })
+})
+
+describe('PDF chantier — étendue d’une tâche', () => {
+  test('délais et fermetures élargissent l’intervalle, segments à part', () => {
+    const periodes = [{ date_debut: '2026-08-03', date_fin: '2026-08-21' }]
+    const tache = { id: 1, debut: '2026-07-27', duree: 5, appro_actif: true, appro_duree: 2, delai_apres: 3 }
+    const seg = { tache_id: 1, date_debut: '2026-09-07', duree_jours: 2 }
+    const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    const res = intervallesTache(tache, [seg], periodes).map(({ debut, fin }) => [iso(debut), iso(fin)])
+    assert.deepEqual(res, [
+      ['2026-07-23', '2026-08-26'],
+      ['2026-09-07', '2026-09-08'],
+    ])
   })
 })
 

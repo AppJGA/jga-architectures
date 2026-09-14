@@ -11,14 +11,16 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 103 tests node --test (planning + exports)
+npm test         # 176 tests node --test (plannings + exports)
 npx eslint src   # ~79 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
-`npm test` couvre `tests/planning.test.js` (chemins critiques chantier),
-`tests/planning-etude.test.js` (chemins critiques étude), `tests/export.test.js`
-(PDF et Excel) et `tests/geometrie.test.js` (fin des barres du Gantt chantier).
-Rien ne couvre l'interface.
+`npm test` couvre, dans `tests/` : les chemins critiques (`planning.test.js`,
+`planning-etude.test.js`), la géométrie des barres du Gantt chantier
+(`geometrie.test.js`) et les exports (`export.test.js`, `export-etude.test.js`,
+`export-chantier-excel.test.js`). Rien ne couvre l'interface : la logique des
+plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`,
+`types.js` de chaque module) pour rester testable.
 
 ## Où se trouve quoi
 
@@ -76,6 +78,16 @@ Rien ne couvre l'interface.
   l'état courant, puis appliquer et enregistrer le même résultat.
 - **Supabase ne lève pas d'exception** : l'échec est dans `{ error }` de la
   réponse. Un `try/catch` seul laisse passer les écritures ratées.
+- **Jamais de `Math.floor` sur un écart en millisecondes entre deux dates.**
+  Entre l'hiver et l'été, il manque une heure : un lundi tombait dans la
+  semaine précédente. Utiliser `joursEntre` (`chantier/planning/geometrie.js`).
+- **Plannings : une durée est en jours ouvrés** (semaines pour l'étude), hors
+  week-ends et fermetures bloquantes. Toute fin de barre, d'export ou de délai
+  passe par `dernierJourTache` ; ne jamais ajouter des jours calendaires à une
+  durée.
+- **Une action du planning = une étape d'historique.** L'annulation écrit tout
+  l'écart avec l'instantané : une action sans instantané est défaite en même
+  temps que la précédente.
 - Un décalage d'animation calculé sur une liste **filtrée** rejoue l'entrée à
   chaque frappe dans la recherche. Le calculer sur la liste complète.
 

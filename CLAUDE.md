@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 240 tests node --test (plannings, exports, comptes rendus, photos, plans, visite, rapport)
+npm test         # 250 tests node --test (plannings, exports, comptes rendus, photos, plans, visite, rapport, diffusion)
 npx eslint src   # ~73 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -20,7 +20,7 @@ npx eslint src   # ~73 problèmes préexistants : comparer, ne pas viser zéro
 (`geometrie.test.js`) et les exports (`export.test.js`, `export-etude.test.js`,
 `export-chantier-excel.test.js`), ainsi que la reprise et les compteurs des
 comptes rendus (`comptes-rendus.test.js`, `photos.test.js`, `plans.test.js`,
-`visite.test.js`, `rapport.test.js`, sur les fichiers `*Logique.js` du module). Rien ne couvre l'interface : la logique des
+`visite.test.js`, `rapport.test.js`, `diffusion.test.js`, sur les fichiers `*Logique.js` du module). Rien ne couvre l'interface : la logique des
 plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`,
 `types.js` de chaque module) pour rester testable.
 
@@ -46,7 +46,7 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
 - **Accès aux données** : hooks dans `src/shared/hooks/`. `useAffaires()` pour
   la liste, `useAffaire(id)` pour une affaire (les deux font `select('*')`),
   `useAffaireCollaborateurs(id)` pour les droits (`canEdit`, `isProprietaire`).
-- **Base** : `supabase/migrations/`, numérotées, 44 fichiers, **passées à la
+- **Base** : `supabase/migrations/`, numérotées, 45 fichiers, **passées à la
   main** dans le SQL Editor de Supabase : un code qui dépend d'une nouvelle
   colonne doit tolérer son absence tant que la migration n'est pas faite. La photo de
   couverture d'une affaire est `affaires.photo_url` (migration 014, bucket
@@ -123,6 +123,13 @@ création avec reprise de la visite précédente) et `useCompteRendu` (un CR).
   s'en tenir aux caractères latins courants. À l'émission, le PDF est archivé
   (`cr_archives`, stockage privé `cr-archives`, migration 043) ; un échec
   d'archive n'empêche pas l'émission.
+- **Diffusion** (`DiffusionCr.jsx`, migration 044) : pas de serveur d'envoi.
+  L'e-mail s'ouvre dans la messagerie de l'utilisateur (lien `mailto:`) avec
+  un lien signé de 30 jours vers le PDF archivé — un mailto ne peut pas porter
+  de pièce jointe. Les versions par entreprise sont des archives avec
+  `destinataire` renseigné, réutilisées pour la même émission ; seules celles
+  sans destinataire sont listées comme archives d'émission. `cr_diffusions`
+  note les e-mails préparés, pas envoyés.
 
 ## Pièges déjà rencontrés
 

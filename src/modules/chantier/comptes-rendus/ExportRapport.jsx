@@ -1,11 +1,12 @@
 import { useState } from 'react'
-import { FileText, FileDown, Eye, Archive, Download } from 'lucide-react'
+import { FileText, FileDown, Eye, Archive, Download, Mail } from 'lucide-react'
 import { useCr } from './CrContexte'
 import { NettoyageStockage } from './NettoyageStockage'
 import { formatOctets, niveauEspace, LIMITE_STOCKAGE } from './photosLogique'
 import { lireReglagesRapport, ecrireReglagesRapport } from './rapportReglages'
 import { genererPdfCr, telechargerBlob } from './genererRapport'
 import { lienArchive } from './rapportStockage'
+import { DiffusionCr } from './DiffusionCr'
 
 // ─── Écran « Exporter le CR » ────────────────────────────────────────────────
 // Réglages du rapport, aperçu et téléchargement du PDF, archives des émissions,
@@ -60,8 +61,10 @@ function fmtHorodatage(iso) {
 
 export function ExportRapport({
   cr, affaire, sections, presences, lotEntreprises, interlocuteurs, photos, liensPhotos, pastilles, plansCr,
-  espace, peutGerer, onEspaceChange, archives, onArchiverMaintenant,
+  espace, peutGerer, onEspaceChange, archives: toutesArchives, onArchiverMaintenant, onPreparerVersion, signataire,
 }) {
+  // Archives d'émission ; les versions par entreprise servent à la diffusion
+  const archives = toutesArchives === null ? null : (toutesArchives ?? []).filter(a => !a.destinataire)
   const { signalerErreur } = useCr()
   const [reglages, setReglagesBruts] = useState(() => lireReglagesRapport(affaire?.id))
   const [enCours, setEnCours] = useState(null) // 'apercu' | 'telecharger' | 'archiver'
@@ -176,6 +179,19 @@ export function ExportRapport({
               ))}
             </ul>
           )}
+        </div>
+      )}
+
+      {cr.statut === 'emis' && archives !== null && peutGerer && (
+        <div style={carte}>
+          <p style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 500, color: '#1F1B17', marginBottom: 4 }}>
+            <Mail size={15} color="#E8602C" /> Diffuser
+          </p>
+          <p style={{ fontSize: 11, color: '#9C9591', marginBottom: 10 }}>
+            L’e-mail s’ouvre dans votre messagerie avec un lien vers le PDF, valable 30 jours.
+          </p>
+          <DiffusionCr cr={cr} affaire={affaire} presences={presences} lots={lots} archives={toutesArchives}
+            onPreparerVersion={onPreparerVersion} signataire={signataire} />
         </div>
       )}
 

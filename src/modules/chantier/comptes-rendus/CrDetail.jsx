@@ -13,7 +13,7 @@ import { CrSectionEditor } from './CrSectionEditor'
 import { TemplateModal } from './TemplateModal'
 import { ExportRapport } from './ExportRapport'
 import { lireReglagesRapport } from './rapportReglages'
-import { genererPdfCr } from './genererRapport'
+import { genererPdfCr, libelleVersion } from './genererRapport'
 import { archivesDuCr, archiverPdf } from './rapportStockage'
 import { compterPresents, FAMILLES_STATUT, infosStatut, estEnRetard } from './crLogique'
 import { CrContexte, useCr } from './CrContexte'
@@ -693,6 +693,26 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
     setVersionEspace(v => v + 1)
   }
 
+  // Version d'un CR émis pour une entreprise : fabriquée et archivée au
+  // premier envoi, réutilisée ensuite pour la même émission
+  const preparerVersion = async (destinataire, inclureGenerales) => {
+    const emission = new Date(cr.date_emission ?? 0).getTime()
+    const existante = (archives ?? []).find(a => a.destinataire === destinataire
+      && new Date(a.emis_le).getTime() === emission
+      && (a.reglages?.inclureGenerales ?? true) === inclureGenerales)
+    if (existante) return existante
+    const reglages = { ...lireReglagesRapport(affaire?.id), destinataire, inclureGenerales }
+    const lots = lotEntreprises.map(le => le.lots).filter(Boolean)
+    const { blob } = await fabriquerPdf(reglages, cr)
+    const ligne = await archiverPdf({
+      affaireId: affaire.id, crId, blob, reglages, emisLe: cr.date_emission ?? new Date().toISOString(),
+      destinataire, versionPour: libelleVersion(destinataire, lots, interlocuteurs ?? []),
+    })
+    setVersionArchives(v => v + 1)
+    setVersionEspace(v => v + 1)
+    return ligne
+  }
+
   const confirmer = async () => {
     setErreur(null)
     if (confirmation === 'rouvrir') {
@@ -895,6 +915,8 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
           onEspaceChange={() => setVersionEspace(v => v + 1)}
           archives={archives}
           onArchiverMaintenant={(reglages) => archiver({ ...reglages, destinataire: '' }, cr, cr.date_emission ?? new Date().toISOString())}
+          onPreparerVersion={preparerVersion}
+          signataire={[cr.profiles?.prenom, cr.profiles?.nom].filter(Boolean).join(' ') || null}
         />
       )}
 

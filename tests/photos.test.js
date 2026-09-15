@@ -6,7 +6,7 @@ import { test, describe } from 'node:test'
 
 import {
   dimensionsCible, cheminsPhoto, fichiersAEffacer, formatOctets, niveauEspace, pointeFleche,
-  resumeOrphelines, paquets,
+  resumeOrphelines, paquets, libelleFichiers,
   TAILLE_PHOTO, LIMITE_STOCKAGE,
 } from '../src/modules/chantier/comptes-rendus/photosLogique.js'
 import { preparerReprise } from '../src/modules/chantier/comptes-rendus/crLogique.js'
@@ -80,16 +80,23 @@ describe('reprise des photos', () => {
   })
 })
 
-test('resumeOrphelines : une photo et sa miniature comptent pour une', () => {
+test('resumeOrphelines : une photo et sa miniature comptent pour une, un plan et son aperçu pour un', () => {
   const r = resumeOrphelines([
-    { chemin: 'a/1.webp', taille: 250000 }, { chemin: 'a/1-mini.webp', taille: 15000 },
-    { chemin: 'a/2-mini.jpg', taille: 12000 },
+    { bucket: 'cr-photos', chemin: 'a/1.webp', taille: 250000 }, { bucket: 'cr-photos', chemin: 'a/1-mini.webp', taille: 15000 },
+    { bucket: 'cr-photos', chemin: 'a/2-mini.jpg', taille: 12000 },
+    { bucket: 'cr-plans', chemin: 'a/p.webp', taille: 1500000 }, { bucket: 'cr-plans', chemin: 'a/p-apercu.webp', taille: 200000 },
   ])
-  assert.deepEqual(r, { photos: 2, fichiers: 3, taille: 277000 })
-  assert.deepEqual(resumeOrphelines([]), { photos: 0, fichiers: 0, taille: 0 })
+  assert.deepEqual(r, { photos: 2, plans: 1, fichiers: 5, taille: 1977000 })
+  assert.deepEqual(resumeOrphelines([]), { photos: 0, plans: 0, fichiers: 0, taille: 0 })
 })
 
 test('paquets', () => {
   assert.deepEqual(paquets([1, 2, 3, 4, 5], 2), [[1, 2], [3, 4], [5]])
   assert.deepEqual(paquets([], 2), [])
+})
+
+test('libelleFichiers', () => {
+  assert.equal(libelleFichiers({ photos: 2, plans: 1 }), '2 photos, 1 plan')
+  assert.equal(libelleFichiers({ photos: 1, plans: 0 }), '1 photo')
+  assert.equal(libelleFichiers({ photos: 0, plans: 3 }), '3 plans')
 })

@@ -72,7 +72,36 @@ function buildPhotosRow(photos) {
   return `<tr class="rem-photos"><td></td><td colspan="3"><div class="rem-photos-grille">${figures}</div></td></tr>`
 }
 
-function buildRemarquesTable(remarques, lots, interlocuteurs, dateReference, photosParRemarque) {
+// Extrait du plan centré sur la pastille de la remarque
+function buildPlanRow(extrait) {
+  if (!extrait?.url) return ''
+  const c = extrait.cadrage
+  return `<tr class="rem-plan"><td></td><td colspan="3">
+    <div class="plan-extrait">
+      <img src="${escHtml(extrait.url)}" alt="" style="width:${c.imageLargeur}%;left:${c.imageGauche}%;top:${c.imageHaut}%">
+      <span class="pastille" style="left:${c.pastilleX}%;top:${c.pastilleY}%;background:${extrait.couleur}">${escHtml(extrait.numero)}</span>
+    </div>
+    <div class="plan-legende">${escHtml(extrait.planNom ?? 'Plan')} · indice ${escHtml(extrait.indice)}</div>
+  </td></tr>`
+}
+
+// Plans entiers avec toutes les pastilles de la visite, en fin de compte rendu
+function buildPlanches(planches) {
+  if (!planches?.length) return ''
+  return `<div class="planches">
+    <div class="section-header"><span class="section-numero">Plans</span></div>
+    ${planches.map(p => `
+      <div class="planche">
+        <div class="planche-titre">${escHtml(p.nom)} · indice ${escHtml(p.indice)}</div>
+        <div class="planche-cadre">
+          <img src="${escHtml(p.url)}" alt="">
+          ${p.pastilles.map(pa => `<span class="pastille" style="left:${pa.x * 100}%;top:${pa.y * 100}%;background:${pa.couleur}">${escHtml(pa.numero)}</span>`).join('')}
+        </div>
+      </div>`).join('')}
+  </div>`
+}
+
+function buildRemarquesTable(remarques, lots, interlocuteurs, dateReference, photosParRemarque, plans) {
   if (!remarques.length) return '<p style="color:#9C9591;font-size:10pt;font-style:italic;padding:4px 0">Aucune remarque</p>'
 
   const rows = remarques.map(r => {
@@ -134,7 +163,7 @@ function buildRemarquesTable(remarques, lots, interlocuteurs, dateReference, pho
         </tr>`
     }).join('')
 
-    return mainRow + buildPhotosRow(photosParRemarque?.get(r.id)) + sousRows
+    return mainRow + buildPhotosRow(photosParRemarque?.get(r.id)) + buildPlanRow(plans?.extraits?.get(r.id)) + sousRows
   }).join('')
 
   return `
@@ -151,7 +180,7 @@ function buildRemarquesTable(remarques, lots, interlocuteurs, dateReference, pho
     </table>`
 }
 
-export function generateCrPdf(cr, sections, presences, affaire, { autoPrint = true, lots = [], interlocuteurs = [], fenetre = null, photosParRemarque = null } = {}) {
+export function generateCrPdf(cr, sections, presences, affaire, { autoPrint = true, lots = [], interlocuteurs = [], fenetre = null, photosParRemarque = null, plans = null } = {}) {
   const num     = String(cr.numero).padStart(2, '0')
   const logoUrl = window.location.origin + '/Logo_JGA_Archi.jpg'
 
@@ -215,13 +244,13 @@ export function generateCrPdf(cr, sections, presences, affaire, { autoPrint = tr
     const sousSectionsHtml = section.sousSections.map(ss => `
       <div class="sous-section">
         <div class="ss-header">${escHtml(ss.code)} — ${escHtml(ss.titre)}</div>
-        ${buildRemarquesTable(ss.remarques, lots, interlocuteurs, cr.date_reunion, photosParRemarque)}
+        ${buildRemarquesTable(ss.remarques, lots, interlocuteurs, cr.date_reunion, photosParRemarque, plans)}
       </div>`).join('')
 
     const directRems = section.directRemarques ?? []
     const directHtml = directRems.length > 0
       ? `<div class="sous-section" style="border-top:${sousSectionsHtml ? '0.5px solid #E9E2D6;margin-top:8px;padding-top:8px;' : ''}">
-          ${buildRemarquesTable(directRems, lots, interlocuteurs, cr.date_reunion, photosParRemarque)}
+          ${buildRemarquesTable(directRems, lots, interlocuteurs, cr.date_reunion, photosParRemarque, plans)}
          </div>`
       : ''
 
@@ -300,6 +329,16 @@ export function generateCrPdf(cr, sections, presences, affaire, { autoPrint = tr
     .rem-date  { font-size:8.5pt; color:#5E5854; }
     .rem-pour  { font-size:8pt; color:#E8602C; font-weight:500; }
     .rem-statut { font-size:8pt; font-weight:600; border-radius:2px; padding:1px 5px; white-space:nowrap; }
+    .rem-plan td { border-bottom:0.5px solid #F3F4F6; padding-top:0; }
+    .plan-extrait { position:relative; width:8cm; height:5.33cm; overflow:hidden; border:0.5px solid #D1D5DB; background:white; }
+    .plan-extrait img { position:absolute; max-width:none; display:block; }
+    .plan-legende { font-size:7.5pt; color:#5E5854; margin-top:2px; }
+    .pastille { position:absolute; transform:translate(-50%, -50%); min-width:16px; height:16px; padding:0 3px; border-radius:8px; border:1.5px solid white; color:white; font-size:7pt; font-weight:bold; line-height:13px; text-align:center; box-shadow:0 1px 3px rgba(0,0,0,0.4); box-sizing:border-box; }
+    .planches { page-break-before:always; break-before:page; }
+    .planche { margin-bottom:14px; page-break-inside:avoid; break-inside:avoid; text-align:center; }
+    .planche-titre { font-size:10pt; font-weight:bold; text-align:left; margin-bottom:4px; }
+    .planche-cadre { position:relative; display:inline-block; max-width:100%; }
+    .planche-cadre img { display:block; max-width:100%; max-height:24cm; border:0.5px solid #D1D5DB; }
     .rem-photos td { border-bottom:0.5px solid #F3F4F6; padding-top:0; }
     .rem-photos-grille { display:flex; flex-wrap:wrap; gap:6px; }
     .rem-photo { width:calc((100% - 12px) / 3); margin:0; page-break-inside:avoid; break-inside:avoid; }
@@ -381,6 +420,9 @@ export function generateCrPdf(cr, sections, presences, affaire, { autoPrint = tr
 
   <!-- SECTIONS + REMARQUES -->
   ${sectionsHtml}
+
+  <!-- PLANS -->
+  ${buildPlanches(plans?.planches)}
 
 </body>
 </html>`

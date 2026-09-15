@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 208 tests node --test (plannings, exports, comptes rendus, photos)
+npm test         # 222 tests node --test (plannings, exports, comptes rendus, photos, plans)
 npx eslint src   # ~74 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -19,8 +19,8 @@ npx eslint src   # ~74 problèmes préexistants : comparer, ne pas viser zéro
 `planning-etude.test.js`), la géométrie des barres du Gantt chantier
 (`geometrie.test.js`) et les exports (`export.test.js`, `export-etude.test.js`,
 `export-chantier-excel.test.js`), ainsi que la reprise et les compteurs des
-comptes rendus (`comptes-rendus.test.js`, `photos.test.js`, sur `crLogique.js` et
-`photosLogique.js`). Rien ne couvre l'interface : la logique des
+comptes rendus (`comptes-rendus.test.js`, `photos.test.js`, `plans.test.js`, sur
+`crLogique.js`, `photosLogique.js` et `plansLogique.js`). Rien ne couvre l'interface : la logique des
 plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`,
 `types.js` de chaque module) pour rester testable.
 
@@ -46,7 +46,7 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
 - **Accès aux données** : hooks dans `src/shared/hooks/`. `useAffaires()` pour
   la liste, `useAffaire(id)` pour une affaire (les deux font `select('*')`),
   `useAffaireCollaborateurs(id)` pour les droits (`canEdit`, `isProprietaire`).
-- **Base** : `supabase/migrations/`, numérotées, 41 fichiers, **passées à la
+- **Base** : `supabase/migrations/`, numérotées, 42 fichiers, **passées à la
   main** dans le SQL Editor de Supabase : un code qui dépend d'une nouvelle
   colonne doit tolérer son absence tant que la migration n'est pas faite. La photo de
   couverture d'une affaire est `affaires.photo_url` (migration 014, bucket
@@ -98,7 +98,16 @@ création avec reprise de la visite précédente) et `useCompteRendu` (un CR).
   appeler `nettoyerFichiers` après coup. Les fichiers restés orphelins malgré
   tout se retrouvent par `cr_photos_orphelines()` (migration 040, ignore ceux
   de moins d'une heure : envoi en cours) — bouton « Nettoyer le stockage » de
-  l'écran d'export.
+  l'écran d'export. Depuis la migration 041, `fichiers_orphelins()` couvre
+  photos et plans.
+- **Plans** (migration 041) : `affaire_plans` (commun à l'affaire) →
+  `affaire_plan_versions` (indice A, B…, image convertie sur l'appareil par
+  `conversionPlan.js`, 6 000 px et 16 Mpx au plus — plafond des iPad) →
+  `cr_pastilles` (une par remarque, x/y relatifs, `version_id`). Une nouvelle
+  version est reportée par la base sur les pastilles des brouillons ; les CR
+  émis gardent la leur, et un plan ou une version qu'ils affichent ne se
+  supprime pas. La visionneuse (`VisionneusePlan.jsx`) garde ses calculs de
+  zoom dans `plansLogique.js`.
 
 ## Pièges déjà rencontrés
 

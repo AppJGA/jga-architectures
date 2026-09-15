@@ -118,10 +118,12 @@ export function compterPointsEnCours(remarques) {
  * est apparu dans cette visite. Les suivis gardent leur état clos.
  *
  * Les photos suivent leur remarque : la ligne est recopiée, pas le fichier.
+ * Les pastilles aussi, sur la version en vigueur de leur plan
+ * (`versionsCourantes` : plan_id → version_id).
  *
- * @returns { sections, sousSections, remarques, sousRemarques, photos }
+ * @returns { sections, sousSections, remarques, sousRemarques, photos, pastilles }
  */
-export function preparerReprise({ sections = [], sousSections = [], remarques = [], photos = [], crId, affaireId, nouvelId }) {
+export function preparerReprise({ sections = [], sousSections = [], remarques = [], photos = [], pastilles = [], versionsCourantes = new Map(), crId, affaireId, nouvelId }) {
   const idSection = new Map()
   const lignesSections = sections.map((s) => {
     const nouveau = nouvelId()
@@ -197,7 +199,17 @@ export function preparerReprise({ sections = [], sousSections = [], remarques = 
       poids_octets: ph.poids_octets ?? 0, legende: ph.legende ?? null, ordre: ph.ordre ?? 0,
     }))
 
+  const lignesPastilles = pastilles
+    .filter((pa) => idRemarque.has(pa.remarque_id))
+    .map((pa) => ({
+      id: nouvelId(), affaire_id: affaireId, cr_id: crId,
+      remarque_id: idRemarque.get(pa.remarque_id),
+      plan_id: pa.plan_id, version_id: versionsCourantes.get(pa.plan_id) ?? pa.version_id,
+      x: pa.x, y: pa.y,
+    }))
+
   return {
+    pastilles: lignesPastilles,
     sections: lignesSections,
     sousSections: lignesSousSections,
     remarques: lignesRemarques,

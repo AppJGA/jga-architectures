@@ -2,7 +2,7 @@ import { useState, useMemo, createContext, useContext } from 'react'
 import {
   Plus, Pencil, ChevronDown, ChevronUp, ChevronRight, X,
   GripVertical, MessageSquarePlus, ToggleLeft, ToggleRight, MessageSquare,
-  Check, RotateCcw, Search, History, CheckSquare,
+  Check, RotateCcw, Search, History, CheckSquare, MapPin,
 } from 'lucide-react'
 import { CATEGORIE_META } from '../../../shared/hooks/useAffaireInterlocuteurs'
 import {
@@ -13,6 +13,7 @@ import { useCr } from './CrContexte'
 import { BoutonSupprimer } from './BoutonSupprimer'
 import { BoutonPhoto, PhotosDeRemarque } from './PhotosRemarque'
 import { usePhotosRemarque } from './usePhotosRemarque'
+import { usePlansCr } from './PlansContexte'
 
 // État propre à l'éditeur, partagé jusqu'aux lignes de remarque : sélection
 // multiple, historique et date de référence des retards.
@@ -415,6 +416,9 @@ function RemarqueRow({ rem, idx, total, crDate, suggestions, lots, interlocuteur
   const enRetard = estEnRetard(rem, dateReference)
   const etapes = historiqueDe(rem)
   const photos = usePhotosRemarque(rem)
+  const plansCr = usePlansCr()
+  const pastille = plansCr.pastilles.find(p => p.remarque_id === rem.id)
+  const planPastille = pastille && plansCr.plans.find(p => p.id === pastille.plan_id)
 
   let descStyle = { fontSize: 13, color: '#1F1B17', lineHeight: 1.5 }
   if (statut.clos) descStyle = { ...descStyle, textDecoration: 'line-through', color: '#9CA3AF' }
@@ -449,7 +453,7 @@ function RemarqueRow({ rem, idx, total, crDate, suggestions, lots, interlocuteur
   )
 
   return (
-    <div style={{ display: hidden ? 'none' : 'block', marginBottom: 4 }}>
+    <div id={`cr-remarque-${rem.id}`} style={{ display: hidden ? 'none' : 'block', marginBottom: 4, scrollMarginTop: 120 }}>
       <div style={{
         display: 'flex', gap: 8, padding: '8px 10px', borderRadius: 2,
         backgroundColor: selection.has(rem.id) ? 'rgba(232,96,44,0.06)' : 'white',
@@ -498,6 +502,15 @@ function RemarqueRow({ rem, idx, total, crDate, suggestions, lots, interlocuteur
               <History size={11} /> Historique · depuis le CR n°{etapes[0].crNumero}
             </button>
           )}
+          {pastille && (
+            <button
+              type="button" onClick={() => plansCr.ouvrirPlacement(rem)} data-compact
+              title="Voir la position sur le plan"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 5, marginRight: 8, padding: '2px 7px', borderRadius: 3, border: 'none', cursor: 'pointer', fontSize: 11, color: '#6B4E9B', background: 'rgba(107,78,155,0.10)' }}
+            >
+              <MapPin size={11} /> {planPastille?.nom ?? 'Plan'}
+            </button>
+          )}
           <PhotosDeRemarque ctl={photos} />
           {historiqueOuvert && (
             <ol style={{ listStyle: 'none', margin: '6px 0 0', padding: '6px 0 0 10px', borderLeft: '2px solid #E9E2D6' }}>
@@ -526,6 +539,15 @@ function RemarqueRow({ rem, idx, total, crDate, suggestions, lots, interlocuteur
           )}
           <button onClick={() => setEditOpen(true)} data-compact style={{ padding: 3, background: 'none', border: 'none', cursor: 'pointer', color: '#9C9591' }}><Pencil size={12} /></button>
           <BoutonPhoto ctl={photos} />
+          {plansCr.disponible && (
+            <button
+              type="button" data-compact onClick={() => plansCr.ouvrirPlacement(rem)}
+              title={pastille ? 'Déplacer la pastille sur le plan' : 'Placer sur un plan'}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 5px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 10, color: pastille ? '#6B4E9B' : '#9C9591' }}
+            >
+              <MapPin size={12} /> Plan
+            </button>
+          )}
           {onAddSousRemarque && (
             <button onClick={() => setAddingSuivi(a => !a)} data-compact
               style={{ display: 'inline-flex', alignItems: 'center', gap: 2, padding: '2px 5px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 10, color: addingSuivi ? '#E8602C' : '#9C9591' }}

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import {
   ArrowLeft, ArrowRight, Send, FileText, FileDown, ChevronRight,
   Users, ClipboardList, MessageSquare, Zap, LayoutDashboard,
-  Lock, RotateCcw, AlertTriangle, X,
+  Lock, RotateCcw, AlertTriangle, X, Map as IconePlan,
 } from 'lucide-react'
 import { useCompteRendu } from '../../../shared/hooks/useCompteRendu'
 import { useAffaireInterlocuteurs } from '../../../shared/hooks/useAffaireInterlocuteurs'
@@ -17,6 +17,11 @@ import { PhotosContexte } from './usePhotosRemarque'
 import { espaceUtilise } from './photosStockage'
 import { formatOctets, niveauEspace, LIMITE_STOCKAGE } from './photosLogique'
 import { NettoyageStockage } from './NettoyageStockage'
+import { PlansContexte } from './PlansContexte'
+import { usePlans } from './usePlans'
+import { PlansVue } from './PlansVue'
+import { PlacementPlan } from './PlacementPlan'
+import { cadrageExtrait } from './plansLogique'
 
 // ─── Styles partagés ──────────────────────────────────────────────────────────
 
@@ -58,6 +63,14 @@ const VUES = [
     icon: MessageSquare,
     couleur: '#2A8A4E',
     fondClair: 'rgba(42,138,78,0.12)',
+  },
+  {
+    id: 'plans',
+    label: 'Plans',
+    description: 'Plans de l’affaire\net pastilles',
+    icon: IconePlan,
+    couleur: '#6B4E9B',
+    fondClair: 'rgba(107,78,155,0.10)',
   },
   {
     id: 'export',
@@ -208,10 +221,11 @@ function CompteurEspace({ utilise }) {
   )
 }
 
-function ExportView({ cr, sections, presences, affaire, lotEntreprises, interlocuteurs, photos, liensPhotos, espace, peutNettoyer, onEspaceChange }) {
+function ExportView({ cr, sections, presences, affaire, lotEntreprises, interlocuteurs, photos, liensPhotos, pastilles, plansCr, remarques, espace, peutNettoyer, onEspaceChange }) {
   const num = String(cr.numero).padStart(2, '0')
   const [bloque, setBloque] = useState(false)
   const [avecPhotos, setAvecPhotos] = useState(true)
+  const [avecPlans, setAvecPlans] = useState(true)
   const { signalerErreur } = useCr()
 
   const generer = async () => {
@@ -231,11 +245,33 @@ function ExportView({ cr, sections, presences, affaire, lotEntreprises, interloc
           parRemarque.set(p.remarque_id, [...(parRemarque.get(p.remarque_id) ?? []), { url, legende: p.legende }])
         }
       }
+      let plans = null
+      if (avecPlans && pastilles.length > 0) {
+        const versionsUtiles = [...new Set(pastilles.map(p => p.version_id))]
+          .map(id => plansCr.versions.find(v => v.id === id)).filter(Boolean)
+        const liens = await plansCr.obtenirLiens(versionsUtiles.map(v => v.chemin_apercu))
+        const parId = new Map(remarques.map(r => [r.id, r]))
+        const extraits = new Map()
+        const planches = versionsUtiles.map(v => {
+          const plan = plansCr.plans.find(p => p.id === v.plan_id)
+          const ratio = v.hauteur / v.largeur
+          const url = liens.get(v.chemin_apercu)
+          const pastillesPlan = pastilles.filter(p => p.version_id === v.id).map(p => {
+            const r = parId.get(p.remarque_id)
+            const vue = { x: p.x, y: p.y, numero: r?.numero ?? '', couleur: r ? infosStatut(r).couleur : '#9C9591' }
+            extraits.set(p.remarque_id, { ...vue, url, cadrage: cadrageExtrait(p.x, p.y, ratio), planNom: plan?.nom, indice: v.indice })
+            return vue
+          })
+          return { nom: plan?.nom ?? 'Plan', indice: v.indice, url, pastilles: pastillesPlan }
+        }).filter(p => p.url)
+        plans = { extraits, planches }
+      }
       generateCrPdf(cr, sections, presences, affaire, {
         lots: lotEntreprises.map(le => le.lots).filter(Boolean),
         interlocuteurs,
         fenetre,
         photosParRemarque: parRemarque,
+        plans,
       })
     } catch (err) {
       fenetre.close()
@@ -270,6 +306,12 @@ function ExportView({ cr, sections, presences, affaire, lotEntreprises, interloc
         <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: 12, color: '#374151', marginTop: 14, cursor: 'pointer' }}>
           <input type="checkbox" checked={avecPhotos} onChange={e => setAvecPhotos(e.target.checked)} style={{ accentColor: '#E8602C' }} />
           Inclure les photos ({photos.length})
+        </label>
+      )}
+      {pastilles.length > 0 && (
+        <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: 12, color: '#374151', marginTop: 8, cursor: 'pointer' }}>
+          <input type="checkbox" checked={avecPlans} onChange={e => setAvecPlans(e.target.checked)} style={{ accentColor: '#E8602C' }} />
+          Inclure les plans ({pastilles.length} pastille{pastilles.length > 1 ? 's' : ''})
         </label>
       )}
       {bloque ? (
@@ -331,7 +373,7 @@ function TuileVue({ vue, titre, sousTitre, onClick }) {
   )
 }
 
-function CrAccueil({ cr, affaire, presences, sections, onNavigate, onOuvrirSection, onEmettre, peutModifier }) {
+function CrAccueil({ cr, affaire, presences, sections, onNavigate, onOuvrirSection, onEmettre, peutModifier, nbPlans, nbPastilles }) {
   const [survolEditeur, setSurvolEditeur] = useState(false)
   const dateLabel = cr.date_reunion
     ? new Date(cr.date_reunion + 'T00:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })
@@ -350,6 +392,7 @@ function CrAccueil({ cr, affaire, presences, sections, onNavigate, onOuvrirSecti
   const vueOrga = VUES.find(v => v.id === 'organisation')
   const vuePresences = VUES.find(v => v.id === 'presences')
   const vueExport = VUES.find(v => v.id === 'export')
+  const vuePlans = VUES.find(v => v.id === 'plans')
 
   return (
     <div>
@@ -505,7 +548,7 @@ function CrAccueil({ cr, affaire, presences, sections, onNavigate, onOuvrirSecti
         )}
       </div>
 
-      {/* Les trois autres vues */}
+      {/* Les autres vues */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
         <TuileVue
           vue={vueOrga}
@@ -518,6 +561,12 @@ function CrAccueil({ cr, affaire, presences, sections, onNavigate, onOuvrirSecti
           titre="Présences"
           sousTitre={presences.length === 0 ? 'Aucun participant' : `${convoques} convoqué${convoques > 1 ? 's' : ''} · ${presents} présent${presents > 1 ? 's' : ''}`}
           onClick={() => onNavigate('presences')}
+        />
+        <TuileVue
+          vue={vuePlans}
+          titre="Plans"
+          sousTitre={nbPlans === 0 ? 'Aucun plan' : `${nbPlans} plan${nbPlans > 1 ? 's' : ''} · ${nbPastilles} pastille${nbPastilles > 1 ? 's' : ''}`}
+          onClick={() => onNavigate('plans')}
         />
         <TuileVue
           vue={vueExport}
@@ -535,13 +584,14 @@ function CrAccueil({ cr, affaire, presences, sections, onNavigate, onOuvrirSecti
 // Fait défiler jusqu'à une section de l'éditeur. L'ancre n'existe qu'une fois
 // l'éditeur monté : on laisse passer une frame, et on réessaie deux fois si le
 // rendu a pris plus longtemps.
-function defilerVersSection(sectionId, essais = 2) {
+function defilerVers(idAncre, essais = 2, block = 'start') {
   requestAnimationFrame(() => {
-    const cible = document.getElementById(`cr-section-${sectionId}`)
-    if (cible) cible.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    else if (essais > 0) defilerVersSection(sectionId, essais - 1)
+    const cible = document.getElementById(idAncre)
+    if (cible) cible.scrollIntoView({ behavior: 'smooth', block })
+    else if (essais > 0) defilerVers(idAncre, essais - 1, block)
   })
 }
+const defilerVersSection = (sectionId) => defilerVers(`cr-section-${sectionId}`)
 
 // ─── Bandeaux ─────────────────────────────────────────────────────────────────
 
@@ -649,6 +699,7 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
 
   const {
     photos, liens, ajouterPhotos, remplacerPhoto, modifierLegendePhoto, supprimerPhoto, liensPhotos,
+    pastilles, placerPastille, enleverPastille,
     cr, sections, presences, profiles, loading, erreurChargement, historique,
     syncPresences, updateCr, emettre, rouvrir, updatePresence,
     addSection, updateSection, deleteSection, reorderSection, reorderSectionsByIds,
@@ -720,6 +771,17 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
     }
   }, [photos, liens, liensPhotos, espace, ajouterPhotos, remplacerPhoto, modifierLegendePhoto, supprimerPhoto, signalerErreur])
 
+  const plansCr = usePlans(affaire?.id)
+  const [placement, setPlacement] = useState(null) // remarque
+  const toutesRemarques = useMemo(() => sections.flatMap(s => [
+    ...(s.directRemarques ?? []),
+    ...(s.sousSections ?? []).flatMap(ss => ss.remarques ?? []),
+  ]), [sections])
+  const contextePlans = useMemo(() => ({
+    disponible: plansCr.disponible, plans: plansCr.plans, versions: plansCr.versions, pastilles,
+    ouvrirPlacement: setPlacement,
+  }), [plansCr.disponible, plansCr.plans, plansCr.versions, pastilles])
+
   const lectureSeule = lectureSeuleAffaire || cr?.statut === 'emis'
   const contexte = useMemo(() => ({ lectureSeule, signalerErreur }), [lectureSeule, signalerErreur])
 
@@ -751,6 +813,7 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
   return (
     <CrContexte.Provider value={contexte}>
     <PhotosContexte.Provider value={contextePhotos}>
+    <PlansContexte.Provider value={contextePlans}>
     <div>
       {erreur && <BandeauErreur message={erreur} onFermer={() => setErreur(null)} />}
 
@@ -804,6 +867,8 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
           onOuvrirSection={(id) => { setActiveView('remarques'); defilerVersSection(id) }}
           onEmettre={() => setConfirmation('emettre')}
           peutModifier={!lectureSeuleAffaire}
+          nbPlans={plansCr.plans.length}
+          nbPastilles={pastilles.length}
         />
       )}
 
@@ -838,6 +903,30 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
         />
       )}
 
+      {activeView === 'plans' && (
+        <PlansVue
+          plansCr={plansCr}
+          remarques={toutesRemarques}
+          pastilles={pastilles}
+          peutGerer={!lectureSeuleAffaire}
+          onAllerRemarque={(id) => { setActiveView('remarques'); defilerVers(`cr-remarque-${id}`, 4, 'center') }}
+        />
+      )}
+
+      {placement && (
+        <PlacementPlan
+          remarque={toutesRemarques.find(r => r.id === placement.id) ?? placement}
+          remarques={toutesRemarques}
+          plans={plansCr.plans}
+          versions={plansCr.versions}
+          pastilles={pastilles}
+          obtenirLiens={plansCr.obtenirLiens}
+          onPoser={(remarqueId, position) => placerPastille(remarqueId, position).catch(err => { signalerErreur(err); throw err })}
+          onRetirer={(remarqueId) => enleverPastille(remarqueId).catch(err => { signalerErreur(err); throw err })}
+          onFermer={() => setPlacement(null)}
+        />
+      )}
+
       {activeView === 'export' && (
         <ExportView
           cr={cr}
@@ -848,6 +937,9 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
           interlocuteurs={interlocuteurs}
           photos={photos}
           liensPhotos={liensPhotos}
+          pastilles={pastilles}
+          plansCr={plansCr}
+          remarques={toutesRemarques}
           espace={espace}
           peutNettoyer={!lectureSeuleAffaire}
           onEspaceChange={() => setVersionEspace(v => v + 1)}
@@ -875,6 +967,7 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
         />
       )}
     </div>
+    </PlansContexte.Provider>
     </PhotosContexte.Provider>
     </CrContexte.Provider>
   )

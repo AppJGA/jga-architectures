@@ -52,10 +52,10 @@ export async function nettoyerFichiers(photosSupprimees) {
 }
 
 // Liens temporaires (le stockage est privé), par chemin
-export async function liensSignes(chemins, dureeSecondes = 3600) {
+export async function liensSignes(chemins, dureeSecondes = 3600, bucket = BUCKET_PHOTOS) {
   const uniques = [...new Set(chemins.filter(Boolean))]
   if (uniques.length === 0) return new Map()
-  const { data, error } = await supabase.storage.from(BUCKET_PHOTOS).createSignedUrls(uniques, dureeSecondes)
+  const { data, error } = await supabase.storage.from(bucket).createSignedUrls(uniques, dureeSecondes)
   if (error) throw error
   return new Map((data ?? []).filter((l) => l.signedUrl).map((l) => [l.path, l.signedUrl]))
 }
@@ -89,19 +89,30 @@ export async function photosDeLAffaire(affaireId) {
   return data ?? []
 }
 
-// Fichiers qu'aucun compte rendu n'utilise (null avant la migration 040)
+/**
+ * Fichiers qu'aucun compte rendu ni plan n'utilise : [{ bucket, chemin, taille }].
+ * Avant la migration 041, seules les photos sont cherchées ; avant la 040,
+ * null.
+ */
 export async function fichiersOrphelins() {
-  const { data, error } = await supabase.rpc('cr_photos_orphelines')
-  if (error) {
-    if (photosIndisponibles(error)) return null
-    throw error
+  const { data, error } = await supabase.rpc('fichiers_orphelins')
+  if (!error) return data ?? []
+  if (!photosIndisponibles(error)) throw error
+  const ancien = await supabase.rpc('cr_photos_orphelines')
+  if (ancien.error) {
+    if (photosIndisponibles(ancien.error)) return null
+    throw ancien.error
   }
-  return data ?? []
+  return (ancien.data ?? []).map((f) => ({ bucket: BUCKET_PHOTOS, ...f }))
 }
 
-export async function supprimerFichiers(chemins) {
-  for (const paquet of paquets(chemins)) {
-    const { error } = await supabase.storage.from(BUCKET_PHOTOS).remove(paquet)
-    if (error) throw error
+export async function supprimerFichiers(fichiers) {
+  const parBucket = new Map()
+  for (const f of fichiers) parBucket.set(f.bucket, [...(parBucket.get(f.bucket) ?? []), f.chemin])
+  for (const [bucket, chemins] of parBucket) {
+    for (const paquet of paquets(chemins)) {
+      const { error } = await supabase.storage.from(bucket).remove(paquet)
+      if (error) throw error
+    }
   }
 }

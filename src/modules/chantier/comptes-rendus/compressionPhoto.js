@@ -34,6 +34,15 @@ function encoder(canvas, type, qualite) {
   return new Promise((resolve) => canvas.toBlob(resolve, type, qualite))
 }
 
+// WebP, ou JPEG si le navigateur ne sait pas en produire (il rendrait du PNG,
+// bien plus lourd)
+export async function encoderImage(canvas, qualite) {
+  let blob = await encoder(canvas, 'image/webp', qualite)
+  if (!blob || blob.type !== 'image/webp') blob = await encoder(canvas, 'image/jpeg', Math.min(0.92, qualite + 0.02))
+  if (!blob) throw new Error('L’image n’a pas pu être compressée (mémoire de l’appareil insuffisante ?).')
+  return blob
+}
+
 async function redessiner(image, largeurSource, hauteurSource, max, qualite) {
   const { largeur, hauteur } = dimensionsCible(largeurSource, hauteurSource, max)
   const canvas = document.createElement('canvas')
@@ -42,11 +51,7 @@ async function redessiner(image, largeurSource, hauteurSource, max, qualite) {
   const ctx = canvas.getContext('2d')
   ctx.imageSmoothingQuality = 'high'
   ctx.drawImage(image, 0, 0, largeur, hauteur)
-  let blob = await encoder(canvas, 'image/webp', qualite)
-  // Navigateur sans encodeur WebP : il rend du PNG, bien plus lourd
-  if (!blob || blob.type !== 'image/webp') blob = await encoder(canvas, 'image/jpeg', qualite + 0.02)
-  if (!blob) throw new Error('La photo n’a pas pu être compressée.')
-  return { blob, largeur, hauteur }
+  return { blob: await encoderImage(canvas, qualite), largeur, hauteur }
 }
 
 /**

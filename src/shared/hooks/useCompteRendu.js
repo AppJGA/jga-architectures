@@ -2,14 +2,10 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../../core/supabase/client'
 import { copiePresence, copieAJour } from '../../modules/chantier/comptes-rendus/crLogique'
 import {
-  photosDuCr, envoyerPhoto, nettoyerFichiers, liensSignes,
+  photosDuCr, envoyerPhoto, nettoyerFichiers, BUCKET_PHOTOS,
 } from '../../modules/chantier/comptes-rendus/photosStockage'
-
-// Un lien signé vaut une heure ; on le renouvelle un peu avant. Le garder entre
-// deux rechargements évite de retélécharger les miniatures : un nouveau lien
-// est une nouvelle adresse pour le cache du navigateur.
-const DUREE_LIEN = 3600
-const MARGE_LIEN = 600
+import { pastillesDuCr, poserPastille, retirerPastille } from '../../modules/chantier/comptes-rendus/plansStockage'
+import { useLiensSignes } from '../../modules/chantier/comptes-rendus/useLiensSignes'
 
 // Jointures d'une présence : la fiche liée sert à tenir sa copie à jour
 const SELECT_PRESENCES = `
@@ -98,25 +94,12 @@ export function useCompteRendu(crId, affaireId) {
   // historique. Chargées une fois : elles ne changent pas pendant la saisie.
   const [historique, setHistorique] = useState({ remarques: [], crs: [] })
   const [photos, setPhotos] = useState([])
-  const [liens, setLiens] = useState(() => new Map())
-  const cacheLiens = useRef(new Map()) // chemin → { url, expire }
+  const [pastilles, setPastilles] = useState([])
+  const { liens, obtenirLiens } = useLiensSignes(BUCKET_PHOTOS)
   // Seul le premier chargement affiche l'indicateur : il remplace l'éditeur,
   // qui perdait sinon à chaque ajout ses filtres, ses sections repliées et la
   // position de défilement.
   const dejaCharge = useRef(false)
-
-  // Liens signés des chemins demandés, depuis le cache quand ils sont encore valides
-  const obtenirLiens = useCallback(async (chemins) => {
-    const maintenant = Date.now() / 1000
-    const cache = cacheLiens.current
-    const manquants = chemins.filter(c => c && !(cache.get(c)?.expire > maintenant + MARGE_LIEN))
-    if (manquants.length > 0) {
-      const nouveaux = await liensSignes(manquants, DUREE_LIEN)
-      for (const [chemin, url] of nouveaux) cache.set(chemin, { url, expire: maintenant + DUREE_LIEN })
-      setLiens(new Map([...cache].map(([c, v]) => [c, v.url])))
-    }
-    return new Map(chemins.map(c => [c, cache.get(c)?.url]))
-  }, [])
 
   const fetchAll = useCallback(async () => {
     if (!crId) return
@@ -143,7 +126,7 @@ export function useCompteRendu(crId, affaireId) {
       { data: presData },
       { data: profData },
     ] = resultats
-    const photosCr = await photosDuCr(crId)
+    const [photosCr, pastillesCr] = await Promise.all([photosDuCr(crId), pastillesDuCr(crId)])
     await obtenirLiens(photosCr.map(p => p.chemin_miniature))
 
     setErreurChargement(null)
@@ -152,6 +135,7 @@ export function useCompteRendu(crId, affaireId) {
     setPresences(presData ?? [])
     setProfiles(profData ?? [])
     setPhotos(photosCr)
+    setPastilles(pastillesCr)
     dejaCharge.current = true
     setLoading(false)
   }, [crId, obtenirLiens])
@@ -503,11 +487,24 @@ export function useCompteRendu(crId, affaireId) {
     await fetchAll()
   }, [fetchAll])
 
+  // ── Pastilles sur plan ───────────────────────────────────────────────────────
+  // Une par remarque : la poser à nouveau la déplace
+  const placerPastille = useCallback(async (remarqueId, { planId, versionId, x, y }) => {
+    await poserPastille({ affaire_id: affaireId, cr_id: crId, remarque_id: remarqueId, plan_id: planId, version_id: versionId, x, y })
+    await fetchAll()
+  }, [affaireId, crId, fetchAll])
+
+  const enleverPastille = useCallback(async (remarqueId) => {
+    await retirerPastille(remarqueId)
+    await fetchAll()
+  }, [fetchAll])
+
   // Lien de la photo entière (visionneuse, PDF)
   const liensPhotos = useCallback((chemins) => obtenirLiens(chemins), [obtenirLiens])
 
   return {
     photos, liens, ajouterPhotos, remplacerPhoto, modifierLegendePhoto, supprimerPhoto, liensPhotos,
+    pastilles, placerPastille, enleverPastille,
     cr, sections, presences, profiles, loading, erreurChargement, historique,
     syncPresences, updateCr, emettre, rouvrir, updatePresence,
     addSection, updateSection, deleteSection, reorderSection, reorderSectionsByIds,

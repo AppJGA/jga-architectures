@@ -21,7 +21,7 @@ function verifier(resultat) {
   return resultat.data
 }
 
-const VIDE = { visites: [], reserves: [], constats: [], photos: [], pastilles: [], presences: [], archives: [], lots: [], lotEntreprises: [] }
+const VIDE = { visites: [], reserves: [], constats: [], photos: [], pastilles: [], presences: [], archives: [], lots: [], lotEntreprises: [], pvs: null }
 
 export function useOpr(affaireId) {
   const [donnees, setDonnees] = useState(VIDE)
@@ -46,7 +46,12 @@ export function useOpr(affaireId) {
       throw echec.error
     }
     const [visites, reserves, constats, photos, pastilles, presences, archives, lots, lotEntreprises] = tables.map((t) => t.data ?? [])
-    return { visites, reserves, constats, photos, pastilles, presences, archives, lots, lotEntreprises }
+    // Procès-verbaux : migration 046, lus à part pour que le module reste
+    // utilisable tant qu'elle n'est pas passée (pvs = null)
+    const pv = await supabase.from('opr_pv').select('*').eq('affaire_id', affaireId)
+    if (pv.error && !photosIndisponibles(pv.error)) throw pv.error
+    const pvs = pv.error ? null : pv.data ?? []
+    return { visites, reserves, constats, photos, pastilles, presences, archives, lots, lotEntreprises, pvs }
   }, [affaireId])
 
   const appliquer = useCallback(async (resultat) => {
@@ -234,6 +239,38 @@ export function useOpr(affaireId) {
     return data
   })
 
+  // ── Procès-verbaux ───────────────────────────────────────────────────────────
+  const enregistrerPv = ecrire(async ({ visite, lotId, type, champs }) => {
+    const existant = (donnees.pvs ?? []).find((p) => p.visite_id === visite.id && p.lot_id === lotId && p.type === type)
+    const lot = donnees.lots.find((l) => l.id === lotId)
+    if (existant) {
+      const { data, error } = await supabase.from('opr_pv').update({ champs }).eq('id', existant.id).select().single()
+      if (error) throw error
+      return data
+    }
+    const { data, error } = await supabase.from('opr_pv').insert({
+      affaire_id: affaireId, visite_id: visite.id, lot_id: lotId, copie_lot: lot ? libelleLot(lot) : null, type, champs,
+    }).select().single()
+    if (error) throw error
+    return data
+  })
+
+  // Nouveau PDF du PV ; l'ancien fichier est effacé une fois le nouveau enregistré
+  const archiverPv = ecrire(async (pv, blob) => {
+    const chemin = `${affaireId}/pv/${pv.id}/${crypto.randomUUID()}.pdf`
+    const envoi = await supabase.storage.from(BUCKET_ARCHIVES).upload(chemin, blob, { contentType: 'application/pdf', upsert: false })
+    if (envoi.error) throw envoi.error
+    const { error } = await supabase.from('opr_pv').update({ chemin, taille_octets: blob.size, genere_le: new Date().toISOString() }).eq('id', pv.id)
+    if (error) {
+      await supabase.storage.from(BUCKET_ARCHIVES).remove([chemin])
+      throw error
+    }
+    if (pv.chemin) {
+      const { error: errAncien } = await supabase.storage.from(BUCKET_ARCHIVES).remove([pv.chemin])
+      if (errAncien) console.warn('Ancien PDF du PV :', errAncien)
+    }
+  })
+
   const diffusionsDeVisite = useCallback(async (visiteId) => {
     const { data, error } = await supabase.from('opr_diffusions').select('*').eq('visite_id', visiteId).order('prepare_le', { ascending: false })
     if (error) throw error
@@ -251,6 +288,6 @@ export function useOpr(affaireId) {
     ajouterReserve, modifierReserve, supprimerReserve, constater, annulerConstat,
     ajouterPhotos, remplacerPhoto, modifierLegendePhoto, supprimerPhoto,
     placerPastille, retirerPastille, setPresence,
-    archiver, diffusionsDeVisite, noterDiffusion,
+    archiver, diffusionsDeVisite, noterDiffusion, enregistrerPv, archiverPv,
   }
 }

@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import {
   ArrowLeft, Users, Send, RotateCcw, Lock, Plus, Camera, MapPin, Pencil, MoreHorizontal,
-  FileDown, Eye, Archive, Download, Mail, AlertTriangle, X,
+  FileDown, Eye, Archive, Download, Mail, AlertTriangle, X, FileSignature,
 } from 'lucide-react'
 import { CrContexte } from '../comptes-rendus/CrContexte'
 import { PhotosContexte, usePhotosRemarque } from '../comptes-rendus/usePhotosRemarque'
@@ -22,6 +22,7 @@ import {
 import { statutPourVisite, REGLAGES_OPR_DEFAUT } from './rapportOprLogique'
 import { genererPdfOpr } from './genererRapportOpr'
 import { PanneauReserve } from './PanneauReserve'
+import { ProcesVerbaux } from './ProcesVerbaux'
 
 // ─── Une visite OPR ou de levée ──────────────────────────────────────────────
 
@@ -248,6 +249,12 @@ function DocumentVisite({ visite, affaire, opr, plansCr, lectureSeuleAffaire, si
           />
         </div>
       )}
+
+      <div style={carte}>
+        <p style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 14, fontWeight: 500, marginBottom: 4 }}><FileSignature size={15} color="#1B3A5C" /> Procès-verbaux</p>
+        <p style={{ fontSize: 12, color: '#9C9591', marginBottom: 10 }}>Remplis depuis la visite et ses réserves ; PDF archivé, à imprimer et signer à la main.</p>
+        <ProcesVerbaux visite={visite} affaire={affaire} opr={opr} lectureSeuleAffaire={lectureSeuleAffaire} signalerErreur={signalerErreur} />
+      </div>
 
       <div style={carte}>
         <p style={{ fontSize: 14, fontWeight: 500, marginBottom: 12 }}>PDF de la visite · {type.titre}</p>

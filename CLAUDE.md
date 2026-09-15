@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 263 tests node --test (plannings, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR)
+npm test         # 274 tests node --test (plannings, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR)
 npx eslint src   # ~73 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -21,7 +21,7 @@ npx eslint src   # ~73 problèmes préexistants : comparer, ne pas viser zéro
 `export-chantier-excel.test.js`), ainsi que la reprise et les compteurs des
 comptes rendus (`comptes-rendus.test.js`, `photos.test.js`, `plans.test.js`,
 `visite.test.js`, `rapport.test.js`, `diffusion.test.js`, sur les fichiers `*Logique.js` du module ;
-`opr.test.js` et `rapportOpr.test.js` pour le module OPR). Rien ne couvre l'interface : la logique des
+`opr.test.js`, `rapportOpr.test.js` et `pv.test.js` pour le module OPR). Rien ne couvre l'interface : la logique des
 plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`,
 `types.js` de chaque module) pour rester testable.
 
@@ -47,7 +47,7 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
 - **Accès aux données** : hooks dans `src/shared/hooks/`. `useAffaires()` pour
   la liste, `useAffaire(id)` pour une affaire (les deux font `select('*')`),
   `useAffaireCollaborateurs(id)` pour les droits (`canEdit`, `isProprietaire`).
-- **Base** : `supabase/migrations/`, numérotées, 46 fichiers, **passées à la
+- **Base** : `supabase/migrations/`, numérotées, 47 fichiers, **passées à la
   main** dans le SQL Editor de Supabase : un code qui dépend d'une nouvelle
   colonne doit tolérer son absence tant que la migration n'est pas faite. La photo de
   couverture d'une affaire est `affaires.photo_url` (migration 014, bucket
@@ -144,6 +144,13 @@ briques des comptes rendus : photos et plans passent par `PhotosContexte` et
 `PlacementPlan` avec `remarque_id` = `reserve_id`, le PDF par les blocs
 exportés de `rapportLogique.js` et `imagesDocument`, la diffusion par
 `DiffusionDocument`.
+
+Procès-verbaux (migration 046, table `opr_pv`, un par visite, lot et type) :
+modèles dans `pvLogique.js` — PV des OPR, propositions du MOE et décision de
+réception (CCAG Travaux, art. 41), PV de réception en marché privé (Code
+civil, art. 1792-6), levée des réserves. Validés par l'agence le 2026-09-15 ;
+toute modification de formulation se fait là et se relit avec elle. PDF à
+signer à la main, archivé dans `cr-archives`.
 
 ## Accès des intervenants extérieurs (prévu)
 

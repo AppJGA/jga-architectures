@@ -60,7 +60,7 @@ function ChampAvancement({ valeur, onValider, style, onFocus, onBlur }) {
 
 export function GanttSidebar({
   tasks, lots, rows = null, rowHeight, headerHeight, onEdit, onAvancementChange, zones = [], colorMode = 'lot',
-  onReorderTask, dragOverTaskId = null, onDragOverTaskChange,
+  onReorderTask, dragOverTaskId = null, onDragOverTaskChange, tacheSelectionneeId = null,
 }) {
   const [draggedTaskId, setDraggedTaskId] = useState(null)
 
@@ -68,7 +68,7 @@ export function GanttSidebar({
     return (
       <ZoneGroupedSidebar
         rows={rows} lots={lots} rowHeight={rowHeight} headerHeight={headerHeight}
-        onEdit={onEdit} onAvancementChange={onAvancementChange}
+        onEdit={onEdit} onAvancementChange={onAvancementChange} tacheSelectionneeId={tacheSelectionneeId}
       />
     )
   }
@@ -149,7 +149,8 @@ export function GanttSidebar({
           </div>
           {lotTasks.map((task) => (
             <TaskRow key={task.id} task={task} lotColor={getBarColor(task, lot.couleur, zones, colorMode)} rowHeight={rowHeight}
-              onEdit={onEdit} onAvancementChange={onAvancementChange} {...dragHandlers} />
+              onEdit={onEdit} onAvancementChange={onAvancementChange} {...dragHandlers}
+              selectionnee={task.id === tacheSelectionneeId} />
           ))}
         </div>
       ))}
@@ -169,7 +170,8 @@ export function GanttSidebar({
           </div>
           {unassigned.map((task) => (
             <TaskRow key={task.id} task={task} lotColor={getBarColor(task, '#94a3b8', zones, colorMode)} rowHeight={rowHeight}
-              onEdit={onEdit} onAvancementChange={onAvancementChange} {...dragHandlers} />
+              onEdit={onEdit} onAvancementChange={onAvancementChange} {...dragHandlers}
+              selectionnee={task.id === tacheSelectionneeId} />
           ))}
         </div>
       )}
@@ -177,8 +179,12 @@ export function GanttSidebar({
   )
 }
 
+// Tâche touchée sur la timeline (menu radial ouvert ou en édition) : sa ligne
+// est repérée ici aussi, la barre pouvant être loin du nom à l'écran.
+const FOND_SELECTION = 'rgba(232,96,44,0.06)'
+
 function TaskRow({
-  task, lotColor, rowHeight, onEdit, onAvancementChange,
+  task, lotColor, rowHeight, onEdit, onAvancementChange, selectionnee = false,
   draggedTaskId, dragOverTaskId, handleTaskDragStart, handleTaskDragEnd, handleTaskDragOver, handleTaskDrop,
 }) {
   const isDragOver = dragOverTaskId === task.id && draggedTaskId !== task.id
@@ -200,9 +206,10 @@ function TaskRow({
         padding: '0 12px', borderBottom: '0.5px solid rgba(0,0,0,0.06)',
         borderTop: isDragOver ? '2px solid #E8602C' : '2px solid transparent',
         transition: 'background-color 0.1s, border-top 0.1s',
+        backgroundColor: selectionnee ? FOND_SELECTION : undefined,
       }}
       onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(155,143,133,0.06)'}
-      onMouseLeave={e => e.currentTarget.style.backgroundColor = ''}
+      onMouseLeave={e => e.currentTarget.style.backgroundColor = selectionnee ? FOND_SELECTION : ''}
     >
       {/* Poignée de drag */}
       <div
@@ -226,13 +233,14 @@ function TaskRow({
       {/* Task name */}
       <button
         style={{
-          flex: 1, minWidth: 0, textAlign: 'left', fontSize: nomFontSize, color: '#1F1B17',
+          flex: 1, minWidth: 0, textAlign: 'left', fontSize: nomFontSize,
+          color: selectionnee ? '#E8602C' : '#1F1B17',
           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
           background: 'none', border: 'none', cursor: 'pointer', padding: 0,
         }}
         onClick={() => onEdit(task)}
         onMouseEnter={e => e.currentTarget.style.color = '#E8602C'}
-        onMouseLeave={e => e.currentTarget.style.color = '#1F1B17'}
+        onMouseLeave={e => e.currentTarget.style.color = selectionnee ? '#E8602C' : '#1F1B17'}
       >
         {task.nom}
         {task.appro_actif && task.appro_duree > 0 && (
@@ -287,7 +295,7 @@ function TaskRow({
 // réorganisation ici : l'ordre des lignes dans une zone reflète l'ordre par lot,
 // et une tâche peut apparaître sur plusieurs lignes, ce que la réorganisation
 // (au sein d'un seul lot) ne gère pas.
-function ZoneGroupedSidebar({ rows, lots, rowHeight, headerHeight, onEdit, onAvancementChange }) {
+function ZoneGroupedSidebar({ rows, lots, rowHeight, headerHeight, onEdit, onAvancementChange, tacheSelectionneeId }) {
   const { compact, nomFontSize, inputHeight, puceHeight, numFontSize } = rowMetrics(rowHeight)
 
   return (
@@ -332,6 +340,7 @@ function ZoneGroupedSidebar({ rows, lots, rowHeight, headerHeight, onEdit, onAva
 
         const lot = lots.find((l) => l.id === row.lotId)
         const isDuplicate = row.showMainBar === false
+        const selectionnee = !isDuplicate && row.task.id === tacheSelectionneeId
 
         return (
           <div
@@ -340,9 +349,10 @@ function ZoneGroupedSidebar({ rows, lots, rowHeight, headerHeight, onEdit, onAva
             style={{
               display: 'flex', alignItems: 'center', height: rowHeight,
               padding: '0 12px', borderBottom: '0.5px solid rgba(0,0,0,0.06)', gap: 6,
+              backgroundColor: selectionnee ? FOND_SELECTION : undefined,
             }}
             onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(155,143,133,0.06)'}
-            onMouseLeave={e => e.currentTarget.style.backgroundColor = ''}
+            onMouseLeave={e => e.currentTarget.style.backgroundColor = selectionnee ? FOND_SELECTION : ''}
           >
             {/* Color bar + numéro */}
             <div style={{ display: 'flex', width: 48, flexShrink: 0, alignItems: 'center', gap: 6 }}>

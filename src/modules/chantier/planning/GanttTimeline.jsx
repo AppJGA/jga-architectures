@@ -1,5 +1,6 @@
 import { useMemo, useRef, useCallback, useState, useEffect, useLayoutEffect } from 'react'
-import { Pencil, GitBranch } from 'lucide-react'
+import { GitBranch } from 'lucide-react'
+import { MenuRadialTache, EditionBarre, BandeauLien } from './MenuRadialTache'
 import {
   parseDate,
   formatDateISO,
@@ -283,6 +284,7 @@ export function GanttTimeline({
   tasks, lots, rows = null, dayWidth, rowHeight, showConnections,
   jalons = [], onJalonClick,
   onTaskClick, onTaskUpdate, onDependencyCreate, onDependencyDelete,
+  onTaskDuplicate, onTaskDelete, onSelectionChange,
   zones = [], colorMode = 'lot', viewMode = 'day', zoomLevel = 1,
   getSegmentsForTache, segments = [], updateSegmentLocal, onSegmentCommit, onSegmentDragBegin, onSegmentDragCancel,
   dependances = [], onSegmentDependencyCreate, onSegmentDependencyDelete,
@@ -600,23 +602,40 @@ export function GanttTimeline({
   const barDragRef = useRef(null)
   const [draggingBar, setDraggingBar] = useState(null)
 
+  // ── Menu radial ───────────────────────────────────────────────────────────────
+  // { taskId, mode: 'menu' | 'move' | 'resize' | 'lien' } — toucher une barre
+  // ouvre le menu ; Déplacer et Allonger passent en mode édition, Lier attend
+  // la tâche suivante.
+  const [selection, setSelection] = useState(null)
+  const selectionTache = selection ? tasks.find((t) => t.id === selection.taskId) ?? null : null
+
+  useEffect(() => { onSelectionChange?.(selectionTache?.id ?? null) }, [selectionTache?.id, onSelectionChange])
+
+  // Bornes d'une barre pendant un geste, lues par le rendu : la barre, ses
+  // délais, ses flèches, l'anneau et les poignées suivent le doigt ensemble.
+  const [apercu, setApercu] = useState(null)
+  const tacheAffichee = useCallback((t) => (
+    apercu && apercu.taskId === t.id ? { ...t, debut: apercu.debut, duree: apercu.duree } : t
+  ), [apercu])
+
+  // À la souris, une barre se glisse directement. Au doigt, seulement en mode
+  // Déplacer ou Allonger de cette tâche : ailleurs le geste reste un toucher,
+  // qui ouvre le menu radial.
   const startBarDrag = useCallback((e, task, type) => {
     if (drawMode) return
-    if (e.button !== 0) return
+    if (e.pointerType === 'mouse' && e.button !== 0) return
     e.preventDefault(); e.stopPropagation()
-    // L'aperçu modifie le style de la barre dans le DOM : on garde celui rendu
-    // par React pour le rétablir au relâchement, sinon un geste sans effet
-    // laisse la barre dessinée à la position de l'aperçu.
-    const el = document.querySelector(`[data-taskid="${task.id}"]`)
+    const enEdition = selection?.taskId === task.id && (selection.mode === 'move' || selection.mode === 'resize')
     barDragRef.current = {
-      type, taskId: task.id, startX: e.clientX,
+      type, taskId: task.id, startX: e.clientX, startY: e.clientY,
       origDebut: parseDate(task.debut), origDuree: task.duree,
-      styleInitial: el ? { left: el.style.left, width: el.style.width } : null,
+      glissable: e.pointerType === 'mouse' || enEdition,
+      pointerType: e.pointerType,
       moved: false,
     }
     setDraggingBar(task.id)
-    document.body.style.cursor = type === 'move' ? 'grabbing' : 'ew-resize'
-  }, [drawMode])
+    if (e.pointerType === 'mouse') document.body.style.cursor = type === 'move' ? 'grabbing' : 'ew-resize'
+  }, [drawMode, selection])
 
   // ── Drag segment ──────────────────────────────────────────────────────────────
   const [draggingSegment, setDraggingSegment] = useState(null)
@@ -757,7 +776,7 @@ export function GanttTimeline({
   // Un changement de mode (activation/désactivation) doit annuler tout geste ou
   // toute connexion de dépendance en cours, pour éviter des états ambigus.
   useEffect(() => {
-    if (drawMode) setConnectingFrom(null)
+    if (drawMode) { setConnectingFrom(null); setSelection(null) }
     else setDrawState(null)
   }, [drawMode])
 
@@ -819,7 +838,9 @@ export function GanttTimeline({
   // ── Flèches permanentes ───────────────────────────────────────────────────────
   // Deux sources : les dépendances tâche→tâche historiques (`depends_on`/`lag_days`)
   // et les dépendances étendues (`planning_dependances`), qui peuvent impliquer des segments.
+  const tasksBrutes = tasks
   const arrows = useMemo(() => {
+    const tasks = tasksBrutes.map(tacheAffichee)
     const legacy = tasks
       .filter((t) => t.depends_on != null)
       .map((t) => {
@@ -869,9 +890,125 @@ export function GanttTimeline({
       .filter(Boolean)
 
     return [...legacy, ...extended]
-  }, [tasks, segments, dependances, rowIndexMap, rowHeight, BAR_PAD, geo, rowY])
+  }, [tasksBrutes, tacheAffichee, segments, dependances, rowIndexMap, rowHeight, BAR_PAD, geo, rowY])
 
   // ── Mouse handlers ─────────────────────────────────────────────────────────────
+
+  // Crée le lien source → cible, qu'il vienne des pastilles d'un segment ou du
+  // mode Lier du menu radial. Points : { type: 'task', taskId } ou
+  // { type: 'segment', segmentId }.
+  const creerLien = useCallback((source, cible) => {
+    const fromInfo = getEntityDateDuree(source, tasks, segments)
+    const toInfo = getEntityDateDuree(cible, tasks, segments)
+    const lag = (fromInfo && toInfo)
+      ? computeLag(fromInfo.debut, fromInfo.duree, toInfo.debut, periodes)
+      : 1
+
+    const tacheCible = cible.type === 'task' ? tasks.find((t) => t.id === cible.taskId) : null
+    // `depends_on` ne porte qu'un prédécesseur : un second lien vers la même
+    // tâche l'écrasait sans prévenir, et le premier chemin critique disparaissait.
+    // Il passe désormais par planning_dependances, qui en accepte plusieurs.
+    const lienHistoriqueLibre = source.type === 'task' && tacheCible && tacheCible.depends_on == null
+    const refuse = lienExiste(source, cible, tasks, dependances)
+      || creeraitUnCycle(cleDePoint(source), cleDePoint(cible), tasks, dependances)
+
+    // Un lien en double ou une boucle ne sont pas créés
+    if (!refuse && lienHistoriqueLibre) {
+      onDependencyCreate(source.taskId, cible.taskId, lag)
+    } else if (!refuse) {
+      onSegmentDependencyCreate?.({
+        sourceTacheId: source.type === 'task' ? source.taskId : null,
+        sourceSegmentId: source.type === 'segment' ? source.segmentId : null,
+        cibleTacheId: cible.type === 'task' ? cible.taskId : null,
+        cibleSegmentId: cible.type === 'segment' ? cible.segmentId : null,
+        lagJours: lag,
+      })
+    }
+  }, [tasks, segments, dependances, periodes, onDependencyCreate, onSegmentDependencyCreate])
+
+  // ── Recadrage « caméra » ──────────────────────────────────────────────────────
+  // La couronne est centrée sur la barre : on amène d'abord la barre au milieu
+  // du volet, sinon les pétales sortiraient de la zone visible. Tween maison :
+  // un saut sec fait perdre le fil du planning.
+  const camera = useRef(null)
+  useEffect(() => () => { if (camera.current) cancelAnimationFrame(camera.current) }, [])
+
+  const recadrerSur = useCallback((taskId) => {
+    const volet = scrollRef?.current
+    const barre = document.querySelector(`[data-taskid="${taskId}"]`)
+    if (!volet || !barre) return
+    const rb = barre.getBoundingClientRect()
+    const rv = volet.getBoundingClientRect()
+    const cibleX = Math.max(0, Math.min(volet.scrollWidth - volet.clientWidth,
+      volet.scrollLeft + rb.left - rv.left + rb.width / 2 - volet.clientWidth / 2))
+    const cibleY = Math.max(0, Math.min(volet.scrollHeight - volet.clientHeight,
+      volet.scrollTop + rb.top - rv.top + rb.height / 2 - volet.clientHeight / 2))
+    if (camera.current) cancelAnimationFrame(camera.current)
+    const x0 = volet.scrollLeft
+    const y0 = volet.scrollTop
+    const ex = cibleX - x0
+    const ey = cibleY - y0
+    if (Math.abs(ex) < 1 && Math.abs(ey) < 1) return
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+      volet.scrollLeft = cibleX
+      volet.scrollTop = cibleY
+      return
+    }
+    const duree = Math.min(620, Math.max(280, Math.max(Math.abs(ex), Math.abs(ey)) * 0.95))
+    const t0 = performance.now()
+    const avance = (t) => {
+      const p = Math.min(1, (t - t0) / duree)
+      const e = p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2
+      volet.scrollLeft = x0 + ex * e
+      volet.scrollTop = y0 + ey * e
+      camera.current = p < 1 ? requestAnimationFrame(avance) : null
+    }
+    camera.current = requestAnimationFrame(avance)
+  }, [scrollRef])
+
+  // Le calque de fermeture du menu ne couvre que les lignes : un clic plus bas
+  // (planning court) ou sur l'en-tête doit aussi le refermer. Les clics sur une
+  // barre sont ignorés : c'est le clic qui vient d'ouvrir le menu.
+  useEffect(() => {
+    const volet = scrollRef?.current
+    if (selection?.mode !== 'menu' || !volet) return
+    const fermer = (e) => {
+      if (e.target.closest?.('[role="menu"], [data-taskid]')) return
+      setSelection(null)
+    }
+    volet.addEventListener('click', fermer)
+    return () => volet.removeEventListener('click', fermer)
+  }, [selection?.mode, scrollRef])
+
+  // Toucher (ou clic sans glisser) une barre de tâche
+  const toucherBarre = useCallback((taskId) => {
+    if (selection?.mode === 'lien') {
+      if (taskId !== selection.taskId) creerLien({ type: 'task', taskId: selection.taskId }, { type: 'task', taskId })
+      setSelection(null)
+      return
+    }
+    setSelection({ taskId, mode: 'menu' })
+    recadrerSur(taskId)
+  }, [selection, creerLien, recadrerSur])
+
+  // En mode Lier, toucher un segment en fait la suite de la tâche choisie
+  const toucherSegment = useCallback((seg) => {
+    if (selection?.mode !== 'lien') return false
+    creerLien({ type: 'task', taskId: selection.taskId }, { type: 'segment', segmentId: seg.id })
+    setSelection(null)
+    return true
+  }, [selection, creerLien])
+
+  const actionMenu = useCallback((action) => {
+    const task = selectionTache
+    if (!task) { setSelection(null); return }
+    if (action === 'move' || action === 'resize') { setSelection({ taskId: task.id, mode: action }); return }
+    if (action === 'dep') { setSelection({ taskId: task.id, mode: 'lien' }); return }
+    setSelection(null)
+    if (action === 'params') onTaskClick(task)
+    else if (action === 'dup') onTaskDuplicate?.(task)
+    else if (action === 'del') onTaskDelete?.(task)
+  }, [selectionTache, onTaskClick, onTaskDuplicate, onTaskDelete])
 
   // Bornes d'une barre pendant un geste : même calcul pour l'aperçu et au
   // relâchement, pour que la barre ne saute pas.
@@ -888,45 +1025,53 @@ export function GanttTimeline({
 
   // Glisser une barre s'écoute sur la fenêtre : sortir du planning (sous la
   // dernière ligne, sur la barre de défilement) ne doit pas valider le geste.
-  useEffect(() => {
+  // Branché dès le rendu validé (useLayoutEffect) plutôt qu'après l'affichage,
+  // pour qu'aucun relâchement rapide ne passe avant l'écoute.
+  useLayoutEffect(() => {
     if (draggingBar == null) return
 
     const handleMove = (e) => {
       const drag = barDragRef.current
       if (!drag) return
       const dx = e.clientX - drag.startX
-      if (Math.abs(dx) > 3) drag.moved = true
+      // Au doigt, un léger glissement reste un toucher
+      const seuil = drag.pointerType === 'mouse' ? 3 : 8
+      if (Math.abs(dx) > seuil || Math.abs(e.clientY - drag.startY) > seuil) drag.moved = true
+      if (!drag.glissable || !drag.moved) return
       const { debut, duree } = bornesGeste(drag, dx)
-      const el = document.querySelector(`[data-taskid="${drag.taskId}"]`)
-      if (el) {
-        const apercu = computeGeometry(debut, duree, geo)
-        el.style.left = `${apercu.left}px`
-        el.style.width = `${apercu.width}px`
-      }
+      const debutISO = formatDateISO(debut)
+      setApercu((prev) => (prev && prev.debut === debutISO && prev.duree === duree
+        ? prev
+        : { taskId: drag.taskId, type: drag.type, debut: debutISO, duree }))
     }
 
     const handleUp = (e) => {
       const drag = barDragRef.current
       barDragRef.current = null
       setDraggingBar(null)
+      setApercu(null)
       document.body.style.cursor = ''
       if (!drag) return
-      const el = document.querySelector(`[data-taskid="${drag.taskId}"]`)
-      if (el && drag.styleInitial) Object.assign(el.style, drag.styleInitial)
-      if (!drag.moved) return
+      if (!drag.moved) {
+        if (e.type !== 'pointercancel') toucherBarre(drag.taskId)
+        return
+      }
+      if (!drag.glissable || e.type === 'pointercancel') return
       const { debut, duree } = bornesGeste(drag, e.clientX - drag.startX)
       if (formatDateISO(debut) !== formatDateISO(drag.origDebut) || duree !== drag.origDuree) {
         onTaskUpdate(drag.taskId, { debut: formatDateISO(debut), duree })
       }
     }
 
-    window.addEventListener('mousemove', handleMove)
-    window.addEventListener('mouseup', handleUp)
+    window.addEventListener('pointermove', handleMove)
+    window.addEventListener('pointerup', handleUp)
+    window.addEventListener('pointercancel', handleUp)
     return () => {
-      window.removeEventListener('mousemove', handleMove)
-      window.removeEventListener('mouseup', handleUp)
+      window.removeEventListener('pointermove', handleMove)
+      window.removeEventListener('pointerup', handleUp)
+      window.removeEventListener('pointercancel', handleUp)
     }
-  }, [draggingBar, bornesGeste, geo, onTaskUpdate])
+  }, [draggingBar, bornesGeste, onTaskUpdate, toucherBarre])
 
   const handleMouseMove = useCallback((e) => {
     if (connectingFrom && svgRef.current) {
@@ -940,7 +1085,7 @@ export function GanttTimeline({
   }, [connectingFrom, hoveredPoint])
 
   useEffect(() => {
-    const h = (e) => { if (e.key === 'Escape') setConnectingFrom(null) }
+    const h = (e) => { if (e.key === 'Escape') { setConnectingFrom(null); setSelection(null) } }
     window.addEventListener('keydown', h)
     return () => window.removeEventListener('keydown', h)
   }, [])
@@ -959,37 +1104,10 @@ export function GanttTimeline({
         }
       }
     } else {
-      if (point.side === 'start' && !sameEndpoint(connectingFrom, point)) {
-        const fromInfo = getEntityDateDuree(connectingFrom, tasks, segments)
-        const toInfo = getEntityDateDuree(point, tasks, segments)
-        const lag = (fromInfo && toInfo)
-          ? computeLag(fromInfo.debut, fromInfo.duree, toInfo.debut, periodes)
-          : 1
-
-        const cible = point.type === 'task' ? tasks.find((t) => t.id === point.taskId) : null
-        // `depends_on` ne porte qu'un prédécesseur : un second lien vers la même
-        // tâche l'écrasait sans prévenir, et le premier chemin critique disparaissait.
-        // Il passe désormais par planning_dependances, qui en accepte plusieurs.
-        const lienHistoriqueLibre = connectingFrom.type === 'task' && cible && cible.depends_on == null
-        const refuse = lienExiste(connectingFrom, point, tasks, dependances)
-          || creeraitUnCycle(cleDePoint(connectingFrom), cleDePoint(point), tasks, dependances)
-
-        // Un lien en double ou une boucle ne sont pas créés
-        if (!refuse && lienHistoriqueLibre) {
-          onDependencyCreate(connectingFrom.taskId, point.taskId, lag)
-        } else if (!refuse) {
-          onSegmentDependencyCreate?.({
-            sourceTacheId: connectingFrom.type === 'task' ? connectingFrom.taskId : null,
-            sourceSegmentId: connectingFrom.type === 'segment' ? connectingFrom.segmentId : null,
-            cibleTacheId: point.type === 'task' ? point.taskId : null,
-            cibleSegmentId: point.type === 'segment' ? point.segmentId : null,
-            lagJours: lag,
-          })
-        }
-      }
+      if (point.side === 'start' && !sameEndpoint(connectingFrom, point)) creerLien(connectingFrom, point)
       setConnectingFrom(null)
     }
-  }, [connectingFrom, tasks, segments, dependances, periodes, rowIndexMap, rowY, onDependencyCreate, onSegmentDependencyCreate])
+  }, [connectingFrom, rowIndexMap, rowY, creerLien])
 
   // Position d'une date, quel que soit le mode d'affichage (jour / semaine / mois)
   const getX = useCallback((date) => {
@@ -1410,7 +1528,9 @@ export function GanttTimeline({
             return (
               <TaskBarRow
                 key={row.id}
-                task={row.task} lot={rowLot}
+                task={tacheAffichee(row.task)} lot={rowLot}
+                enEdition={selectionTache?.id === row.task.id && ['move', 'resize'].includes(selection?.mode)}
+                onSegmentTap={toucherSegment}
                 barColor={getBarColor(row.task, rowLot, zones, colorMode)}
                 rowHeight={rowHeight} geo={geo}
                 dragOverTaskId={dragOverTaskId} drawMode={drawMode}
@@ -1447,7 +1567,9 @@ export function GanttTimeline({
                 {lotTasks.map((task) => (
                   <TaskBarRow
                     key={task.id}
-                    task={task} lot={lot}
+                    task={tacheAffichee(task)} lot={lot}
+                        enEdition={selectionTache?.id === task.id && ['move', 'resize'].includes(selection?.mode)}
+                    onSegmentTap={toucherSegment}
                     barColor={getBarColor(task, lot, zones, colorMode)}
                     rowHeight={rowHeight} geo={geo}
                     dragOverTaskId={dragOverTaskId} drawMode={drawMode}
@@ -1482,7 +1604,9 @@ export function GanttTimeline({
                 {unassigned.map((task) => (
                   <TaskBarRow
                     key={task.id}
-                    task={task} lot={null}
+                    task={tacheAffichee(task)} lot={null}
+                        enEdition={selectionTache?.id === task.id && ['move', 'resize'].includes(selection?.mode)}
+                    onSegmentTap={toucherSegment}
                     barColor={getBarColor(task, null, zones, colorMode)}
                     rowHeight={rowHeight} geo={geo}
                     dragOverTaskId={dragOverTaskId} drawMode={drawMode}
@@ -1591,6 +1715,53 @@ export function GanttTimeline({
           )}
         </svg>
 
+        {/* ── Menu radial et modes d'édition d'une barre ─────────────────── */}
+        {selectionTache && (() => {
+          const ligne = rowIndexMap[rowKey('task', selectionTache.id)]
+          if (ligne === undefined) return null
+          const affichee = tacheAffichee(selectionTache)
+          const { left, width } = computeGeometry(parseDate(affichee.debut), affichee.duree, geo)
+          const lot = lots.find((l) => l.id === selectionTache.lot_id) ?? null
+          const barre = {
+            left, width, haut: rowY(ligne), hauteurLigne: rowHeight, barPad: BAR_PAD,
+            couleur: getBarColor(selectionTache, lot, zones, colorMode),
+          }
+          if (selection.mode === 'menu') {
+            return (
+              <MenuRadialTache
+                barre={barre}
+                numero={lot ? `${lot.num_lot ?? String(lot.numero ?? '').padStart(2, '0')}-${selectionTache.num_tache}` : selectionTache.num_tache}
+                duree={`${selectionTache.duree} j`}
+                onAction={actionMenu}
+                onFermer={() => setSelection(null)}
+              />
+            )
+          }
+          if (selection.mode === 'move' || selection.mode === 'resize') {
+            // Écart du geste en cours : jours ouvrés gagnés ou perdus
+            let ecart = 0
+            if (apercu?.taskId === selectionTache.id) {
+              if (apercu.type === 'move') {
+                const avant = parseDate(selectionTache.debut)
+                const apres = parseDate(apercu.debut)
+                ecart = apres >= avant ? dureeEntre(avant, apres, periodes) - 1 : -(dureeEntre(apres, avant, periodes) - 1)
+              } else {
+                ecart = apercu.duree - selectionTache.duree
+              }
+            }
+            return (
+              <EditionBarre
+                barre={barre}
+                mode={selection.mode}
+                ecart={ecart === 0 ? '±0 j' : `${ecart > 0 ? '+' : ''}${ecart} j`}
+                onPoigneeDown={(e, type) => startBarDrag(e, selectionTache, type)}
+                onTerminer={() => setSelection(null)}
+              />
+            )
+          }
+          return null
+        })()}
+
         {/* Today marker */}
         {todayOffset != null && <div style={{
           position: 'absolute', top: 0, bottom: 0, zIndex: 20,
@@ -1619,6 +1790,8 @@ export function GanttTimeline({
           Cliquez sur le point de début d'une tâche · Échap pour annuler
         </div>
       )}
+
+      {selection?.mode === 'lien' && selectionTache && <BandeauLien onAnnuler={() => setSelection(null)} />}
 
       {/* Toast mode dessin */}
       {drawMode && (
@@ -1705,6 +1878,7 @@ function TaskBarRow({
   draggingSegmentId, onSegmentDragStart, segmentDragMovedRef,
   onSegmentResizeStart, resizingSegmentId,
   onBarDragStart, onBarClick, onConnectionPointClick, onConnectionPointHover,
+  enEdition = false, onSegmentTap,
 }) {
   const [isHovered, setIsHovered] = useState(false)
   const color = barColor ?? lot?.couleur ?? '#94a3b8'
@@ -1726,18 +1900,9 @@ function TaskBarRow({
     : geo.viewMode === 'week' ? geo.weekWidth >= 16
       : geo.dayWidth >= 10
 
-  const isOwnSource = sameEndpoint(connectingFrom, { type: 'task', taskId: task.id })
-  const isSource = isOwnSource
-  const isStartHovered = hoveredPoint?.type === 'task' && hoveredPoint?.taskId === task.id && hoveredPoint?.side === 'start'
-  const isEndHovered = hoveredPoint?.type === 'task' && hoveredPoint?.taskId === task.id && hoveredPoint?.side === 'end'
-
-  const startPoint = { type: 'task', taskId: task.id, side: 'start', x: left, y: BAR_BOTTOM }
-  const endPoint = { type: 'task', taskId: task.id, side: 'end', x: left + width, y: BAR_BOTTOM }
-
-  const PENCIL_SIZE = Math.min(14, rowHeight * 0.35)
-
-  const showStartDot = isConnecting && !isOwnSource ? true : isHovered
-  const showEndDot = isConnecting ? false : isHovered
+  // Barre en cours d'édition (Déplacer / Allonger) : légèrement agrandie et
+  // soulevée, comme dans la maquette
+  const barTop = enEdition ? Math.max(0, BAR_PAD - 2) : BAR_PAD
 
   const barTitle = task.appro_actif && task.appro_duree
     ? `${task.nom} · Délai avant : ${task.appro_duree}j${task.appro_materiau ? ` (${task.appro_materiau})` : ''}`
@@ -1758,19 +1923,18 @@ function TaskBarRow({
         title={barTitle}
         style={{
           position: 'absolute', left, width,
-          top: BAR_PAD, bottom: BAR_PAD,
+          top: barTop, bottom: barTop,
           backgroundColor: color, borderRadius: 0,
           display: 'flex', alignItems: 'center', overflow: 'hidden',
-          boxShadow: isDragging ? '0 8px 24px rgba(0,0,0,0.2)' : '0 1px 3px rgba(0,0,0,0.15)',
-          zIndex: isDragging ? 30 : 10,
-          opacity: isDragging ? 0.9 : 1,
-          cursor: drawMode ? 'crosshair' : isConnecting && !isSource ? 'crosshair' : 'grab',
-          outline: isDragging ? '2px solid rgba(255,255,255,0.3)' : 'none',
+          boxShadow: enEdition || isDragging ? '0 4px 14px rgba(0,0,0,0.25)' : '0 1px 3px rgba(0,0,0,0.15)',
+          zIndex: enEdition ? 36 : isDragging ? 30 : 10,
+          cursor: drawMode || isConnecting ? 'crosshair' : 'pointer',
+          // Le doigt glisse la barre (en édition) au lieu de faire défiler
+          touchAction: 'none',
         }}
-        onMouseDown={(e) => {
+        onPointerDown={(e) => {
           if (drawMode) return
           if (e.target.dataset.handle) return
-          if (e.target.dataset.editbtn) return
           if (isConnecting) return
           onBarDragStart(e, task, 'move')
         }}
@@ -1784,7 +1948,8 @@ function TaskBarRow({
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             borderRadius: 0,
           }}
-          onMouseDown={(e) => { if (drawMode || e.button !== 0) return; e.stopPropagation(); onBarDragStart(e, task, 'resize-left') }}
+          // Poignées fines, pour la souris : au doigt, Allonger du menu radial
+          onPointerDown={(e) => { if (drawMode || e.pointerType !== 'mouse') return; e.stopPropagation(); onBarDragStart(e, task, 'resize-left') }}
           onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.2)'}
           onMouseLeave={e => e.currentTarget.style.backgroundColor = ''}
         >
@@ -1799,32 +1964,6 @@ function TaskBarRow({
           }} />
         )}
 
-        {/* Bouton crayon */}
-        <button
-          data-editbtn="1"
-          style={{
-            position: 'absolute', zIndex: 20,
-            right: HANDLE_W + 3, top: '50%', transform: 'translateY(-50%)',
-            width: PENCIL_SIZE + 6, height: PENCIL_SIZE + 6,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            borderRadius: 3, border: 'none', cursor: 'pointer',
-            backgroundColor: 'rgba(0,0,0,0.3)', color: 'white',
-            opacity: isHovered ? 1 : 0,
-            transition: 'opacity 0.15s, background-color 0.1s',
-            flexShrink: 0,
-          }}
-          onMouseDown={(e) => e.stopPropagation()}
-          onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.5)'}
-          onMouseLeave={e => e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.3)'}
-          onClick={(e) => {
-            e.stopPropagation()
-            if (!barDragRef_click.moved) onBarClick(task)
-          }}
-          title="Modifier la tâche"
-        >
-          <Pencil style={{ width: PENCIL_SIZE, height: PENCIL_SIZE }} strokeWidth={2.5} />
-        </button>
-
         {/* Resize droite */}
         <div
           data-handle="right"
@@ -1834,7 +1973,7 @@ function TaskBarRow({
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             borderRadius: 0,
           }}
-          onMouseDown={(e) => { if (drawMode || e.button !== 0) return; e.stopPropagation(); onBarDragStart(e, task, 'resize-right') }}
+          onPointerDown={(e) => { if (drawMode || e.pointerType !== 'mouse') return; e.stopPropagation(); onBarDragStart(e, task, 'resize-right') }}
           onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.2)'}
           onMouseLeave={e => e.currentTarget.style.backgroundColor = ''}
         >
@@ -1918,6 +2057,7 @@ function TaskBarRow({
               onClick={(e) => {
                 e.stopPropagation()
                 if (drawMode || segmentDragMovedRef?.current?.moved) return
+                if (onSegmentTap?.(seg)) return
                 onBarClick(task)
               }}
             >
@@ -2005,47 +2145,6 @@ function TaskBarRow({
         )
       })}
 
-      {showMainBar && (
-        <>
-          {/* ── Point START ──────────────────────────────────────────── */}
-          <div
-            style={{
-              position: 'absolute', zIndex: 40,
-              left: left - DOT_R, top: BAR_BOTTOM - DOT_R,
-              width: DOT_R * 2, height: DOT_R * 2,
-              borderRadius: '50%', border: '2px solid white', cursor: 'crosshair',
-              backgroundColor: isStartHovered ? '#E8602C' : color,
-              transform: isStartHovered ? 'scale(1.5)' : 'scale(1)',
-              boxShadow: isStartHovered ? '0 0 0 3px rgba(224,90,30,0.35)' : '0 1px 4px rgba(0,0,0,0.4)',
-              opacity: showStartDot ? 1 : 0,
-              transition: 'transform 0.15s, box-shadow 0.15s, opacity 0.15s, background-color 0.15s',
-              pointerEvents: showStartDot ? 'auto' : 'none',
-            }}
-            onClick={(e) => onConnectionPointClick(e, startPoint)}
-            onMouseEnter={() => onConnectionPointHover(startPoint)}
-            onMouseLeave={() => onConnectionPointHover(null)}
-          />
-
-          {/* ── Point END ────────────────────────────────────────────── */}
-          <div
-            style={{
-              position: 'absolute', zIndex: 40,
-              left: left + width - DOT_R, top: BAR_BOTTOM - DOT_R,
-              width: DOT_R * 2, height: DOT_R * 2,
-              borderRadius: '50%', border: '2px solid white', cursor: 'crosshair',
-              backgroundColor: isSource || isEndHovered ? '#E8602C' : color,
-              transform: isEndHovered || isSource ? 'scale(1.5)' : 'scale(1)',
-              boxShadow: (isEndHovered || isSource) ? '0 0 0 3px rgba(224,90,30,0.35)' : '0 1px 4px rgba(0,0,0,0.4)',
-              opacity: showEndDot ? 1 : 0,
-              transition: 'transform 0.15s, box-shadow 0.15s, opacity 0.15s, background-color 0.15s',
-              pointerEvents: showEndDot ? 'auto' : 'none',
-            }}
-            onClick={(e) => onConnectionPointClick(e, endPoint)}
-            onMouseEnter={() => onConnectionPointHover(endPoint)}
-            onMouseLeave={() => onConnectionPointHover(null)}
-          />
-        </>
-      )}
     </div>
   )
 }
@@ -2137,4 +2236,3 @@ function DelaiApresBar({ task, color, geo, barPad }) {
 }
 
 // Ref partagée pour détecter si un drag a eu lieu (évite onClick après drag)
-const barDragRef_click = { moved: false }

@@ -171,8 +171,26 @@ body {
 .jga-entree-vue { animation: jga-vue-in 0.4s cubic-bezier(0.22, 1, 0.36, 1) backwards; }
 .jga-respire    { animation: jga-respire 3.4s ease-in-out infinite; }
 
+/* ── Planning chantier : menu radial d'une barre ──────────────────────────────
+   Repris du composant Claude Design « Editeur Gantt - menu radial » (variante
+   B). Chaque pétale part du centre de la couronne : son décalage final est posé
+   en variables inline (--dx, --dy) avec son animation-delay. Remplissage en
+   `backwards` : un `both` figerait le transform et écraserait l'état pressé. */
+@keyframes jga-petale-in {
+  from { opacity: 0; transform: translate(calc(var(--dx) * -1), calc(var(--dy) * -1)) scale(0.3); }
+  60%  { opacity: 1; }
+  to   { opacity: 1; transform: translate(0, 0) scale(1); }
+}
+@keyframes jga-disque-in { from { opacity: 0; transform: scale(0.72); } to { opacity: 1; transform: scale(1); } }
+@keyframes jga-voile-in  { from { opacity: 0; } to { opacity: 1; } }
+
+.jga-petale { animation: jga-petale-in 0.34s cubic-bezier(0.22, 1, 0.36, 1) backwards; }
+.jga-disque { animation: jga-disque-in 0.2s  cubic-bezier(0.22, 1, 0.36, 1) backwards; }
+.jga-voile  { animation: jga-voile-in  0.18s ease backwards; }
+
 @media (prefers-reduced-motion: reduce) {
   .jga-entree-carte, .jga-entree-libelle,
   .jga-entree-affaire, .jga-entree-entete, .jga-entree-photo,
-  .jga-entree-vue, .jga-respire { animation: none; }
+  .jga-entree-vue, .jga-respire,
+  .jga-petale, .jga-disque, .jga-voile { animation: none; }
 }

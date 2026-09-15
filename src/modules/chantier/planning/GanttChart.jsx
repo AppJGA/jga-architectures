@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { Trash2, X, ZoomIn, ZoomOut, Calendar, Eye, Layers, Palette } from 'lucide-react'
-import { parseDate, formatDateISO, addWorkingDays } from './types'
+import { parseDate, formatDateISO, addWorkingDays, addWorkingDaysBlocked, dernierJourTache } from './types'
 import {
   propagateAllDependencies, endDateChanged, entityKey, reconcilierLienHistorique, lagsDependancesCible,
   propagerDepuisRacines, skipBlockedPeriods,
@@ -94,6 +94,8 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
   const [showOptionsPanel, setShowOptionsPanel] = useState(false)
   const [drawMode, setDrawMode] = useState(false)
   const [createDefaults, setCreateDefaults] = useState(null)
+  // Tâche touchée sur la timeline, repérée aussi dans la sidebar
+  const [tacheSelectionneeId, setTacheSelectionneeId] = useState(null)
   const savedScrollRef = useRef(0)
 
   const [colorMode, setColorMode] = useState(
@@ -510,6 +512,39 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
     if (taskData.lot_id) setLastUsedLotId(taskData.lot_id)
     await fetchAllData()
   }
+
+  // ── Duplication (menu radial) ─────────────────────────────────────────────────
+  // La copie se place juste sous l'original, démarre le jour ouvré qui suit sa
+  // fin et repart à 0 % ; elle n'hérite pas de ses liens, qui la feraient
+  // démarrer avec l'original.
+  const handleDuplicateTask = useCallback(async (task) => {
+    const debut = addWorkingDaysBlocked(dernierJourTache(task.debut, task.duree, periodes), 1, periodes)
+    const duLot = tasks.filter((t) => t.lot_id === task.lot_id)
+    const numero = String(Math.max(0, ...duLot.map((t) => parseInt(t.num_tache, 10) || 0)) + 1).padStart(2, '0')
+    const ordre = (task.ordre ?? 0) + 1
+    const suivantes = duLot.filter((t) => t.id !== task.id && (t.ordre ?? 0) >= ordre)
+
+    saveSnapshot(takeSnapshot(`Duplication « ${task.nom} »`))
+    const resultats = await Promise.all([
+      supabase.from('planning').insert([{
+        affaire_id: affaireId, lot_id: task.lot_id ?? null, zone_id: task.zone_id ?? null,
+        num_tache: numero, nom: `${task.nom} (copie)`, ordre,
+        debut: formatDateISO(debut), duree: task.duree, avancement: 0,
+        depends_on: null, lag_days: 0,
+        appro_actif: task.appro_actif ?? false, appro_duree: task.appro_duree ?? null,
+        appro_materiau: task.appro_materiau ?? null,
+        delai_apres: task.delai_apres ?? 0, label_apres: task.label_apres ?? null,
+      }]),
+      ...suivantes.map((t) => supabase.from('planning').update({ ordre: (t.ordre ?? 0) + 1 }).eq('id', t.id)),
+    ])
+    const echec = resultats.find((r) => r.error)
+    if (echec) {
+      retirerDernier()
+      await signalerEchec('Duplication impossible', echec.error.message)
+      return
+    }
+    await fetchAllData()
+  }, [tasks, periodes, affaireId, saveSnapshot, takeSnapshot, retirerDernier, signalerEchec, fetchAllData])
 
   // ── Task delete ────────────────────────────────────────────────────────────────
   const handleDeleteTask = async (taskId) => {
@@ -1101,6 +1136,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
             colorMode={colorMode}
             dragOverTaskId={dragOverTaskId}
             onDragOverTaskChange={setDragOverTaskId}
+            tacheSelectionneeId={tacheSelectionneeId}
           />
           <div style={{ height: margeDefilement }} />
         </div>
@@ -1129,6 +1165,9 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
             onJalonClick={() => setShowJalonsModal(true)}
             onTaskClick={(t) => handleOpenTaskModal(t, 'edit')}
             onTaskUpdate={handleTaskUpdate}
+            onTaskDuplicate={handleDuplicateTask}
+            onTaskDelete={setDeletingTask}
+            onSelectionChange={setTacheSelectionneeId}
             onDependencyCreate={handleDependencyCreate}
             onDependencyDelete={handleDependencyDelete}
             zones={zones}

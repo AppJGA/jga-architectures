@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import {
-  ArrowLeft, ArrowRight, Send, FileText, FileDown, ChevronRight,
+  ArrowLeft, ArrowRight, Send, FileDown, ChevronRight,
   Users, ClipboardList, MessageSquare, Zap, LayoutDashboard,
   Lock, RotateCcw, AlertTriangle, X, Map as IconePlan, Smartphone,
 } from 'lucide-react'
@@ -11,19 +11,20 @@ import { supabase } from '../../../core/supabase/client'
 import { CrPresences } from './CrPresences'
 import { CrSectionEditor } from './CrSectionEditor'
 import { TemplateModal } from './TemplateModal'
-import { generateCrPdf } from './CrPdfExport'
+import { ExportRapport } from './ExportRapport'
+import { lireReglagesRapport } from './rapportReglages'
+import { genererPdfCr } from './genererRapport'
+import { archivesDuCr, archiverPdf } from './rapportStockage'
 import { compterPresents, FAMILLES_STATUT, infosStatut, estEnRetard } from './crLogique'
 import { CrContexte, useCr } from './CrContexte'
 import { PhotosContexte } from './usePhotosRemarque'
 import { espaceUtilise } from './photosStockage'
-import { formatOctets, niveauEspace, LIMITE_STOCKAGE } from './photosLogique'
-import { NettoyageStockage } from './NettoyageStockage'
+import { niveauEspace } from './photosLogique'
 import { PlansContexte } from './PlansContexte'
 import { usePlans } from './usePlans'
 import { PlansVue } from './PlansVue'
 import { PlacementPlan } from './PlacementPlan'
 import { ModeVisite } from './ModeVisite'
-import { cadrageExtrait } from './plansLogique'
 
 // ─── Styles partagés ──────────────────────────────────────────────────────────
 
@@ -191,145 +192,6 @@ function OrganisationView({ cr, profiles, updateCr, onApplyTemplate, lots, inter
           onClose={() => setTemplateOpen(false)}
           onApplied={onApplyTemplate}
         />
-      )}
-    </div>
-  )
-}
-
-// ─── Vue export ───────────────────────────────────────────────────────────────
-
-// Espace de stockage utilisé par tout le projet, face à l'offre gratuite
-function CompteurEspace({ utilise }) {
-  if (utilise == null) return null
-  const { ratio, alerte } = niveauEspace(utilise)
-  const couleur = alerte ? '#B8412C' : '#2A8A4E'
-  return (
-    <div style={{ maxWidth: 320, margin: '28px auto 0', textAlign: 'left' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#5E5854', marginBottom: 4 }}>
-        <span>Espace photos</span>
-        <span style={{ color: alerte ? couleur : undefined, fontWeight: alerte ? 600 : 400 }}>
-          {formatOctets(utilise)} / {formatOctets(LIMITE_STOCKAGE)}
-        </span>
-      </div>
-      <div style={{ height: 6, background: '#E9E2D6', borderRadius: 3, overflow: 'hidden' }}>
-        <div style={{ width: `${Math.min(100, ratio * 100)}%`, height: '100%', background: couleur }} />
-      </div>
-      {alerte && (
-        <p style={{ fontSize: 11, color: '#B8412C', marginTop: 6 }}>
-          L’espace gratuit sera bientôt plein : supprimez les photos inutiles ou prévoyez un stockage plus grand.
-        </p>
-      )}
-    </div>
-  )
-}
-
-function ExportView({ cr, sections, presences, affaire, lotEntreprises, interlocuteurs, photos, liensPhotos, pastilles, plansCr, remarques, espace, peutNettoyer, onEspaceChange }) {
-  const num = String(cr.numero).padStart(2, '0')
-  const [bloque, setBloque] = useState(false)
-  const [avecPhotos, setAvecPhotos] = useState(true)
-  const [avecPlans, setAvecPlans] = useState(true)
-  const { signalerErreur } = useCr()
-
-  const generer = async () => {
-    // La fenêtre s'ouvre tout de suite, pendant le clic : ouverte après
-    // l'attente des liens des photos, le navigateur la bloquerait.
-    const fenetre = window.open('', '_blank', 'width=900,height=700')
-    if (!fenetre) { setBloque(true); return }
-    setBloque(false)
-    fenetre.document.write('<p style="font-family:Arial,sans-serif;padding:24px;color:#5E5854">Préparation du compte rendu…</p>')
-    try {
-      const parRemarque = new Map()
-      if (avecPhotos && photos.length > 0) {
-        const liens = await liensPhotos(photos.map(p => p.chemin))
-        for (const p of photos) {
-          const url = liens.get(p.chemin)
-          if (!url) continue
-          parRemarque.set(p.remarque_id, [...(parRemarque.get(p.remarque_id) ?? []), { url, legende: p.legende }])
-        }
-      }
-      let plans = null
-      if (avecPlans && pastilles.length > 0) {
-        const versionsUtiles = [...new Set(pastilles.map(p => p.version_id))]
-          .map(id => plansCr.versions.find(v => v.id === id)).filter(Boolean)
-        const liens = await plansCr.obtenirLiens(versionsUtiles.map(v => v.chemin_apercu))
-        const parId = new Map(remarques.map(r => [r.id, r]))
-        const extraits = new Map()
-        const planches = versionsUtiles.map(v => {
-          const plan = plansCr.plans.find(p => p.id === v.plan_id)
-          const ratio = v.hauteur / v.largeur
-          const url = liens.get(v.chemin_apercu)
-          const pastillesPlan = pastilles.filter(p => p.version_id === v.id).map(p => {
-            const r = parId.get(p.remarque_id)
-            const vue = { x: p.x, y: p.y, numero: r?.numero ?? '', couleur: r ? infosStatut(r).couleur : '#9C9591' }
-            extraits.set(p.remarque_id, { ...vue, url, cadrage: cadrageExtrait(p.x, p.y, ratio), planNom: plan?.nom, indice: v.indice })
-            return vue
-          })
-          return { nom: plan?.nom ?? 'Plan', indice: v.indice, url, pastilles: pastillesPlan }
-        }).filter(p => p.url)
-        plans = { extraits, planches }
-      }
-      generateCrPdf(cr, sections, presences, affaire, {
-        lots: lotEntreprises.map(le => le.lots).filter(Boolean),
-        interlocuteurs,
-        fenetre,
-        photosParRemarque: parRemarque,
-        plans,
-      })
-    } catch (err) {
-      fenetre.close()
-      signalerErreur(err)
-    }
-  }
-
-  return (
-    <div style={{ textAlign: 'center', padding: '40px 0' }}>
-      <div style={{ width: 72, height: 72, borderRadius: '50%', background: '#FAF7F2', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
-        <FileText size={28} color="#9C9591" />
-      </div>
-      <p style={{ fontSize: 14, fontWeight: 500, color: '#1F1B17', marginBottom: 6 }}>
-        Compte rendu n°{num}
-      </p>
-      <p style={{ fontSize: 13, color: '#5E5854', marginBottom: 24 }}>
-        {cr.date_reunion
-          ? new Date(cr.date_reunion + 'T00:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })
-          : 'Date non définie'}
-      </p>
-      <button
-        onClick={generer}
-        style={{
-          display: 'inline-flex', alignItems: 'center', gap: 8,
-          padding: '10px 24px', borderRadius: 2, fontSize: 13, fontWeight: 500,
-          border: 'none', backgroundColor: '#E8602C', color: 'white', cursor: 'pointer',
-        }}
-      >
-        <FileDown size={15} /> Générer le PDF
-      </button>
-      {photos.length > 0 && (
-        <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: 12, color: '#374151', marginTop: 14, cursor: 'pointer' }}>
-          <input type="checkbox" checked={avecPhotos} onChange={e => setAvecPhotos(e.target.checked)} style={{ accentColor: '#E8602C' }} />
-          Inclure les photos ({photos.length})
-        </label>
-      )}
-      {pastilles.length > 0 && (
-        <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: 12, color: '#374151', marginTop: 8, cursor: 'pointer' }}>
-          <input type="checkbox" checked={avecPlans} onChange={e => setAvecPlans(e.target.checked)} style={{ accentColor: '#E8602C' }} />
-          Inclure les plans ({pastilles.length} pastille{pastilles.length > 1 ? 's' : ''})
-        </label>
-      )}
-      {bloque ? (
-        <p role="alert" style={{ fontSize: 12, color: '#B8412C', marginTop: 12 }}>
-          Le navigateur a bloqué la fenêtre d’aperçu. Autorisez les fenêtres pop-up pour ce site, puis cliquez à nouveau.
-        </p>
-      ) : (
-        <p style={{ fontSize: 11, color: '#9C9591', marginTop: 12 }}>
-          Une fenêtre s'ouvrira avec l'aperçu avant impression.
-        </p>
-      )}
-      <CompteurEspace utilise={espace} />
-      {espace != null && peutNettoyer && (
-        <div style={{ maxWidth: 320, margin: '0 auto', textAlign: 'left' }}>
-          <NettoyageStockage onTermine={onEspaceChange} />
-        </div>
       )}
     </div>
   )
@@ -809,13 +671,60 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
   const lectureSeule = lectureSeuleAffaire || cr?.statut === 'emis'
   const contexte = useMemo(() => ({ lectureSeule, signalerErreur }), [lectureSeule, signalerErreur])
 
+  // Archive PDF de chaque émission (migration 043 ; null tant qu'elle manque)
+  const [archives, setArchives] = useState(null)
+  const [versionArchives, setVersionArchives] = useState(0)
+  useEffect(() => {
+    let abandon = false
+    archivesDuCr(crId).then(a => { if (!abandon) setArchives(a) }).catch(err => console.warn('Archives :', err))
+    return () => { abandon = true }
+  }, [crId, versionArchives])
+
+  const fabriquerPdf = (reglages, crPdf) => genererPdfCr({
+    cr: crPdf, affaire, sections, presences,
+    lots: lotEntreprises.map(le => le.lots).filter(Boolean), interlocuteurs: interlocuteurs ?? [],
+    photos, liensPhotos, pastilles, plansCr, reglages,
+  })
+
+  const archiver = async (reglages, crPdf, emisLe) => {
+    const { blob } = await fabriquerPdf(reglages, crPdf)
+    await archiverPdf({ affaireId: affaire.id, crId, blob, reglages, emisLe })
+    setVersionArchives(v => v + 1)
+    setVersionEspace(v => v + 1)
+  }
+
   const confirmer = async () => {
+    setErreur(null)
+    if (confirmation === 'rouvrir') {
+      try { await rouvrir() } catch (err) { signalerErreur(err) }
+      setConfirmation(null)
+      return
+    }
+    // Émission : le PDF est fabriqué avant le verrou, avec les réglages du
+    // moment ; un échec d'archive n'empêche pas l'émission, il est signalé.
+    const emisLe = new Date().toISOString()
+    const reglages = lireReglagesRapport(affaire?.id)
+    let pdf = null
+    let echecArchive = null
+    if (archives !== null) {
+      try { pdf = await fabriquerPdf(reglages, { ...cr, statut: 'emis', date_emission: emisLe }) } catch (err) { echecArchive = err }
+    }
     try {
-      setErreur(null)
-      if (confirmation === 'emettre') await emettre()
-      else await rouvrir()
+      await emettre(emisLe)
     } catch (err) {
       signalerErreur(err)
+      setConfirmation(null)
+      return
+    }
+    if (pdf) {
+      try {
+        await archiverPdf({ affaireId: affaire.id, crId, blob: pdf.blob, reglages, emisLe })
+        setVersionArchives(v => v + 1)
+        setVersionEspace(v => v + 1)
+      } catch (err) { echecArchive = err }
+    }
+    if (echecArchive) {
+      signalerErreur(new Error(`Le compte rendu est émis, mais son PDF n’a pas été archivé (${messageErreur(echecArchive)}). Utilisez « Archiver maintenant » dans l’écran d’export.`))
     }
     setConfirmation(null)
   }
@@ -970,7 +879,7 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
       )}
 
       {activeView === 'export' && (
-        <ExportView
+        <ExportRapport
           cr={cr}
           sections={sections}
           presences={presences}
@@ -981,10 +890,11 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
           liensPhotos={liensPhotos}
           pastilles={pastilles}
           plansCr={plansCr}
-          remarques={toutesRemarques}
           espace={espace}
-          peutNettoyer={!lectureSeuleAffaire}
+          peutGerer={!lectureSeuleAffaire}
           onEspaceChange={() => setVersionEspace(v => v + 1)}
+          archives={archives}
+          onArchiverMaintenant={(reglages) => archiver({ ...reglages, destinataire: '' }, cr, cr.date_emission ?? new Date().toISOString())}
         />
       )}
 

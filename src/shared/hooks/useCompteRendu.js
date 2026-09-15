@@ -213,10 +213,10 @@ export function useCompteRendu(crId, affaireId) {
   // ── Émission ─────────────────────────────────────────────────────────────────
   // Émis, le compte rendu est verrouillé (en base aussi, migration 037). La
   // feuille de présence est d'abord mise à jour une dernière fois.
-  const emettre = useCallback(async () => {
+  const emettre = useCallback(async (dateEmission = new Date().toISOString()) => {
     await syncPresences()
     let { error } = await supabase.from('comptes_rendus')
-      .update({ statut: 'emis', date_emission: new Date().toISOString() }).eq('id', crId)
+      .update({ statut: 'emis', date_emission: dateEmission }).eq('id', crId)
     if (colonneAbsente(error)) {
       ({ error } = await supabase.from('comptes_rendus').update({ statut: 'emis' }).eq('id', crId))
     }

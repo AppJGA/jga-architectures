@@ -131,6 +131,17 @@ création avec reprise de la visite précédente) et `useCompteRendu` (un CR).
   sans destinataire sont listées comme archives d'émission. `cr_diffusions`
   note les e-mails préparés, pas envoyés.
 
+## Accès des intervenants extérieurs (prévu)
+
+Des BET ou architectes extérieurs pourront consulter les comptes rendus des
+seules affaires où ils sont invités et y ajouter leurs propres remarques
+(photos, pastilles, suivis), sans jamais toucher à celles de l'agence ni voir
+finances, FTM, plannings ou carnet d'adresses. Développement prévu après les
+étapes en cours ; aujourd'hui presque toutes les règles RLS sont « tout
+utilisateur connecté ». En attendant, toute nouvelle table porte `affaire_id`
+et, pour un contenu rédigé, `created_by uuid default auth.uid()` ; tout fichier
+stocké a un chemin qui commence par l'identifiant de l'affaire.
+
 ## Pièges déjà rencontrés
 
 - **Une animation CSS prime sur le style inline.** Un `animation: … both` fige

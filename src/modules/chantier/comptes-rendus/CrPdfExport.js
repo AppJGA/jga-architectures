@@ -1,6 +1,8 @@
 // Génération HTML/PDF pour un Compte Rendu de Chantier
 // Pattern : window.open() → HTML → window.print()
 
+import { affichagePresence } from './crLogique'
+
 function fmtDate(d) {
   if (!d) return '—'
   return new Date(d + 'T00:00:00').toLocaleDateString('fr-FR', {
@@ -33,6 +35,7 @@ function escHtml(str) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
     .replace(/\n/g, '<br>')
 }
 
@@ -69,18 +72,17 @@ function buildRemarquesTable(remarques, lots, interlocuteurs) {
     if (r.pour) dateHtml += `<br><span class="rem-pour">${escHtml(r.pour)}</span>`
 
     // Attribution
-    let attrHtml = ''
-    if (r.lot_id && lots?.length) {
-      const lot = lots.find(l => l.id === r.lot_id)
-      if (lot) attrHtml = `<br><span style="font-size:8pt;color:#5E5854;font-style:italic">(${escHtml(lot.numero ? `Lot ${lot.numero} — ${lot.nom}` : lot.nom)})</span>`
-    } else if (r.interlocuteur_id && interlocuteurs?.length) {
-      const i = interlocuteurs.find(x => x.id === r.interlocuteur_id)
-      if (i) {
-        const name = [i.prenom, i.nom].filter(Boolean).join(' ') || i.organisation || '?'
-        attrHtml = `<br><span style="font-size:8pt;color:#5E5854;font-style:italic">(${escHtml(name)})</span>`
-      }
+    // Attribution : la fiche actuelle, ou le nom enregistré si elle a été supprimée
+    let attribution = null
+    if (r.lot_id) {
+      const lot = (lots ?? []).find(l => l.id === r.lot_id)
+      if (lot) attribution = lot.numero ? `Lot ${lot.numero} — ${lot.nom}` : lot.nom
+    } else if (r.interlocuteur_id) {
+      const i = (interlocuteurs ?? []).find(x => x.id === r.interlocuteur_id)
+      if (i) attribution = [i.prenom, i.nom].filter(Boolean).join(' ') || i.organisation || null
     }
-    dateHtml += attrHtml
+    attribution ??= r.copie_destinataire
+    if (attribution) dateHtml += `<br><span style="font-size:8pt;color:#5E5854;font-style:italic">(${escHtml(attribution)})</span>`
 
     let descStyle = ''
     if (r.est_clos) descStyle += 'text-decoration:line-through;color:#9CA3AF;'
@@ -142,57 +144,49 @@ export function generateCrPdf(cr, sections, presences, affaire, { autoPrint = tr
     ? `${fmtDate(cr.date_prochaine_reunion)}${cr.heure_prochaine_reunion ? ' à ' + fmtTime(cr.heure_prochaine_reunion) : ''}`
     : 'À définir'
 
-  const interloPresences = presences
-    .filter(p => p.affaire_interlocuteurs)
-    .sort((a, b) => (a.affaire_interlocuteurs?.ordre ?? 99) - (b.affaire_interlocuteurs?.ordre ?? 99))
+  // Participants lus depuis leur copie : une fiche supprimée depuis figure
+  // toujours au compte rendu, adresse comprise.
+  const participants = presences.map(p => ({ ...p, vue: affichagePresence(p) }))
 
-  const lotPresences = presences
-    .filter(p => p.lot_entreprises)
-    .sort((a, b) => (a.lot_entreprises?.lots?.numero ?? 99) - (b.lot_entreprises?.lots?.numero ?? 99))
+  const interloPresences = participants
+    .filter(p => p.vue.type === 'interlocuteur')
+    .sort((a, b) => a.vue.ordre - b.vue.ordre)
+
+  const lotPresences = participants
+    .filter(p => p.vue.type === 'entreprise')
+    .sort((a, b) => (a.vue.lotNumero ?? 99) - (b.vue.lotNumero ?? 99))
+
+  const coordonnees = (v) => [
+    v.email ? `<a href="mailto:${escHtml(v.email)}" style="color:#1B3A5C">${escHtml(v.email)}</a>` : '',
+    v.telephone ? escHtml(v.telephone) : '',
+  ].filter(Boolean).join('<br>')
 
   const interloColumns = [
     { label: 'Rôle', render: p => {
-      const cat = p.affaire_interlocuteurs?.categorie ?? ''
-      const lbl = p.affaire_interlocuteurs?.categorie_label || CATEGORIE_LABELS[cat] || cat
+      const cat = p.vue.categorie ?? ''
+      const lbl = p.vue.categorieLabel || CATEGORIE_LABELS[cat] || cat
       return `<span style="font-size:9pt;color:#5E5854">${escHtml(lbl)}</span>`
     }},
     { label: 'Contact', render: p => {
-      const i    = p.affaire_interlocuteurs
-      const name = [i?.prenom, i?.nom].filter(Boolean).join(' ')
-      const org  = i?.organisation
+      // `nom` retombe sur l'organisation quand la fiche n'a pas de nom de personne
+      const name = p.vue.prenom || p.vue.nom !== p.vue.organisation ? p.vue.nom : ''
+      const org  = p.vue.organisation
       return `<strong>${escHtml(name)}</strong>${org ? '<br><span style="color:#5E5854;font-size:9pt">' + escHtml(org) + '</span>' : ''}`
     }},
-    { label: 'Adresse', render: p => escHtml(p.affaire_interlocuteurs?.adresse) },
-    { label: 'Email / Tél', render: p => {
-      const i = p.affaire_interlocuteurs
-      return [
-        i?.email ? `<a href="mailto:${escHtml(i.email)}" style="color:#1B3A5C">${escHtml(i.email)}</a>` : '',
-        i?.telephone ? escHtml(i.telephone) : '',
-      ].filter(Boolean).join('<br>')
-    }},
+    { label: 'Adresse', render: p => escHtml(p.vue.adresse) },
+    { label: 'Email / Tél', render: p => coordonnees(p.vue) },
     { label: 'Présence', render: p => buildPresencePill(p.presence) },
     { label: 'Convoqué', render: p => p.convoque ? `<strong style="color:#2A8A4E">✓</strong>${p.heure_convocation ? ' ' + fmtTime(p.heure_convocation) : ''}` : '—' },
   ]
 
   const lotColumns = [
-    { label: 'Lot', render: p => {
-      const le       = p.lot_entreprises
-      const lotLabel = le?.lots ? `Lot ${le.lots.numero ?? ''} — ${le.lots.nom ?? ''}` : '—'
-      return escHtml(lotLabel)
-    }},
+    { label: 'Lot', render: p => escHtml(p.vue.lotNom ? `Lot ${p.vue.lotNumero ?? ''} — ${p.vue.lotNom}` : '—') },
     { label: 'Entreprise', render: p => {
-      const le      = p.lot_entreprises
-      const name    = le?.entreprises?.raison_sociale ?? '—'
-      const contact = le?.interlocuteurs ? `${le.interlocuteurs.prenom ?? ''} ${le.interlocuteurs.nom ?? ''}`.trim() : ''
+      const name    = p.vue.entreprise ?? '—'
+      const contact = p.vue.contact
       return `<strong>${escHtml(name)}</strong>${contact ? '<br><span style="color:#5E5854;font-size:9pt">' + escHtml(contact) + '</span>' : ''}`
     }},
-    { label: 'Email / Tél', render: p => {
-      const le = p.lot_entreprises?.interlocuteurs
-      return [
-        le?.email ? `<a href="mailto:${escHtml(le.email)}" style="color:#1B3A5C">${escHtml(le.email)}</a>` : '',
-        le?.telephone ? escHtml(le.telephone) : '',
-      ].filter(Boolean).join('<br>')
-    }},
+    { label: 'Email / Tél', render: p => coordonnees(p.vue) },
     { label: 'Présence', render: p => buildPresencePill(p.presence) },
     { label: 'Convoqué', render: p => p.convoque ? `<strong style="color:#2A8A4E">✓</strong>${p.heure_convocation ? ' ' + fmtTime(p.heure_convocation) : ''}` : '—' },
   ]
@@ -306,10 +300,12 @@ export function generateCrPdf(cr, sections, presences, affaire, { autoPrint = tr
     <div class="header-logo"><img src="${logoUrl}" alt="JGA" onerror="this.style.display='none'"></div>
     <div class="header-center">
       <div class="header-title">Réunion n°${num}</div>
-      <div class="header-date">${new Date((cr.date_reunion || '') + 'T00:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}</div>
+      <div class="header-date">${cr.date_reunion ? new Date(cr.date_reunion + 'T00:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) : 'Date non définie'}</div>
     </div>
     <div class="header-right" style="font-size:9pt;color:#5E5854">
-      ${cr.statut === 'emis' ? '<span style="color:#2A8A4E;font-weight:bold">✓ Émis</span>' : '<span style="color:#9C9591">Brouillon</span>'}
+      ${cr.statut === 'emis'
+        ? `<span style="color:#2A8A4E;font-weight:bold">✓ Émis</span>${cr.date_emission ? `<br>le ${new Date(cr.date_emission).toLocaleDateString('fr-FR')}` : ''}`
+        : '<span style="color:#9C9591">Brouillon</span>'}
     </div>
   </div>
 
@@ -367,8 +363,11 @@ export function generateCrPdf(cr, sections, presences, affaire, { autoPrint = tr
 </body>
 </html>`
 
+  // Fenêtre bloquée par le navigateur : l'appelant prévient l'utilisateur,
+  // sinon le clic semble ne rien faire.
   const win = window.open('', '_blank', 'width=900,height=700')
-  if (!win) return
+  if (!win) return false
   win.document.write(html)
   win.document.close()
+  return true
 }

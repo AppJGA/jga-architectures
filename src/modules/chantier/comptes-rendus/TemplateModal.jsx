@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { X, Plus, Pencil, Trash2, ChevronUp, ChevronDown, Zap } from 'lucide-react'
 import { useCrTemplate } from '../../../shared/hooks/useCrTemplate'
+import { useCr } from './CrContexte'
 
 const LABEL = {
   display: 'block', fontSize: 11, fontWeight: 500,
@@ -128,16 +129,20 @@ export function TemplateModal({ affaireId, crId, lots, interlocuteurs, onClose, 
   const [addOpen, setAddOpen] = useState(false)
   const [editItem, setEditItem] = useState(null)
   const [applying, setApplying] = useState(false)
+  const { signalerErreur } = useCr()
 
   const handleApply = async () => {
     if (!crId) return
     setApplying(true)
     try {
       await applyTemplate(crId, lots, interlocuteurs)
-      onApplied?.()
-      onClose()
-    } catch (err) { console.error(err) }
+    } catch (err) {
+      signalerErreur(err)
+    }
+    // Même après un échec : les sections déjà créées doivent apparaître
+    onApplied?.()
     setApplying(false)
+    onClose()
   }
 
   return (

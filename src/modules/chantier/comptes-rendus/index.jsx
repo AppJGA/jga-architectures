@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
-import { Plus, Trash2, Users, LayoutList, LayoutGrid, CalendarPlus, ArrowRight } from 'lucide-react'
+import { Plus, Trash2, Users, LayoutList, LayoutGrid, CalendarPlus, ArrowRight, AlertTriangle, X, Lock } from 'lucide-react'
 import { useAffaire } from '../../../shared/hooks/useAffaires'
 import { useComptesRendus } from '../../../shared/hooks/useComptesRendus'
 import { InterlocuteursModal } from './InterlocuteursModal'
@@ -39,6 +39,32 @@ function Spinner() {
 
 // ─── Vue liste ────────────────────────────────────────────────────────────────
 
+// Un CR émis ne se supprime pas (la base le refuse aussi) : il faut d'abord
+// le rouvrir. Le cadenas le signale à la place de la corbeille.
+function ActionSupprimer({ cr, onDelete, compact }) {
+  if (!onDelete) return null
+  if (cr.statut === 'emis') {
+    return (
+      <span title="Compte rendu émis : rouvrez-le pour le supprimer" style={{ display: 'inline-flex', padding: compact ? '4px 6px' : '5px 8px', color: '#C9C4C0' }}>
+        <Lock size={compact ? 12 : 13} />
+      </span>
+    )
+  }
+  return (
+    <button
+      onClick={e => { e.stopPropagation(); onDelete(cr) }}
+      title="Supprimer"
+      style={compact
+        ? { padding: '4px 6px', borderRadius: 2, border: '0.5px solid rgba(0,0,0,0.10)', backgroundColor: 'transparent', color: '#C9C4C0', cursor: 'pointer' }
+        : { padding: '5px 8px', borderRadius: 2, fontSize: 11, cursor: 'pointer', border: '0.5px solid rgba(0,0,0,0.12)', backgroundColor: 'white', color: '#9C9591' }}
+      onMouseEnter={e => { e.currentTarget.style.color = '#B8412C' }}
+      onMouseLeave={e => { e.currentTarget.style.color = compact ? '#C9C4C0' : '#9C9591' }}
+    >
+      <Trash2 size={compact ? 12 : 13} />
+    </button>
+  )
+}
+
 function CrRow({ cr, onOpen, onDelete }) {
   const redacteurName = cr.profiles
     ? [cr.profiles.prenom, cr.profiles.nom].filter(Boolean).join(' ')
@@ -63,13 +89,7 @@ function CrRow({ cr, onOpen, onDelete }) {
       <td style={{ padding: '12px 16px', fontSize: 12, color: '#5E5854' }}>{redacteurName}</td>
       <td style={{ padding: '12px 16px' }}><StatutBadge statut={cr.statut} /></td>
       <td style={{ padding: '12px 16px', textAlign: 'right' }}>
-        <button
-          onClick={e => { e.stopPropagation(); onDelete(cr) }}
-          title="Supprimer"
-          style={{ padding: '5px 8px', borderRadius: 2, fontSize: 11, cursor: 'pointer', border: '0.5px solid rgba(0,0,0,0.12)', backgroundColor: 'white', color: '#9C9591' }}
-        >
-          <Trash2 size={13} />
-        </button>
+        <ActionSupprimer cr={cr} onDelete={onDelete} />
       </td>
     </tr>
   )
@@ -128,15 +148,7 @@ function CrBulle({ cr, onOpen, onDelete }) {
             <span style={{ fontSize: 11, color: '#5E5854' }}>{redacteur}</span>
           </div>
         ) : <span />}
-        <button
-          onClick={e => { e.stopPropagation(); onDelete(cr) }}
-          title="Supprimer"
-          style={{ padding: '4px 6px', borderRadius: 2, border: '0.5px solid rgba(0,0,0,0.10)', backgroundColor: 'transparent', color: '#C9C4C0', cursor: 'pointer' }}
-          onMouseEnter={e => { e.currentTarget.style.color = '#B8412C' }}
-          onMouseLeave={e => { e.currentTarget.style.color = '#C9C4C0' }}
-        >
-          <Trash2 size={12} />
-        </button>
+        <ActionSupprimer cr={cr} onDelete={onDelete} compact />
       </div>
     </div>
   )
@@ -146,6 +158,7 @@ function CrBulle({ cr, onOpen, onDelete }) {
 
 function DeleteConfirmModal({ cr, onConfirm, onCancel }) {
   const [deleting, setDeleting] = useState(false)
+  const [erreur, setErreur] = useState(null)
   return (
     <div style={{
       position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.3)',
@@ -167,14 +180,19 @@ function DeleteConfirmModal({ cr, onConfirm, onCancel }) {
               Supprimer le compte rendu ?
             </p>
             <p style={{ fontSize: 12, color: '#9C9591' }}>
-              Réunion n°{cr.numero} — {new Date(cr.date_reunion + 'T00:00:00').toLocaleDateString('fr-FR')}
+              Réunion n°{cr.numero}{cr.date_reunion && ` — ${new Date(cr.date_reunion + 'T00:00:00').toLocaleDateString('fr-FR')}`}
             </p>
           </div>
         </div>
 
-        <p style={{ fontSize: 13, color: '#5E5854', lineHeight: 1.6, marginBottom: 24 }}>
+        <p style={{ fontSize: 13, color: '#5E5854', lineHeight: 1.6, marginBottom: erreur ? 12 : 24 }}>
           Cette action est <strong>irréversible</strong>. Toutes les présences et remarques associées seront définitivement supprimées.
         </p>
+        {erreur && (
+          <p role="alert" style={{ fontSize: 12, color: '#B8412C', marginBottom: 16 }}>
+            La suppression a échoué : {erreur}
+          </p>
+        )}
 
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <button
@@ -184,7 +202,12 @@ function DeleteConfirmModal({ cr, onConfirm, onCancel }) {
             Annuler
           </button>
           <button
-            onClick={async () => { setDeleting(true); await onConfirm(); setDeleting(false) }}
+            onClick={async () => {
+              setDeleting(true)
+              setErreur(null)
+              try { await onConfirm() } catch (err) { setErreur(err?.message ?? String(err)) }
+              setDeleting(false)
+            }}
             disabled={deleting}
             style={{ padding: '8px 16px', borderRadius: 2, border: 'none', background: '#B8412C', color: 'white', fontSize: 13, fontWeight: 500, cursor: 'pointer', opacity: deleting ? 0.6 : 1 }}
           >
@@ -296,7 +319,7 @@ function BandeauProchaineReunion({ dernier, onCreer }) {
 
 // ─── Module principal ─────────────────────────────────────────────────────────
 
-export default function ComptesRendusModule() {
+export default function ComptesRendusModule({ lectureSeule = false }) {
   const { affaireId } = useParams()
   const { affaire } = useAffaire(affaireId)
   const { comptesRendus, loading, createCR, deleteCR } = useComptesRendus(affaireId)
@@ -304,6 +327,7 @@ export default function ComptesRendusModule() {
   const [interloOpen, setInterloOpen] = useState(false)
   const [creating, setCreating] = useState(false)
   const [deletingCr, setDeletingCr] = useState(null)
+  const [erreur, setErreur] = useState(null)
   const [viewMode, setViewMode] = useState(() => localStorage.getItem('jga-cr-viewmode') || 'liste')
 
   const setView = (mode) => {
@@ -312,18 +336,23 @@ export default function ComptesRendusModule() {
   }
 
   const handleCreate = async () => {
+    if (lectureSeule || creating) return
     setCreating(true)
+    setErreur(null)
     try {
       const cr = await createCR()
       setSelectedCrId(cr.id)
-    } catch (err) { console.error(err) }
+    } catch (err) {
+      console.error(err)
+      setErreur(`La visite n’a pas été créée. ${err?.message ?? ''}`)
+    }
     setCreating(false)
   }
 
   // Raccourci N, annoncé par le badge du bouton. Ignoré dès qu'on saisit du
   // texte, qu'un modificateur est enfoncé, ou qu'on n'est plus sur la liste.
   useEffect(() => {
-    if (selectedCrId || interloOpen || deletingCr) return
+    if (selectedCrId || interloOpen || deletingCr || lectureSeule) return
     const onKeyDown = (e) => {
       if (e.key !== 'n' && e.key !== 'N') return
       if (e.metaKey || e.ctrlKey || e.altKey) return
@@ -345,6 +374,7 @@ export default function ComptesRendusModule() {
           crId={selectedCrId}
           affaire={affaire}
           onBack={() => setSelectedCrId(null)}
+          lectureSeule={lectureSeule}
         />
       </>
     )
@@ -358,6 +388,16 @@ export default function ComptesRendusModule() {
   return (
     <div className="jga-entree-vue">
       <style>{`@keyframes jga-spin { to { transform: rotate(360deg); } }`}</style>
+
+      {erreur && (
+        <div role="alert" style={{ display: 'flex', alignItems: 'flex-start', gap: 10, background: 'rgba(184,65,44,0.08)', border: '0.5px solid rgba(184,65,44,0.4)', borderLeft: '3px solid #B8412C', padding: '10px 14px', marginBottom: 16, fontSize: 12, color: '#7A2A1C' }}>
+          <AlertTriangle size={14} color="#B8412C" strokeWidth={1.8} style={{ flexShrink: 0, marginTop: 1 }} />
+          <span style={{ flex: 1 }}>{erreur}</span>
+          <button onClick={() => setErreur(null)} title="Fermer" data-compact style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#B8412C', padding: 2 }}>
+            <X size={14} />
+          </button>
+        </div>
+      )}
 
       {/* En-tête */}
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 18, flexWrap: 'wrap', gap: 14 }}>
@@ -397,18 +437,18 @@ export default function ComptesRendusModule() {
             })}
           </div>
 
-          <button
+          {!lectureSeule && <button
             onClick={() => setInterloOpen(true)}
             style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 2, fontSize: 12, border: '0.5px solid rgba(0,0,0,0.15)', backgroundColor: 'white', color: '#374151', cursor: 'pointer' }}
           >
             <Users size={13} /> Interlocuteurs
-          </button>
-          <BoutonNouvelleVisite onClick={handleCreate} disabled={creating} />
+          </button>}
+          {!lectureSeule && <BoutonNouvelleVisite onClick={handleCreate} disabled={creating} />}
         </div>
       </div>
 
       {/* Rappel de la prochaine réunion, tant que son CR n'existe pas */}
-      {!loading && dernier?.date_prochaine_reunion && (
+      {!loading && !lectureSeule && dernier?.date_prochaine_reunion && (
         <BandeauProchaineReunion dernier={dernier} onCreer={handleCreate} />
       )}
 
@@ -439,7 +479,7 @@ export default function ComptesRendusModule() {
                   key={cr.id}
                   cr={cr}
                   onOpen={setSelectedCrId}
-                  onDelete={setDeletingCr}
+                  onDelete={lectureSeule ? null : setDeletingCr}
                 />
               ))}
             </tbody>
@@ -452,7 +492,7 @@ export default function ComptesRendusModule() {
               key={cr.id}
               cr={cr}
               onOpen={setSelectedCrId}
-              onDelete={setDeletingCr}
+              onDelete={lectureSeule ? null : setDeletingCr}
             />
           ))}
         </div>

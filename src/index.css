@@ -112,6 +112,9 @@ body {
 
 /* ── Sous-remarques : actions visibles au survol ── */
 .sous-remarque-row:hover .sous-remarque-actions { opacity: 1 !important; }
+/* Au clavier et sur tablette (pas de survol), les actions restent accessibles */
+.sous-remarque-row:focus-within .sous-remarque-actions { opacity: 1 !important; }
+@media (hover: none) { .sous-remarque-actions { opacity: 1 !important; } }
 
 /* Rotation des indicateurs de chargement. Déclarée globalement : cinq
    composants la redéfinissaient chacun dans leur propre <style> inline. */

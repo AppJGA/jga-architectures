@@ -83,10 +83,11 @@ export function useCrTemplate(affaireId) {
   const applyTemplate = useCallback(async (crId, lots = [], interlocuteurs = []) => {
     const source = templates.length > 0 ? templates : DEFAULT_TEMPLATE_SECTIONS
 
-    const { data: existingSections } = await supabase
+    const { data: existingSections, error: errLecture } = await supabase
       .from('cr_sections')
       .select('numero_romain')
       .eq('cr_id', crId)
+    if (errLecture) throw errLecture
     const existingRomans = new Set((existingSections ?? []).map(s => s.numero_romain))
 
     for (const tmpl of source) {
@@ -110,18 +111,20 @@ export function useCrTemplate(affaireId) {
         }))
       }
 
-      const { data: newSection } = await supabase
+      const { data: newSection, error: errSection } = await supabase
         .from('cr_sections')
         .insert({ cr_id: crId, numero_romain: tmpl.numero_romain, titre: tmpl.titre, ordre: tmpl.ordre })
         .select().single()
+      if (errSection) throw errSection
 
       if (newSection && sousSections.length > 0) {
-        await supabase.from('cr_sous_sections').insert(
+        const { error: errSous } = await supabase.from('cr_sous_sections').insert(
           sousSections.map((ss, ssIdx) => ({
             cr_id: crId, section_id: newSection.id,
             code: ss.code || String(ssIdx + 1), titre: ss.titre, ordre: ssIdx,
           }))
         )
+        if (errSous) throw errSous
       }
     }
   }, [templates])

@@ -1,16 +1,27 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../../core/supabase/client'
+import { dateDuJour, compterPointsEnCours, preparerReprise } from '../../modules/chantier/comptes-rendus/crLogique'
+
+// Insère des lignes et fait remonter l'échec : Supabase ne lève pas d'exception
+async function inserer(table, lignes) {
+  if (lignes.length === 0) return
+  const { error } = await supabase.from(table).insert(lignes)
+  if (error) throw error
+}
 
 export function useComptesRendus(affaireId) {
   const [comptesRendus, setComptesRendus] = useState([])
   const [loading, setLoading] = useState(true)
+  // L'indicateur de chargement ne s'affiche qu'au premier chargement : ensuite
+  // la liste reste visible pendant qu'elle se met à jour.
+  const dejaCharge = useRef(false)
 
   const fetchAll = useCallback(async () => {
     if (!affaireId) return
-    setLoading(true)
+    if (!dejaCharge.current) setLoading(true)
     // Les remarques non closes sont comptées par CR en une seule requête, plutôt
     // qu'un compte par ligne : la liste affiche « points en cours » sur chaque CR.
-    const [{ data }, { data: remarques }] = await Promise.all([
+    const [{ data, error }, { data: remarques }] = await Promise.all([
       supabase
         .from('comptes_rendus')
         .select('*, profiles:redacteur_id(prenom, nom)')
@@ -18,43 +29,59 @@ export function useComptesRendus(affaireId) {
         .order('numero', { ascending: false }),
       supabase
         .from('cr_remarques')
-        .select('cr_id')
+        .select('cr_id, est_clos, parent_id')
         .eq('affaire_id', affaireId)
         .eq('est_clos', false),
     ])
+    if (error) throw error
 
     const parCr = new Map()
-    for (const r of remarques ?? []) parCr.set(r.cr_id, (parCr.get(r.cr_id) ?? 0) + 1)
+    for (const r of remarques ?? []) {
+      const liste = parCr.get(r.cr_id) ?? []
+      liste.push(r)
+      parCr.set(r.cr_id, liste)
+    }
 
-    setComptesRendus((data ?? []).map(cr => ({ ...cr, pointsEnCours: parCr.get(cr.id) ?? 0 })))
+    setComptesRendus((data ?? []).map(cr => ({ ...cr, pointsEnCours: compterPointsEnCours(parCr.get(cr.id)) })))
+    dejaCharge.current = true
     setLoading(false)
   }, [affaireId])
 
-  useEffect(() => { fetchAll() }, [fetchAll])
+  useEffect(() => {
+    dejaCharge.current = false
+    fetchAll().catch((err) => { console.error(err); setLoading(false) })
+  }, [fetchAll])
 
   const nextNumero = useCallback(async () => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('comptes_rendus')
       .select('numero')
       .eq('affaire_id', affaireId)
       .order('numero', { ascending: false })
       .limit(1)
       .maybeSingle()
+    if (error) throw error
     return (data?.numero ?? 0) + 1
   }, [affaireId])
 
   const createCR = useCallback(async (payload = {}) => {
-    const numero = await nextNumero()
-    const today = new Date().toISOString().split('T')[0]
-    const { data: cr, error } = await supabase
-      .from('comptes_rendus')
-      .insert({ affaire_id: affaireId, numero, date_reunion: today, statut: 'brouillon', ...payload })
-      .select()
-      .single()
-    if (error) throw error
+    // Deux personnes créant une visite au même moment calculent le même numéro :
+    // la contrainte d'unicité refuse la seconde, qui réessaie avec le suivant.
+    let cr = null
+    for (let essai = 0; essai < 3 && !cr; essai++) {
+      const numero = await nextNumero()
+      const { data, error } = await supabase
+        .from('comptes_rendus')
+        .insert({ affaire_id: affaireId, numero, date_reunion: dateDuJour(), statut: 'brouillon', ...payload })
+        .select()
+        .single()
+      if (error && error.code !== '23505') throw error
+      cr = data
+    }
+    if (!cr) throw new Error('Impossible d’attribuer un numéro à la visite, réessayez.')
 
-    // Auto-import des remarques non clôturées du CR précédent
-    const { data: prevCR } = await supabase
+    // Reprise de la visite précédente
+    const { data: prevCR, error: errPrev } = await supabase
       .from('comptes_rendus')
       .select('id')
       .eq('affaire_id', affaireId)
@@ -62,101 +89,37 @@ export function useComptesRendus(affaireId) {
       .order('numero', { ascending: false })
       .limit(1)
       .maybeSingle()
+    if (errPrev) throw errPrev
 
     if (prevCR) {
-      const [
-        { data: sections },
-        { data: sousSections },
-        { data: remarques },
-      ] = await Promise.all([
-        supabase.from('cr_sections').select('*').eq('cr_id', prevCR.id).order('ordre'),
-        supabase.from('cr_sous_sections').select('*').eq('cr_id', prevCR.id).order('ordre'),
-        supabase.from('cr_remarques').select('*')
-          .eq('cr_id', prevCR.id)
-          .eq('est_clos', false)
-          .is('parent_id', null),
-      ])
+      try {
+        const [
+          { data: sections, error: e1 },
+          { data: sousSections, error: e2 },
+          { data: remarques, error: e3 },
+        ] = await Promise.all([
+          supabase.from('cr_sections').select('*').eq('cr_id', prevCR.id).order('ordre'),
+          supabase.from('cr_sous_sections').select('*').eq('cr_id', prevCR.id).order('ordre'),
+          supabase.from('cr_remarques').select('*').eq('cr_id', prevCR.id),
+        ])
+        const erreurLecture = e1 ?? e2 ?? e3
+        if (erreurLecture) throw erreurLecture
 
-      // Mapping sections
-      const sIdMap = {}
-      for (const s of sections ?? []) {
-        const { data: ns } = await supabase
-          .from('cr_sections')
-          .insert({ cr_id: cr.id, numero_romain: s.numero_romain, titre: s.titre, ordre: s.ordre, type_section: s.type_section ?? 'general' })
-          .select().single()
-        if (ns) sIdMap[s.id] = ns.id
-      }
-
-      // Mapping sous-sections
-      const ssIdMap = {}
-      for (const ss of sousSections ?? []) {
-        const newSId = sIdMap[ss.section_id]
-        if (!newSId) continue
-        const { data: nss } = await supabase
-          .from('cr_sous_sections')
-          .insert({ cr_id: cr.id, section_id: newSId, code: ss.code, titre: ss.titre, ordre: ss.ordre })
-          .select().single()
-        if (nss) ssIdMap[ss.id] = nss.id
-      }
-
-      // Reprise des remarques principales non clôturées
-      const remIdMap = {}
-      for (const r of remarques ?? []) {
-        const insertPayload = {
-          cr_id: cr.id,
-          affaire_id: affaireId,
-          lot_id: r.lot_id,
-          interlocuteur_id: r.interlocuteur_id,
-          date_note: r.date_note,
-          pour: r.pour,
-          description: r.description,
-          statut: r.statut,
-          date_echeance: r.date_echeance,
-          est_important: r.est_important,
-          est_clos: false,
-          est_nouveau: true,
-          ordre: r.ordre,
-        }
-
-        if (r.sous_section_id) {
-          const newSsId = ssIdMap[r.sous_section_id]
-          if (!newSsId) continue
-          insertPayload.sous_section_id = newSsId
-          if (r.section_id) insertPayload.section_id = sIdMap[r.section_id] ?? null
-        } else if (r.section_id) {
-          const newSecId = sIdMap[r.section_id]
-          if (!newSecId) continue
-          insertPayload.section_id = newSecId
-        } else {
-          continue
-        }
-
-        const { data: newR } = await supabase.from('cr_remarques').insert(insertPayload).select().single()
-        if (newR) remIdMap[r.id] = newR.id
-      }
-
-      // Reprise des sous-remarques des remarques reprises
-      const parentIds = Object.keys(remIdMap)
-      if (parentIds.length > 0) {
-        const { data: sousRems } = await supabase
-          .from('cr_remarques')
-          .select('*')
-          .in('parent_id', parentIds)
-
-        for (const sr of sousRems ?? []) {
-          const newParentId = remIdMap[sr.parent_id]
-          if (!newParentId) continue
-          await supabase.from('cr_remarques').insert({
-            cr_id: cr.id,
-            parent_id: newParentId,
-            affaire_id: affaireId,
-            date_note: sr.date_note,
-            pour: sr.pour,
-            description: sr.description,
-            est_clos: false,
-            est_nouveau: true,
-          })
-        }
+        const reprise = preparerReprise({
+          sections: sections ?? [], sousSections: sousSections ?? [], remarques: remarques ?? [],
+          crId: cr.id, affaireId, nouvelId: () => crypto.randomUUID(),
+        })
+        // Chaque niveau après celui qu'il référence
+        await inserer('cr_sections', reprise.sections)
+        await inserer('cr_sous_sections', reprise.sousSections)
+        await inserer('cr_remarques', reprise.remarques)
+        await inserer('cr_remarques', reprise.sousRemarques)
+      } catch (err) {
+        // Une visite à moitié reprise serait trompeuse : on la retire entière
+        // (les lignes déjà insérées partent en cascade) et on prévient.
+        await supabase.from('comptes_rendus').delete().eq('id', cr.id)
+        await fetchAll()
+        throw new Error(`La reprise de la visite précédente a échoué : ${err.message}`, { cause: err })
       }
     }
 

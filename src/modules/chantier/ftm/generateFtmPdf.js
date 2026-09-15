@@ -1,3 +1,5 @@
+import { echapperHtml as e } from '../../../shared/echapperHtml'
+
 function fmtDate(d) {
   if (!d) return '___/___/______'
   return new Date(d + 'T00:00:00').toLocaleDateString('fr-FR', {
@@ -21,7 +23,7 @@ function buildFtmHtml(ftm, affaire, { autoPrint = true } = {}) {
   const ref = `FTM-${String(ftm.numero).padStart(3, '0')}`
 
   const incidenceDelai = (ftm.incidence_delai_valeur && Number(ftm.incidence_delai_valeur) !== 0)
-    ? `${ftm.incidence_delai_valeur} ${ftm.incidence_delai_unite ?? 'jours'}`
+    ? `${e(ftm.incidence_delai_valeur)} ${e(ftm.incidence_delai_unite ?? 'jours')}`
     : 'Sans incidence'
 
   const printScript = autoPrint
@@ -32,7 +34,7 @@ function buildFtmHtml(ftm, affaire, { autoPrint = true } = {}) {
 <html lang="fr">
 <head>
   <meta charset="UTF-8" />
-  <title>${ref} — ${affaire?.nom ?? ''}</title>
+  <title>${ref} — ${e(affaire?.nom)}</title>
   <style>
     @page { size: A4 portrait; margin: 20mm; }
     * { box-sizing: border-box; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
@@ -66,11 +68,11 @@ function buildFtmHtml(ftm, affaire, { autoPrint = true } = {}) {
   <div class="header-grid">
     <div class="field">
       <div class="field-label">Projet</div>
-      <div class="field-value">${affaire?.nom ?? ''}</div>
+      <div class="field-value">${e(affaire?.nom)}</div>
     </div>
     <div class="field">
       <div class="field-label">Maître d'Ouvrage</div>
-      <div class="field-value">${affaire?.moa_nom ?? ''}</div>
+      <div class="field-value">${e(affaire?.moa_nom)}</div>
     </div>
     <div class="field">
       <div class="field-label">Date d'émission</div>
@@ -78,7 +80,7 @@ function buildFtmHtml(ftm, affaire, { autoPrint = true } = {}) {
     </div>
     <div class="field">
       <div class="field-label">Référence chantier</div>
-      <div class="field-value">${ftm.reference_chantier ?? ref}</div>
+      <div class="field-value">${e(ftm.reference_chantier ?? ref)}</div>
     </div>
   </div>
   <hr />
@@ -88,14 +90,14 @@ function buildFtmHtml(ftm, affaire, { autoPrint = true } = {}) {
   <div class="cb-line">${cb(ftm.type_demande === 'suppression')} &nbsp;Suppression</div>
   <div class="cb-line">${cb(ftm.type_demande === 'modification')} &nbsp;Modification</div>
   <p style="font-weight:bold;margin:10px 0 4px;">Description précise de la demande :</p>
-  <div class="description-block">${ftm.description ? ftm.description.replace(/\n/g, '<br>') : ''}</div>
+  <div class="description-block">${e(ftm.description).replace(/\n/g, '<br>')}</div>
   <hr />
 
   <h2>2. Motivation de la demande</h2>
   <div class="cb-line">${cb(ftm.motivation === 'confort_usage')} &nbsp;Confort / usage</div>
   <div class="cb-line">${cb(ftm.motivation === 'esthetique')} &nbsp;Esthétique</div>
   <div class="cb-line">${cb(ftm.motivation === 'technique')} &nbsp;Technique</div>
-  <div class="cb-line">${cb(ftm.motivation === 'autre')} &nbsp;Autre${ftm.motivation === 'autre' && ftm.motivation_autre ? ` : ${ftm.motivation_autre}` : ''}</div>
+  <div class="cb-line">${cb(ftm.motivation === 'autre')} &nbsp;Autre${ftm.motivation === 'autre' && ftm.motivation_autre ? ` : ${e(ftm.motivation_autre)}` : ''}</div>
   <hr />
 
   <h2>3. Analyse par le Maître d'Œuvre</h2>

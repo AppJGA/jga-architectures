@@ -54,7 +54,7 @@ function useAffaireStats(affaireId) {
     if (!affaireId) return
     Promise.all([
       supabase.from('comptes_rendus').select('id, statut, date_reunion, date_prochaine_reunion').eq('affaire_id', affaireId).order('numero', { ascending: false }),
-      supabase.from('cr_remarques').select('id').eq('affaire_id', affaireId).ilike('statut', '%faire%').eq('est_clos', false),
+      supabase.from('cr_remarques').select('cr_id, parent_id').eq('affaire_id', affaireId).ilike('statut', '%faire%').eq('est_clos', false),
       supabase.from('todos').select('id, fait').eq('affaire_id', affaireId),
       supabase.from('lots').select('id', { count: 'exact', head: true }).eq('affaire_id', affaireId),
       supabase.from('lot_entreprises').select('montant_marche_ht').eq('affaire_id', affaireId),
@@ -126,7 +126,10 @@ function useAffaireStats(affaireId) {
         crEmis,
         crDernierDate: crRows[0]?.date_reunion ?? null,
         crProchaineReunion: crRows[0]?.date_prochaine_reunion ?? null,
-        remarquesAFaire: (remAFaire.data ?? []).length,
+        // Chaque visite reprend les remarques ouvertes de la précédente : compter
+        // tous les CR comptait une même remarque autant de fois qu'elle a été
+        // reprise. Seul le dernier CR fait foi, et sans les suivis.
+        remarquesAFaire: (remAFaire.data ?? []).filter(r => r.cr_id === crRows[0]?.id && !r.parent_id).length,
         todos: t.data?.length ?? 0,
         todosDone: t.data?.filter(x => x.fait).length ?? 0,
         lots: lots.count ?? 0,
@@ -170,9 +173,9 @@ function Spinner() {
 }
 
 // ─── Module renderer ──────────────────────────────────────────────────────────
-function ModuleRenderer({ mod }) {
+function ModuleRenderer({ mod, lectureSeule }) {
   const Comp = mod.component
-  return <Suspense fallback={<Spinner />}><Comp /></Suspense>
+  return <Suspense fallback={<Spinner />}><Comp lectureSeule={lectureSeule} /></Suspense>
 }
 
 // ─── Photo de l'affaire ───────────────────────────────────────────────────────
@@ -1053,7 +1056,7 @@ export function AffairePage() {
               </div>
             )}
             {activeModule
-              ? <ModuleRenderer mod={activeModule} />
+              ? <ModuleRenderer mod={activeModule} lectureSeule={!collabLoading && !canEdit} />
               : <AffaireOverview affaire={affaire} stats={stats} affaireId={affaireId} onEdit={() => setEditOpen(true)} canEdit={canEdit} />
             }
           </main>

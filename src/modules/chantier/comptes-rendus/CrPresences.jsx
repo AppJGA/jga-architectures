@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react'
-import { supabase } from '../../../core/supabase/client'
 import { CATEGORIE_META } from '../../../shared/hooks/useAffaireInterlocuteurs'
+import { affichagePresence } from './crLogique'
+import { useCr } from './CrContexte'
 
 const PRESENCE_OPTIONS = [
   { id: 'p', label: 'P', title: 'Présent',  bg: '#2A8A4E', color: 'white' },
@@ -18,12 +18,15 @@ const LEGEND_ITEMS = [
 
 // ─── Toggle switch ────────────────────────────────────────────────────────────
 
-function Toggle({ value, onChange }) {
+function Toggle({ value, onChange, disabled }) {
   return (
     <div
-      onClick={() => onChange(!value)}
+      role="switch"
+      aria-checked={!!value}
+      onClick={() => { if (!disabled) onChange(!value) }}
       style={{
-        width: 36, height: 20, borderRadius: 2, cursor: 'pointer',
+        width: 36, height: 20, borderRadius: 2, cursor: disabled ? 'default' : 'pointer',
+        opacity: disabled ? 0.6 : 1,
         background: value ? '#2A8A4E' : 'rgba(0,0,0,0.15)',
         position: 'relative', transition: 'background 0.2s', flexShrink: 0,
       }}
@@ -40,14 +43,17 @@ function Toggle({ value, onChange }) {
 
 // ─── Presence pills ───────────────────────────────────────────────────────────
 
-function PresencePills({ value, onChange }) {
+function PresencePills({ value, onChange, disabled }) {
   return (
     <div style={{ display: 'flex', gap: 4 }}>
       {PRESENCE_OPTIONS.map(opt => {
         const active = value === opt.id
+        // En lecture seule, seul le statut retenu reste affiché
+        if (disabled && !active) return null
         return (
           <button
             key={opt.id}
+            disabled={disabled}
             onClick={() => onChange(active ? 'na' : opt.id)}
             title={opt.title}
             style={{
@@ -55,7 +61,7 @@ function PresencePills({ value, onChange }) {
               border: active ? 'none' : '0.5px solid rgba(0,0,0,0.15)',
               backgroundColor: active ? opt.bg : 'white',
               color: active ? opt.color : '#9C9591',
-              cursor: 'pointer', transition: 'all 0.12s',
+              cursor: disabled ? 'default' : 'pointer', transition: 'all 0.12s',
             }}
           >
             {opt.label}
@@ -68,25 +74,33 @@ function PresencePills({ value, onChange }) {
 
 // ─── Convoqué cell — toujours visible, jamais de saut ────────────────────────
 
+const HEURE_PAR_DEFAUT = '09:00'
+
 function ConvoqueCell({ presence, onUpdate }) {
+  const { lectureSeule } = useCr()
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, height: 28 }}>
       <Toggle
         value={presence.convoque}
-        onChange={val => onUpdate(presence.id, { convoque: val })}
+        disabled={lectureSeule}
+        // L'heure affichée par défaut n'existait qu'à l'écran : elle est
+        // enregistrée au moment de la convocation, sinon le PDF n'en montre aucune.
+        onChange={val => onUpdate(presence.id, val && !presence.heure_convocation
+          ? { convoque: true, heure_convocation: HEURE_PAR_DEFAUT }
+          : { convoque: val })}
       />
       <input
         type="time"
-        value={presence.heure_convocation ?? '09:00'}
-        disabled={!presence.convoque}
-        onChange={e => onUpdate(presence.id, { heure_convocation: e.target.value })}
+        value={presence.heure_convocation?.slice(0, 5) ?? HEURE_PAR_DEFAUT}
+        disabled={!presence.convoque || lectureSeule}
+        onChange={e => onUpdate(presence.id, { heure_convocation: e.target.value || null })}
         style={{
           fontSize: 11, width: 70,
           border: '0.5px solid rgba(0,0,0,0.12)', borderRadius: 3,
           padding: '2px 6px', outline: 'none',
           color: presence.convoque ? '#1F1B17' : '#9C9591',
           background: presence.convoque ? 'white' : '#FAF7F2',
-          cursor: presence.convoque ? 'text' : 'not-allowed',
+          cursor: presence.convoque && !lectureSeule ? 'text' : 'not-allowed',
           opacity: presence.convoque ? 1 : 0.5,
           transition: 'all 0.2s',
         }}
@@ -96,12 +110,14 @@ function ConvoqueCell({ presence, onUpdate }) {
 }
 
 // ─── Lignes ───────────────────────────────────────────────────────────────────
+// Affichées depuis la copie du participant : une fiche supprimée depuis reste
+// visible dans les comptes rendus où elle figurait.
 
 function InterloRow({ presence, onPresence, onUpdate }) {
-  const i = presence.affaire_interlocuteurs
-  if (!i) return null
+  const { lectureSeule } = useCr()
+  const i = affichagePresence(presence)
   const meta = CATEGORIE_META[i.categorie]
-  const catLabel = i.categorie_label || meta?.label || i.categorie
+  const catLabel = i.categorieLabel || meta?.label || i.categorie
 
   return (
     <tr>
@@ -112,7 +128,7 @@ function InterloRow({ presence, onPresence, onUpdate }) {
       </td>
       <td style={{ padding: '10px 12px', verticalAlign: 'top' }}>
         <p style={{ fontSize: 12, fontWeight: 500, color: '#1F1B17', marginBottom: 1 }}>
-          {[i.prenom, i.nom].filter(Boolean).join(' ') || i.organisation || '—'}
+          {i.nom || '—'}
         </p>
         {i.fonction && <p style={{ fontSize: 11, color: '#5E5854' }}>{i.fonction}</p>}
         {i.organisation && <p style={{ fontSize: 11, color: '#5E5854' }}>{i.organisation}</p>}
@@ -122,7 +138,7 @@ function InterloRow({ presence, onPresence, onUpdate }) {
         {i.telephone && <span style={{ fontSize: 11, color: '#5E5854' }}>{i.telephone}</span>}
       </td>
       <td style={{ padding: '10px 12px', verticalAlign: 'middle' }}>
-        <PresencePills value={presence.presence} onChange={val => onPresence(presence.id, val)} />
+        <PresencePills value={presence.presence} disabled={lectureSeule} onChange={val => onPresence(presence.id, val)} />
       </td>
       <td style={{ padding: '10px 12px', verticalAlign: 'middle' }}>
         <ConvoqueCell presence={presence} onUpdate={onUpdate} />
@@ -132,29 +148,26 @@ function InterloRow({ presence, onPresence, onUpdate }) {
 }
 
 function LotRow({ presence, onPresence, onUpdate }) {
-  const le = presence.lot_entreprises
-  if (!le) return null
-  const lot = le.lots
-  const ent = le.entreprises
-  const contact = le.interlocuteurs
+  const { lectureSeule } = useCr()
+  const e = affichagePresence(presence)
 
   return (
     <tr>
       <td style={{ padding: '10px 12px', verticalAlign: 'top' }}>
         <p style={{ fontSize: 12, fontWeight: 500, color: '#1F1B17' }}>
-          {lot ? `Lot ${lot.numero ?? ''} — ${lot.nom}` : '—'}
+          {e.lotNom ? `Lot ${e.lotNumero ?? ''} — ${e.lotNom}` : '—'}
         </p>
       </td>
       <td style={{ padding: '10px 12px', verticalAlign: 'top' }}>
-        <p style={{ fontSize: 12, fontWeight: 500, color: '#1F1B17', marginBottom: 1 }}>{ent?.raison_sociale ?? '—'}</p>
-        {contact && <p style={{ fontSize: 11, color: '#5E5854' }}>{[contact.prenom, contact.nom].filter(Boolean).join(' ')}</p>}
+        <p style={{ fontSize: 12, fontWeight: 500, color: '#1F1B17', marginBottom: 1 }}>{e.entreprise ?? '—'}</p>
+        {e.contact && <p style={{ fontSize: 11, color: '#5E5854' }}>{e.contact}</p>}
       </td>
       <td style={{ padding: '10px 12px', verticalAlign: 'top' }}>
-        {contact?.email && <a href={`mailto:${contact.email}`} style={{ display: 'block', fontSize: 11, color: '#1B3A5C', textDecoration: 'none' }}>{contact.email}</a>}
-        {contact?.telephone && <span style={{ fontSize: 11, color: '#5E5854' }}>{contact.telephone}</span>}
+        {e.email && <a href={`mailto:${e.email}`} style={{ display: 'block', fontSize: 11, color: '#1B3A5C', textDecoration: 'none' }}>{e.email}</a>}
+        {e.telephone && <span style={{ fontSize: 11, color: '#5E5854' }}>{e.telephone}</span>}
       </td>
       <td style={{ padding: '10px 12px', verticalAlign: 'middle' }}>
-        <PresencePills value={presence.presence} onChange={val => onPresence(presence.id, val)} />
+        <PresencePills value={presence.presence} disabled={lectureSeule} onChange={val => onPresence(presence.id, val)} />
       </td>
       <td style={{ padding: '10px 12px', verticalAlign: 'middle' }}>
         <ConvoqueCell presence={presence} onUpdate={onUpdate} />
@@ -172,7 +185,7 @@ function PresenceTable({ title, headers, rows }) {
   return (
     <div style={{ marginBottom: 24 }}>
       <h3 style={{ fontSize: 13, fontWeight: 500, color: '#1F1B17', marginBottom: 10 }}>{title}</h3>
-      <div style={{ backgroundColor: 'white', borderRadius: 0, border: '0.5px solid rgba(0,0,0,0.08)', overflow: 'hidden' }}>
+      <div style={{ backgroundColor: 'white', borderRadius: 0, border: '0.5px solid rgba(0,0,0,0.08)', overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ backgroundColor: '#FAFAF9' }}>
@@ -188,30 +201,25 @@ function PresenceTable({ title, headers, rows }) {
 
 // ─── Export ───────────────────────────────────────────────────────────────────
 
-export function CrPresences({ presences: presencesProp, setPresence, setConvoque }) {
-  // Local copy pour mises à jour optimistes (évite le re-render global + saut de layout)
-  const [presences, setPresences] = useState(presencesProp)
-
-  useEffect(() => { setPresences(presencesProp) }, [presencesProp])
-
-  // Optimistic update : local first, persist sans refetch
-  const updatePresence = async (id, changes) => {
-    setPresences(prev => prev.map(p => p.id === id ? { ...p, ...changes } : p))
-    await supabase.from('cr_presences').update(changes).eq('id', id)
-  }
+// Les écritures sont optimistes (le hook met l'écran à jour tout de suite) ;
+// un échec est signalé dans le bandeau du compte rendu.
+export function CrPresences({ presences, setPresence, updatePresence }) {
+  const { signalerErreur } = useCr()
 
   const handlePresence = (presenceId, val) => {
-    setPresences(prev => prev.map(p => p.id === presenceId ? { ...p, presence: val } : p))
-    setPresence(presenceId, val)
+    setPresence(presenceId, val).catch(signalerErreur)
+  }
+  const handleUpdate = (presenceId, changes) => {
+    updatePresence(presenceId, changes).catch(signalerErreur)
   }
 
   const interloPresences = presences
-    .filter(p => p.affaire_interlocuteurs)
-    .sort((a, b) => (a.affaire_interlocuteurs?.ordre ?? 99) - (b.affaire_interlocuteurs?.ordre ?? 99))
+    .filter(p => affichagePresence(p).type === 'interlocuteur')
+    .sort((a, b) => affichagePresence(a).ordre - affichagePresence(b).ordre)
 
   const lotPresences = presences
-    .filter(p => p.lot_entreprises)
-    .sort((a, b) => (a.lot_entreprises?.lots?.numero ?? 99) - (b.lot_entreprises?.lots?.numero ?? 99))
+    .filter(p => affichagePresence(p).type === 'entreprise')
+    .sort((a, b) => (affichagePresence(a).lotNumero ?? 99) - (affichagePresence(b).lotNumero ?? 99))
 
   return (
     <div>
@@ -242,7 +250,7 @@ export function CrPresences({ presences: presencesProp, setPresence, setConvoque
         title="Interlocuteurs projet"
         headers={['Rôle', 'Contact', 'Email & Tél', 'Présence', 'Convoqué']}
         rows={interloPresences.map(p => (
-          <InterloRow key={p.id} presence={p} onPresence={handlePresence} onUpdate={updatePresence} />
+          <InterloRow key={p.id} presence={p} onPresence={handlePresence} onUpdate={handleUpdate} />
         ))}
       />
 
@@ -250,14 +258,14 @@ export function CrPresences({ presences: presencesProp, setPresence, setConvoque
         title="Entreprises"
         headers={['Lot', 'Entreprise', 'Email & Tél', 'Présence', 'Convoqué']}
         rows={lotPresences.map(p => (
-          <LotRow key={p.id} presence={p} onPresence={handlePresence} onUpdate={updatePresence} />
+          <LotRow key={p.id} presence={p} onPresence={handlePresence} onUpdate={handleUpdate} />
         ))}
       />
 
       {interloPresences.length === 0 && lotPresences.length === 0 && (
         <div style={{ textAlign: 'center', padding: '32px 0', color: '#9C9591', fontSize: 13 }}>
           <p style={{ marginBottom: 6 }}>Aucun interlocuteur configuré.</p>
-          <p style={{ fontSize: 12 }}>Ajoutez des interlocuteurs via "Gérer les interlocuteurs" dans la liste des visites.</p>
+          <p style={{ fontSize: 12 }}>Ajoutez-les avec le bouton « Interlocuteurs » de la liste des visites.</p>
         </div>
       )}
     </div>

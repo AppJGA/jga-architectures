@@ -1,5 +1,33 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../../core/supabase/client'
+import { copiePresence, copieAJour } from '../../modules/chantier/comptes-rendus/crLogique'
+
+// Jointures d'une présence : la fiche liée sert à tenir sa copie à jour
+const SELECT_PRESENCES = `
+  *,
+  affaire_interlocuteurs:interlocuteur_id(
+    id, categorie, categorie_label, prenom, nom, fonction, organisation, adresse, email, telephone, ordre
+  ),
+  lot_entreprises:lot_entreprise_id(
+    id, lot_id,
+    lots:lot_id(id, numero, nom),
+    entreprises:entreprise_id(id, raison_sociale, email, telephone),
+    interlocuteurs:interlocuteur_id(prenom, nom, telephone, email)
+  )
+`
+
+// Plusieurs écritures lancées ensemble : la première erreur est levée
+function verifierTout(resultats) {
+  const echec = resultats.find((r) => r.error)
+  if (echec) throw echec.error
+}
+
+// Colonne inconnue : la migration 037 n'est pas encore passée sur la base.
+// Les copies et la date d'émission sont alors ignorées plutôt que de bloquer
+// la saisie.
+function colonneAbsente(error) {
+  return error?.code === 'PGRST204' || error?.code === '42703'
+}
 
 function buildTree(sections, sousSections, remarques) {
   // Séparer remarques principales (sans parent) des sous-remarques
@@ -56,10 +84,29 @@ export function useCompteRendu(crId, affaireId) {
   const [presences, setPresences] = useState([])
   const [profiles, setProfiles]   = useState([])
   const [loading, setLoading]     = useState(true)
+  const [erreurChargement, setErreurChargement] = useState(null)
+  // Seul le premier chargement affiche l'indicateur : il remplace l'éditeur,
+  // qui perdait sinon à chaque ajout ses filtres, ses sections repliées et la
+  // position de défilement.
+  const dejaCharge = useRef(false)
 
   const fetchAll = useCallback(async () => {
     if (!crId) return
-    setLoading(true)
+    if (!dejaCharge.current) setLoading(true)
+    const resultats = await Promise.all([
+      supabase.from('comptes_rendus').select('*, profiles:redacteur_id(id, prenom, nom)').eq('id', crId).single(),
+      supabase.from('cr_sections').select('*').eq('cr_id', crId).order('ordre'),
+      supabase.from('cr_sous_sections').select('*').eq('cr_id', crId).order('ordre'),
+      supabase.from('cr_remarques').select('*').eq('cr_id', crId).order('ordre'),
+      supabase.from('cr_presences').select(SELECT_PRESENCES).eq('cr_id', crId),
+      supabase.from('profiles').select('id, prenom, nom'),
+    ])
+    const echec = resultats.find((r) => r.error)
+    if (echec) {
+      setErreurChargement(echec.error.message)
+      setLoading(false)
+      throw echec.error
+    }
     const [
       { data: crData },
       { data: secData },
@@ -67,56 +114,92 @@ export function useCompteRendu(crId, affaireId) {
       { data: remData },
       { data: presData },
       { data: profData },
-    ] = await Promise.all([
-      supabase.from('comptes_rendus').select('*, profiles:redacteur_id(id, prenom, nom)').eq('id', crId).single(),
-      supabase.from('cr_sections').select('*').eq('cr_id', crId).order('ordre'),
-      supabase.from('cr_sous_sections').select('*').eq('cr_id', crId).order('ordre'),
-      supabase.from('cr_remarques').select('*').eq('cr_id', crId).order('ordre'),
-      supabase.from('cr_presences').select(`
-        *,
-        affaire_interlocuteurs:interlocuteur_id(
-          id, categorie, categorie_label, prenom, nom, fonction, organisation, email, telephone, ordre
-        ),
-        lot_entreprises:lot_entreprise_id(
-          id, lot_id,
-          lots:lot_id(id, numero, nom),
-          entreprises:entreprise_id(id, raison_sociale),
-          interlocuteurs:interlocuteur_id(prenom, nom, telephone, email)
-        )
-      `).eq('cr_id', crId),
-      supabase.from('profiles').select('id, prenom, nom'),
-    ])
+    ] = resultats
 
+    setErreurChargement(null)
     setCr(crData)
     setSections(buildTree(secData ?? [], ssData ?? [], remData ?? []))
     setPresences(presData ?? [])
     setProfiles(profData ?? [])
+    dejaCharge.current = true
     setLoading(false)
   }, [crId])
 
-  useEffect(() => { fetchAll() }, [fetchAll])
+  useEffect(() => {
+    dejaCharge.current = false
+    fetchAll().catch((err) => console.error(err))
+  }, [fetchAll])
 
-  // ── Sync presences depuis les contacts de l'affaire ──────────────────────────
+  // ── Présences : participants de l'affaire et copies à jour ───────────────────
+  //
+  // Ajoute les interlocuteurs et entreprises arrivés depuis, et met à jour la
+  // copie des participants (colonnes `copie_*`). Rien n'est fait sur un compte
+  // rendu émis : sa feuille de présence est figée, et la base le refuserait.
   const syncPresences = useCallback(async () => {
     if (!affaireId || !crId) return
     const [
-      { data: interlos },
-      { data: lotEnts },
-      { data: existing },
+      { data: crStatut, error: e0 },
+      { data: interlos, error: e1 },
+      { data: lotEnts, error: e2 },
+      { data: existing, error: e3 },
     ] = await Promise.all([
+      supabase.from('comptes_rendus').select('statut').eq('id', crId).single(),
       supabase.from('affaire_interlocuteurs').select('id').eq('affaire_id', affaireId),
       supabase.from('lot_entreprises').select('id').eq('affaire_id', affaireId),
-      supabase.from('cr_presences').select('interlocuteur_id, lot_entreprise_id').eq('cr_id', crId),
+      supabase.from('cr_presences').select(SELECT_PRESENCES).eq('cr_id', crId),
     ])
+    const erreur = e0 ?? e1 ?? e2 ?? e3
+    if (erreur) throw erreur
+    if (crStatut?.statut === 'emis') return
+
     const existInterlo = new Set((existing ?? []).filter(p => p.interlocuteur_id).map(p => p.interlocuteur_id))
     const existLot     = new Set((existing ?? []).filter(p => p.lot_entreprise_id).map(p => p.lot_entreprise_id))
     const toInsert = [
       ...(interlos ?? []).filter(i => !existInterlo.has(i.id)).map(i => ({ cr_id: crId, interlocuteur_id: i.id, presence: 'na', convoque: false })),
       ...(lotEnts ?? []).filter(l => !existLot.has(l.id)).map(l => ({ cr_id: crId, lot_entreprise_id: l.id, presence: 'na', convoque: false })),
     ]
-    if (toInsert.length > 0) await supabase.from('cr_presences').insert(toInsert)
+    if (toInsert.length > 0) {
+      const { error } = await supabase.from('cr_presences').insert(toInsert)
+      if (error) throw error
+    }
+
+    // Copies : lignes ajoutées à l'instant et fiches modifiées depuis
+    const { data: aCopier, error: e4 } = toInsert.length > 0
+      ? await supabase.from('cr_presences').select(SELECT_PRESENCES).eq('cr_id', crId)
+      : { data: existing, error: null }
+    if (e4) throw e4
+    const mises = (aCopier ?? []).filter((p) => !copieAJour(p))
+    const resultats = await Promise.all(mises.map((p) =>
+      supabase.from('cr_presences').update(copiePresence(p)).eq('id', p.id)))
+    const echec = resultats.find((r) => r.error && !colonneAbsente(r.error))
+    if (echec) throw echec.error
+
     await fetchAll()
   }, [affaireId, crId, fetchAll])
+
+  // ── Émission ─────────────────────────────────────────────────────────────────
+  // Émis, le compte rendu est verrouillé (en base aussi, migration 037). La
+  // feuille de présence est d'abord mise à jour une dernière fois.
+  const emettre = useCallback(async () => {
+    await syncPresences()
+    let { error } = await supabase.from('comptes_rendus')
+      .update({ statut: 'emis', date_emission: new Date().toISOString() }).eq('id', crId)
+    if (colonneAbsente(error)) {
+      ({ error } = await supabase.from('comptes_rendus').update({ statut: 'emis' }).eq('id', crId))
+    }
+    if (error) throw error
+    await fetchAll()
+  }, [crId, syncPresences, fetchAll])
+
+  const rouvrir = useCallback(async () => {
+    let { error } = await supabase.from('comptes_rendus')
+      .update({ statut: 'brouillon', date_emission: null }).eq('id', crId)
+    if (colonneAbsente(error)) {
+      ({ error } = await supabase.from('comptes_rendus').update({ statut: 'brouillon' }).eq('id', crId))
+    }
+    if (error) throw error
+    await fetchAll()
+  }, [crId, fetchAll])
 
   // ── CR metadata ──────────────────────────────────────────────────────────────
   const updateCr = useCallback(async (payload) => {
@@ -146,7 +229,7 @@ export function useCompteRendu(crId, affaireId) {
   }, [fetchAll])
 
   const reorderSectionsByIds = useCallback(async (orderedIds) => {
-    await Promise.all(orderedIds.map((id, idx) => supabase.from('cr_sections').update({ ordre: idx }).eq('id', id)))
+    verifierTout(await Promise.all(orderedIds.map((id, idx) => supabase.from('cr_sections').update({ ordre: idx }).eq('id', id))))
     await fetchAll()
   }, [fetchAll])
 
@@ -155,10 +238,10 @@ export function useCompteRendu(crId, affaireId) {
     const idx = sorted.findIndex(s => s.id === id)
     const swapIdx = dir === 'up' ? idx - 1 : idx + 1
     if (swapIdx < 0 || swapIdx >= sorted.length) return
-    await Promise.all([
+    verifierTout(await Promise.all([
       supabase.from('cr_sections').update({ ordre: sorted[swapIdx].ordre }).eq('id', sorted[idx].id),
       supabase.from('cr_sections').update({ ordre: sorted[idx].ordre }).eq('id', sorted[swapIdx].id),
-    ])
+    ]))
     await fetchAll()
   }, [sections, fetchAll])
 
@@ -190,10 +273,10 @@ export function useCompteRendu(crId, affaireId) {
     const idx = sorted.findIndex(ss => ss.id === id)
     const swapIdx = dir === 'up' ? idx - 1 : idx + 1
     if (swapIdx < 0 || swapIdx >= sorted.length) return
-    await Promise.all([
+    verifierTout(await Promise.all([
       supabase.from('cr_sous_sections').update({ ordre: sorted[swapIdx].ordre }).eq('id', sorted[idx].id),
       supabase.from('cr_sous_sections').update({ ordre: sorted[idx].ordre }).eq('id', sorted[swapIdx].id),
-    ])
+    ]))
     await fetchAll()
   }, [sections, fetchAll])
 
@@ -244,10 +327,10 @@ export function useCompteRendu(crId, affaireId) {
     const idx = sorted.findIndex(r => r.id === id)
     const swapIdx = dir === 'up' ? idx - 1 : idx + 1
     if (swapIdx < 0 || swapIdx >= sorted.length) return
-    await Promise.all([
+    verifierTout(await Promise.all([
       supabase.from('cr_remarques').update({ ordre: sorted[swapIdx].ordre }).eq('id', sorted[idx].id),
       supabase.from('cr_remarques').update({ ordre: sorted[idx].ordre }).eq('id', sorted[swapIdx].id),
-    ])
+    ]))
     await fetchAll()
   }, [sections, fetchAll])
 
@@ -258,10 +341,10 @@ export function useCompteRendu(crId, affaireId) {
     const idx = sorted.findIndex(r => r.id === id)
     const swapIdx = dir === 'up' ? idx - 1 : idx + 1
     if (swapIdx < 0 || swapIdx >= sorted.length) return
-    await Promise.all([
+    verifierTout(await Promise.all([
       supabase.from('cr_remarques').update({ ordre: sorted[swapIdx].ordre }).eq('id', sorted[idx].id),
       supabase.from('cr_remarques').update({ ordre: sorted[idx].ordre }).eq('id', sorted[swapIdx].id),
-    ])
+    ]))
     await fetchAll()
   }, [sections, fetchAll])
 
@@ -276,25 +359,32 @@ export function useCompteRendu(crId, affaireId) {
 
   // ── Présences ────────────────────────────────────────────────────────────────
   const setPresence = useCallback(async (presenceId, presence) => {
+    setPresences((prev) => prev.map((p) => (p.id === presenceId ? { ...p, presence } : p)))
     const { error } = await supabase.from('cr_presences').update({ presence }).eq('id', presenceId)
-    if (error) throw error
-    await fetchAll()
+    if (error) {
+      await fetchAll()
+      throw error
+    }
   }, [fetchAll])
 
-  const setConvoque = useCallback(async (presenceId, convoque, heure_convocation = null) => {
-    const { error } = await supabase.from('cr_presences').update({ convoque, heure_convocation }).eq('id', presenceId)
-    if (error) throw error
-    await fetchAll()
+  // Convocation et heure, modifiées sans recharger l'écran
+  const updatePresence = useCallback(async (presenceId, changes) => {
+    setPresences((prev) => prev.map((p) => (p.id === presenceId ? { ...p, ...changes } : p)))
+    const { error } = await supabase.from('cr_presences').update(changes).eq('id', presenceId)
+    if (error) {
+      await fetchAll()
+      throw error
+    }
   }, [fetchAll])
 
   return {
-    cr, sections, presences, profiles, loading,
-    syncPresences, updateCr,
+    cr, sections, presences, profiles, loading, erreurChargement,
+    syncPresences, updateCr, emettre, rouvrir, updatePresence,
     addSection, updateSection, deleteSection, reorderSection, reorderSectionsByIds,
     addSousSection, updateSousSection, deleteSousSection, reorderSousSection,
     addRemarque, addSectionRemarque, updateRemarque, deleteRemarque, reorderRemarque, reorderSectionRemarque,
     addSousRemarque,
-    setPresence, setConvoque,
+    setPresence,
     refetch: fetchAll,
   }
 }

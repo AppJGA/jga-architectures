@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import {
   ArrowLeft, ArrowRight, Send, FileText, FileDown, ChevronRight,
   Users, ClipboardList, MessageSquare, Zap, LayoutDashboard,
+  Lock, RotateCcw, AlertTriangle, X,
 } from 'lucide-react'
 import { useCompteRendu } from '../../../shared/hooks/useCompteRendu'
 import { useAffaireInterlocuteurs } from '../../../shared/hooks/useAffaireInterlocuteurs'
@@ -10,6 +11,8 @@ import { CrPresences } from './CrPresences'
 import { CrSectionEditor } from './CrSectionEditor'
 import { TemplateModal } from './TemplateModal'
 import { generateCrPdf } from './CrPdfExport'
+import { compterPresents } from './crLogique'
+import { CrContexte, useCr } from './CrContexte'
 
 // ─── Styles partagés ──────────────────────────────────────────────────────────
 
@@ -78,6 +81,7 @@ function OrganisationView({ cr, profiles, updateCr, onApplyTemplate, lots, inter
   const [form, setForm] = useState({})
   const [saving, setSaving] = useState(false)
   const [templateOpen, setTemplateOpen] = useState(false)
+  const { lectureSeule, signalerErreur } = useCr()
 
   useEffect(() => {
     if (cr) setForm({
@@ -101,12 +105,13 @@ function OrganisationView({ cr, profiles, updateCr, onApplyTemplate, lots, inter
         heure_prochaine_reunion: form.heure_prochaine_reunion || null,
         redacteur_id: form.redacteur_id || null,
       })
-    } catch (err) { console.error(err) }
+    } catch (err) { signalerErreur(err) }
     setSaving(false)
   }
 
   return (
     <div style={{ maxWidth: 600 }}>
+      <fieldset disabled={lectureSeule} style={{ border: 'none', margin: 0, padding: 0, minWidth: 0 }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
         <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: 12 }}>
@@ -141,7 +146,7 @@ function OrganisationView({ cr, profiles, updateCr, onApplyTemplate, lots, inter
           </select>
         </div>
 
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+        {!lectureSeule && <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
           <button
             onClick={handleSave} disabled={saving}
             style={{ padding: '7px 16px', borderRadius: 2, fontSize: 12, fontWeight: 500, border: 'none', backgroundColor: '#2A8A4E', color: 'white', cursor: 'pointer', opacity: saving ? 0.6 : 1 }}
@@ -154,10 +159,11 @@ function OrganisationView({ cr, profiles, updateCr, onApplyTemplate, lots, inter
           >
             <Zap size={13} /> Appliquer un template de sections
           </button>
-        </div>
+        </div>}
       </div>
+      </fieldset>
 
-      {templateOpen && (
+      {templateOpen && !lectureSeule && (
         <TemplateModal
           affaireId={cr.affaire_id}
           crId={cr.id}
@@ -175,6 +181,7 @@ function OrganisationView({ cr, profiles, updateCr, onApplyTemplate, lots, inter
 
 function ExportView({ cr, sections, presences, affaire, lotEntreprises, interlocuteurs }) {
   const num = String(cr.numero).padStart(2, '0')
+  const [bloque, setBloque] = useState(false)
   return (
     <div style={{ textAlign: 'center', padding: '40px 0' }}>
       <div style={{ width: 72, height: 72, borderRadius: '50%', background: '#FAF7F2', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
@@ -189,10 +196,10 @@ function ExportView({ cr, sections, presences, affaire, lotEntreprises, interloc
           : 'Date non définie'}
       </p>
       <button
-        onClick={() => generateCrPdf(cr, sections, presences, affaire, {
+        onClick={() => setBloque(!generateCrPdf(cr, sections, presences, affaire, {
           lots: lotEntreprises.map(le => le.lots).filter(Boolean),
           interlocuteurs,
-        })}
+        }))}
         style={{
           display: 'inline-flex', alignItems: 'center', gap: 8,
           padding: '10px 24px', borderRadius: 2, fontSize: 13, fontWeight: 500,
@@ -201,9 +208,15 @@ function ExportView({ cr, sections, presences, affaire, lotEntreprises, interloc
       >
         <FileDown size={15} /> Générer le PDF
       </button>
-      <p style={{ fontSize: 11, color: '#9C9591', marginTop: 12 }}>
-        Une fenêtre s'ouvrira avec l'aperçu avant impression.
-      </p>
+      {bloque ? (
+        <p role="alert" style={{ fontSize: 12, color: '#B8412C', marginTop: 12 }}>
+          Le navigateur a bloqué la fenêtre d’aperçu. Autorisez les fenêtres pop-up pour ce site, puis cliquez à nouveau.
+        </p>
+      ) : (
+        <p style={{ fontSize: 11, color: '#9C9591', marginTop: 12 }}>
+          Une fenêtre s'ouvrira avec l'aperçu avant impression.
+        </p>
+      )}
     </div>
   )
 }
@@ -269,7 +282,7 @@ function TuileVue({ vue, titre, sousTitre, onClick }) {
   )
 }
 
-function CrAccueil({ cr, affaire, presences, sections, onNavigate, onOuvrirSection, onEmit }) {
+function CrAccueil({ cr, affaire, presences, sections, onNavigate, onOuvrirSection, onEmettre, peutModifier }) {
   const [survolEditeur, setSurvolEditeur] = useState(false)
   const dateLabel = cr.date_reunion
     ? new Date(cr.date_reunion + 'T00:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })
@@ -282,7 +295,7 @@ function CrAccueil({ cr, affaire, presences, sections, onNavigate, onOuvrirSecti
   }))
 
   const convoques = presences.filter(p => p.convoque).length
-  const presents = presences.filter(p => p.presence === 'P').length
+  const presents = compterPresents(presences)
 
   const vueOrga = VUES.find(v => v.id === 'organisation')
   const vuePresences = VUES.find(v => v.id === 'presences')
@@ -312,20 +325,22 @@ function CrAccueil({ cr, affaire, presences, sections, onNavigate, onOuvrirSecti
         }}>
           {cr.statut === 'emis' ? 'Émis' : 'Brouillon'}
         </span>
-        <button
-          onClick={onEmit}
-          style={{
-            display: 'inline-flex', alignItems: 'center', gap: 6,
-            padding: '8px 16px', borderRadius: 2, fontSize: 12, fontWeight: 500,
-            border: '0.5px solid rgba(0,0,0,0.15)', backgroundColor: 'white',
-            color: '#1F1B17', cursor: 'pointer',
-          }}
-          onMouseEnter={e => { e.currentTarget.style.borderColor = '#2A8A4E'; e.currentTarget.style.color = '#2A8A4E' }}
-          onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(0,0,0,0.15)'; e.currentTarget.style.color = '#1F1B17' }}
-        >
-          <Send size={13} />
-          {cr.statut === 'emis' ? 'Repasser en brouillon' : 'Émettre le CR'}
-        </button>
+        {/* Émis : la réouverture se fait depuis le bandeau au-dessus */}
+        {peutModifier && cr.statut !== 'emis' && (
+          <button
+            onClick={onEmettre}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              padding: '8px 16px', borderRadius: 2, fontSize: 12, fontWeight: 500,
+              border: '0.5px solid rgba(0,0,0,0.15)', backgroundColor: 'white',
+              color: '#1F1B17', cursor: 'pointer',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = '#2A8A4E'; e.currentTarget.style.color = '#2A8A4E' }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(0,0,0,0.15)'; e.currentTarget.style.color = '#1F1B17' }}
+          >
+            <Send size={13} /> Émettre le CR
+          </button>
+        )}
       </div>
 
       {/* Bloc principal : les remarques */}
@@ -351,7 +366,6 @@ function CrAccueil({ cr, affaire, presences, sections, onNavigate, onOuvrirSecti
               {toutesRemarques.length === 0
                 ? 'Aucune remarque pour l’instant'
                 : `${toutesRemarques.length} remarque${toutesRemarques.length > 1 ? 's' : ''} réparties en ${sections.length} section${sections.length > 1 ? 's' : ''}`}
-              {cr.numero > 1 && toutesRemarques.length > 0 && ` · reprises du CR n°${cr.numero - 1}`}
             </p>
           </div>
           <button
@@ -368,7 +382,7 @@ function CrAccueil({ cr, affaire, presences, sections, onNavigate, onOuvrirSecti
               transition: 'transform 0.18s cubic-bezier(0.22,1,0.36,1), background 0.18s ease',
             }}
           >
-            Ouvrir l'éditeur
+            {cr.statut === 'emis' || !peutModifier ? 'Consulter' : "Ouvrir l'éditeur"}
             <ArrowRight size={15} strokeWidth={1.8} />
           </button>
         </div>
@@ -468,11 +482,97 @@ function defilerVersSection(sectionId, essais = 2) {
   })
 }
 
-export function CrDetail({ crId, affaire, onBack }) {
+// ─── Bandeaux ─────────────────────────────────────────────────────────────────
+
+function fmtDateHeure(iso) {
+  const d = new Date(iso)
+  return `${d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })} à ${d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`
+}
+
+function BandeauEmis({ cr, peutModifier, onRouvrir }) {
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+      background: 'rgba(42,138,78,0.08)', border: '0.5px solid rgba(42,138,78,0.35)',
+      borderLeft: '3px solid #2A8A4E', padding: '10px 14px', marginBottom: 16,
+      fontSize: 12, color: '#1F1B17',
+    }}>
+      <Lock size={14} color="#2A8A4E" strokeWidth={1.8} />
+      <span style={{ flex: 1, minWidth: 200 }}>
+        Compte rendu émis{cr.date_emission ? ` le ${fmtDateHeure(cr.date_emission)}` : ''} : il n’est plus modifiable.
+      </span>
+      {peutModifier && (
+        <button onClick={onRouvrir} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 12px', borderRadius: 2, fontSize: 12, border: '0.5px solid rgba(0,0,0,0.15)', background: 'white', color: '#1F1B17', cursor: 'pointer' }}>
+          <RotateCcw size={12} /> Rouvrir
+        </button>
+      )}
+    </div>
+  )
+}
+
+function BandeauErreur({ message, onFermer }) {
+  return (
+    <div role="alert" style={{
+      display: 'flex', alignItems: 'flex-start', gap: 10,
+      background: 'rgba(184,65,44,0.08)', border: '0.5px solid rgba(184,65,44,0.4)',
+      borderLeft: '3px solid #B8412C', padding: '10px 14px', marginBottom: 16,
+      fontSize: 12, color: '#7A2A1C', position: 'sticky', top: 0, zIndex: 20,
+    }}>
+      <AlertTriangle size={14} color="#B8412C" strokeWidth={1.8} style={{ flexShrink: 0, marginTop: 1 }} />
+      <span style={{ flex: 1 }}>
+        <strong>La modification n’a pas été enregistrée.</strong> {message}
+      </span>
+      <button onClick={onFermer} title="Fermer" data-compact style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#B8412C', padding: 2 }}>
+        <X size={14} />
+      </button>
+    </div>
+  )
+}
+
+// Confirmation d'émission ou de réouverture
+function ModaleConfirmation({ titre, texte, libelle, couleur, onConfirmer, onAnnuler }) {
+  const [enCours, setEnCours] = useState(false)
+  return (
+    <div onClick={onAnnuler} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.3)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div role="dialog" aria-modal="true" onClick={e => e.stopPropagation()} style={{ background: 'white', padding: '24px 28px', maxWidth: 440, width: '100%', border: '0.5px solid rgba(0,0,0,0.08)' }}>
+        <p style={{ fontSize: 15, fontWeight: 500, color: '#1F1B17', marginBottom: 10 }}>{titre}</p>
+        <p style={{ fontSize: 13, color: '#5E5854', lineHeight: 1.6, marginBottom: 22 }}>{texte}</p>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button onClick={onAnnuler} style={{ padding: '8px 16px', borderRadius: 2, border: '0.5px solid rgba(0,0,0,0.15)', background: 'transparent', fontSize: 13, cursor: 'pointer', color: '#374151' }}>
+            Annuler
+          </button>
+          <button
+            disabled={enCours}
+            onClick={async () => { setEnCours(true); await onConfirmer(); setEnCours(false) }}
+            style={{ padding: '8px 16px', borderRadius: 2, border: 'none', background: couleur, color: 'white', fontSize: 13, fontWeight: 500, cursor: 'pointer', opacity: enCours ? 0.6 : 1 }}
+          >
+            {enCours ? 'Enregistrement…' : libelle}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Message lisible pour une erreur Supabase ou JavaScript
+function messageErreur(err) {
+  const brut = err?.message ?? String(err)
+  if (/Failed to fetch|NetworkError/i.test(brut)) return 'Connexion au serveur impossible : vérifiez la connexion internet et réessayez.'
+  return brut
+}
+
+export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffaire = false }) {
   const [activeView, setActiveView] = useState(null)
   const { interlocuteurs } = useAffaireInterlocuteurs(affaire?.id)
   const [lotEntreprises, setLotEntreprises] = useState([])
+  const [erreur, setErreur] = useState(null)
+  const [confirmation, setConfirmation] = useState(null) // 'emettre' | 'rouvrir'
   const syncDone = useRef(false)
+
+  const signalerErreur = useCallback((err) => {
+    console.error(err)
+    setErreur(messageErreur(err))
+  }, [])
 
   useEffect(() => {
     if (!affaire?.id) return
@@ -480,43 +580,88 @@ export function CrDetail({ crId, affaire, onBack }) {
       .from('lot_entreprises')
       .select('id, lot_id, lots(id, numero, nom), entreprises(id, raison_sociale), interlocuteurs:interlocuteur_id(prenom, nom, telephone, email)')
       .eq('affaire_id', affaire.id)
-      .then(({ data }) => setLotEntreprises(data ?? []))
-  }, [affaire?.id])
+      .then(({ data, error }) => {
+        if (error) signalerErreur(error)
+        else setLotEntreprises(data ?? [])
+      })
+  }, [affaire?.id, signalerErreur])
 
   const {
-    cr, sections, presences, profiles, loading,
-    syncPresences, updateCr,
+    cr, sections, presences, profiles, loading, erreurChargement,
+    syncPresences, updateCr, emettre, rouvrir, updatePresence,
     addSection, updateSection, deleteSection, reorderSection, reorderSectionsByIds,
     addSousSection, updateSousSection, deleteSousSection, reorderSousSection,
     addRemarque, addSectionRemarque, updateRemarque, deleteRemarque, reorderRemarque, reorderSectionRemarque,
     addSousRemarque,
-    setPresence, setConvoque, refetch,
+    setPresence, refetch,
   } = useCompteRendu(crId, affaire?.id)
 
+  // Feuille de présence complétée à l'ouverture (rien sur un CR émis, ni pour
+  // qui consulte sans droit de modification)
   useEffect(() => {
-    if (syncDone.current) return
+    if (syncDone.current || lectureSeuleAffaire) return
     syncDone.current = true
-    syncPresences()
+    syncPresences().catch(signalerErreur)
   }, [crId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const ops = {
+  // Chaque écriture signale son échec dans le bandeau, puis relaie l'erreur :
+  // un formulaire ne doit pas se fermer comme si la saisie était enregistrée.
+  const ops = useMemo(() => {
+    const brutes = {
+      addSection, updateSection, deleteSection, reorderSection, reorderSectionsByIds,
+      addSousSection, updateSousSection, deleteSousSection, reorderSousSection,
+      addRemarque, addSectionRemarque, updateRemarque, deleteRemarque, reorderRemarque, reorderSectionRemarque,
+      addSousRemarque,
+    }
+    return Object.fromEntries(Object.entries(brutes).map(([nom, op]) => [nom, async (...args) => {
+      try {
+        setErreur(null)
+        return await op(...args)
+      } catch (err) {
+        signalerErreur(err)
+        throw err
+      }
+    }]))
+  }, [
     addSection, updateSection, deleteSection, reorderSection, reorderSectionsByIds,
     addSousSection, updateSousSection, deleteSousSection, reorderSousSection,
     addRemarque, addSectionRemarque, updateRemarque, deleteRemarque, reorderRemarque, reorderSectionRemarque,
-    addSousRemarque,
+    addSousRemarque, signalerErreur,
+  ])
+
+  const lectureSeule = lectureSeuleAffaire || cr?.statut === 'emis'
+  const contexte = useMemo(() => ({ lectureSeule, signalerErreur }), [lectureSeule, signalerErreur])
+
+  const confirmer = async () => {
+    try {
+      setErreur(null)
+      if (confirmation === 'emettre') await emettre()
+      else await rouvrir()
+    } catch (err) {
+      signalerErreur(err)
+    }
+    setConfirmation(null)
   }
 
-  const handleEmit = async () => {
-    if (!cr) return
-    await updateCr({ statut: cr.statut === 'emis' ? 'brouillon' : 'emis' })
+  if (!loading && !cr && erreurChargement) {
+    return (
+      <div>
+        <button onClick={onBack} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 10px', borderRadius: 2, fontSize: 12, border: '0.5px solid rgba(0,0,0,0.12)', backgroundColor: 'white', color: '#5E5854', cursor: 'pointer', marginBottom: 16 }}>
+          <ArrowLeft size={13} /> Liste des visites
+        </button>
+        <BandeauErreur message={`Le compte rendu n’a pas pu être chargé : ${erreurChargement}`} onFermer={onBack} />
+      </div>
+    )
   }
-
   if (loading || !cr) return <Spinner />
 
   const vueMeta = VUES.find(v => v.id === activeView)
 
   return (
+    <CrContexte.Provider value={contexte}>
     <div>
+      {erreur && <BandeauErreur message={erreur} onFermer={() => setErreur(null)} />}
+
       {/* Navigation */}
       {activeView ? (
         <div style={{ marginBottom: 24 }}>
@@ -552,6 +697,10 @@ export function CrDetail({ crId, affaire, onBack }) {
         </div>
       )}
 
+      {cr.statut === 'emis' && (
+        <BandeauEmis cr={cr} peutModifier={!lectureSeuleAffaire} onRouvrir={() => setConfirmation('rouvrir')} />
+      )}
+
       {/* Contenu */}
       {activeView === null && (
         <CrAccueil
@@ -561,7 +710,8 @@ export function CrDetail({ crId, affaire, onBack }) {
           sections={sections}
           onNavigate={setActiveView}
           onOuvrirSection={(id) => { setActiveView('remarques'); defilerVersSection(id) }}
-          onEmit={handleEmit}
+          onEmettre={() => setConfirmation('emettre')}
+          peutModifier={!lectureSeuleAffaire}
         />
       )}
 
@@ -580,7 +730,7 @@ export function CrDetail({ crId, affaire, onBack }) {
         <CrPresences
           presences={presences}
           setPresence={setPresence}
-          setConvoque={setConvoque}
+          updatePresence={updatePresence}
         />
       )}
 
@@ -604,6 +754,28 @@ export function CrDetail({ crId, affaire, onBack }) {
           interlocuteurs={interlocuteurs}
         />
       )}
+
+      {confirmation === 'emettre' && (
+        <ModaleConfirmation
+          titre={`Émettre le compte rendu n°${cr.numero} ?`}
+          texte="Une fois émis, le compte rendu est verrouillé : présences, sections et remarques ne sont plus modifiables. Vous pourrez le rouvrir si une correction s’impose."
+          libelle="Émettre"
+          couleur="#2A8A4E"
+          onConfirmer={confirmer}
+          onAnnuler={() => setConfirmation(null)}
+        />
+      )}
+      {confirmation === 'rouvrir' && (
+        <ModaleConfirmation
+          titre={`Rouvrir le compte rendu n°${cr.numero} ?`}
+          texte="Il repasse en brouillon et redevient modifiable. Pensez à l’émettre à nouveau après correction : les destinataires ont peut-être déjà reçu la version émise."
+          libelle="Rouvrir"
+          couleur="#E8602C"
+          onConfirmer={confirmer}
+          onAnnuler={() => setConfirmation(null)}
+        />
+      )}
     </div>
+    </CrContexte.Provider>
   )
 }

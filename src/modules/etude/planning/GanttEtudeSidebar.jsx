@@ -5,7 +5,7 @@ import { clePhase } from './snapshotDiffEtude'
 
 export const HEADER_HEIGHT = 56
 
-export function GanttEtudeSidebar({ phases, onEdit, criticalIds, onReorder, rowHeight = 44 }) {
+export function GanttEtudeSidebar({ phases, onEdit, criticalIds, onReorder, rowHeight = 44, phaseSelectionneeId = null }) {
   const [draggedId, setDraggedId]   = useState(null)
   const [dragOverId, setDragOverId] = useState(null)
 
@@ -63,6 +63,7 @@ export function GanttEtudeSidebar({ phases, onEdit, criticalIds, onReorder, rowH
           rowHeight={rowHeight}
           onEdit={onEdit}
           isCritical={criticalIds?.has(phase.id) ?? false}
+          selectionnee={phase.id != null && phase.id === phaseSelectionneeId}
           isDragging={draggedId === phase.id}
           isDragOver={dragOverId === phase.id}
           onDragStart={handleDragStart}
@@ -76,7 +77,7 @@ export function GanttEtudeSidebar({ phases, onEdit, criticalIds, onReorder, rowH
 }
 
 function PhaseRow({
-  phase, rowHeight, onEdit, isCritical,
+  phase, rowHeight, onEdit, isCritical, selectionnee = false,
   isDragging, isDragOver,
   onDragStart, onDragEnd, onDragOver, onDrop,
 }) {
@@ -86,11 +87,14 @@ function PhaseRow({
 
   // Les phases MOE/chantier sont un cran au-dessus des lignes secondaires,
   // l'écart étant conservé quelle que soit la densité.
+  // Phase touchée sur la timeline (menu radial) : repérée ici aussi, la barre
+  // pouvant être loin du nom à l'écran
+  const accent = hovered || selectionnee
   const nameStyle = {
-    etude:         { fontSize, fontWeight: 600, color: hovered ? '#E8602C' : '#1F1B17', fontStyle: 'normal', marginLeft: 0 },
-    validation:    { fontSize: numFontSize + 1, fontWeight: 400, color: hovered ? '#E8602C' : '#4b5563', fontStyle: 'normal', marginLeft: 8 },
-    administratif: { fontSize: numFontSize + 1, fontWeight: 400, color: hovered ? '#E8602C' : '#92400E', fontStyle: 'italic', marginLeft: 0 },
-    chantier:      { fontSize, fontWeight: 500, color: hovered ? '#E8602C' : '#1e40af', fontStyle: 'normal', marginLeft: 0 },
+    etude:         { fontSize, fontWeight: 600, color: accent ? '#E8602C' : '#1F1B17', fontStyle: 'normal', marginLeft: 0 },
+    validation:    { fontSize: numFontSize + 1, fontWeight: 400, color: accent ? '#E8602C' : '#4b5563', fontStyle: 'normal', marginLeft: 8 },
+    administratif: { fontSize: numFontSize + 1, fontWeight: 400, color: accent ? '#E8602C' : '#92400E', fontStyle: 'italic', marginLeft: 0 },
+    chantier:      { fontSize, fontWeight: 500, color: accent ? '#E8602C' : '#1e40af', fontStyle: 'normal', marginLeft: 0 },
   }[phase.type_tache] ?? { fontSize, fontWeight: 400, color: '#1F1B17', fontStyle: 'normal', marginLeft: 0 }
 
   return (
@@ -106,7 +110,7 @@ function PhaseRow({
         paddingRight: 12,
         borderBottom: '0.5px solid rgba(0,0,0,0.06)',
         borderTop: isDragOver ? '2px solid var(--jga-orange)' : '2px solid transparent',
-        backgroundColor: isDragging
+        backgroundColor: isDragging || selectionnee
           ? 'rgba(224,90,30,0.06)'
           : hovered ? 'rgba(155,143,133,0.06)' : 'transparent',
         opacity: isDragging ? 0.5 : 1,

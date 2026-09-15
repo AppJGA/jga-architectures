@@ -1,8 +1,8 @@
 import { useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo } from 'react'
-import { X, ZoomIn, ZoomOut } from 'lucide-react'
+import { X, ZoomIn, ZoomOut, Trash2 } from 'lucide-react'
 import { supabase } from '../../../core/supabase/client'
 import {
-  calculerModificationPhase, recalerPhasesDependantes, creeraitUnCycle,
+  calculerModificationPhase, recalerPhasesDependantes, creeraitUnCycle, finEffectivePhase,
   addWeeks, weeksBetween, getCurrentWeek,
   getNextAvailableSemaine, TYPE_COLORS, adminGradient, densityFromRowHeight,
 } from './types'
@@ -10,7 +10,7 @@ import { computeCriticalPath } from './computeCriticalPath'
 import { usePlanningEtude } from '../../../shared/hooks/usePlanningEtude'
 import { usePlanningEtudeSegments } from '../../../shared/hooks/usePlanningEtudeSegments'
 import { useUndoRedo } from '../../../shared/hooks/useUndoRedo'
-import { diffSnapshotsEtude, diffEstVide, estPhasePersistee, clePhase } from './snapshotDiffEtude'
+import { diffSnapshotsEtude, diffEstVide, estPhasePersistee, clePhase, COLONNES_PHASE } from './snapshotDiffEtude'
 import { rapprocherPhasesNotion } from './rapprochementNotion'
 import { usePeriodesBloquees } from '../../../shared/hooks/usePeriodesBloquees'
 import { useNotionSync } from '../../../shared/hooks/useNotionSync'
@@ -62,7 +62,7 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
   // ── Historique annuler / rétablir ───────────────────────────────────────────
   const historique = useUndoRedo(20)
   const {
-    saveSnapshot, beginPending, commitPending,
+    saveSnapshot, beginPending, commitPending, retirerDernier,
     undo, redo, reset: resetHistorique, canUndo, canRedo,
   } = historique
 
@@ -143,6 +143,10 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
   const [showConnections, setShowConnections] = useState(true)
   const [editingPhase, setEditingPhase] = useState(null)
   const [showPhaseModal, setShowPhaseModal] = useState(false)
+  // Menu radial : phase touchée sur la timeline (repérée dans la sidebar) et
+  // phase dont la suppression attend confirmation
+  const [phaseSelectionneeId, setPhaseSelectionneeId] = useState(null)
+  const [phaseASupprimer, setPhaseASupprimer] = useState(null)
   const [phaseModalMode, setPhaseModalMode] = useState('edit')
   const [showJalonsModal, setShowJalonsModal] = useState(false)
   const [showExportModal, setShowExportModal] = useState(false)
@@ -404,6 +408,36 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
     replaceSegments(segments.filter((sg) => sg.phase_id !== id))
     return true
   }, [deletePhase, phases, segments, replaceSegments, saveSnapshot, takeSnapshot, refetch, signalerErreur])
+
+  // ── Duplication (menu radial) ─────────────────────────────────────────────────
+  // La copie se place juste sous l'original et démarre la semaine qui suit sa
+  // fin effective ; elle n'hérite pas de sa liaison, qui la ferait démarrer
+  // avec l'original.
+  const handleDuplicatePhase = useCallback(async (phase) => {
+    if (phase?.id == null) return
+    const fin = finEffectivePhase(phase, periodes)
+    const ordre = (Number(phase.ordre) || 0) + 1
+    const suivantes = phases.filter((p) => estPhasePersistee(p) && p.id !== phase.id && (Number(p.ordre) || 0) >= ordre)
+    const copie = {
+      ...Object.fromEntries(COLONNES_PHASE.map((c) => [c, phase[c] ?? null])),
+      affaire_id: affaireId,
+      nom: `${phase.nom} (copie)`,
+      semaine_debut: fin.semaine, annee_debut: fin.annee,
+      depends_on: null, lag_semaines: 0, ordre,
+    }
+    saveSnapshot(takeSnapshot(`Duplication « ${phase.nom} »`))
+    const resultats = await Promise.all([
+      supabase.from('planning_etude_phases').insert([copie]),
+      ...suivantes.map((p) =>
+        supabase.from('planning_etude_phases').update({ ordre: (Number(p.ordre) || 0) + 1 }).eq('id', p.id)),
+    ])
+    const echec = resultats.find((r) => r?.error)
+    if (echec) {
+      retirerDernier()
+      signalerErreur(`Duplication impossible — ${echec.error.message}`)
+    }
+    await refetch()
+  }, [phases, periodes, affaireId, saveSnapshot, takeSnapshot, retirerDernier, signalerErreur, refetch])
 
   // ── Réordonnancement par drag & drop ─────────────────────────────────────────
   const handleReorder = useCallback(async (reorderedPhases) => {
@@ -762,6 +796,7 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
             onEdit={p => { setEditingPhase(p); setPhaseModalMode('edit'); setShowPhaseModal(true) }}
             criticalIds={criticalIds}
             onReorder={handleReorder}
+            phaseSelectionneeId={phaseSelectionneeId}
           />
         </div>
 
@@ -798,6 +833,10 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
             drawMode={drawMode}
             onDrawCreate={handleDrawCreate}
             rowHeight={rowHeight}
+            scrollRef={timelineRef}
+            onPhaseDuplicate={handleDuplicatePhase}
+            onPhaseDelete={setPhaseASupprimer}
+            onSelectionChange={setPhaseSelectionneeId}
           />
         </div>
 
@@ -1045,6 +1084,57 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
         updatePeriode={handleUpdatePeriode}
         deletePeriode={handleDeletePeriode}
       />
+
+      {/* Confirmation de suppression demandée depuis le menu radial */}
+      {phaseASupprimer && (
+        <div style={{
+          position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)',
+          zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <div style={{
+            backgroundColor: 'white', padding: '28px 32px', maxWidth: 420, width: '100%',
+            border: '0.5px solid rgba(0,0,0,0.08)', boxShadow: '0 8px 40px rgba(0,0,0,0.12)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+              <div style={{
+                width: 36, height: 36, borderRadius: 2, backgroundColor: '#FEF2F2',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+              }}>
+                <Trash2 size={18} style={{ color: '#B8412C' }} />
+              </div>
+              <span style={{ fontSize: 15, fontWeight: 500, color: '#1F1B17' }}>Supprimer la phase</span>
+            </div>
+            <p style={{ fontSize: 13, color: '#5E5854', lineHeight: 1.6, marginBottom: 20 }}>
+              La phase <strong style={{ color: '#1F1B17' }}>{phaseASupprimer.nom}</strong> et ses segments
+              vont être supprimés. Les phases qui en dépendaient perdent leur liaison.
+            </p>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setPhaseASupprimer(null)}
+                style={{
+                  padding: '0 16px', minHeight: 40, borderRadius: 2, fontSize: 13, cursor: 'pointer',
+                  border: '0.5px solid rgba(0,0,0,0.15)', backgroundColor: 'transparent', color: '#374151',
+                }}
+              >
+                Annuler
+              </button>
+              <button
+                onClick={async () => {
+                  const id = phaseASupprimer.id
+                  setPhaseASupprimer(null)
+                  await handleDeletePhase(id)
+                }}
+                style={{
+                  padding: '0 16px', minHeight: 40, borderRadius: 2, fontSize: 13, fontWeight: 500,
+                  border: 'none', backgroundColor: '#B8412C', color: 'white', cursor: 'pointer',
+                }}
+              >
+                Supprimer définitivement
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {notionToast && (
         <Toast

@@ -1,9 +1,10 @@
-// ─── Menu radial d'une barre de tâche ─────────────────────────────────────────
+// ─── Menu radial d'une barre de planning ──────────────────────────────────────
 //
-// Repris du composant Claude Design « Editeur Gantt - menu radial » (variante B).
-// Toucher une barre ouvre une couronne d'actions autour d'elle, pensée pour le
-// doigt : de grandes cibles plutôt que les micro-boutons qui n'apparaissaient
-// qu'au survol, et qu'une tablette ne peut donc pas atteindre.
+// Repris du composant Claude Design « Editeur Gantt - menu radial » (variante B),
+// commun aux plannings chantier (tâches) et étude (phases). Toucher une barre
+// ouvre une couronne d'actions autour d'elle, pensée pour le doigt : de grandes
+// cibles plutôt que les micro-boutons qui n'apparaissaient qu'au survol, et
+// qu'une tablette ne peut donc pas atteindre.
 //
 // Tout est positionné dans le repère du corps de la timeline (celui des lignes
 // et des flèches) : `left`/`width` de la barre, `haut` de sa ligne.
@@ -43,11 +44,15 @@ const DISQUE = 68
 /**
  * Voile, barre mise en avant et couronne d'actions.
  *
- * @param barre { left, width, haut, hauteurLigne, barPad, couleur }
+ * @param barre { left, width, haut, hauteurLigne, barPad, fond, fragments? }
+ *              `fond` : valeurs CSS de remplissage de la barre ; `fragments` :
+ *              [{ left, width }] quand des fermetures coupent la barre
+ * @param objet 'tâche' | 'phase', pour les libellés d'accessibilité
  */
-export function MenuRadialTache({ barre, numero, duree, onAction, onFermer }) {
+export function MenuRadial({ barre, numero, duree, objet = 'tâche', onAction, onFermer }) {
   const centreX = barre.left + barre.width / 2
   const centreY = barre.haut + barre.hauteurLigne / 2
+  const morceaux = barre.fragments ?? [{ left: barre.left, width: barre.width }]
 
   return (
     <>
@@ -57,22 +62,28 @@ export function MenuRadialTache({ barre, numero, duree, onAction, onFermer }) {
         onClick={(e) => { e.stopPropagation(); onFermer() }}
         style={{ position: 'absolute', inset: 0, zIndex: 44 }}
       />
-      {/* Le voile visible est l'ombre portée de la barre mise en avant : une
-          ombre ne compte pas dans le débordement défilable, alors qu'un calque
-          plus haut que les lignes ajouterait une barre de défilement fantôme.
-          Le calque ci-dessus, lui, ne sert qu'à capter le clic de fermeture. */}
+      {/* Le voile visible est l'ombre d'un point posé sous la barre : une ombre
+          ne compte pas dans le débordement défilable, alors qu'un calque plus
+          haut que les lignes ajouterait une barre de défilement fantôme. Le
+          calque ci-dessus, lui, ne sert qu'à capter le clic de fermeture. */}
       <div className="jga-voile" style={{
-        position: 'absolute', zIndex: 45, pointerEvents: 'none',
-        left: barre.left, width: barre.width,
-        top: barre.haut + barre.barPad, height: barre.hauteurLigne - barre.barPad * 2,
-        background: barre.couleur, border: '2px solid #E8602C',
-        boxShadow: '0 6px 20px rgba(0,0,0,0.35), 0 0 0 200vmax rgba(31,27,23,0.32)',
-        boxSizing: 'border-box',
+        position: 'absolute', zIndex: 44, pointerEvents: 'none',
+        left: centreX, top: centreY, width: 0, height: 0,
+        boxShadow: '0 0 0 200vmax rgba(31,27,23,0.32)',
       }} />
+      {morceaux.map((m, i) => (
+        <div key={i} className="jga-voile" style={{
+          position: 'absolute', zIndex: 45, pointerEvents: 'none',
+          left: m.left, width: m.width,
+          top: barre.haut + barre.barPad, height: barre.hauteurLigne - barre.barPad * 2,
+          ...barre.fond, border: '2px solid #E8602C',
+          boxShadow: '0 6px 20px rgba(0,0,0,0.35)', boxSizing: 'border-box',
+        }} />
+      ))}
 
       <div
         role="menu"
-        aria-label={`Actions sur la tâche ${numero}`}
+        aria-label={`Actions sur la ${objet} ${numero}`}
         style={{ position: 'absolute', left: centreX, top: centreY, width: 0, height: 0, zIndex: 60 }}
       >
         <div className="jga-disque" style={{
@@ -118,7 +129,7 @@ export function MenuRadialTache({ barre, numero, duree, onAction, onFermer }) {
  * @param mode 'move' | 'resize'
  * @param ecart texte de l'écart du geste en cours (« +3 j »)
  */
-export function EditionBarre({ barre, mode, ecart, onPoigneeDown, onTerminer }) {
+export function EditionBarre({ barre, mode, ecart, objet = 'tâche', onPoigneeDown, onTerminer }) {
   const poignee = {
     position: 'absolute', top: barre.haut + barre.hauteurLigne / 2 - 22, height: 44,
     background: '#FFFFFF', border: '2px solid #E8602C', borderRadius: 4, boxSizing: 'border-box',
@@ -140,7 +151,7 @@ export function EditionBarre({ barre, mode, ecart, onPoigneeDown, onTerminer }) 
 
       {mode === 'move' ? (
         <div
-          aria-label="Glisser pour déplacer la tâche"
+          aria-label={`Glisser pour déplacer la ${objet}`}
           onPointerDown={(e) => onPoigneeDown(e, 'move')}
           style={{ ...poignee, left: barre.left + barre.width / 2 - 34, width: 68, gap: 3 }}
         >
@@ -197,8 +208,8 @@ export function EditionBarre({ barre, mode, ecart, onPoigneeDown, onTerminer }) 
   )
 }
 
-// Bandeau du mode Lier : la tâche touchée ensuite devient la suivante
-export function BandeauLien({ onAnnuler }) {
+// Bandeau du mode Lier : la barre touchée ensuite devient la suivante
+export function BandeauLien({ objet = 'tâche', onAnnuler }) {
   return (
     <div style={{
       position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', zIndex: 70,
@@ -207,7 +218,7 @@ export function BandeauLien({ onAnnuler }) {
       display: 'flex', alignItems: 'center', gap: 10, whiteSpace: 'nowrap',
     }}>
       <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#FFFFFF' }} />
-      Sélectionnez la tâche qui doit suivre
+      Sélectionnez la {objet} qui doit suivre
       <button
         type="button"
         onClick={onAnnuler}

@@ -1,10 +1,12 @@
-import { useMemo, useRef, useCallback, useState, useEffect } from 'react'
-import { Pencil, GitBranch } from 'lucide-react'
+import { useMemo, useRef, useCallback, useState, useEffect, useLayoutEffect } from 'react'
+import { GitBranch } from 'lucide-react'
+import { MenuRadial, EditionBarre, BandeauLien } from '../../../shared/planning/MenuRadial'
+import { recadrerSurBarre } from '../../../shared/planning/recadrage'
 import {
   getWeekStart, addWeeks, weeksBetween, getCurrentWeek, computeLagSemaines,
   getPhaseCouleur, adminGradient, rowMetrics,
   weekOfDate, computePhaseFragments, finEffectivePhase, distributeSegmentsAcrossFragments,
-  ancetresPhase, creeraitUnCycle,
+  creeraitUnCycle,
 } from './types'
 import { clePhase } from './snapshotDiffEtude'
 
@@ -29,11 +31,12 @@ const HEADER_HEIGHT = 56
 
 const dragState = { moved: false }
 
-// Vrai entre le début d'une connexion et le clic qui la termine ou l'annule.
-// Le `click` est dispatché APRÈS le `mouseup` qui a déjà remis `connectingFrom`
-// à null : l'état React ne permet donc pas de filtrer ce clic-là, d'où ce
-// drapeau hors rendu (même principe que `dragState.moved`).
-const connectionState = { pending: false }
+// Libellé court d'une phase pour le disque central du menu radial : le premier
+// mot de son nom (« ESQ », « APS », « Dépôt »), le planning d'étude n'ayant pas
+// de numéros de tâche.
+function libelleCourt(nom) {
+  return String(nom ?? '').trim().split(/[\s–—-]+/)[0].slice(0, 7) || '—'
+}
 
 // Hauteur et marges dérivées de la prop `rowHeight` (cf. rowMetrics dans
 // types.js) — plus aucune constante figée ici.
@@ -56,6 +59,7 @@ export function GanttEtudeTimeline({
   periodes = [],
   drawMode = false, onDrawCreate,
   rowHeight = 44,
+  onPhaseDuplicate, onPhaseDelete, onSelectionChange, scrollRef = null,
 }) {
   const metrics = rowMetrics(rowHeight)
   // ── Reference week — reçue depuis GanttEtude (dynamique, -4 sem de marge) ─────
@@ -147,24 +151,44 @@ export function GanttEtudeTimeline({
   const [draggingBar, setDraggingBar] = useState(null)
   const [dragPreview, setDragPreview] = useState(null)
 
+  // ── Menu radial ───────────────────────────────────────────────────────────────
+  // { phaseId, mode: 'menu' | 'move' | 'resize' | 'lien' } — toucher une barre
+  // ouvre le menu ; Déplacer et Allonger passent en mode édition, Lier attend
+  // la phase suivante.
+  const [selection, setSelection] = useState(null)
+  // En mode dessin, le geste crée une phase : aucune sélection n'y survit
+  const selectionPhase = selection && !drawMode ? phases.find((p) => p.id === selection.phaseId) ?? null : null
+
+  useEffect(() => { onSelectionChange?.(selectionPhase?.id ?? null) }, [selectionPhase?.id, onSelectionChange])
+
+  // À la souris, une barre se glisse directement. Au doigt, seulement en mode
+  // Déplacer ou Allonger de cette phase : ailleurs le geste reste un toucher,
+  // qui ouvre le menu radial.
   const startBarDrag = useCallback((e, phase, type) => {
     if (drawMode) return   // en mode dessin, le geste crée une phase
-    // Phase venue de Notion, absente de la base : il n'y a rien à enregistrer
-    if (phase.id == null) return
+    if (e.pointerType === 'mouse' && e.button !== 0) return
     e.preventDefault(); e.stopPropagation()
+    // Une phase Notion n'a pas d'id : sans le test sur `selection`, undefined
+    // === undefined la ferait passer pour la phase sélectionnée
+    const enEdition = selection != null && phase.id != null && selection.phaseId === phase.id
+      && (selection.mode === 'move' || selection.mode === 'resize')
     dragState.moved = false
     barDragRef.current = {
-      type, phaseId: phase.id,
-      startX: e.clientX,
+      type, phaseId: phase.id, phase,
+      startX: e.clientX, startY: e.clientY,
       origSemaine: phase.semaine_debut,
       origAnnee: phase.annee_debut,
       origDuree: phase.duree_semaines,
+      // Phase venue de Notion, absente de la base : il n'y a rien à enregistrer
+      glissable: phase.id != null && (e.pointerType === 'mouse' || enEdition),
+      pointerType: e.pointerType,
+      moved: false,
       lastDelta: 0,
     }
-    setDraggingBar(phase.id)
+    setDraggingBar(clePhase(phase))
     setDragPreview(null)
-    document.body.style.cursor = type === 'move' ? 'grabbing' : 'ew-resize'
-  }, [drawMode])
+    if (e.pointerType === 'mouse') document.body.style.cursor = type === 'move' ? 'grabbing' : 'ew-resize'
+  }, [drawMode, selection])
 
   // Nouvelle géométrie d'une phase après un déplacement de `delta` semaines —
   // partagée par l'aperçu et l'enregistrement, pour qu'ils ne divergent jamais.
@@ -328,19 +352,23 @@ export function GanttEtudeTimeline({
     }
   }, [drawState, refWeek, semWidth])
 
-  // ── Connections ───────────────────────────────────────────────────────────────
-  const [connectingFrom, setConnectingFrom] = useState(null)
-  const [mousePos, setMousePos] = useState({ x: 0, y: 0 })
-  const [hoveredPoint, setHoveredPoint] = useState(null)
+  // ── Liaisons ──────────────────────────────────────────────────────────────────
   const [hoveredArrowId, setHoveredArrowId] = useState(null)
   const [deletingArrow, setDeletingArrow] = useState(null)
   const svgRef = useRef(null)
 
+  // Phases telles qu'affichées : l'aperçu du geste en cours y est intégré, pour
+  // que les flèches suivent la barre pendant qu'on la glisse.
+  const phasesAffichees = useMemo(
+    () => (dragPreview ? phases.map((p) => (p.id === dragPreview.id ? { ...p, ...dragPreview } : p)) : phases),
+    [phases, dragPreview]
+  )
+
   const arrows = useMemo(() =>
-    phases
+    phasesAffichees
       .filter(p => p.depends_on != null)
       .map(p => {
-        const fromPhase = phases.find(x => x.id === p.depends_on)
+        const fromPhase = phasesAffichees.find(x => x.id === p.depends_on)
         if (!fromPhase) return null
         const fromOffset = rowOffsets[fromPhase.id]
         const toOffset = rowOffsets[p.id]
@@ -369,145 +397,188 @@ export function GanttEtudeTimeline({
         }
       })
       .filter(Boolean),
-    [phases, rowOffsets, refWeek, semWidth, periodes, rowHeight, metrics.barPad]
+    [phasesAffichees, rowOffsets, refWeek, semWidth, periodes, rowHeight, metrics.barPad]
   )
 
-  // ── Mouse handlers ─────────────────────────────────────────────────────────────
-  // Le geste compte comme un déplacement dès qu'il change de semaine : à fort
-  // dézoom, une semaine fait moins que le seuil de 4 px, et l'aperçu avançait
-  // sans que rien ne soit enregistré.
-  const handleMouseMove = useCallback((e) => {
-    if (barDragRef.current) {
-      const drag = barDragRef.current
-      const dx = e.clientX - drag.startX
-      const delta = Math.round(dx / semWidth)
-      if (Math.abs(dx) > 4 || delta !== 0) dragState.moved = true
-      if (delta !== drag.lastDelta) {
-        drag.lastDelta = delta
-        setDragPreview({ id: drag.phaseId, ...phaseChangesFor(drag, delta) })
-      }
-    }
-    if (segDragRef.current) {
-      const drag = segDragRef.current
-      const dx = e.clientX - drag.startX
-      const delta = Math.round(dx / semWidth)
-      if (Math.abs(dx) > 4 || delta !== 0) dragState.moved = true
-      const el = document.querySelector(`[data-segid="${drag.segId}"]`)
-      if (el) {
-        const c = segChangesFor(drag, delta)
-        if (c.semaine_debut != null) {
-          const shift = weeksBetween(drag.origSemaine, drag.origAnnee, c.semaine_debut, c.annee_debut)
-          el.style.left = `${drag.origLeft + shift * semWidth}px`
-        }
-        if (c.duree_semaines != null) el.style.width = `${c.duree_semaines * semWidth}px`
-      }
-    }
-    if (connectingFrom && svgRef.current) {
-      const rect = svgRef.current.getBoundingClientRect()
-      setMousePos({ x: e.clientX - rect.left, y: e.clientY - rect.top })
-    }
-  }, [semWidth, connectingFrom, segChangesFor, phaseChangesFor])
+  // ── Lier, recadrer, toucher ───────────────────────────────────────────────────
 
-  const handleMouseUp = useCallback((e) => {
-    if (barDragRef.current) {
+  // Le planning d'étude n'a qu'un prédécesseur par phase : lier la cible le
+  // remplace. Une boucle est refusée.
+  const creerLien = useCallback((sourceId, cibleId) => {
+    if (sourceId == null || cibleId == null || sourceId === cibleId) return
+    if (creeraitUnCycle(phases, cibleId, sourceId)) return
+    const cible = phases.find((p) => p.id === cibleId)
+    if (!cible || cible.depends_on === sourceId) return
+    const source = phases.find((p) => p.id === sourceId)
+    const lag = source
+      ? computeLagSemaines(source.semaine_debut, source.annee_debut, source.duree_semaines, cible.semaine_debut, cible.annee_debut, periodes)
+      : 0
+    onDependencyCreate(sourceId, cibleId, lag)
+  }, [phases, periodes, onDependencyCreate])
+
+  // Recadrage « caméra » sur la barre touchée (cf. recadrerSurBarre)
+  const camera = useRef(null)
+  useEffect(() => () => { if (camera.current) cancelAnimationFrame(camera.current) }, [])
+
+  // Toucher (ou clic sans glisser) une barre de phase
+  const toucherPhase = useCallback((phase) => {
+    if (selection?.mode === 'lien') {
+      creerLien(selection.phaseId, phase.id)
+      setSelection(null)
+      return
+    }
+    // Phase venue de Notion : rien à déplacer ni lier, ses réglages seulement
+    if (phase.id == null) { onPhaseClick(phase); return }
+    setSelection({ phaseId: phase.id, mode: 'menu' })
+    recadrerSurBarre(scrollRef, `[data-phaseid="${phase.id}"]`, camera)
+  }, [selection, creerLien, scrollRef, onPhaseClick])
+
+  // Grandes poignées du mode Déplacer / Allonger
+  const poigneeDown = useCallback((e, type) => {
+    if (selectionPhase) startBarDrag(e, selectionPhase, type)
+  }, [selectionPhase, startBarDrag])
+
+  // En mode Lier, toucher un segment lie sa phase
+  const toucherSegment = useCallback((phase) => {
+    if (selection?.mode !== 'lien') return false
+    creerLien(selection.phaseId, phase.id)
+    setSelection(null)
+    return true
+  }, [selection, creerLien])
+
+  const actionMenu = useCallback((action) => {
+    const phase = selectionPhase
+    if (!phase) { setSelection(null); return }
+    if (action === 'move' || action === 'resize') { setSelection({ phaseId: phase.id, mode: action }); return }
+    if (action === 'dep') { setSelection({ phaseId: phase.id, mode: 'lien' }); return }
+    setSelection(null)
+    if (action === 'params') onPhaseClick(phase)
+    else if (action === 'dup') onPhaseDuplicate?.(phase)
+    else if (action === 'del') onPhaseDelete?.(phase)
+  }, [selectionPhase, onPhaseClick, onPhaseDuplicate, onPhaseDelete])
+
+  // Le calque de fermeture du menu ne couvre que les lignes : un clic plus bas
+  // (planning court) ou sur l'en-tête doit aussi le refermer. Les clics sur une
+  // barre sont ignorés : c'est le clic qui vient d'ouvrir le menu.
+  useEffect(() => {
+    const volet = scrollRef?.current
+    if (selection?.mode !== 'menu' || !volet) return
+    const fermer = (e) => {
+      if (e.target.closest?.('[role="menu"], [data-phasebarre]')) return
+      setSelection(null)
+    }
+    volet.addEventListener('click', fermer)
+    return () => volet.removeEventListener('click', fermer)
+  }, [selection?.mode, scrollRef])
+
+  // ── Glisser une barre de phase ────────────────────────────────────────────────
+  // Écouté sur la fenêtre : sortir du planning (sous la dernière ligne, sur la
+  // barre de défilement) ne doit pas valider le geste. Le geste compte comme un
+  // déplacement dès qu'il change de semaine : à fort dézoom, une semaine fait
+  // moins que le seuil en pixels.
+  useLayoutEffect(() => {
+    if (draggingBar == null) return
+
+    const handleMove = (e) => {
       const drag = barDragRef.current
-      const { phaseId, startX, origSemaine, origAnnee, origDuree } = drag
-      const delta = Math.round((e.clientX - startX) / semWidth)
-      if (delta !== 0) {
-        const c = phaseChangesFor(drag, delta)
-        const newSem = c.semaine_debut ?? origSemaine
-        const newAnn = c.annee_debut ?? origAnnee
-        const newDuree = c.duree_semaines ?? origDuree
-        if (newSem !== origSemaine || newAnn !== origAnnee || newDuree !== origDuree) {
-          onPhaseUpdate(phaseId, { semaine_debut: newSem, annee_debut: newAnn, duree_semaines: newDuree })
-        }
+      if (!drag) return
+      const dx = e.clientX - drag.startX
+      const delta = Math.round(dx / semWidth)
+      const seuil = drag.pointerType === 'mouse' ? 4 : 8
+      if (Math.abs(dx) > seuil || Math.abs(e.clientY - drag.startY) > seuil || (drag.glissable && delta !== 0)) {
+        drag.moved = true
+        dragState.moved = true
       }
+      if (!drag.glissable || delta === drag.lastDelta) return
+      drag.lastDelta = delta
+      setDragPreview({ id: drag.phaseId, type: drag.type, ...phaseChangesFor(drag, delta) })
+    }
+
+    const handleUp = (e) => {
+      const drag = barDragRef.current
       barDragRef.current = null
-      dragState.moved = false   // reset pour que le crayon fonctionne après un drag
       setDraggingBar(null)
       setDragPreview(null)
       document.body.style.cursor = ''
-    }
-
-    if (segDragRef.current) {
-      const drag = segDragRef.current
-      const delta = Math.round((e.clientX - drag.startX) / semWidth)
-      const changes = segChangesFor(drag, delta)
-      const bouge = (changes.semaine_debut != null && changes.semaine_debut !== drag.origSemaine)
-        || (changes.annee_debut != null && changes.annee_debut !== drag.origAnnee)
-        || (changes.duree_semaines != null && changes.duree_semaines !== drag.origDuree)
-      if (bouge) {
-        dragState.moved = true
-        updateSegmentLocal?.(drag.segId, changes)
-        onSegmentCommit?.(drag.segId, changes)
-      } else {
-        // L'aperçu a déplacé l'élément directement dans le DOM. Sans geste
-        // abouti, l'état ne change pas et React ne le remettrait pas en place.
-        const el = document.querySelector(`[data-segid="${drag.segId}"]`)
-        if (el) {
-          el.style.left = `${drag.origLeft}px`
-          el.style.width = `${Math.max(drag.origDuree, 1) * semWidth}px`
-        }
+      if (!drag) return
+      if (!drag.moved) {
+        if (e.type !== 'pointercancel') toucherPhase(drag.phase)
+        return
       }
-      segDragRef.current = null
-      // `dragState.moved` n'est PAS réinitialisé ici : le clic qui suit le
-      // mouseup doit encore pouvoir le lire pour ne pas rouvrir la modale.
-      // Le prochain début de geste le remet à false.
-      setDraggingSeg(null)
-      document.body.style.cursor = ''
+      if (!drag.glissable || e.type === 'pointercancel') return
+      const delta = Math.round((e.clientX - drag.startX) / semWidth)
+      if (delta === 0) return
+      const c = phaseChangesFor(drag, delta)
+      const newSem = c.semaine_debut ?? drag.origSemaine
+      const newAnn = c.annee_debut ?? drag.origAnnee
+      const newDuree = c.duree_semaines ?? drag.origDuree
+      if (newSem !== drag.origSemaine || newAnn !== drag.origAnnee || newDuree !== drag.origDuree) {
+        onPhaseUpdate(drag.phaseId, { semaine_debut: newSem, annee_debut: newAnn, duree_semaines: newDuree })
+      }
     }
 
-    if (connectingFrom && !hoveredPoint) setConnectingFrom(null)
-  }, [semWidth, onPhaseUpdate, connectingFrom, hoveredPoint, phaseChangesFor, segChangesFor, updateSegmentLocal, onSegmentCommit])
+    window.addEventListener('pointermove', handleMove)
+    window.addEventListener('pointerup', handleUp)
+    window.addEventListener('pointercancel', handleUp)
+    return () => {
+      window.removeEventListener('pointermove', handleMove)
+      window.removeEventListener('pointerup', handleUp)
+      window.removeEventListener('pointercancel', handleUp)
+    }
+  }, [draggingBar, semWidth, phaseChangesFor, onPhaseUpdate, toucherPhase])
+
+  // ── Segments (souris) ─────────────────────────────────────────────────────────
+  const handleMouseMove = useCallback((e) => {
+    if (!segDragRef.current) return
+    const drag = segDragRef.current
+    const dx = e.clientX - drag.startX
+    const delta = Math.round(dx / semWidth)
+    if (Math.abs(dx) > 4 || delta !== 0) dragState.moved = true
+    const el = document.querySelector(`[data-segid="${drag.segId}"]`)
+    if (el) {
+      const c = segChangesFor(drag, delta)
+      if (c.semaine_debut != null) {
+        const shift = weeksBetween(drag.origSemaine, drag.origAnnee, c.semaine_debut, c.annee_debut)
+        el.style.left = `${drag.origLeft + shift * semWidth}px`
+      }
+      if (c.duree_semaines != null) el.style.width = `${c.duree_semaines * semWidth}px`
+    }
+  }, [semWidth, segChangesFor])
+
+  const handleMouseUp = useCallback((e) => {
+    if (!segDragRef.current) return
+    const drag = segDragRef.current
+    const delta = Math.round((e.clientX - drag.startX) / semWidth)
+    const changes = segChangesFor(drag, delta)
+    const bouge = (changes.semaine_debut != null && changes.semaine_debut !== drag.origSemaine)
+      || (changes.annee_debut != null && changes.annee_debut !== drag.origAnnee)
+      || (changes.duree_semaines != null && changes.duree_semaines !== drag.origDuree)
+    if (bouge) {
+      dragState.moved = true
+      updateSegmentLocal?.(drag.segId, changes)
+      onSegmentCommit?.(drag.segId, changes)
+    } else {
+      // L'aperçu a déplacé l'élément directement dans le DOM. Sans geste
+      // abouti, l'état ne change pas et React ne le remettrait pas en place.
+      const el = document.querySelector(`[data-segid="${drag.segId}"]`)
+      if (el) {
+        el.style.left = `${drag.origLeft}px`
+        el.style.width = `${Math.max(drag.origDuree, 1) * semWidth}px`
+      }
+    }
+    segDragRef.current = null
+    // `dragState.moved` n'est PAS réinitialisé ici : le clic qui suit le
+    // mouseup doit encore pouvoir le lire pour ne pas rouvrir la modale.
+    // Le prochain début de geste le remet à false.
+    setDraggingSeg(null)
+    document.body.style.cursor = ''
+  }, [semWidth, segChangesFor, updateSegmentLocal, onSegmentCommit])
 
   useEffect(() => {
-    const h = (e) => {
-      if (e.key !== 'Escape') return
-      connectionState.pending = false
-      setConnectingFrom(null)
-    }
+    const h = (e) => { if (e.key === 'Escape') setSelection(null) }
     window.addEventListener('keydown', h)
     return () => window.removeEventListener('keydown', h)
   }, [])
-
-  const handleConnectionPointClick = useCallback((e, point) => {
-    e.preventDefault(); e.stopPropagation()
-    if (!connectingFrom) {
-      if (point.side === 'end' && point.phaseId != null) {
-        connectionState.pending = true
-        setConnectingFrom(point)
-        if (svgRef.current) {
-          const rect = svgRef.current.getBoundingClientRect()
-          setMousePos({ x: e.clientX - rect.left, y: e.clientY - rect.top })
-        }
-      }
-    } else {
-      if (
-        point.side === 'start' && point.phaseId != null
-        && !creeraitUnCycle(phases, point.phaseId, connectingFrom.phaseId)
-      ) {
-        const exists = phases.find(p => p.id === point.phaseId && p.depends_on === connectingFrom.phaseId)
-        if (!exists) {
-          const fromPhase = phases.find(p => p.id === connectingFrom.phaseId)
-          const toPhase = phases.find(p => p.id === point.phaseId)
-          const lag = (fromPhase && toPhase)
-            ? computeLagSemaines(fromPhase.semaine_debut, fromPhase.annee_debut, fromPhase.duree_semaines, toPhase.semaine_debut, toPhase.annee_debut, periodes)
-            : 0
-          onDependencyCreate(connectingFrom.phaseId, point.phaseId, lag)
-        }
-      }
-      connectionState.pending = false
-      setConnectingFrom(null)
-    }
-  }, [connectingFrom, phases, onDependencyCreate, periodes])
-
-  // Pendant une connexion, les ancêtres de la phase source ne sont pas des
-  // cibles possibles : les lier fermerait une boucle. Leur pastille est masquée
-  // plutôt que de laisser un clic sans effet.
-  const ancetresSource = useMemo(
-    () => (connectingFrom ? ancetresPhase(phases, connectingFrom.phaseId) : null),
-    [connectingFrom, phases]
-  )
 
   return (
     <div
@@ -681,21 +752,15 @@ export function GanttEtudeTimeline({
             phase={dragPreview && dragPreview.id === phase.id ? { ...phase, ...dragPreview } : phase}
             periodes={periodes}
             rowHeight={rowHeight}
-            rowOffset={rowOffsets[clePhase(phase)] ?? 0}
-            cibleInterdite={!!connectingFrom && (
-              phase.id == null || phase.id === connectingFrom.phaseId || !!ancetresSource?.has(phase.id)
-            )}
             semWidth={semWidth}
             refSemaine={refWeek.semaine}
             refAnnee={refWeek.annee}
-            isDragging={draggingBar === phase.id}
-            isConnecting={!!connectingFrom}
-            connectingFromId={connectingFrom?.phaseId ?? null}
-            hoveredPoint={hoveredPoint}
+            isDragging={draggingBar === clePhase(phase) && !!dragPreview}
+            enEdition={selectionPhase != null && selectionPhase.id === phase.id && ['move', 'resize'].includes(selection?.mode)}
+            modeLien={selectionPhase != null && selection?.mode === 'lien'}
             onBarDragStart={startBarDrag}
             onBarClick={onPhaseClick}
-            onConnectionPointClick={handleConnectionPointClick}
-            onConnectionPointHover={setHoveredPoint}
+            onSegmentTap={toucherSegment}
             isCritical={criticalIds?.has(phase.id) ?? false}
             segments={getSegmentsForPhase ? getSegmentsForPhase(phase.id) : []}
             draggingSegId={draggingSeg}
@@ -776,36 +841,59 @@ export function GanttEtudeTimeline({
             )
           })}
 
-          {connectingFrom && (
-            <g>
-              <line
-                x1={connectingFrom.x} y1={connectingFrom.y}
-                x2={mousePos.x} y2={mousePos.y}
-                stroke="currentColor" strokeWidth="2.5" strokeDasharray="7 3"
-                markerEnd="url(#dep-arr-live)"
-              />
-              <circle cx={connectingFrom.x} cy={connectingFrom.y} r="5" fill="currentColor">
-                <animate attributeName="r" values="4;7;4" dur="0.9s" repeatCount="indefinite" />
-                <animate attributeName="opacity" values="1;0.4;1" dur="0.9s" repeatCount="indefinite" />
-              </circle>
-            </g>
-          )}
         </svg>
+
+        {/* ── Menu radial et modes d'édition d'une barre ─────────────────── */}
+        {selectionPhase && rowOffsets[clePhase(selectionPhase)] !== undefined && (() => {
+          const affichee = dragPreview && dragPreview.id === selectionPhase.id
+            ? { ...selectionPhase, ...dragPreview } : selectionPhase
+          // Une phase coupée par des congés est mise en avant fragment par fragment
+          const fragments = computePhaseFragments(affichee, periodes).map((f) => ({
+            left: weeksBetween(refWeek.semaine, refWeek.annee, f.semaine_debut, f.annee_debut) * semWidth,
+            width: f.duree_semaines * semWidth,
+          }))
+          const dernier = fragments[fragments.length - 1]
+          const barre = {
+            left: fragments[0].left, width: dernier.left + dernier.width - fragments[0].left,
+            haut: rowOffsets[clePhase(selectionPhase)], hauteurLigne: rowHeight, barPad: metrics.barPad,
+            fond: getBarStyle(selectionPhase, getPhaseCouleur(selectionPhase)), fragments,
+          }
+          if (selection.mode === 'menu') {
+            return (
+              <MenuRadial
+                barre={barre}
+                objet="phase"
+                numero={libelleCourt(selectionPhase.nom)}
+                duree={`${selectionPhase.duree_semaines} sem.`}
+                onAction={actionMenu}
+                onFermer={() => setSelection(null)}
+              />
+            )
+          }
+          if (selection.mode === 'move' || selection.mode === 'resize') {
+            // Écart du geste en cours, en semaines
+            let ecart = 0
+            if (dragPreview && dragPreview.id === selectionPhase.id) {
+              ecart = dragPreview.type === 'move'
+                ? weeksBetween(selectionPhase.semaine_debut, selectionPhase.annee_debut, affichee.semaine_debut, affichee.annee_debut)
+                : affichee.duree_semaines - selectionPhase.duree_semaines
+            }
+            return (
+              <EditionBarre
+                barre={barre}
+                objet="phase"
+                mode={selection.mode}
+                ecart={ecart === 0 ? '±0 sem.' : `${ecart > 0 ? '+' : ''}${ecart} sem.`}
+                onPoigneeDown={poigneeDown}
+                onTerminer={() => setSelection(null)}
+              />
+            )
+          }
+          return null
+        })()}
       </div>
 
-      {/* Toast connexion */}
-      {connectingFrom && (
-        <div style={{
-          position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)',
-          zIndex: 50, backgroundColor: '#E8602C', color: 'white',
-          fontSize: 12, fontWeight: 700, padding: '10px 20px', borderRadius: 2,
-          boxShadow: '0 4px 20px rgba(0,0,0,0.25)',
-          display: 'flex', alignItems: 'center', gap: 10,
-        }}>
-          <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: 'white', display: 'inline-block' }} />
-          Cliquez sur le point de début d'une phase · Échap pour annuler
-        </div>
-      )}
+      {selectionPhase && selection?.mode === 'lien' && <BandeauLien objet="phase" onAnnuler={() => setSelection(null)} />}
 
       {/* Modal suppression dépendance */}
       {deletingArrow && (
@@ -847,18 +935,18 @@ export function GanttEtudeTimeline({
 // ─── PhaseBarRow ───────────────────────────────────────────────────────────────
 
 function PhaseBarRow({
-  phase, periodes = [], rowOffset, semWidth, refSemaine, refAnnee, rowHeight = 44,
-  isDragging, isConnecting, connectingFromId, hoveredPoint, cibleInterdite = false,
-  onBarDragStart, onBarClick, onConnectionPointClick, onConnectionPointHover,
+  phase, periodes = [], semWidth, refSemaine, refAnnee, rowHeight = 44,
+  isDragging, enEdition = false, modeLien = false,
+  onBarDragStart, onBarClick, onSegmentTap,
   isCritical,
   segments = [], draggingSegId, onSegmentDragStart,
 }) {
-  const [isHovered, setIsHovered] = useState(false)
-
   const isMoe = phase.type_tache === 'etude'
-  const { barPad, fontSize, connectionSize } = rowMetrics(rowHeight)
+  const { barPad: barPadBase, fontSize } = rowMetrics(rowHeight)
+  // Barre en cours d'édition (Déplacer / Allonger) : légèrement agrandie et
+  // soulevée, comme dans la maquette
+  const barPad = enEdition ? Math.max(0, barPadBase - 2) : barPadBase
   const rh = rowHeight
-  const DOT_R = connectionSize / 2
   const color = getPhaseCouleur(phase)
   const barStyle = getBarStyle(phase, color)
   const isAdmin = phase.type_tache === 'administratif'
@@ -877,33 +965,17 @@ function PhaseBarRow({
     [phase, fragments]
   )
 
-  const premierFrag = fragments[0]
   const dernierFrag = fragments[fragments.length - 1]
-  const left = weeksBetween(refSemaine, refAnnee, premierFrag.semaine_debut, premierFrag.annee_debut) * semWidth
   // Bord droit = fin EFFECTIVE (dernier fragment), pas début + durée
   const finLeft = weeksBetween(refSemaine, refAnnee, dernierFrag.semaine_debut, dernierFrag.annee_debut) * semWidth
     + dernierFrag.duree_semaines * semWidth
 
   const HANDLE_W = Math.max(5, Math.min(8, semWidth * 0.2))
-  const connectionY = rowOffset + rh - barPad
-
-  const isSource = connectingFromId === phase.id
-  const isStartHov = hoveredPoint?.phaseId === phase.id && hoveredPoint?.side === 'start'
-  const isEndHov = hoveredPoint?.phaseId === phase.id && hoveredPoint?.side === 'end'
-  // Une phase venue de Notion n'est pas en base : elle ne peut pas être liée
+  // Une phase venue de Notion n'est pas en base : elle ne se glisse ni ne s'étire
   const modifiable = phase.id != null
-  const showStartDot = isConnecting && connectingFromId !== phase.id && !cibleInterdite
-  const showEndDot = !isConnecting && isHovered && modifiable
-
-  const startPoint = { phaseId: phase.id, side: 'start', x: left, y: connectionY }
-  const endPoint = { phaseId: phase.id, side: 'end', x: finLeft, y: connectionY }
 
   return (
-    <div
-      style={{ position: 'relative', height: rh, borderBottom: '0.5px solid rgba(0,0,0,0.05)' }}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-    >
+    <div style={{ position: 'relative', height: rh, borderBottom: '0.5px solid rgba(0,0,0,0.05)' }}>
       {/* ── Barres de phase — un fragment par plage travaillée ───────────
           Les semaines couvertes par une période bloquante coupent la barre :
           la durée travaillée est conservée, la fin effective recule. */}
@@ -917,6 +989,7 @@ function PhaseBarRow({
           <div
             key={`${phase.id}-frag-${i}`}
             data-phaseid={premier ? phase.id : undefined}
+            data-phasebarre="1"
             title={fragments.length > 1
               ? `${phase.nom} — fragment ${i + 1}/${fragments.length}`
               : phase.nom}
@@ -926,17 +999,18 @@ function PhaseBarRow({
               ...barStyle,
               borderRadius: 0,
               display: 'flex', alignItems: 'center', overflow: 'visible',
-              boxShadow: isDragging
-                ? '0 8px 24px rgba(0,0,0,0.2)'
+              boxShadow: enEdition || isDragging
+                ? '0 4px 14px rgba(0,0,0,0.25)'
                 : isCritical
                   ? '0 0 0 2px #B8412C, 0 1px 3px rgba(0,0,0,0.15)'
                   : '0 1px 3px rgba(0,0,0,0.15)',
-              zIndex: isDragging ? 30 : 10,
-              opacity: isDragging ? 0.9 : 1,
-              cursor: isConnecting && !isSource ? 'crosshair' : modifiable ? 'grab' : 'default',
+              zIndex: enEdition ? 36 : isDragging ? 30 : 10,
+              cursor: modeLien ? 'crosshair' : 'pointer',
+              // Le doigt glisse la barre (en édition) au lieu de faire défiler
+              touchAction: 'none',
             }}
-            onMouseDown={(e) => {
-              if (e.target.dataset.handle || e.target.dataset.editbtn || isConnecting) return
+            onPointerDown={(e) => {
+              if (e.target.dataset.handle) return
               onBarDragStart(e, phase, 'move')
             }}
           >
@@ -945,7 +1019,8 @@ function PhaseBarRow({
               <div
                 data-handle="left"
                 style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: HANDLE_W, cursor: modifiable ? 'ew-resize' : 'default', flexShrink: 0, borderRadius: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                onMouseDown={(e) => { e.stopPropagation(); onBarDragStart(e, phase, 'resize-left') }}
+                // Poignées fines, pour la souris : au doigt, Allonger du menu radial
+                onPointerDown={(e) => { if (e.pointerType !== 'mouse') return; e.stopPropagation(); onBarDragStart(e, phase, 'resize-left') }}
                 onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.2)'}
                 onMouseLeave={e => e.currentTarget.style.backgroundColor = ''}
               >
@@ -990,40 +1065,13 @@ function PhaseBarRow({
               </div>
             )}
 
-            {/* Crayon + resize right — sur le dernier fragment (fin de la phase) */}
+            {/* Resize right — sur le dernier fragment (fin de la phase) */}
             {dernier && (
               <>
-                <button
-                  data-editbtn="1"
-                  style={{
-                    position: 'absolute', zIndex: 20, right: HANDLE_W + 2, top: '50%', transform: 'translateY(-50%)',
-                    width: 20, height: 20,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    borderRadius: 3, border: 'none', cursor: 'pointer',
-                    backgroundColor: 'rgba(0,0,0,0.3)', color: 'white',
-                    opacity: isHovered && !isConnecting ? 1 : 0, transition: 'opacity 0.15s',
-                    // Invisible ⇒ non cliquable : sans cela, un clic sur une
-                    // pastille de connexion passait au travers et ouvrait la modale.
-                    pointerEvents: isHovered && !isConnecting ? 'auto' : 'none',
-                    flexShrink: 0,
-                  }}
-                  onMouseDown={e => e.stopPropagation()}
-                  onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.5)'}
-                  onMouseLeave={e => e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.3)'}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    if (connectionState.pending) { connectionState.pending = false; return }
-                    onBarClick(phase)
-                  }}
-                  title="Modifier"
-                >
-                  <Pencil size={11} strokeWidth={2.5} />
-                </button>
-
                 <div
                   data-handle="right"
                   style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: HANDLE_W, cursor: modifiable ? 'ew-resize' : 'default', flexShrink: 0, borderRadius: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                  onMouseDown={(e) => { e.stopPropagation(); onBarDragStart(e, phase, 'resize-right') }}
+                  onPointerDown={(e) => { if (e.pointerType !== 'mouse') return; e.stopPropagation(); onBarDragStart(e, phase, 'resize-right') }}
                   onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.2)'}
                   onMouseLeave={e => e.currentTarget.style.backgroundColor = ''}
                 >
@@ -1087,10 +1135,8 @@ function PhaseBarRow({
               }}
               onClick={(e) => {
                 e.stopPropagation()
-                // Le clic qui termine ou annule une connexion ne doit pas
-                // ouvrir la modale — il est consommé ici.
-                if (connectionState.pending) { connectionState.pending = false; return }
-                if (dragState.moved || isConnecting) return
+                if (dragState.moved) return
+                if (onSegmentTap?.(phase)) return
                 onBarClick(phase)
               }}
             >
@@ -1150,45 +1196,6 @@ function PhaseBarRow({
         )
       })}
 
-      {/* ── Connection dot START ───────────────────────────────────────── */}
-      <div
-        style={{
-          position: 'absolute', zIndex: 40,
-          left: left - DOT_R, top: rh - barPad - DOT_R,
-          width: DOT_R * 2, height: DOT_R * 2,
-          borderRadius: '50%', border: '2px solid white', cursor: 'crosshair',
-          backgroundColor: isStartHov ? '#E8602C' : color,
-          transform: isStartHov ? 'scale(1.5)' : 'scale(1)',
-          boxShadow: isStartHov ? '0 0 0 3px rgba(224,90,30,0.35)' : '0 1px 4px rgba(0,0,0,0.4)',
-          opacity: showStartDot || isStartHov ? 1 : 0,
-          transition: 'transform 0.15s, opacity 0.15s, background-color 0.15s',
-          pointerEvents: showStartDot ? 'auto' : 'none',
-        }}
-        onMouseDown={(e) => e.stopPropagation()}
-        onClick={(e) => { e.stopPropagation(); onConnectionPointClick(e, startPoint) }}
-        onMouseEnter={() => onConnectionPointHover(startPoint)}
-        onMouseLeave={() => onConnectionPointHover(null)}
-      />
-
-      {/* ── Connection dot END ─────────────────────────────────────────── */}
-      <div
-        style={{
-          position: 'absolute', zIndex: 40,
-          left: finLeft - DOT_R, top: rh - barPad - DOT_R,
-          width: DOT_R * 2, height: DOT_R * 2,
-          borderRadius: '50%', border: '2px solid white', cursor: 'crosshair',
-          backgroundColor: isSource || isEndHov ? '#E8602C' : color,
-          transform: isEndHov || isSource ? 'scale(1.5)' : 'scale(1)',
-          boxShadow: (isEndHov || isSource) ? '0 0 0 3px rgba(224,90,30,0.35)' : '0 1px 4px rgba(0,0,0,0.4)',
-          opacity: showEndDot || isSource || isEndHov ? 1 : 0,
-          transition: 'transform 0.15s, opacity 0.15s, background-color 0.15s',
-          pointerEvents: showEndDot ? 'auto' : 'none',
-        }}
-        onMouseDown={(e) => e.stopPropagation()}
-        onClick={(e) => { e.stopPropagation(); onConnectionPointClick(e, endPoint) }}
-        onMouseEnter={() => onConnectionPointHover(endPoint)}
-        onMouseLeave={() => onConnectionPointHover(null)}
-      />
     </div>
   )
 }

@@ -11,7 +11,7 @@ import { CrPresences } from './CrPresences'
 import { CrSectionEditor } from './CrSectionEditor'
 import { TemplateModal } from './TemplateModal'
 import { generateCrPdf } from './CrPdfExport'
-import { compterPresents } from './crLogique'
+import { compterPresents, FAMILLES_STATUT, infosStatut, estEnRetard } from './crLogique'
 import { CrContexte, useCr } from './CrContexte'
 
 // ─── Styles partagés ──────────────────────────────────────────────────────────
@@ -223,27 +223,6 @@ function ExportView({ cr, sections, presences, affaire, lotEntreprises, interloc
 
 // ─── Page d'accueil du CR ─────────────────────────────────────────────────────
 
-// Le statut d'une remarque est du texte libre (voir les suggestions de
-// CrSectionEditor : « À faire », « Fait », « Pour mémoire », « À prévoir »,
-// « En cours », « Urgent », « Annulé »), plus un booléen `est_clos`. Ces quatre
-// familles regroupent ce vocabulaire. L'ordre des tests compte : « Fait » doit
-// être reconnu avant « À faire ».
-const FAMILLES = [
-  { id: 'afaire', label: 'À faire', couleur: '#B8412C' },
-  { id: 'encours', label: 'En cours', couleur: '#D97706' },
-  { id: 'soldees', label: 'Soldées', couleur: '#2A8A4E' },
-  { id: 'sansSuite', label: 'Sans suite donnée', couleur: '#9C9591' },
-]
-
-function familleRemarque(r) {
-  if (r.est_clos) return 'soldees'
-  const s = (r.statut ?? '').toLowerCase()
-  if (/\bfaits?\b|sold|clos/.test(s)) return 'soldees'
-  if (/faire|prévoir|prevoir|urgent/.test(s)) return 'afaire'
-  if (/cours/.test(s)) return 'encours'
-  return 'sansSuite'
-}
-
 function remarquesDeSection(s) {
   return [
     ...(s.directRemarques ?? []),
@@ -289,10 +268,11 @@ function CrAccueil({ cr, affaire, presences, sections, onNavigate, onOuvrirSecti
     : 'Date non définie'
 
   const toutesRemarques = sections.flatMap(remarquesDeSection)
-  const parFamille = FAMILLES.map(f => ({
+  const parFamille = FAMILLES_STATUT.map(f => ({
     ...f,
-    total: toutesRemarques.filter(r => familleRemarque(r) === f.id).length,
+    total: toutesRemarques.filter(r => infosStatut(r).famille === f.id).length,
   }))
+  const enRetard = toutesRemarques.filter(r => estEnRetard(r, cr.date_reunion)).length
 
   const convoques = presences.filter(p => p.convoque).length
   const presents = compterPresents(presences)
@@ -394,11 +374,22 @@ function CrAccueil({ cr, affaire, presences, sections, onNavigate, onOuvrirSecti
               display: 'flex', flexDirection: 'column', gap: 3,
             }}>
               <span style={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: '#C9C4C0' }}>
-                {f.label}
+                {f.libelle}
               </span>
               <span style={{ fontSize: 22, fontWeight: 600, color: f.couleur }}>{f.total}</span>
             </div>
           ))}
+          {enRetard > 0 && (
+            <div style={{
+              border: '0.5px solid rgba(184,65,44,0.45)', background: 'rgba(184,65,44,0.06)', padding: '12px 14px',
+              display: 'flex', flexDirection: 'column', gap: 3,
+            }}>
+              <span style={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: '#B8412C' }}>
+                En retard
+              </span>
+              <span style={{ fontSize: 22, fontWeight: 600, color: '#B8412C' }}>{enRetard}</span>
+            </div>
+          )}
         </div>
 
         {sections.length > 0 && (
@@ -410,7 +401,7 @@ function CrAccueil({ cr, affaire, presences, sections, onNavigate, onOuvrirSecti
               {sections.map((s, i) => {
                 const rems = remarquesDeSection(s)
                 // Une section « chaude » a au moins un point à faire
-                const chaude = rems.some(r => familleRemarque(r) === 'afaire')
+                const chaude = rems.some(r => infosStatut(r).famille === 'rouge')
                 return (
                   <button
                     key={s.id}
@@ -587,12 +578,12 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
   }, [affaire?.id, signalerErreur])
 
   const {
-    cr, sections, presences, profiles, loading, erreurChargement,
+    cr, sections, presences, profiles, loading, erreurChargement, historique,
     syncPresences, updateCr, emettre, rouvrir, updatePresence,
     addSection, updateSection, deleteSection, reorderSection, reorderSectionsByIds,
     addSousSection, updateSousSection, deleteSousSection, reorderSousSection,
     addRemarque, addSectionRemarque, updateRemarque, deleteRemarque, reorderRemarque, reorderSectionRemarque,
-    addSousRemarque,
+    addSousRemarque, changerStatutRemarques,
     setPresence, refetch,
   } = useCompteRendu(crId, affaire?.id)
 
@@ -611,7 +602,7 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
       addSection, updateSection, deleteSection, reorderSection, reorderSectionsByIds,
       addSousSection, updateSousSection, deleteSousSection, reorderSousSection,
       addRemarque, addSectionRemarque, updateRemarque, deleteRemarque, reorderRemarque, reorderSectionRemarque,
-      addSousRemarque,
+      addSousRemarque, changerStatutRemarques,
     }
     return Object.fromEntries(Object.entries(brutes).map(([nom, op]) => [nom, async (...args) => {
       try {
@@ -626,7 +617,7 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
     addSection, updateSection, deleteSection, reorderSection, reorderSectionsByIds,
     addSousSection, updateSousSection, deleteSousSection, reorderSousSection,
     addRemarque, addSectionRemarque, updateRemarque, deleteRemarque, reorderRemarque, reorderSectionRemarque,
-    addSousRemarque, signalerErreur,
+    addSousRemarque, changerStatutRemarques, signalerErreur,
   ])
 
   const lectureSeule = lectureSeuleAffaire || cr?.statut === 'emis'
@@ -737,6 +728,8 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
       {activeView === 'remarques' && (
         <CrSectionEditor
           sections={sections}
+          crId={cr.id}
+          historique={historique}
           crDate={cr.date_reunion}
           interlocuteurs={interlocuteurs}
           lotEntreprises={lotEntreprises}

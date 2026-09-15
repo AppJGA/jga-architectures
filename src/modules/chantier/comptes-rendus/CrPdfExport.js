@@ -1,7 +1,7 @@
 // Génération HTML/PDF pour un Compte Rendu de Chantier
 // Pattern : window.open() → HTML → window.print()
 
-import { affichagePresence } from './crLogique'
+import { affichagePresence, infosStatut, estEnRetard } from './crLogique'
 
 function fmtDate(d) {
   if (!d) return '—'
@@ -62,11 +62,13 @@ function buildPresencePill(presence) {
 }
 
 // Évolution 4: inclut les sous-remarques indentées sous leur remarque parente
-function buildRemarquesTable(remarques, lots, interlocuteurs) {
+function buildRemarquesTable(remarques, lots, interlocuteurs, dateReference) {
   if (!remarques.length) return '<p style="color:#9C9591;font-size:10pt;font-style:italic;padding:4px 0">Aucune remarque</p>'
 
   const rows = remarques.map(r => {
-    let dateHtml = ''
+    const statut = infosStatut(r)
+    const enRetard = estEnRetard(r, dateReference)
+    let dateHtml = r.numero != null ? `<span class="rem-numero">n°${r.numero}</span><br>` : ''
     if (r.est_nouveau) dateHtml += '<span class="new-triangle">▶ </span>'
     dateHtml += `<span class="rem-date">${fmtDateShort(r.date_note)}</span>`
     if (r.pour) dateHtml += `<br><span class="rem-pour">${escHtml(r.pour)}</span>`
@@ -85,15 +87,18 @@ function buildRemarquesTable(remarques, lots, interlocuteurs) {
     if (attribution) dateHtml += `<br><span style="font-size:8pt;color:#5E5854;font-style:italic">(${escHtml(attribution)})</span>`
 
     let descStyle = ''
-    if (r.est_clos) descStyle += 'text-decoration:line-through;color:#9CA3AF;'
+    if (statut.clos) descStyle += 'text-decoration:line-through;color:#9CA3AF;'
     if (r.est_important) descStyle += 'font-weight:bold;color:#E8602C;'
     const descHtml = `<span style="${descStyle}">${escHtml(r.description)}</span>`
 
-    const echeanceHtml = r.date_echeance ? fmtDateShort(r.date_echeance) : '—'
-    const statutHtml   = r.statut ? `<span class="rem-statut">${escHtml(r.statut)}</span>` : ''
+    const echeanceHtml = r.date_echeance
+      ? `<span style="${enRetard ? 'color:#B8412C;font-weight:bold' : ''}">${fmtDateShort(r.date_echeance)}</span>${enRetard ? '<br><span class="rem-retard">En retard</span>' : ''}`
+      : '—'
+    const statutHtml = `<span class="rem-statut" style="color:${statut.couleur};background:${statut.fond}">${escHtml(statut.libelle)}</span>`
+      + (statut.clos && r.date_cloture ? `<br><span style="font-size:7.5pt;color:#5E5854">le ${fmtDateShort(r.date_cloture)}</span>` : '')
 
     const mainRow = `
-      <tr class="${r.est_clos ? 'rem-clos' : ''}">
+      <tr class="${statut.clos ? 'rem-clos' : ''}">
         <td class="td-date">${dateHtml}</td>
         <td class="td-desc">${descHtml}</td>
         <td class="td-echeance">${echeanceHtml}</td>
@@ -200,13 +205,13 @@ export function generateCrPdf(cr, sections, presences, affaire, { autoPrint = tr
     const sousSectionsHtml = section.sousSections.map(ss => `
       <div class="sous-section">
         <div class="ss-header">${escHtml(ss.code)} — ${escHtml(ss.titre)}</div>
-        ${buildRemarquesTable(ss.remarques, lots, interlocuteurs)}
+        ${buildRemarquesTable(ss.remarques, lots, interlocuteurs, cr.date_reunion)}
       </div>`).join('')
 
     const directRems = section.directRemarques ?? []
     const directHtml = directRems.length > 0
       ? `<div class="sous-section" style="border-top:${sousSectionsHtml ? '0.5px solid #E9E2D6;margin-top:8px;padding-top:8px;' : ''}">
-          ${buildRemarquesTable(directRems, lots, interlocuteurs)}
+          ${buildRemarquesTable(directRems, lots, interlocuteurs, cr.date_reunion)}
          </div>`
       : ''
 
@@ -284,7 +289,9 @@ export function generateCrPdf(cr, sections, presences, affaire, { autoPrint = tr
     .remarques-table tr.rem-clos td { color:#9CA3AF; }
     .rem-date  { font-size:8.5pt; color:#5E5854; }
     .rem-pour  { font-size:8pt; color:#E8602C; font-weight:500; }
-    .rem-statut { font-size:8pt; color:#5E5854; }
+    .rem-statut { font-size:8pt; font-weight:600; border-radius:2px; padding:1px 5px; white-space:nowrap; }
+    .rem-numero { font-size:7.5pt; color:#9C9591; font-family:monospace; }
+    .rem-retard { font-size:7.5pt; font-weight:bold; color:white; background:#B8412C; border-radius:2px; padding:0 4px; }
     .new-triangle { color:#E8602C; font-size:8pt; }
     .td-date { width:12%; }
     .td-desc { width:56%; }

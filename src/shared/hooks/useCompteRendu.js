@@ -85,6 +85,9 @@ export function useCompteRendu(crId, affaireId) {
   const [profiles, setProfiles]   = useState([])
   const [loading, setLoading]     = useState(true)
   const [erreurChargement, setErreurChargement] = useState(null)
+  // Versions des remarques dans les autres visites de l'affaire, pour leur
+  // historique. Chargées une fois : elles ne changent pas pendant la saisie.
+  const [historique, setHistorique] = useState({ remarques: [], crs: [] })
   // Seul le premier chargement affiche l'indicateur : il remplace l'éditeur,
   // qui perdait sinon à chaque ajout ses filtres, ses sections repliées et la
   // position de défilement.
@@ -129,6 +132,24 @@ export function useCompteRendu(crId, affaireId) {
     dejaCharge.current = false
     fetchAll().catch((err) => console.error(err))
   }, [fetchAll])
+
+  useEffect(() => {
+    if (!affaireId || !crId) return
+    let abandon = false
+    Promise.all([
+      supabase.from('comptes_rendus').select('id, numero, date_reunion').eq('affaire_id', affaireId),
+      supabase.from('cr_remarques')
+        .select('id, cr_id, parent_id, suivi_id, numero, statut, est_clos, description')
+        .eq('affaire_id', affaireId).is('parent_id', null).neq('cr_id', crId),
+    ]).then(([crs, remarques]) => {
+      if (abandon) return
+      const erreur = crs.error ?? remarques.error
+      // Sans la migration 038, pas de suivi_id : pas d'historique, sans bruit
+      if (erreur) { if (!colonneAbsente(erreur)) console.error(erreur); return }
+      setHistorique({ remarques: remarques.data ?? [], crs: crs.data ?? [] })
+    })
+    return () => { abandon = true }
+  }, [affaireId, crId])
 
   // ── Présences : participants de l'affaire et copies à jour ───────────────────
   //
@@ -311,6 +332,14 @@ export function useCompteRendu(crId, affaireId) {
     await fetchAll()
   }, [fetchAll])
 
+  // Statut de plusieurs remarques d'un coup (mode sélection de l'éditeur)
+  const changerStatutRemarques = useCallback(async (ids, statut, clos) => {
+    if (ids.length === 0) return
+    const { error } = await supabase.from('cr_remarques').update({ statut, est_clos: clos }).in('id', ids)
+    if (error) throw error
+    await fetchAll()
+  }, [fetchAll])
+
   const deleteRemarque = useCallback(async (id) => {
     const { error } = await supabase.from('cr_remarques').delete().eq('id', id)
     if (error) throw error
@@ -378,12 +407,12 @@ export function useCompteRendu(crId, affaireId) {
   }, [fetchAll])
 
   return {
-    cr, sections, presences, profiles, loading, erreurChargement,
+    cr, sections, presences, profiles, loading, erreurChargement, historique,
     syncPresences, updateCr, emettre, rouvrir, updatePresence,
     addSection, updateSection, deleteSection, reorderSection, reorderSectionsByIds,
     addSousSection, updateSousSection, deleteSousSection, reorderSousSection,
     addRemarque, addSectionRemarque, updateRemarque, deleteRemarque, reorderRemarque, reorderSectionRemarque,
-    addSousRemarque,
+    addSousRemarque, changerStatutRemarques,
     setPresence,
     refetch: fetchAll,
   }

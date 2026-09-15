@@ -13,6 +13,7 @@ import { PhaseBadge } from '../shared/components/Badge'
 
 import { AffaireFormModal } from '../dashboard/AffaireFormModal'
 import { supabase } from '../core/supabase/client'
+import { infosStatut } from '../modules/chantier/comptes-rendus/crLogique'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -54,7 +55,7 @@ function useAffaireStats(affaireId) {
     if (!affaireId) return
     Promise.all([
       supabase.from('comptes_rendus').select('id, statut, date_reunion, date_prochaine_reunion').eq('affaire_id', affaireId).order('numero', { ascending: false }),
-      supabase.from('cr_remarques').select('cr_id, parent_id').eq('affaire_id', affaireId).ilike('statut', '%faire%').eq('est_clos', false),
+      supabase.from('cr_remarques').select('cr_id, parent_id, statut, est_clos').eq('affaire_id', affaireId).eq('est_clos', false),
       supabase.from('todos').select('id, fait').eq('affaire_id', affaireId),
       supabase.from('lots').select('id', { count: 'exact', head: true }).eq('affaire_id', affaireId),
       supabase.from('lot_entreprises').select('montant_marche_ht').eq('affaire_id', affaireId),
@@ -129,7 +130,8 @@ function useAffaireStats(affaireId) {
         // Chaque visite reprend les remarques ouvertes de la précédente : compter
         // tous les CR comptait une même remarque autant de fois qu'elle a été
         // reprise. Seul le dernier CR fait foi, et sans les suivis.
-        remarquesAFaire: (remAFaire.data ?? []).filter(r => r.cr_id === crRows[0]?.id && !r.parent_id).length,
+        remarquesAFaire: (remAFaire.data ?? [])
+          .filter(r => r.cr_id === crRows[0]?.id && !r.parent_id && infosStatut(r).famille === 'rouge').length,
         todos: t.data?.length ?? 0,
         todosDone: t.data?.filter(x => x.fait).length ?? 0,
         lots: lots.count ?? 0,
@@ -706,7 +708,7 @@ function PhaseSection({ phase, affaire, stats, affaireId, navigate, rangBase }) 
                     )}
                     {stats.remarquesAFaire > 0 && (
                       <p style={{ fontSize: 11, color: '#E8602C', marginTop: 4 }}>
-                        {stats.remarquesAFaire} remarque{stats.remarquesAFaire > 1 ? 's' : ''} à faire
+                        {stats.remarquesAFaire} remarque{stats.remarquesAFaire > 1 ? 's' : ''} à traiter
                       </p>
                     )}
                   </>

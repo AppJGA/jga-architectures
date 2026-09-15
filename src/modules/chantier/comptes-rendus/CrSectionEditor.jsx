@@ -1,12 +1,22 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, createContext, useContext } from 'react'
 import {
   Plus, Pencil, Trash2, ChevronDown, ChevronUp, ChevronRight, X,
   GripVertical, MessageSquarePlus, ToggleLeft, ToggleRight, MessageSquare,
-  Check, RotateCcw,
+  Check, RotateCcw, Search, History, CheckSquare,
 } from 'lucide-react'
 import { CATEGORIE_META } from '../../../shared/hooks/useAffaireInterlocuteurs'
-import { dateDuJour } from './crLogique'
+import {
+  dateDuJour, STATUTS, FAMILLES_STATUT, STATUT_PAR_DEFAUT, statutNormalise, infosStatut,
+  estEnRetard, historiqueRemarque, passeFiltre, FILTRE_VIDE, filtreActif,
+} from './crLogique'
 import { useCr } from './CrContexte'
+
+// État propre à l'éditeur, partagé jusqu'aux lignes de remarque : sélection
+// multiple, historique et date de référence des retards.
+const EditeurContexte = createContext({
+  modeSelection: false, selection: new Set(), basculerSelection: () => {},
+  historiqueDe: () => [], dateReference: null,
+})
 
 // ─── Utilitaires ──────────────────────────────────────────────────────────────
 
@@ -17,7 +27,12 @@ function nextRoman(sections) {
   return ROMAN[max + 1] ?? String(max + 1)
 }
 
-const STATUT_SUGGESTIONS = ['À faire', 'Fait', 'Pour mémoire', 'À prévoir', 'En cours', 'Urgent', 'Annulé']
+
+const PAR_CODE = new Map(STATUTS.map(st => [st.code, st]))
+
+function fmtJour(d, options = { day: '2-digit', month: '2-digit', year: 'numeric' }) {
+  return d ? new Date(d + 'T00:00:00').toLocaleDateString('fr-FR', options) : null
+}
 
 const LABEL = {
   display: 'block', fontSize: 11, fontWeight: 500,
@@ -30,6 +45,67 @@ const INPUT = {
 }
 function focusOn(e)  { e.target.style.borderColor = '#E8602C'; e.target.style.boxShadow = '0 0 0 3px rgba(224,90,30,0.07)' }
 function focusOff(e) { e.target.style.borderColor = 'rgba(0,0,0,0.12)'; e.target.style.boxShadow = 'none' }
+
+// ─── Statuts ──────────────────────────────────────────────────────────────────
+
+// Choix du statut dans le formulaire : boutons plutôt que liste, lisibles et
+// assez grands pour le doigt.
+function ChoixStatut({ valeur, onChange }) {
+  return (
+    <div role="radiogroup" aria-label="Statut" style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+      {STATUTS.map(st => {
+        const actif = valeur === st.code
+        return (
+          <button
+            key={st.code} type="button" role="radio" aria-checked={actif}
+            onClick={() => onChange(st.code)}
+            style={{
+              padding: '5px 10px', borderRadius: 3, fontSize: 12, cursor: 'pointer',
+              border: `0.5px solid ${actif ? st.couleur : 'rgba(0,0,0,0.12)'}`,
+              background: actif ? st.couleur : 'white',
+              color: actif ? 'white' : st.couleur, fontWeight: actif ? 500 : 400,
+            }}
+          >
+            {st.libelle}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+// Badge de statut d'une ligne : un menu déroulant tant que le compte rendu est
+// modifiable, pour changer le statut sans ouvrir le formulaire.
+function BadgeStatut({ rem, onChange }) {
+  const { lectureSeule } = useCr()
+  const st = infosStatut(rem)
+  const style = {
+    fontSize: 10, fontWeight: 500, color: st.couleur, backgroundColor: st.fond,
+    borderRadius: 3, padding: '2px 6px', border: 'none', whiteSpace: 'nowrap',
+  }
+  if (lectureSeule || !onChange) return <span style={style}>{st.libelle}</span>
+  return (
+    <select
+      value={st.code}
+      title="Changer le statut"
+      aria-label="Statut"
+      onChange={e => onChange(e.target.value)}
+      style={{ ...style, cursor: 'pointer', appearance: 'none', WebkitAppearance: 'none', outline: 'none', fontFamily: 'inherit' }}
+    >
+      {FAMILLES_STATUT.map(f => (
+        <optgroup key={f.id} label={f.libelle}>
+          {STATUTS.filter(x => x.famille === f.id).map(x => <option key={x.code} value={x.code}>{x.libelle}</option>)}
+        </optgroup>
+      ))}
+    </select>
+  )
+}
+
+// Changement de statut : la clôture est envoyée avec, pour rester juste même
+// avant la migration 038 (qui la déduit en base).
+function changementStatut(code) {
+  return { statut: code, est_clos: PAR_CODE.get(code).clos }
+}
 
 // ─── Bouton de suppression en deux temps ──────────────────────────────────────
 // Premier clic : le bouton passe au rouge et demande confirmation. Sans second
@@ -89,17 +165,16 @@ function RemarqueForm({ initial, crDate, suggestions, lots, interlocuteurs, sect
   // reprise dans la visite suivante retire le repère.
   const [form, setForm] = useState(() => ({
     date_note: today, pour: '', description: '',
-    statut: 'En cours', date_echeance: '',
-    est_important: false, est_clos: false, est_nouveau: true,
+    statut: STATUT_PAR_DEFAUT, date_echeance: '',
+    est_important: false, est_nouveau: true,
     lot_id: '', interlocuteur_id: '',
     ...(initial ? {
       date_note:        initial.date_note ?? today,
       pour:             initial.pour ?? '',
       description:      initial.description ?? '',
-      statut:           initial.statut ?? 'En cours',
+      statut:           statutNormalise(initial),
       date_echeance:    initial.date_echeance ?? '',
       est_important:    !!initial.est_important,
-      est_clos:         !!initial.est_clos,
       est_nouveau:      !!initial.est_nouveau,
       lot_id:           initial.lot_id ?? '',
       interlocuteur_id: initial.interlocuteur_id ?? '',
@@ -135,10 +210,9 @@ function RemarqueForm({ initial, crDate, suggestions, lots, interlocuteurs, sect
         date_note:        form.date_note || null,
         pour:             form.pour || null,
         description:      form.description,
-        statut:           form.statut || null,
+        ...changementStatut(form.statut),
         date_echeance:    form.date_echeance || null,
         est_important:    !!form.est_important,
-        est_clos:         !!form.est_clos,
         est_nouveau:      !!form.est_nouveau,
         lot_id:           sectionType === 'general' ? null : (form.lot_id || null),
         interlocuteur_id: sectionType === 'general' ? null : (form.interlocuteur_id || null),
@@ -188,8 +262,8 @@ function RemarqueForm({ initial, crDate, suggestions, lots, interlocuteurs, sect
           </div>
         )}
 
-        {/* Date + Pour */}
-        <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', gap: 10 }}>
+        {/* Date + Pour + Échéance */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
           <div>
             <label style={LABEL}>Date</label>
             <input type="date" value={form.date_note ?? ''} onChange={e => set('date_note', e.target.value)} style={INPUT} onFocus={focusOn} onBlur={focusOff} />
@@ -205,6 +279,10 @@ function RemarqueForm({ initial, crDate, suggestions, lots, interlocuteurs, sect
               {(suggestions ?? []).map(s => <option key={s} value={s} />)}
             </datalist>
           </div>
+          <div>
+            <label style={LABEL}>Pour le</label>
+            <input type="date" value={form.date_echeance ?? ''} onChange={e => set('date_echeance', e.target.value)} style={INPUT} onFocus={focusOn} onBlur={focusOff} />
+          </div>
         </div>
 
         {/* Description */}
@@ -219,23 +297,10 @@ function RemarqueForm({ initial, crDate, suggestions, lots, interlocuteurs, sect
           />
         </div>
 
-        {/* Statut + Échéance */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px', gap: 10 }}>
-          <div>
-            <label style={LABEL}>Statut</label>
-            <input
-              value={form.statut ?? ''} onChange={e => set('statut', e.target.value)}
-              list="statut-suggestions" placeholder="En cours, À faire…"
-              style={INPUT} onFocus={focusOn} onBlur={focusOff}
-            />
-            <datalist id="statut-suggestions">
-              {STATUT_SUGGESTIONS.map(s => <option key={s} value={s} />)}
-            </datalist>
-          </div>
-          <div>
-            <label style={LABEL}>Pour le</label>
-            <input type="date" value={form.date_echeance ?? ''} onChange={e => set('date_echeance', e.target.value)} style={INPUT} onFocus={focusOn} onBlur={focusOff} />
-          </div>
+        {/* Statut : il décide seul du report à la visite suivante */}
+        <div>
+          <label style={LABEL}>Statut</label>
+          <ChoixStatut valeur={form.statut} onChange={v => set('statut', v)} />
         </div>
 
         {/* Options */}
@@ -243,7 +308,6 @@ function RemarqueForm({ initial, crDate, suggestions, lots, interlocuteurs, sect
           {[
             { key: 'est_nouveau',   label: '▶ Nouveau' },
             { key: 'est_important', label: 'Important (gras)' },
-            { key: 'est_clos',      label: 'Clôturé (barré)' },
           ].map(opt => (
             <label key={opt.key} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer', userSelect: 'none' }}>
               <input type="checkbox" checked={!!form[opt.key]} onChange={e => set(opt.key, e.target.checked)} style={{ cursor: 'pointer', accentColor: '#E8602C' }} />
@@ -381,11 +445,16 @@ function SousRemarqueForm({ crDate, onSave, onCancel }) {
 function RemarqueRow({ rem, idx, total, crDate, suggestions, lots, interlocuteurs, sectionType, onEdit, onDelete, onReorder, onAddSousRemarque, noReorder, hidden }) {
   const [editOpen, setEditOpen]       = useState(false)
   const [addingSuivi, setAddingSuivi] = useState(false)
+  const [historiqueOuvert, setHistoriqueOuvert] = useState(false)
   const { lectureSeule } = useCr()
-  const fmtD = (d) => d ? new Date(d + 'T00:00:00').toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : null
+  const { modeSelection, selection, basculerSelection, historiqueDe, dateReference } = useContext(EditeurContexte)
+  const fmtD = (d) => fmtJour(d)
+  const statut = infosStatut(rem)
+  const enRetard = estEnRetard(rem, dateReference)
+  const etapes = historiqueDe(rem)
 
   let descStyle = { fontSize: 13, color: '#1F1B17', lineHeight: 1.5 }
-  if (rem.est_clos) descStyle = { ...descStyle, textDecoration: 'line-through', color: '#9CA3AF' }
+  if (statut.clos) descStyle = { ...descStyle, textDecoration: 'line-through', color: '#9CA3AF' }
   if (rem.est_important) descStyle = { ...descStyle, fontWeight: 500, color: '#E8602C' }
 
   const sousSousRems = rem.sous_remarques ?? []
@@ -418,8 +487,22 @@ function RemarqueRow({ rem, idx, total, crDate, suggestions, lots, interlocuteur
 
   return (
     <div style={{ display: hidden ? 'none' : 'block', marginBottom: 4 }}>
-      <div style={{ display: 'flex', gap: 8, padding: '8px 10px', backgroundColor: 'white', borderRadius: 2, border: '0.5px solid rgba(0,0,0,0.06)' }}>
+      <div style={{
+        display: 'flex', gap: 8, padding: '8px 10px', borderRadius: 2,
+        backgroundColor: selection.has(rem.id) ? 'rgba(232,96,44,0.06)' : 'white',
+        border: `0.5px solid ${selection.has(rem.id) ? 'rgba(232,96,44,0.45)' : 'rgba(0,0,0,0.06)'}`,
+      }}>
+        {modeSelection && !lectureSeule && (
+          <input
+            type="checkbox" aria-label={`Sélectionner la remarque ${rem.numero ?? ''}`}
+            checked={selection.has(rem.id)} onChange={() => basculerSelection(rem.id)}
+            style={{ width: 18, height: 18, marginTop: 2, flexShrink: 0, cursor: 'pointer', accentColor: '#E8602C' }}
+          />
+        )}
         <div style={{ flexShrink: 0, width: 100, paddingTop: 2 }}>
+          {rem.numero != null && (
+            <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: '#9C9591', marginBottom: 1 }}>n°{rem.numero}</p>
+          )}
           <p style={{ fontSize: 11, color: '#5E5854' }}>
             {rem.est_nouveau && <span style={{ color: '#E8602C', marginRight: 2 }}>▶</span>}
             {fmtD(rem.date_note) ?? '—'}
@@ -432,16 +515,43 @@ function RemarqueRow({ rem, idx, total, crDate, suggestions, lots, interlocuteur
             <p style={{ ...descStyle, margin: 0 }}>{rem.description}</p>
             <AttrBadge rem={rem} lots={lots} interlocuteurs={interlocuteurs} sectionType={sectionType} />
           </div>
-          {rem.date_echeance && (
-            <p style={{ fontSize: 11, color: '#5E5854', marginTop: 3 }}>Pour le {fmtD(rem.date_echeance)}</p>
+          {(rem.date_echeance || (statut.clos && rem.date_cloture)) && (
+            <p style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', fontSize: 11, color: '#5E5854', marginTop: 3 }}>
+              {rem.date_echeance && <span style={{ color: enRetard ? '#B8412C' : undefined, fontWeight: enRetard ? 500 : 400 }}>Pour le {fmtD(rem.date_echeance)}</span>}
+              {enRetard && (
+                <span style={{ fontSize: 10, fontWeight: 600, color: 'white', background: '#B8412C', borderRadius: 3, padding: '1px 6px' }}>En retard</span>
+              )}
+              {statut.clos && rem.date_cloture && (
+                <span style={{ color: '#2A8A4E' }}>{statut.libelle} le {fmtD(rem.date_cloture)}</span>
+              )}
+            </p>
+          )}
+          {etapes.length > 1 && (
+            <button
+              type="button" onClick={() => setHistoriqueOuvert(o => !o)} data-compact
+              aria-expanded={historiqueOuvert}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 4, padding: 0, background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: historiqueOuvert ? '#E8602C' : '#9C9591' }}
+            >
+              <History size={11} /> Historique · depuis le CR n°{etapes[0].crNumero}
+            </button>
+          )}
+          {historiqueOuvert && (
+            <ol style={{ listStyle: 'none', margin: '6px 0 0', padding: '6px 0 0 10px', borderLeft: '2px solid #E9E2D6' }}>
+              {etapes.map(e => (
+                <li key={e.crId} style={{ display: 'flex', gap: 8, alignItems: 'baseline', fontSize: 11, color: '#5E5854', padding: '2px 0', flexWrap: 'wrap' }}>
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", color: '#9C9591', minWidth: 48 }}>CR n°{e.crNumero}</span>
+                  {e.date && <span style={{ minWidth: 40 }}>{fmtJour(e.date, { day: '2-digit', month: '2-digit' })}</span>}
+                  <span style={{ color: e.statut.couleur, fontWeight: 500 }}>{e.statut.libelle}</span>
+                  {e.texteModifie && <span style={{ fontStyle: 'italic' }}>texte modifié : « {e.description} »</span>}
+                </li>
+              ))}
+            </ol>
           )}
         </div>
 
-        {rem.statut && (
-          <div style={{ flexShrink: 0, paddingTop: 2 }}>
-            <span style={{ fontSize: 10, color: '#5E5854', backgroundColor: '#FAF7F2', borderRadius: 3, padding: '2px 6px' }}>{rem.statut}</span>
-          </div>
-        )}
+        <div style={{ flexShrink: 0, paddingTop: 2 }}>
+          <BadgeStatut rem={rem} onChange={code => onEdit(rem.id, changementStatut(code)).catch(() => {})} />
+        </div>
 
         {!lectureSeule && <div style={{ display: 'flex', gap: 2, flexShrink: 0, alignItems: 'flex-start' }}>
           {!noReorder && (
@@ -879,66 +989,75 @@ function SectionBlock({ section, sIdx, sTotal, crDate, suggestions, lots, interl
 
 // ─── Barre de filtre ──────────────────────────────────────────────────────────
 
-function FilterBar({ filter, setFilter, lots, interlocuteurs }) {
-  const hasLots     = lots?.length > 0
-  const hasInterlos = interlocuteurs?.length > 0
-
-  const pill = (type, label, active) => (
-    <button
-      key={type}
-      onClick={() => setFilter({ type, lotId: '', interloId: '' })}
-      style={{
-        padding: '4px 12px', borderRadius: 3, fontSize: 11, cursor: 'pointer',
-        border: `0.5px solid ${active ? '#E8602C' : 'rgba(0,0,0,0.12)'}`,
-        backgroundColor: active ? 'rgba(232,96,44,0.10)' : 'white',
-        color: active ? '#E8602C' : '#5E5854',
-        fontWeight: active ? 500 : 400,
-      }}
-    >
-      {label}
-    </button>
-  )
-
-  const SELECT = {
-    height: 28, padding: '0 8px', borderRadius: 2, fontSize: 12,
-    border: '0.5px solid rgba(0,0,0,0.12)', backgroundColor: 'white',
-    outline: 'none', color: '#1F1B17', cursor: 'pointer',
-  }
+function FilterBar({ filtre, setFiltre, lots, interlocuteurs, nbVisibles, nbTotal }) {
+  const basculerFamille = (id) => setFiltre(f => ({
+    ...f, familles: f.familles.includes(id) ? f.familles.filter(x => x !== id) : [...f.familles, id],
+  }))
+  const pastille = (actif, couleur) => ({
+    display: 'inline-flex', alignItems: 'center', gap: 5,
+    padding: '4px 10px', borderRadius: 3, fontSize: 11, cursor: 'pointer',
+    border: `0.5px solid ${actif ? couleur : 'rgba(0,0,0,0.12)'}`,
+    backgroundColor: actif ? couleur : 'white',
+    color: actif ? 'white' : '#5E5854', fontWeight: actif ? 500 : 400,
+  })
 
   return (
-    <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-      {pill('all', 'Toutes', filter.type === 'all')}
-      {pill('general', 'Générales', filter.type === 'general')}
-
-      {hasLots && (
-        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-          {pill('lot', 'Par lot', filter.type === 'lot')}
-          {filter.type === 'lot' && (
-            <select value={filter.lotId} onChange={e => setFilter(f => ({ ...f, lotId: e.target.value }))} style={SELECT}>
-              <option value="">Tous</option>
-              {lots.map(l => (
-                <option key={l.id} value={l.id}>{l.numero ? `Lot ${l.numero}` : l.nom}</option>
-              ))}
-            </select>
-          )}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flex: 1, minWidth: 260 }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div style={{ position: 'relative', flex: '1 1 200px', maxWidth: 320 }}>
+          <Search size={13} color="#9C9591" style={{ position: 'absolute', left: 9, top: 8, pointerEvents: 'none' }} />
+          <input
+            type="search" value={filtre.recherche}
+            onChange={e => setFiltre(f => ({ ...f, recherche: e.target.value }))}
+            placeholder="Rechercher un mot, un n°…" aria-label="Rechercher dans les remarques"
+            style={{ ...INPUT, height: 30, fontSize: 12, paddingLeft: 28 }} onFocus={focusOn} onBlur={focusOff}
+          />
         </div>
-      )}
-
-      {hasInterlos && (
-        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-          {pill('interlocuteur', 'Par interlocuteur', filter.type === 'interlocuteur')}
-          {filter.type === 'interlocuteur' && (
-            <select value={filter.interloId} onChange={e => setFilter(f => ({ ...f, interloId: e.target.value }))} style={SELECT}>
-              <option value="">Tous</option>
-              {interlocuteurs.map(i => (
-                <option key={i.id} value={i.id}>
-                  {[i.prenom, i.nom].filter(Boolean).join(' ') || i.organisation}
-                </option>
-              ))}
-            </select>
-          )}
-        </div>
-      )}
+        {(lots.length > 0 || interlocuteurs.length > 0) && (
+          <select
+            value={filtre.destinataire} aria-label="Destinataire"
+            onChange={e => setFiltre(f => ({ ...f, destinataire: e.target.value }))}
+            style={{ height: 30, padding: '0 8px', borderRadius: 2, fontSize: 12, border: `0.5px solid ${filtre.destinataire ? '#E8602C' : 'rgba(0,0,0,0.12)'}`, backgroundColor: 'white', outline: 'none', color: '#1F1B17', cursor: 'pointer', maxWidth: 220 }}
+          >
+            <option value="">Tous les destinataires</option>
+            <option value="aucun">Sans destinataire</option>
+            {lots.length > 0 && (
+              <optgroup label="Lots / Entreprises">
+                {lots.map(l => <option key={l.id} value={`lot:${l.id}`}>{l.numero ? `Lot ${l.numero} — ${l.nom}` : l.nom}</option>)}
+              </optgroup>
+            )}
+            {interlocuteurs.length > 0 && (
+              <optgroup label="Interlocuteurs">
+                {interlocuteurs.map(i => (
+                  <option key={i.id} value={`interlo:${i.id}`}>{[i.prenom, i.nom].filter(Boolean).join(' ') || i.organisation}</option>
+                ))}
+              </optgroup>
+            )}
+          </select>
+        )}
+      </div>
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+        {FAMILLES_STATUT.map(f => {
+          const actif = filtre.familles.includes(f.id)
+          return (
+            <button key={f.id} type="button" aria-pressed={actif} onClick={() => basculerFamille(f.id)} style={pastille(actif, f.couleur)}>
+              <span style={{ width: 7, height: 7, borderRadius: '50%', background: actif ? 'white' : f.couleur }} />
+              {f.libelle}
+            </button>
+          )
+        })}
+        <button type="button" aria-pressed={filtre.enRetard} onClick={() => setFiltre(f => ({ ...f, enRetard: !f.enRetard }))} style={pastille(filtre.enRetard, '#B8412C')}>
+          En retard
+        </button>
+        {filtreActif(filtre) && (
+          <>
+            <span style={{ fontSize: 11, color: '#9C9591' }}>{nbVisibles} / {nbTotal}</span>
+            <button type="button" onClick={() => setFiltre(FILTRE_VIDE)} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '3px 6px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: '#5E5854' }}>
+              <X size={11} /> Effacer
+            </button>
+          </>
+        )}
+      </div>
     </div>
   )
 }
@@ -1020,10 +1139,12 @@ function NewRemarqueModal({ sections, crDate, suggestions, lots, interlocuteurs,
 
 // ─── Export principal ─────────────────────────────────────────────────────────
 
-export function CrSectionEditor({ sections, crDate, interlocuteurs, lotEntreprises, ops }) {
+export function CrSectionEditor({ sections, crId, crDate, interlocuteurs, lotEntreprises, ops, historique }) {
   const [addSec, setAddSec]             = useState(false)
   const [newSec, setNewSec]             = useState({ numero_romain: '', titre: '' })
-  const [filter, setFilter]             = useState({ type: 'all', lotId: '', interloId: '' })
+  const [filtre, setFiltre]             = useState(FILTRE_VIDE)
+  const [modeSelection, setModeSelection] = useState(false)
+  const [selection, setSelection]       = useState(() => new Set())
   const [globalAddOpen, setGlobalAddOpen] = useState(false)
   const [dragId, setDragId]             = useState(null)
   const [dropBeforeId, setDropBeforeId] = useState(null)
@@ -1041,12 +1162,45 @@ export function CrSectionEditor({ sections, crDate, interlocuteurs, lotEntrepris
     ).filter(Boolean),
   ].filter((v, i, a) => v && a.indexOf(v) === i)
 
-  const filterFn = (rem) => {
-    if (filter.type === 'all') return true
-    if (filter.type === 'general') return !rem.lot_id && !rem.interlocuteur_id && !rem.copie_destinataire
-    if (filter.type === 'lot') return filter.lotId ? rem.lot_id === filter.lotId : !!rem.lot_id
-    if (filter.type === 'interlocuteur') return filter.interloId ? rem.interlocuteur_id === filter.interloId : !!rem.interlocuteur_id
-    return true
+  const filterFn = (rem) => passeFiltre(rem, filtre, crDate)
+
+  // Remarques principales de cette visite, à plat
+  const toutes = useMemo(() => sections.flatMap(s => [
+    ...(s.directRemarques ?? []),
+    ...(s.sousSections ?? []).flatMap(ss => ss.remarques ?? []),
+  ]), [sections])
+  const visibles = toutes.filter(filterFn)
+  // L'action groupée ne touche que ce qui est à l'écran : une remarque cochée
+  // puis masquée par un filtre n'est pas modifiée à l'insu de l'utilisateur.
+  const cibles = visibles.filter(r => selection.has(r.id)).map(r => r.id)
+
+  const contexteEditeur = useMemo(() => {
+    const versions = [
+      ...(historique?.remarques ?? []).filter(r => r.cr_id !== crId),
+      ...toutes,
+    ]
+    return {
+      modeSelection,
+      selection,
+      basculerSelection: (id) => setSelection(prev => {
+        const suivante = new Set(prev)
+        if (suivante.has(id)) suivante.delete(id)
+        else suivante.add(id)
+        return suivante
+      }),
+      historiqueDe: (rem) => historiqueRemarque(rem, versions, historique?.crs),
+      dateReference: crDate,
+    }
+  }, [modeSelection, selection, historique, crId, toutes, crDate])
+
+  const quitterSelection = () => { setModeSelection(false); setSelection(new Set()) }
+
+  const appliquerStatut = async (code) => {
+    if (!code || cibles.length === 0) return
+    try {
+      await ops.changerStatutRemarques(cibles, code, PAR_CODE.get(code).clos)
+      quitterSelection()
+    } catch { /* signalé dans le bandeau du compte rendu */ }
   }
 
   const handleDrop = (targetId) => {
@@ -1074,11 +1228,21 @@ export function CrSectionEditor({ sections, crDate, interlocuteurs, lotEntrepris
   }
 
   return (
+    <EditeurContexte.Provider value={contexteEditeur}>
     <div>
-      {/* Barre supérieure : nouvelle remarque + filtres */}
+      {/* Barre supérieure : filtres, sélection, nouvelle remarque */}
       <div style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: '#FAF7F2', paddingBottom: 10, marginBottom: 4 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
-          <FilterBar filter={filter} setFilter={setFilter} lots={lots} interlocuteurs={interlocuteurs ?? []} />
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+          <FilterBar filtre={filtre} setFiltre={setFiltre} lots={lots} interlocuteurs={interlocuteurs ?? []} nbVisibles={visibles.length} nbTotal={toutes.length} />
+          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+          {!lectureSeule && !modeSelection && toutes.length > 0 && (
+            <button
+              onClick={() => setModeSelection(true)}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 2, fontSize: 12, border: '0.5px solid rgba(0,0,0,0.15)', backgroundColor: 'white', color: '#374151', cursor: 'pointer' }}
+            >
+              <CheckSquare size={13} /> Sélectionner
+            </button>
+          )}
           {!lectureSeule && <button
             onClick={() => setGlobalAddOpen(true)}
             style={{
@@ -1090,8 +1254,43 @@ export function CrSectionEditor({ sections, crDate, interlocuteurs, lotEntrepris
           >
             <MessageSquarePlus size={13} /> Nouvelle remarque
           </button>}
+          </div>
         </div>
+
+        {modeSelection && !lectureSeule && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 10, padding: '8px 12px', background: '#1F1B17', color: 'white', fontSize: 12 }}>
+            <span style={{ fontWeight: 500 }}>
+              {cibles.length === 0 ? 'Cochez les remarques à modifier' : `${cibles.length} remarque${cibles.length > 1 ? 's' : ''} sélectionnée${cibles.length > 1 ? 's' : ''}`}
+            </span>
+            <button
+              onClick={() => setSelection(new Set(cibles.length === visibles.length ? [] : visibles.map(r => r.id)))}
+              style={{ padding: '4px 10px', borderRadius: 2, fontSize: 12, border: '0.5px solid rgba(255,255,255,0.35)', background: 'transparent', color: 'white', cursor: 'pointer' }}
+            >
+              {cibles.length === visibles.length && visibles.length > 0 ? 'Tout désélectionner' : `Tout sélectionner (${visibles.length})`}
+            </button>
+            <select
+              value="" disabled={cibles.length === 0}
+              onChange={e => appliquerStatut(e.target.value)}
+              aria-label="Changer le statut des remarques sélectionnées"
+              style={{ height: 28, padding: '0 8px', borderRadius: 2, fontSize: 12, border: 'none', cursor: cibles.length ? 'pointer' : 'default', opacity: cibles.length ? 1 : 0.5 }}
+            >
+              <option value="">Changer le statut…</option>
+              {FAMILLES_STATUT.map(f => (
+                <optgroup key={f.id} label={f.libelle}>
+                  {STATUTS.filter(x => x.famille === f.id).map(x => <option key={x.code} value={x.code}>{x.libelle}</option>)}
+                </optgroup>
+              ))}
+            </select>
+            <button onClick={quitterSelection} style={{ marginLeft: 'auto', padding: '4px 10px', borderRadius: 2, fontSize: 12, border: 'none', background: 'rgba(255,255,255,0.14)', color: 'white', cursor: 'pointer' }}>
+              Terminer
+            </button>
+          </div>
+        )}
       </div>
+
+      {filtreActif(filtre) && visibles.length === 0 && (
+        <p style={{ fontSize: 12, color: '#9C9591', padding: '10px 2px' }}>Aucune remarque ne correspond aux filtres.</p>
+      )}
 
       {/* Sections */}
       {sections.map((sec) => (
@@ -1184,5 +1383,6 @@ export function CrSectionEditor({ sections, crDate, interlocuteurs, lotEntrepris
         />
       )}
     </div>
+    </EditeurContexte.Provider>
   )
 }

@@ -29,7 +29,7 @@ export function useComptesRendus(affaireId) {
         .order('numero', { ascending: false }),
       supabase
         .from('cr_remarques')
-        .select('cr_id, est_clos, parent_id')
+        .select('cr_id, statut, est_clos, parent_id')
         .eq('affaire_id', affaireId)
         .eq('est_clos', false),
     ])

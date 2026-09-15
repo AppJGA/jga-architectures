@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 186 tests node --test (plannings, exports, comptes rendus)
+npm test         # 197 tests node --test (plannings, exports, comptes rendus)
 npx eslint src   # ~74 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -45,7 +45,7 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
 - **Accès aux données** : hooks dans `src/shared/hooks/`. `useAffaires()` pour
   la liste, `useAffaire(id)` pour une affaire (les deux font `select('*')`),
   `useAffaireCollaborateurs(id)` pour les droits (`canEdit`, `isProprietaire`).
-- **Base** : `supabase/migrations/`, numérotées, 38 fichiers, **passées à la
+- **Base** : `supabase/migrations/`, numérotées, 39 fichiers, **passées à la
   main** dans le SQL Editor de Supabase : un code qui dépend d'une nouvelle
   colonne doit tolérer son absence tant que la migration n'est pas faite. La photo de
   couverture d'une affaire est `affaires.photo_url` (migration 014, bucket
@@ -78,6 +78,15 @@ création avec reprise de la visite précédente) et `useCompteRendu` (un CR).
   remarque celle de son destinataire (`copie_destinataire`, tenue par un
   déclencheur). Afficher une présence passe par `affichagePresence`, jamais par
   les jointures seules : la fiche liée peut avoir été supprimée.
+- **Statuts fixes** (migration 038, `STATUTS` de `crLogique.js`) : le statut
+  décide seul de la clôture ; `est_clos` en est déduit par le déclencheur
+  `cr_remarques_suivi`. Toujours lire un statut via `statutNormalise` /
+  `infosStatut` : les anciennes lignes et un onglet d'avant la migration
+  portent encore du texte libre. La correspondance est dupliquée en SQL
+  (`cr_statut_normalise`) : modifier les deux ensemble.
+- **Suivi d'une remarque** : ses copies de visite en visite partagent
+  `suivi_id` et `numero`. Une remarque close revient une fois
+  (`cloture_reportee` sur la copie), puis disparaît.
 
 ## Pièges déjà rencontrés
 

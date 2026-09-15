@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../../core/supabase/client'
 import { dateDuJour, compterPointsEnCours, preparerReprise } from '../../modules/chantier/comptes-rendus/crLogique'
+import { photosDuCr, nettoyerFichiers } from '../../modules/chantier/comptes-rendus/photosStockage'
 
 // Insère des lignes et fait remonter l'échec : Supabase ne lève pas d'exception
 async function inserer(table, lignes) {
@@ -104,9 +105,10 @@ export function useComptesRendus(affaireId) {
         ])
         const erreurLecture = e1 ?? e2 ?? e3
         if (erreurLecture) throw erreurLecture
+        const photos = await photosDuCr(prevCR.id)
 
         const reprise = preparerReprise({
-          sections: sections ?? [], sousSections: sousSections ?? [], remarques: remarques ?? [],
+          sections: sections ?? [], sousSections: sousSections ?? [], remarques: remarques ?? [], photos,
           crId: cr.id, affaireId, nouvelId: () => crypto.randomUUID(),
         })
         // Chaque niveau après celui qu'il référence
@@ -114,6 +116,7 @@ export function useComptesRendus(affaireId) {
         await inserer('cr_sous_sections', reprise.sousSections)
         await inserer('cr_remarques', reprise.remarques)
         await inserer('cr_remarques', reprise.sousRemarques)
+        await inserer('cr_photos', reprise.photos)
       } catch (err) {
         // Une visite à moitié reprise serait trompeuse : on la retire entière
         // (les lignes déjà insérées partent en cascade) et on prévient.
@@ -134,8 +137,10 @@ export function useComptesRendus(affaireId) {
   }, [fetchAll])
 
   const deleteCR = useCallback(async (id) => {
+    const photos = await photosDuCr(id)
     const { error } = await supabase.from('comptes_rendus').delete().eq('id', id)
     if (error) throw error
+    await nettoyerFichiers(photos)
     await fetchAll()
   }, [fetchAll])
 

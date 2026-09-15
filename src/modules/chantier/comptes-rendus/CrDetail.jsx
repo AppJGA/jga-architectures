@@ -13,6 +13,9 @@ import { TemplateModal } from './TemplateModal'
 import { generateCrPdf } from './CrPdfExport'
 import { compterPresents, FAMILLES_STATUT, infosStatut, estEnRetard } from './crLogique'
 import { CrContexte, useCr } from './CrContexte'
+import { PhotosContexte } from './usePhotosRemarque'
+import { espaceUtilise } from './photosStockage'
+import { formatOctets, niveauEspace, LIMITE_STOCKAGE } from './photosLogique'
 
 // ─── Styles partagés ──────────────────────────────────────────────────────────
 
@@ -179,9 +182,66 @@ function OrganisationView({ cr, profiles, updateCr, onApplyTemplate, lots, inter
 
 // ─── Vue export ───────────────────────────────────────────────────────────────
 
-function ExportView({ cr, sections, presences, affaire, lotEntreprises, interlocuteurs }) {
+// Espace de stockage utilisé par tout le projet, face à l'offre gratuite
+function CompteurEspace({ utilise }) {
+  if (utilise == null) return null
+  const { ratio, alerte } = niveauEspace(utilise)
+  const couleur = alerte ? '#B8412C' : '#2A8A4E'
+  return (
+    <div style={{ maxWidth: 320, margin: '28px auto 0', textAlign: 'left' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#5E5854', marginBottom: 4 }}>
+        <span>Espace photos</span>
+        <span style={{ color: alerte ? couleur : undefined, fontWeight: alerte ? 600 : 400 }}>
+          {formatOctets(utilise)} / {formatOctets(LIMITE_STOCKAGE)}
+        </span>
+      </div>
+      <div style={{ height: 6, background: '#E9E2D6', borderRadius: 3, overflow: 'hidden' }}>
+        <div style={{ width: `${Math.min(100, ratio * 100)}%`, height: '100%', background: couleur }} />
+      </div>
+      {alerte && (
+        <p style={{ fontSize: 11, color: '#B8412C', marginTop: 6 }}>
+          L’espace gratuit sera bientôt plein : supprimez les photos inutiles ou prévoyez un stockage plus grand.
+        </p>
+      )}
+    </div>
+  )
+}
+
+function ExportView({ cr, sections, presences, affaire, lotEntreprises, interlocuteurs, photos, liensPhotos, espace }) {
   const num = String(cr.numero).padStart(2, '0')
   const [bloque, setBloque] = useState(false)
+  const [avecPhotos, setAvecPhotos] = useState(true)
+  const { signalerErreur } = useCr()
+
+  const generer = async () => {
+    // La fenêtre s'ouvre tout de suite, pendant le clic : ouverte après
+    // l'attente des liens des photos, le navigateur la bloquerait.
+    const fenetre = window.open('', '_blank', 'width=900,height=700')
+    if (!fenetre) { setBloque(true); return }
+    setBloque(false)
+    fenetre.document.write('<p style="font-family:Arial,sans-serif;padding:24px;color:#5E5854">Préparation du compte rendu…</p>')
+    try {
+      const parRemarque = new Map()
+      if (avecPhotos && photos.length > 0) {
+        const liens = await liensPhotos(photos.map(p => p.chemin))
+        for (const p of photos) {
+          const url = liens.get(p.chemin)
+          if (!url) continue
+          parRemarque.set(p.remarque_id, [...(parRemarque.get(p.remarque_id) ?? []), { url, legende: p.legende }])
+        }
+      }
+      generateCrPdf(cr, sections, presences, affaire, {
+        lots: lotEntreprises.map(le => le.lots).filter(Boolean),
+        interlocuteurs,
+        fenetre,
+        photosParRemarque: parRemarque,
+      })
+    } catch (err) {
+      fenetre.close()
+      signalerErreur(err)
+    }
+  }
+
   return (
     <div style={{ textAlign: 'center', padding: '40px 0' }}>
       <div style={{ width: 72, height: 72, borderRadius: '50%', background: '#FAF7F2', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
@@ -196,10 +256,7 @@ function ExportView({ cr, sections, presences, affaire, lotEntreprises, interloc
           : 'Date non définie'}
       </p>
       <button
-        onClick={() => setBloque(!generateCrPdf(cr, sections, presences, affaire, {
-          lots: lotEntreprises.map(le => le.lots).filter(Boolean),
-          interlocuteurs,
-        }))}
+        onClick={generer}
         style={{
           display: 'inline-flex', alignItems: 'center', gap: 8,
           padding: '10px 24px', borderRadius: 2, fontSize: 13, fontWeight: 500,
@@ -208,6 +265,12 @@ function ExportView({ cr, sections, presences, affaire, lotEntreprises, interloc
       >
         <FileDown size={15} /> Générer le PDF
       </button>
+      {photos.length > 0 && (
+        <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: 12, color: '#374151', marginTop: 14, cursor: 'pointer' }}>
+          <input type="checkbox" checked={avecPhotos} onChange={e => setAvecPhotos(e.target.checked)} style={{ accentColor: '#E8602C' }} />
+          Inclure les photos ({photos.length})
+        </label>
+      )}
       {bloque ? (
         <p role="alert" style={{ fontSize: 12, color: '#B8412C', marginTop: 12 }}>
           Le navigateur a bloqué la fenêtre d’aperçu. Autorisez les fenêtres pop-up pour ce site, puis cliquez à nouveau.
@@ -217,6 +280,7 @@ function ExportView({ cr, sections, presences, affaire, lotEntreprises, interloc
           Une fenêtre s'ouvrira avec l'aperçu avant impression.
         </p>
       )}
+      <CompteurEspace utilise={espace} />
     </div>
   )
 }
@@ -578,6 +642,7 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
   }, [affaire?.id, signalerErreur])
 
   const {
+    photos, liens, ajouterPhotos, remplacerPhoto, modifierLegendePhoto, supprimerPhoto, liensPhotos,
     cr, sections, presences, profiles, loading, erreurChargement, historique,
     syncPresences, updateCr, emettre, rouvrir, updatePresence,
     addSection, updateSection, deleteSection, reorderSection, reorderSectionsByIds,
@@ -620,6 +685,34 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
     addSousRemarque, changerStatutRemarques, signalerErreur,
   ])
 
+  // Espace utilisé, relu quand le nombre de photos change
+  const [espace, setEspace] = useState(null)
+  useEffect(() => {
+    let abandon = false
+    espaceUtilise().then(v => { if (!abandon) setEspace(v) }).catch(err => console.warn('Espace de stockage :', err))
+    return () => { abandon = true }
+  }, [photos.length])
+
+  const contextePhotos = useMemo(() => {
+    const signaler = (op) => async (...args) => {
+      try {
+        setErreur(null)
+        return await op(...args)
+      } catch (err) {
+        signalerErreur(err)
+        throw err
+      }
+    }
+    return {
+      photos, liens, liensPhotos,
+      espacePlein: espace != null && niveauEspace(espace).plein,
+      ajouterPhotos: signaler(ajouterPhotos),
+      remplacerPhoto: signaler(remplacerPhoto),
+      modifierLegendePhoto: signaler(modifierLegendePhoto),
+      supprimerPhoto: signaler(supprimerPhoto),
+    }
+  }, [photos, liens, liensPhotos, espace, ajouterPhotos, remplacerPhoto, modifierLegendePhoto, supprimerPhoto, signalerErreur])
+
   const lectureSeule = lectureSeuleAffaire || cr?.statut === 'emis'
   const contexte = useMemo(() => ({ lectureSeule, signalerErreur }), [lectureSeule, signalerErreur])
 
@@ -650,6 +743,7 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
 
   return (
     <CrContexte.Provider value={contexte}>
+    <PhotosContexte.Provider value={contextePhotos}>
     <div>
       {erreur && <BandeauErreur message={erreur} onFermer={() => setErreur(null)} />}
 
@@ -745,6 +839,9 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
           affaire={affaire}
           lotEntreprises={lotEntreprises}
           interlocuteurs={interlocuteurs}
+          photos={photos}
+          liensPhotos={liensPhotos}
+          espace={espace}
         />
       )}
 
@@ -769,6 +866,7 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
         />
       )}
     </div>
+    </PhotosContexte.Provider>
     </CrContexte.Provider>
   )
 }

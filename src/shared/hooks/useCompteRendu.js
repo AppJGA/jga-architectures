@@ -1,6 +1,15 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../../core/supabase/client'
 import { copiePresence, copieAJour } from '../../modules/chantier/comptes-rendus/crLogique'
+import {
+  photosDuCr, envoyerPhoto, nettoyerFichiers, liensSignes,
+} from '../../modules/chantier/comptes-rendus/photosStockage'
+
+// Un lien signé vaut une heure ; on le renouvelle un peu avant. Le garder entre
+// deux rechargements évite de retélécharger les miniatures : un nouveau lien
+// est une nouvelle adresse pour le cache du navigateur.
+const DUREE_LIEN = 3600
+const MARGE_LIEN = 600
 
 // Jointures d'une présence : la fiche liée sert à tenir sa copie à jour
 const SELECT_PRESENCES = `
@@ -88,10 +97,26 @@ export function useCompteRendu(crId, affaireId) {
   // Versions des remarques dans les autres visites de l'affaire, pour leur
   // historique. Chargées une fois : elles ne changent pas pendant la saisie.
   const [historique, setHistorique] = useState({ remarques: [], crs: [] })
+  const [photos, setPhotos] = useState([])
+  const [liens, setLiens] = useState(() => new Map())
+  const cacheLiens = useRef(new Map()) // chemin → { url, expire }
   // Seul le premier chargement affiche l'indicateur : il remplace l'éditeur,
   // qui perdait sinon à chaque ajout ses filtres, ses sections repliées et la
   // position de défilement.
   const dejaCharge = useRef(false)
+
+  // Liens signés des chemins demandés, depuis le cache quand ils sont encore valides
+  const obtenirLiens = useCallback(async (chemins) => {
+    const maintenant = Date.now() / 1000
+    const cache = cacheLiens.current
+    const manquants = chemins.filter(c => c && !(cache.get(c)?.expire > maintenant + MARGE_LIEN))
+    if (manquants.length > 0) {
+      const nouveaux = await liensSignes(manquants, DUREE_LIEN)
+      for (const [chemin, url] of nouveaux) cache.set(chemin, { url, expire: maintenant + DUREE_LIEN })
+      setLiens(new Map([...cache].map(([c, v]) => [c, v.url])))
+    }
+    return new Map(chemins.map(c => [c, cache.get(c)?.url]))
+  }, [])
 
   const fetchAll = useCallback(async () => {
     if (!crId) return
@@ -118,15 +143,18 @@ export function useCompteRendu(crId, affaireId) {
       { data: presData },
       { data: profData },
     ] = resultats
+    const photosCr = await photosDuCr(crId)
+    await obtenirLiens(photosCr.map(p => p.chemin_miniature))
 
     setErreurChargement(null)
     setCr(crData)
     setSections(buildTree(secData ?? [], ssData ?? [], remData ?? []))
     setPresences(presData ?? [])
     setProfiles(profData ?? [])
+    setPhotos(photosCr)
     dejaCharge.current = true
     setLoading(false)
-  }, [crId])
+  }, [crId, obtenirLiens])
 
   useEffect(() => {
     dejaCharge.current = false
@@ -243,11 +271,25 @@ export function useCompteRendu(crId, affaireId) {
     await fetchAll()
   }, [fetchAll])
 
+  // Supprimer une remarque, une sous-section ou une section emporte ses photos
+  // en cascade : leurs fichiers sont ensuite effacés s'ils ne servent plus.
+  const photosDesRemarques = useCallback((ids) => {
+    const cibles = new Set(ids)
+    return photos.filter(p => cibles.has(p.remarque_id))
+  }, [photos])
+
   const deleteSection = useCallback(async (id) => {
+    const sec = sections.find(s => s.id === id)
+    const ids = [
+      ...(sec?.directRemarques ?? []),
+      ...(sec?.sousSections ?? []).flatMap(ss => ss.remarques ?? []),
+    ].map(r => r.id)
+    const emportees = photosDesRemarques(ids)
     const { error } = await supabase.from('cr_sections').delete().eq('id', id)
     if (error) throw error
+    await nettoyerFichiers(emportees)
     await fetchAll()
-  }, [fetchAll])
+  }, [sections, photosDesRemarques, fetchAll])
 
   const reorderSectionsByIds = useCallback(async (orderedIds) => {
     verifierTout(await Promise.all(orderedIds.map((id, idx) => supabase.from('cr_sections').update({ ordre: idx }).eq('id', id))))
@@ -282,10 +324,13 @@ export function useCompteRendu(crId, affaireId) {
   }, [fetchAll])
 
   const deleteSousSection = useCallback(async (id) => {
+    const ss = sections.flatMap(s => s.sousSections ?? []).find(x => x.id === id)
+    const emportees = photosDesRemarques((ss?.remarques ?? []).map(r => r.id))
     const { error } = await supabase.from('cr_sous_sections').delete().eq('id', id)
     if (error) throw error
+    await nettoyerFichiers(emportees)
     await fetchAll()
-  }, [fetchAll])
+  }, [sections, photosDesRemarques, fetchAll])
 
   const reorderSousSection = useCallback(async (sectionId, id, dir) => {
     const sec = sections.find(s => s.id === sectionId)
@@ -341,10 +386,12 @@ export function useCompteRendu(crId, affaireId) {
   }, [fetchAll])
 
   const deleteRemarque = useCallback(async (id) => {
+    const emportees = photosDesRemarques([id])
     const { error } = await supabase.from('cr_remarques').delete().eq('id', id)
     if (error) throw error
+    await nettoyerFichiers(emportees)
     await fetchAll()
-  }, [fetchAll])
+  }, [photosDesRemarques, fetchAll])
 
   const reorderRemarque = useCallback(async (sousSectionId, id, dir) => {
     let allRems = []
@@ -406,7 +453,61 @@ export function useCompteRendu(crId, affaireId) {
     }
   }, [fetchAll])
 
+  // ── Photos ───────────────────────────────────────────────────────────────────
+  // Compressées avant d'arriver ici (compressionPhoto.js)
+  const ajouterPhotos = useCallback(async (remarqueId, compressions) => {
+    const dejaLa = photos.filter(p => p.remarque_id === remarqueId)
+    let ordre = dejaLa.reduce((m, p) => Math.max(m, p.ordre ?? 0), -1) + 1
+    try {
+      for (const compression of compressions) {
+        const fichier = await envoyerPhoto(affaireId, compression)
+        const { error } = await supabase.from('cr_photos').insert({
+          ...fichier, affaire_id: affaireId, cr_id: crId, remarque_id: remarqueId, ordre: ordre++,
+        })
+        if (error) {
+          await nettoyerFichiers([fichier])
+          throw error
+        }
+      }
+    } finally {
+      await fetchAll()
+    }
+  }, [photos, affaireId, crId, fetchAll])
+
+  // Photo annotée : nouveau fichier, l'ancien reste pour les visites qui le
+  // montrent encore (compte rendu émis, par exemple)
+  const remplacerPhoto = useCallback(async (photo, compression) => {
+    const fichier = await envoyerPhoto(affaireId, compression)
+    const { error } = await supabase.from('cr_photos').update({
+      chemin: fichier.chemin, chemin_miniature: fichier.chemin_miniature,
+      largeur: fichier.largeur, hauteur: fichier.hauteur, poids_octets: fichier.poids_octets,
+    }).eq('id', photo.id)
+    if (error) {
+      await nettoyerFichiers([fichier])
+      throw error
+    }
+    await nettoyerFichiers([photo])
+    await fetchAll()
+  }, [affaireId, fetchAll])
+
+  const modifierLegendePhoto = useCallback(async (photoId, legende) => {
+    const { error } = await supabase.from('cr_photos').update({ legende: legende || null }).eq('id', photoId)
+    if (error) throw error
+    await fetchAll()
+  }, [fetchAll])
+
+  const supprimerPhoto = useCallback(async (photo) => {
+    const { error } = await supabase.from('cr_photos').delete().eq('id', photo.id)
+    if (error) throw error
+    await nettoyerFichiers([photo])
+    await fetchAll()
+  }, [fetchAll])
+
+  // Lien de la photo entière (visionneuse, PDF)
+  const liensPhotos = useCallback((chemins) => obtenirLiens(chemins), [obtenirLiens])
+
   return {
+    photos, liens, ajouterPhotos, remplacerPhoto, modifierLegendePhoto, supprimerPhoto, liensPhotos,
     cr, sections, presences, profiles, loading, erreurChargement, historique,
     syncPresences, updateCr, emettre, rouvrir, updatePresence,
     addSection, updateSection, deleteSection, reorderSection, reorderSectionsByIds,

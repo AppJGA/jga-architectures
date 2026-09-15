@@ -62,7 +62,17 @@ function buildPresencePill(presence) {
 }
 
 // Évolution 4: inclut les sous-remarques indentées sous leur remarque parente
-function buildRemarquesTable(remarques, lots, interlocuteurs, dateReference) {
+function buildPhotosRow(photos) {
+  if (!photos?.length) return ''
+  const figures = photos.map(ph => `
+    <figure class="rem-photo">
+      <img src="${escHtml(ph.url)}" alt="">
+      ${ph.legende ? `<figcaption>${escHtml(ph.legende)}</figcaption>` : ''}
+    </figure>`).join('')
+  return `<tr class="rem-photos"><td></td><td colspan="3"><div class="rem-photos-grille">${figures}</div></td></tr>`
+}
+
+function buildRemarquesTable(remarques, lots, interlocuteurs, dateReference, photosParRemarque) {
   if (!remarques.length) return '<p style="color:#9C9591;font-size:10pt;font-style:italic;padding:4px 0">Aucune remarque</p>'
 
   const rows = remarques.map(r => {
@@ -124,7 +134,7 @@ function buildRemarquesTable(remarques, lots, interlocuteurs, dateReference) {
         </tr>`
     }).join('')
 
-    return mainRow + sousRows
+    return mainRow + buildPhotosRow(photosParRemarque?.get(r.id)) + sousRows
   }).join('')
 
   return `
@@ -141,7 +151,7 @@ function buildRemarquesTable(remarques, lots, interlocuteurs, dateReference) {
     </table>`
 }
 
-export function generateCrPdf(cr, sections, presences, affaire, { autoPrint = true, lots = [], interlocuteurs = [] } = {}) {
+export function generateCrPdf(cr, sections, presences, affaire, { autoPrint = true, lots = [], interlocuteurs = [], fenetre = null, photosParRemarque = null } = {}) {
   const num     = String(cr.numero).padStart(2, '0')
   const logoUrl = window.location.origin + '/Logo_JGA_Archi.jpg'
 
@@ -205,13 +215,13 @@ export function generateCrPdf(cr, sections, presences, affaire, { autoPrint = tr
     const sousSectionsHtml = section.sousSections.map(ss => `
       <div class="sous-section">
         <div class="ss-header">${escHtml(ss.code)} — ${escHtml(ss.titre)}</div>
-        ${buildRemarquesTable(ss.remarques, lots, interlocuteurs, cr.date_reunion)}
+        ${buildRemarquesTable(ss.remarques, lots, interlocuteurs, cr.date_reunion, photosParRemarque)}
       </div>`).join('')
 
     const directRems = section.directRemarques ?? []
     const directHtml = directRems.length > 0
       ? `<div class="sous-section" style="border-top:${sousSectionsHtml ? '0.5px solid #E9E2D6;margin-top:8px;padding-top:8px;' : ''}">
-          ${buildRemarquesTable(directRems, lots, interlocuteurs, cr.date_reunion)}
+          ${buildRemarquesTable(directRems, lots, interlocuteurs, cr.date_reunion, photosParRemarque)}
          </div>`
       : ''
 
@@ -290,6 +300,11 @@ export function generateCrPdf(cr, sections, presences, affaire, { autoPrint = tr
     .rem-date  { font-size:8.5pt; color:#5E5854; }
     .rem-pour  { font-size:8pt; color:#E8602C; font-weight:500; }
     .rem-statut { font-size:8pt; font-weight:600; border-radius:2px; padding:1px 5px; white-space:nowrap; }
+    .rem-photos td { border-bottom:0.5px solid #F3F4F6; padding-top:0; }
+    .rem-photos-grille { display:flex; flex-wrap:wrap; gap:6px; }
+    .rem-photo { width:calc((100% - 12px) / 3); margin:0; page-break-inside:avoid; break-inside:avoid; }
+    .rem-photo img { width:100%; height:5.5cm; object-fit:cover; display:block; border-radius:2px; }
+    .rem-photo figcaption { font-size:7.5pt; color:#5E5854; margin-top:2px; }
     .rem-numero { font-size:7.5pt; color:#9C9591; font-family:monospace; }
     .rem-retard { font-size:7.5pt; font-weight:bold; color:white; background:#B8412C; border-radius:2px; padding:0 4px; }
     .new-triangle { color:#E8602C; font-size:8pt; }
@@ -372,8 +387,9 @@ export function generateCrPdf(cr, sections, presences, affaire, { autoPrint = tr
 
   // Fenêtre bloquée par le navigateur : l'appelant prévient l'utilisateur,
   // sinon le clic semble ne rien faire.
-  const win = window.open('', '_blank', 'width=900,height=700')
+  const win = fenetre ?? window.open('', '_blank', 'width=900,height=700')
   if (!win) return false
+  if (fenetre) win.document.open()
   win.document.write(html)
   win.document.close()
   return true

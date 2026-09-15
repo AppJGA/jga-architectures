@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 197 tests node --test (plannings, exports, comptes rendus)
+npm test         # 206 tests node --test (plannings, exports, comptes rendus, photos)
 npx eslint src   # ~74 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -19,7 +19,8 @@ npx eslint src   # ~74 problèmes préexistants : comparer, ne pas viser zéro
 `planning-etude.test.js`), la géométrie des barres du Gantt chantier
 (`geometrie.test.js`) et les exports (`export.test.js`, `export-etude.test.js`,
 `export-chantier-excel.test.js`), ainsi que la reprise et les compteurs des
-comptes rendus (`comptes-rendus.test.js`, sur `comptes-rendus/crLogique.js`). Rien ne couvre l'interface : la logique des
+comptes rendus (`comptes-rendus.test.js`, `photos.test.js`, sur `crLogique.js` et
+`photosLogique.js`). Rien ne couvre l'interface : la logique des
 plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`,
 `types.js` de chaque module) pour rester testable.
 
@@ -45,7 +46,7 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
 - **Accès aux données** : hooks dans `src/shared/hooks/`. `useAffaires()` pour
   la liste, `useAffaire(id)` pour une affaire (les deux font `select('*')`),
   `useAffaireCollaborateurs(id)` pour les droits (`canEdit`, `isProprietaire`).
-- **Base** : `supabase/migrations/`, numérotées, 39 fichiers, **passées à la
+- **Base** : `supabase/migrations/`, numérotées, 40 fichiers, **passées à la
   main** dans le SQL Editor de Supabase : un code qui dépend d'une nouvelle
   colonne doit tolérer son absence tant que la migration n'est pas faite. La photo de
   couverture d'une affaire est `affaires.photo_url` (migration 014, bucket
@@ -87,6 +88,14 @@ création avec reprise de la visite précédente) et `useCompteRendu` (un CR).
 - **Suivi d'une remarque** : ses copies de visite en visite partagent
   `suivi_id` et `numero`. Une remarque close revient une fois
   (`cloture_reportee` sur la copie), puis disparaît.
+- **Photos** (migration 039, table `cr_photos`, stockage **privé** `cr-photos`,
+  liens signés) : compressées sur l'appareil avant l'envoi
+  (`compressionPhoto.js`, 1 920 px WebP ~300 Ko + miniature) — l'offre gratuite
+  de Supabase plafonne le stockage à 1 Go. La reprise recopie la ligne, pas le
+  fichier : plusieurs lignes partagent un `chemin`, et un fichier ne s'efface
+  (`nettoyerFichiers`) que lorsque plus aucune ligne ne le désigne. Le stockage
+  ne se purge pas en SQL : toute suppression qui emporte des photos doit
+  appeler `nettoyerFichiers` après coup.
 
 ## Pièges déjà rencontrés
 

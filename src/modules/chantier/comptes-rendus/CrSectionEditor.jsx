@@ -1,6 +1,6 @@
-import { useState, useEffect, useMemo, createContext, useContext } from 'react'
+import { useState, useMemo, createContext, useContext } from 'react'
 import {
-  Plus, Pencil, Trash2, ChevronDown, ChevronUp, ChevronRight, X,
+  Plus, Pencil, ChevronDown, ChevronUp, ChevronRight, X,
   GripVertical, MessageSquarePlus, ToggleLeft, ToggleRight, MessageSquare,
   Check, RotateCcw, Search, History, CheckSquare,
 } from 'lucide-react'
@@ -10,6 +10,9 @@ import {
   estEnRetard, historiqueRemarque, passeFiltre, FILTRE_VIDE, filtreActif,
 } from './crLogique'
 import { useCr } from './CrContexte'
+import { BoutonSupprimer } from './BoutonSupprimer'
+import { BoutonPhoto, PhotosDeRemarque } from './PhotosRemarque'
+import { usePhotosRemarque } from './usePhotosRemarque'
 
 // État propre à l'éditeur, partagé jusqu'aux lignes de remarque : sélection
 // multiple, historique et date de référence des retards.
@@ -105,47 +108,6 @@ function BadgeStatut({ rem, onChange }) {
 // avant la migration 038 (qui la déduit en base).
 function changementStatut(code) {
   return { statut: code, est_clos: PAR_CODE.get(code).clos }
-}
-
-// ─── Bouton de suppression en deux temps ──────────────────────────────────────
-// Premier clic : le bouton passe au rouge et demande confirmation. Sans second
-// clic dans les 3 secondes, il se réarme : un clic distrait des minutes plus
-// tard ne doit pas supprimer.
-
-function BoutonSupprimer({ onConfirm, taille = 12, libelle = false, style }) {
-  const [arme, setArme] = useState(false)
-  useEffect(() => {
-    if (!arme) return
-    const t = setTimeout(() => setArme(false), 3000)
-    return () => clearTimeout(t)
-  }, [arme])
-
-  return (
-    <button
-      type="button"
-      data-compact={libelle ? undefined : true}
-      title={arme ? 'Cliquer à nouveau pour confirmer' : 'Supprimer'}
-      onClick={() => {
-        if (!arme) { setArme(true); return }
-        setArme(false)
-        onConfirm()
-      }}
-      style={libelle ? {
-        display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 10px', borderRadius: 2, fontSize: 11, cursor: 'pointer',
-        border: `0.5px solid ${arme ? 'rgba(220,38,38,0.5)' : 'rgba(0,0,0,0.12)'}`,
-        backgroundColor: arme ? 'rgba(184,65,44,0.10)' : 'white', color: arme ? '#B8412C' : '#9C9591',
-        ...style,
-      } : {
-        display: 'inline-flex', alignItems: 'center', gap: 3, padding: arme ? '2px 5px' : 3, borderRadius: 2,
-        background: arme ? 'rgba(184,65,44,0.10)' : 'none', border: 'none', cursor: 'pointer',
-        fontSize: 10, color: arme ? '#B8412C' : '#9C9591',
-        ...style,
-      }}
-    >
-      <Trash2 size={taille} />
-      {libelle ? (arme ? 'Confirmer' : 'Supprimer') : (arme && 'Confirmer')}
-    </button>
-  )
 }
 
 // Libellé affiché d'un destinataire disparu (lot ou interlocuteur supprimé) :
@@ -452,6 +414,7 @@ function RemarqueRow({ rem, idx, total, crDate, suggestions, lots, interlocuteur
   const statut = infosStatut(rem)
   const enRetard = estEnRetard(rem, dateReference)
   const etapes = historiqueDe(rem)
+  const photos = usePhotosRemarque(rem)
 
   let descStyle = { fontSize: 13, color: '#1F1B17', lineHeight: 1.5 }
   if (statut.clos) descStyle = { ...descStyle, textDecoration: 'line-through', color: '#9CA3AF' }
@@ -535,6 +498,7 @@ function RemarqueRow({ rem, idx, total, crDate, suggestions, lots, interlocuteur
               <History size={11} /> Historique · depuis le CR n°{etapes[0].crNumero}
             </button>
           )}
+          <PhotosDeRemarque ctl={photos} />
           {historiqueOuvert && (
             <ol style={{ listStyle: 'none', margin: '6px 0 0', padding: '6px 0 0 10px', borderLeft: '2px solid #E9E2D6' }}>
               {etapes.map(e => (
@@ -561,6 +525,7 @@ function RemarqueRow({ rem, idx, total, crDate, suggestions, lots, interlocuteur
             </>
           )}
           <button onClick={() => setEditOpen(true)} data-compact style={{ padding: 3, background: 'none', border: 'none', cursor: 'pointer', color: '#9C9591' }}><Pencil size={12} /></button>
+          <BoutonPhoto ctl={photos} />
           {onAddSousRemarque && (
             <button onClick={() => setAddingSuivi(a => !a)} data-compact
               style={{ display: 'inline-flex', alignItems: 'center', gap: 2, padding: '2px 5px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 10, color: addingSuivi ? '#E8602C' : '#9C9591' }}

@@ -117,9 +117,11 @@ export function compterPointsEnCours(remarques) {
  * Une remarque reprise n'est pas « nouvelle » (▶) : le repère désigne ce qui
  * est apparu dans cette visite. Les suivis gardent leur état clos.
  *
- * @returns { sections, sousSections, remarques, sousRemarques }
+ * Les photos suivent leur remarque : la ligne est recopiée, pas le fichier.
+ *
+ * @returns { sections, sousSections, remarques, sousRemarques, photos }
  */
-export function preparerReprise({ sections = [], sousSections = [], remarques = [], crId, affaireId, nouvelId }) {
+export function preparerReprise({ sections = [], sousSections = [], remarques = [], photos = [], crId, affaireId, nouvelId }) {
   const idSection = new Map()
   const lignesSections = sections.map((s) => {
     const nouveau = nouvelId()
@@ -185,11 +187,22 @@ export function preparerReprise({ sections = [], sousSections = [], remarques = 
       est_clos: !!r.est_clos, est_nouveau: false, est_important: !!r.est_important,
     }))
 
+  const lignesPhotos = photos
+    .filter((ph) => idRemarque.has(ph.remarque_id))
+    .map((ph) => ({
+      id: nouvelId(), affaire_id: affaireId, cr_id: crId,
+      remarque_id: idRemarque.get(ph.remarque_id),
+      chemin: ph.chemin, chemin_miniature: ph.chemin_miniature,
+      largeur: ph.largeur ?? null, hauteur: ph.hauteur ?? null,
+      poids_octets: ph.poids_octets ?? 0, legende: ph.legende ?? null, ordre: ph.ordre ?? 0,
+    }))
+
   return {
     sections: lignesSections,
     sousSections: lignesSousSections,
     remarques: lignesRemarques,
     sousRemarques: lignesSousRemarques,
+    photos: lignesPhotos,
   }
 }
 

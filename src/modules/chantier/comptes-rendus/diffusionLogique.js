@@ -79,28 +79,38 @@ export function dateExpiration(maintenant = new Date(), jours = DUREE_LIEN_JOURS
 
 const jourLong = (d) => new Date(`${d}T00:00:00`).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
 
-/** Objet et texte de l'e-mail */
-export function texteEmail({ cr, affaire, versionPour, lien, expiration, signataire }) {
-  const num = String(cr.numero).padStart(2, '0')
-  const date = cr.date_reunion ? new Date(`${cr.date_reunion}T00:00:00`).toLocaleDateString('fr-FR') : ''
-  const objet = [`Compte rendu de réunion n°${num}`, affaire?.nom, date].filter(Boolean).join(' — ')
-  const dateTexte = cr.date_reunion
-    ? ` du ${new Date(`${cr.date_reunion}T00:00:00`).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}`
-    : ''
-  const [h, m] = String(cr.heure_prochaine_reunion ?? '').split(':')
-  const heure = cr.heure_prochaine_reunion ? ` à ${Number(h)} h${m && m !== '00' ? ` ${m}` : ''}` : ''
+/**
+ * Objet et texte de l'e-mail d'un document.
+ * @param intitule   pour l'objet (« Compte rendu de réunion »)
+ * @param designation dans la phrase (« le compte rendu de la réunion de chantier »)
+ */
+export function texteEmailDocument({ intitule, designation, numero, date, affaire, versionPour, lien, expiration, prochaine, signataire }) {
+  const num = String(numero).padStart(2, '0')
+  const objet = [`${intitule} n°${num}`, affaire?.nom, date ? new Date(`${date}T00:00:00`).toLocaleDateString('fr-FR') : null].filter(Boolean).join(' — ')
+  const dateTexte = date ? ` du ${new Date(`${date}T00:00:00`).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}` : ''
   const lignes = [
     'Bonjour,',
     '',
-    `Veuillez trouver le compte rendu de la réunion de chantier n°${num}${dateTexte}${affaire?.nom ? ` (${affaire.nom})` : ''}${versionPour ? `, version pour ${versionPour}` : ''} :`,
+    `Veuillez trouver ${designation} n°${num}${dateTexte}${affaire?.nom ? ` (${affaire.nom})` : ''}${versionPour ? `, version pour ${versionPour}` : ''} :`,
     lien,
     `Lien valable jusqu'au ${expiration.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}.`,
-    ...(cr.date_prochaine_reunion ? ['', `Prochaine réunion : ${jourLong(cr.date_prochaine_reunion)}${heure}.`] : []),
+    ...(prochaine ? ['', prochaine] : []),
     '',
     'Cordialement,',
     [signataire, 'JGA Architectures'].filter(Boolean).join(' — '),
   ]
   return { objet, corps: lignes.join('\n') }
+}
+
+/** Objet et texte de l'e-mail d'un compte rendu */
+export function texteEmail({ cr, affaire, versionPour, lien, expiration, signataire }) {
+  const [h, m] = String(cr.heure_prochaine_reunion ?? '').split(':')
+  const heure = cr.heure_prochaine_reunion ? ` à ${Number(h)} h${m && m !== '00' ? ` ${m}` : ''}` : ''
+  return texteEmailDocument({
+    intitule: 'Compte rendu de réunion', designation: 'le compte rendu de la réunion de chantier',
+    numero: cr.numero, date: cr.date_reunion, affaire, versionPour, lien, expiration, signataire,
+    prochaine: cr.date_prochaine_reunion ? `Prochaine réunion : ${jourLong(cr.date_prochaine_reunion)}${heure}.` : null,
+  })
 }
 
 /** Lien « mailto: » : destinataires visibles ou en copie cachée */

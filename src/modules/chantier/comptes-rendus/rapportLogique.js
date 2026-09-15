@@ -76,15 +76,15 @@ export function nomFichierCr(cr, affaire, versionPour) {
 
 // ─── Description du document ─────────────────────────────────────────────────
 
-const COULEUR = { orange: '#E8602C', texte: '#1F1B17', gris: '#5E5854', grisClair: '#9C9591', filet: '#E5E7EB' }
+export const COULEUR = { orange: '#E8602C', texte: '#1F1B17', gris: '#5E5854', grisClair: '#9C9591', filet: '#E5E7EB' }
 const PRESENCES = { p: ['P', '#2A8A4E'], r: ['R', '#E8602C'], a: ['A', '#B8412C'], e: ['E', '#5E5854'] }
 const CATEGORIES = {
   moa: "Maître d'ouvrage", moe: "Maître d'œuvre", be: "Bureau d'études",
   ct: 'Contrôle technique', csps: 'CSPS', administration: 'Administration', autre: 'Autre',
 }
-const LARGEUR_UTILE = 523 // A4 moins les marges
+export const LARGEUR_UTILE = 523 // A4 moins les marges
 
-function jour(d, options = { day: '2-digit', month: '2-digit', year: 'numeric' }) {
+export function jour(d, options = { day: '2-digit', month: '2-digit', year: 'numeric' }) {
   return d ? new Date(`${d}T00:00:00`).toLocaleDateString('fr-FR', options) : ''
 }
 
@@ -100,14 +100,14 @@ function destinataireDe(rem, lots, interlocuteurs) {
   return rem.copie_destinataire ?? null
 }
 
-const tableauFin = {
+export const tableauFin = {
   hLineWidth: (i, node) => (i === 0 || i === node.table.body.length ? 0 : 0.5),
   vLineWidth: () => 0,
   hLineColor: () => COULEUR.filet,
   paddingLeft: () => 4, paddingRight: () => 4, paddingTop: () => 4, paddingBottom: () => 4,
 }
 
-function lignePhotos(photos, taille) {
+export function lignePhotos(photos, taille) {
   const parLigne = taille === 'grandes' ? 2 : 3
   const largeur = (LARGEUR_UTILE * 0.84 - 8 * (parLigne - 1) - 12) / parLigne
   const lignes = []
@@ -249,28 +249,6 @@ export function definitionPdf({ cr, affaire, sections, presences, lots, interloc
     ? `${jour(cr.date_prochaine_reunion, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}${cr.heure_prochaine_reunion ? ` à ${cr.heure_prochaine_reunion.slice(0, 5)}` : ''}`
     : 'À définir'
 
-  const participants = (presences ?? []).map((p) => ({ p, v: affichagePresence(p) }))
-  const interlos = participants.filter((l) => l.v.type === 'interlocuteur').sort((a, b) => a.v.ordre - b.v.ordre)
-  const entreprises = participants.filter((l) => l.v.type === 'entreprise').sort((a, b) => (a.v.lotNumero ?? 99) - (b.v.lotNumero ?? 99))
-
-  const colonnesInterlos = [
-    { titre: 'Rôle', largeur: 80, cellule: ({ v }) => ({ text: v.categorieLabel || CATEGORIES[v.categorie] || v.categorie || '', fontSize: 8, color: COULEUR.gris }) },
-    { titre: 'Contact', largeur: '*', cellule: ({ v }) => ({ stack: [{ text: v.prenom || v.nom !== v.organisation ? v.nom : '', bold: true, fontSize: 8 }, ...(v.organisation ? [{ text: v.organisation, fontSize: 7.5, color: COULEUR.gris }] : [])] }) },
-    ...(complet ? [
-      { titre: 'Adresse', largeur: 100, cellule: ({ v }) => ({ text: v.adresse ?? '', fontSize: 7.5 }) },
-      { titre: 'Email / Tél', largeur: 110, cellule: celluleContact },
-    ] : []),
-    { titre: 'Présence', largeur: 44, cellule: cellulePresence },
-    { titre: 'Convoqué', largeur: 50, cellule: celluleConvoque },
-  ]
-  const colonnesEntreprises = [
-    { titre: 'Lot', largeur: 110, cellule: ({ v }) => ({ text: v.lotNom ? `Lot ${v.lotNumero ?? ''} — ${v.lotNom}` : '—', fontSize: 8 }) },
-    { titre: 'Entreprise', largeur: '*', cellule: ({ v }) => ({ stack: [{ text: v.entreprise ?? '—', bold: true, fontSize: 8 }, ...(v.contact ? [{ text: v.contact, fontSize: 7.5, color: COULEUR.gris }] : [])] }) },
-    ...(complet ? [{ titre: 'Email / Tél', largeur: 120, cellule: celluleContact }] : []),
-    { titre: 'Présence', largeur: 44, cellule: cellulePresence },
-    { titre: 'Convoqué', largeur: 50, cellule: celluleConvoque },
-  ]
-
   const contenuSections = (sections ?? []).map((s) => ({
     stack: [
       {
@@ -295,69 +273,124 @@ export function definitionPdf({ cr, affaire, sections, presences, lots, interloc
     pageMargins: [36, 36, 36, 44],
     info: { title: `Compte rendu n°${num}${affaire?.nom ? ` — ${affaire.nom}` : ''}`, author: 'JGA Architectes' },
     defaultStyle: { font: 'Roboto', fontSize: 9, color: COULEUR.texte, lineHeight: 1.15 },
-    footer: (page, pages) => ({
-      margin: [36, 14, 36, 0],
-      columns: [
-        { text: PIED_AGENCE, fontSize: 7, color: COULEUR.gris },
-        { text: `Page ${page} / ${pages}`, fontSize: 7, color: COULEUR.gris, alignment: 'right', width: 70 },
-      ],
-    }),
+    footer: piedPdf,
     content: [
-      {
-        columns: [
-          images.logo ? { image: images.logo, fit: [90, 44], width: 100 } : { text: '', width: 100 },
-          {
-            width: '*', alignment: 'center',
-            stack: [
-              { text: `Réunion n°${num}`, fontSize: 20, bold: true },
-              { text: cr.date_reunion ? jour(cr.date_reunion, { day: 'numeric', month: 'long', year: 'numeric' }) : 'Date non définie', fontSize: 13, color: COULEUR.orange },
-            ],
-          },
-          {
-            width: 100, alignment: 'right', fontSize: 8,
-            stack: cr.statut === 'emis'
-              ? [{ text: 'Émis', bold: true, color: '#2A8A4E' }, ...(cr.date_emission ? [{ text: `le ${new Date(cr.date_emission).toLocaleDateString('fr-FR')}`, color: COULEUR.gris }] : [])]
-              : [{ text: 'Brouillon', color: COULEUR.grisClair }],
-          },
-        ],
-      },
-      { canvas: [{ type: 'line', x1: 0, y1: 6, x2: LARGEUR_UTILE, y2: 6, lineWidth: 1.5, lineColor: COULEUR.orange }], margin: [0, 0, 0, 10] },
-      ...(versionPour ? [{ text: `Version pour : ${versionPour}`, bold: true, fontSize: 10, color: COULEUR.orange, margin: [0, 0, 0, 8] }] : []),
-      {
-        table: {
-          widths: ['*', 70, '*', '*'],
-          body: [
-            ['Affaire', 'Code', 'Adresse', "Maître d'ouvrage"].map((t) => ({ text: t.toUpperCase(), fontSize: 7, color: COULEUR.gris })),
-            [
-              { text: affaire?.nom ?? '—', bold: true },
-              { text: affaire?.code_affaire ?? '—' },
-              { text: [affaire?.projet_adresse, affaire?.projet_commune].filter(Boolean).join(' ') || '—' },
-              { text: affaire?.moa_nom ?? '—' },
-            ],
-          ],
-        },
-        layout: { hLineWidth: () => 0, vLineWidth: () => 0, fillColor: () => '#F5F5F5', paddingLeft: () => 8, paddingTop: () => 3, paddingBottom: () => 3 },
-        margin: [0, 0, 0, 8],
-      },
+      ...entetePdf({
+        logo: images.logo,
+        titre: `Réunion n°${num}`,
+        sousTitre: cr.date_reunion ? jour(cr.date_reunion, { day: 'numeric', month: 'long', year: 'numeric' }) : 'Date non définie',
+        emis: cr.statut === 'emis', dateEmission: cr.date_emission, versionPour,
+      }),
+      blocAffaire(affaire),
       {
         table: { widths: ['auto', '*'], body: [[{ text: 'PROCHAINE RÉUNION', bold: true, fontSize: 8, color: COULEUR.orange }, { text: prochaine, bold: true }]] },
         layout: { hLineWidth: () => 0, vLineWidth: () => 0, fillColor: () => '#FDEFE9', paddingLeft: () => 8, paddingTop: () => 5, paddingBottom: () => 5 },
         margin: [0, 0, 0, 6],
       },
-      ...(participants.length > 0 ? [{ text: 'Présence : P présent · R retard · A absent · E excusé', fontSize: 7.5, color: COULEUR.gris, margin: [0, 2, 0, 0] }] : []),
-      ...tableauPresences('Personnes relatives au projet', interlos, colonnesInterlos),
-      ...tableauPresences('Entreprises', entreprises, colonnesEntreprises),
+      ...blocsPresences(presences, complet),
       ...contenuSections,
-      ...(planches.length > 0 ? [
-        { text: 'PLANS', bold: true, fontSize: 10.5, color: COULEUR.orange, pageBreak: 'before', margin: [0, 0, 0, 8] },
-        ...planches.map((p) => ({
-          unbreakable: true, margin: [0, 0, 0, 14],
-          stack: [
-            { text: p.titre, bold: true, fontSize: 10, margin: [0, 0, 0, 4] },
-            { image: p.image, fit: [LARGEUR_UTILE, 700], alignment: 'center' },
-          ],
-        })),
-      ] : []),
+      ...blocPlanches(planches),
     ],
   }
+}
+
+// ─── Blocs communs aux documents (compte rendu, OPR) ─────────────────────────
+
+export function piedPdf(page, pages) {
+  return {
+    margin: [36, 14, 36, 0],
+    columns: [
+      { text: PIED_AGENCE, fontSize: 7, color: COULEUR.gris },
+      { text: `Page ${page} / ${pages}`, fontSize: 7, color: COULEUR.gris, alignment: 'right', width: 70 },
+    ],
+  }
+}
+
+export function entetePdf({ logo, titre, sousTitre, emis, dateEmission, versionPour }) {
+  return [
+    {
+      columns: [
+        logo ? { image: logo, fit: [90, 44], width: 100 } : { text: '', width: 100 },
+        {
+          width: '*', alignment: 'center',
+          stack: [
+            { text: titre, fontSize: 20, bold: true },
+            { text: sousTitre, fontSize: 13, color: COULEUR.orange },
+          ],
+        },
+        {
+          width: 100, alignment: 'right', fontSize: 8,
+          stack: emis
+            ? [{ text: 'Émis', bold: true, color: '#2A8A4E' }, ...(dateEmission ? [{ text: `le ${new Date(dateEmission).toLocaleDateString('fr-FR')}`, color: COULEUR.gris }] : [])]
+            : [{ text: 'Brouillon', color: COULEUR.grisClair }],
+        },
+      ],
+    },
+    { canvas: [{ type: 'line', x1: 0, y1: 6, x2: LARGEUR_UTILE, y2: 6, lineWidth: 1.5, lineColor: COULEUR.orange }], margin: [0, 0, 0, 10] },
+    ...(versionPour ? [{ text: `Version pour : ${versionPour}`, bold: true, fontSize: 10, color: COULEUR.orange, margin: [0, 0, 0, 8] }] : []),
+  ]
+}
+
+export function blocAffaire(affaire) {
+  return {
+    table: {
+      widths: ['*', 70, '*', '*'],
+      body: [
+        ['Affaire', 'Code', 'Adresse', "Maître d'ouvrage"].map((t) => ({ text: t.toUpperCase(), fontSize: 7, color: COULEUR.gris })),
+        [
+          { text: affaire?.nom ?? '—', bold: true },
+          { text: affaire?.code_affaire ?? '—' },
+          { text: [affaire?.projet_adresse, affaire?.projet_commune].filter(Boolean).join(' ') || '—' },
+          { text: affaire?.moa_nom ?? '—' },
+        ],
+      ],
+    },
+    layout: { hLineWidth: () => 0, vLineWidth: () => 0, fillColor: () => '#F5F5F5', paddingLeft: () => 8, paddingTop: () => 3, paddingBottom: () => 3 },
+    margin: [0, 0, 0, 8],
+  }
+}
+
+/** Feuille de présence : légende, interlocuteurs, entreprises (coordonnées si `complet`) */
+export function blocsPresences(presences, complet) {
+  const participants = (presences ?? []).map((p) => ({ p, v: affichagePresence(p) }))
+  const interlos = participants.filter((l) => l.v.type === 'interlocuteur').sort((a, b) => a.v.ordre - b.v.ordre)
+  const entreprises = participants.filter((l) => l.v.type === 'entreprise').sort((a, b) => (a.v.lotNumero ?? 99) - (b.v.lotNumero ?? 99))
+
+  const colonnesInterlos = [
+    { titre: 'Rôle', largeur: 80, cellule: ({ v }) => ({ text: v.categorieLabel || CATEGORIES[v.categorie] || v.categorie || '', fontSize: 8, color: COULEUR.gris }) },
+    { titre: 'Contact', largeur: '*', cellule: ({ v }) => ({ stack: [{ text: v.prenom || v.nom !== v.organisation ? v.nom : '', bold: true, fontSize: 8 }, ...(v.organisation ? [{ text: v.organisation, fontSize: 7.5, color: COULEUR.gris }] : [])] }) },
+    ...(complet ? [
+      { titre: 'Adresse', largeur: 100, cellule: ({ v }) => ({ text: v.adresse ?? '', fontSize: 7.5 }) },
+      { titre: 'Email / Tél', largeur: 110, cellule: celluleContact },
+    ] : []),
+    { titre: 'Présence', largeur: 44, cellule: cellulePresence },
+    { titre: 'Convoqué', largeur: 50, cellule: celluleConvoque },
+  ]
+  const colonnesEntreprises = [
+    { titre: 'Lot', largeur: 110, cellule: ({ v }) => ({ text: v.lotNom ? `Lot ${v.lotNumero ?? ''} — ${v.lotNom}` : '—', fontSize: 8 }) },
+    { titre: 'Entreprise', largeur: '*', cellule: ({ v }) => ({ stack: [{ text: v.entreprise ?? '—', bold: true, fontSize: 8 }, ...(v.contact ? [{ text: v.contact, fontSize: 7.5, color: COULEUR.gris }] : [])] }) },
+    ...(complet ? [{ titre: 'Email / Tél', largeur: 120, cellule: celluleContact }] : []),
+    { titre: 'Présence', largeur: 44, cellule: cellulePresence },
+    { titre: 'Convoqué', largeur: 50, cellule: celluleConvoque },
+  ]
+
+  return [
+    ...(participants.length > 0 ? [{ text: 'Présence : P présent · R retard · A absent · E excusé', fontSize: 7.5, color: COULEUR.gris, margin: [0, 2, 0, 0] }] : []),
+    ...tableauPresences('Personnes relatives au projet', interlos, colonnesInterlos),
+    ...tableauPresences('Entreprises', entreprises, colonnesEntreprises),
+  ]
+}
+
+export function blocPlanches(planches) {
+  if (!planches?.length) return []
+  return [
+    { text: 'PLANS', bold: true, fontSize: 10.5, color: COULEUR.orange, pageBreak: 'before', margin: [0, 0, 0, 8] },
+    ...planches.map((p) => ({
+      unbreakable: true, margin: [0, 0, 0, 14],
+      stack: [
+        { text: p.titre, bold: true, fontSize: 10, margin: [0, 0, 0, 4] },
+        { image: p.image, fit: [LARGEUR_UTILE, 700], alignment: 'center' },
+      ],
+    })),
+  ]
 }

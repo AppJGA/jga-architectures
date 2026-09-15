@@ -6,7 +6,7 @@ import assert from 'node:assert/strict'
 import { test, describe } from 'node:test'
 
 import {
-  participantsAvecEmail, selectionParDefaut, entreprisesDiffusion, dateExpiration, texteEmail, lienMailto, texteACopier, MAILTO_MAX,
+  participantsAvecEmail, selectionParDefaut, entreprisesDiffusion, dateExpiration, texteEmail, texteEmailDocument, lienMailto, texteACopier, MAILTO_MAX,
 } from '../src/modules/chantier/comptes-rendus/diffusionLogique.js'
 
 const presences = [
@@ -79,4 +79,10 @@ describe('lienMailto', () => {
 
 test('texteACopier', () => {
   assert.equal(texteACopier({ adresses: ['a@b.fr'], copieCachee: true, objet: 'O', corps: 'C' }), 'Cci : a@b.fr\nObjet : O\n\nC')
+})
+
+test('texteEmailDocument : autre document (OPR)', () => {
+  const { objet, corps } = texteEmailDocument({ intitule: 'OPR', designation: 'le compte rendu des opérations préalables à la réception', numero: 1, date: '2026-09-15', affaire: { nom: 'GS' }, versionPour: 'Lot 5 — Serrurerie', lien: 'L', expiration: new Date('2026-10-15') })
+  assert.equal(objet, 'OPR n°01 — GS — 15/09/2026')
+  assert.ok(corps.includes('Veuillez trouver le compte rendu des opérations préalables à la réception n°01 du 15 septembre 2026 (GS), version pour Lot 5 — Serrurerie :'))
 })

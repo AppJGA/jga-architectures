@@ -67,7 +67,7 @@ export const phases = [
         icon: 'ClipboardCheck',
         path: 'opr',
         component: lazy(() => import('./chantier/opr')),
-        enabled: false,
+        enabled: true,
         description: 'Opérations Préalables à la Réception',
       },
       {

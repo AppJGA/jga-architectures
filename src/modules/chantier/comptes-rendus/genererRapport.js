@@ -6,7 +6,7 @@ import { infosStatut } from './crLogique'
 
 // pdfmake et ses polices (~1 Mo) ne sont chargés qu'au premier export
 let chargement = null
-function chargerPdfMake() {
+export function chargerPdfMake() {
   if (!chargement) {
     chargement = Promise.all([import('pdfmake/build/pdfmake'), import('pdfmake/build/vfs_fonts')])
       .then(([moduleMake, moduleVfs]) => {
@@ -33,45 +33,40 @@ export function libelleVersion(destinataire, lots, interlocuteurs) {
 }
 
 /**
- * @returns { blob, nomFichier, avertissements }
- * Une image qui ne se charge pas n'empêche pas le PDF : elle est omise et
- * signalée dans `avertissements`.
+ * Images d'un document (logo, photos, extraits et plans entiers), prêtes pour
+ * pdfmake. Une image qui ne se charge pas est omise et comptée dans
+ * `avertissements`.
+ * @param elements  [{ id, numero, couleur }] remarques ou réserves du document
+ * @param photos    [{ cle (id de l'élément), chemin, legende }]
+ * @param pastilles [{ cle, version_id, x, y }]
  */
-export async function genererPdfCr({ cr, affaire, sections, presences, lots, interlocuteurs, photos, liensPhotos, pastilles, plansCr, reglages: brut }) {
-  const reglages = reglagesEffectifs(brut)
-  const [pdfMake] = await Promise.all([chargerPdfMake()])
-  const choisies = selectionnerSections(sections, reglages)
-  const remarques = remarquesDesSections(choisies)
-  const idsRetenus = new Set(remarques.map((r) => r.id))
-  const manquants = new Map() // libellé → nombre
+export async function imagesDocument({ elements, photos, liensPhotos, pastilles, plansCr, reglages }) {
+  const manquants = new Map()
   const tolerer = (promesse, quoi) => promesse.catch((err) => {
     console.warn(`PDF, ${quoi} non chargé :`, err)
     manquants.set(quoi, (manquants.get(quoi) ?? 0) + 1)
     return null
   })
+  const parId = new Map(elements.map((e) => [e.id, e]))
 
   const logo = await tolerer(imagePourPdf(`${window.location.origin}/Logo_JGA_Archi.jpg`, 400, 0.85), 'Logo')
 
-  // Photos
-  const photosParRemarque = new Map()
+  const photosParElement = new Map()
   if (reglages.photos !== 'aucune') {
-    const retenues = (photos ?? []).filter((p) => idsRetenus.has(p.remarque_id))
+    const retenues = (photos ?? []).filter((p) => parId.has(p.cle))
     const liens = retenues.length ? await liensPhotos(retenues.map((p) => p.chemin)) : new Map()
     const taille = reglages.photos === 'grandes' ? 1000 : 700
     const prets = await Promise.all(retenues.map((p) => tolerer(imagePourPdf(liens.get(p.chemin), taille), 'Photo').then((image) => ({ p, image }))))
     for (const { p, image } of prets) {
-      if (!image) continue
-      photosParRemarque.set(p.remarque_id, [...(photosParRemarque.get(p.remarque_id) ?? []), { image, legende: p.legende }])
+      if (image) photosParElement.set(p.cle, [...(photosParElement.get(p.cle) ?? []), { image, legende: p.legende }])
     }
   }
 
-  // Plans
   const extraits = new Map()
   const planches = []
-  const pastillesRetenues = reglages.plans === 'aucun' ? [] : (pastilles ?? []).filter((p) => idsRetenus.has(p.remarque_id))
-  if (pastillesRetenues.length > 0 && plansCr) {
-    const parRemarque = new Map(remarques.map((r) => [r.id, r]))
-    const versions = [...new Set(pastillesRetenues.map((p) => p.version_id))]
+  const retenues = reglages.plans === 'aucun' ? [] : (pastilles ?? []).filter((p) => parId.has(p.cle))
+  if (retenues.length > 0 && plansCr) {
+    const versions = [...new Set(retenues.map((p) => p.version_id))]
       .map((id) => plansCr.versions.find((v) => v.id === id)).filter(Boolean)
     const liens = await plansCr.obtenirLiens(versions.map((v) => v.chemin_apercu))
     for (const v of versions) {
@@ -79,14 +74,13 @@ export async function genererPdfCr({ cr, affaire, sections, presences, lots, int
       if (!url) continue
       const plan = plansCr.plans.find((p) => p.id === v.plan_id)
       const legende = `${plan?.nom ?? 'Plan'} · indice ${v.indice}`
-      const siennes = pastillesRetenues.filter((p) => p.version_id === v.id).map((p) => {
-        const r = parRemarque.get(p.remarque_id)
-        return { remarqueId: p.remarque_id, x: p.x, y: p.y, numero: r?.numero ?? '', couleur: r ? infosStatut(r).couleur : '#9C9591' }
-      })
+      const siennes = retenues.filter((p) => p.version_id === v.id).map((p) => ({
+        cle: p.cle, x: p.x, y: p.y, numero: parId.get(p.cle)?.numero ?? '', couleur: parId.get(p.cle)?.couleur ?? '#9C9591',
+      }))
       if (['extraits', 'les_deux'].includes(reglages.plans)) {
         for (const pa of siennes) {
           const image = await tolerer(extraitPlanPourPdf(url, pa), 'Extrait')
-          if (image) extraits.set(pa.remarqueId, { image, legende })
+          if (image) extraits.set(pa.cle, { image, legende })
         }
       }
       if (['planches', 'les_deux'].includes(reglages.plans)) {
@@ -96,13 +90,29 @@ export async function genererPdfCr({ cr, affaire, sections, presences, lots, int
     }
   }
 
-  const versionPour = reglages.destinataire ? libelleVersion(reglages.destinataire, lots, interlocuteurs) : null
-  const definition = definitionPdf({
-    cr, affaire, sections: choisies, presences, lots, interlocuteurs, reglages, versionPour,
-    images: { logo, photos: photosParRemarque, extraits, planches },
-  })
-  const blob = await pdfMake.createPdf(definition).getBlob()
   const avertissements = [...manquants].map(([quoi, n]) => `${n} ${quoi.toLowerCase()}${n > 1 ? 's' : ''} non chargé${quoi === 'Photo' ? 'e' : ''}${n > 1 ? 's' : ''}`)
+  return { images: { logo, photos: photosParElement, extraits, planches }, avertissements }
+}
+
+/**
+ * @returns { blob, nomFichier, avertissements }
+ */
+export async function genererPdfCr({ cr, affaire, sections, presences, lots, interlocuteurs, photos, liensPhotos, pastilles, plansCr, reglages: brut }) {
+  const reglages = reglagesEffectifs(brut)
+  const pdfMake = await chargerPdfMake()
+  const choisies = selectionnerSections(sections, reglages)
+  const remarques = remarquesDesSections(choisies)
+
+  const { images, avertissements } = await imagesDocument({
+    elements: remarques.map((r) => ({ id: r.id, numero: r.numero, couleur: infosStatut(r).couleur })),
+    photos: (photos ?? []).map((p) => ({ cle: p.remarque_id, chemin: p.chemin, legende: p.legende })),
+    pastilles: (pastilles ?? []).map((p) => ({ cle: p.remarque_id, version_id: p.version_id, x: p.x, y: p.y })),
+    liensPhotos, plansCr, reglages,
+  })
+
+  const versionPour = reglages.destinataire ? libelleVersion(reglages.destinataire, lots, interlocuteurs) : null
+  const definition = definitionPdf({ cr, affaire, sections: choisies, presences, lots, interlocuteurs, reglages, versionPour, images })
+  const blob = await pdfMake.createPdf(definition).getBlob()
   return { blob, nomFichier: nomFichierCr(cr, affaire, versionPour), avertissements }
 }
 

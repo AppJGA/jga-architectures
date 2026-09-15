@@ -7,7 +7,9 @@ import { infosStatut } from './crLogique'
 
 // ─── Placer la pastille d'une remarque ───────────────────────────────────────
 
-export function PlacementPlan({ remarque, remarques, plans, versions, pastilles, obtenirLiens, onPoser, onRetirer, onFermer }) {
+// `couleurDe` : couleur de la pastille (statut de remarque par défaut ; les
+// réserves d'OPR ont leurs propres statuts)
+export function PlacementPlan({ remarque, remarques, plans, versions, pastilles, obtenirLiens, onPoser, onRetirer, onFermer, couleurDe = (r) => infosStatut(r).couleur }) {
   const { lectureSeule } = useCr()
   const existante = pastilles.find(p => p.remarque_id === remarque.id)
   const [planId, setPlanId] = useState(existante?.plan_id ?? plans[0]?.id ?? null)
@@ -25,7 +27,7 @@ export function PlacementPlan({ remarque, remarques, plans, versions, pastilles,
   const autres = pastilles
     .filter(p => p.plan_id === planId && p.remarque_id !== remarque.id)
     .map(p => ({ id: p.id, x: p.x, y: p.y, numero: parId.get(p.remarque_id)?.numero, couleur: '#9C9591', attenuee: true }))
-  const moi = position && { id: 'moi', ...position, numero: remarque.numero, couleur: infosStatut(remarque).couleur }
+  const moi = position && { id: 'moi', ...position, numero: remarque.numero, couleur: couleurDe(remarque) }
 
   const executer = async (action) => {
     setEnCours(true)

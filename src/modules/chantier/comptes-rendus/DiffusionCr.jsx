@@ -7,6 +7,21 @@ import {
 } from './diffusionLogique'
 import { lienArchive, diffusionsDuCr, noterDiffusion } from './rapportStockage'
 
+/** Diffusion d'un compte rendu */
+export function DiffusionCr({ cr, affaire, presences, lots, archives, onPreparerVersion, signataire }) {
+  return (
+    <DiffusionDocument
+      cleDocument={cr.id} presences={presences} lots={lots}
+      archiveEmission={(archives ?? []).find(a => !a.destinataire)}
+      optionGenerales
+      texte={(options) => texteEmail({ cr, affaire, signataire, ...options })}
+      preparerVersion={onPreparerVersion}
+      chargerDiffusions={() => diffusionsDuCr(cr.id)}
+      noter={(ligne) => noterDiffusion({ affaire_id: affaire.id, cr_id: cr.id, ...ligne })}
+    />
+  )
+}
+
 // ─── Diffuser le compte rendu par la messagerie ──────────────────────────────
 // « Préparer » fabrique le lien de téléchargement (30 jours), puis « Ouvrir
 // l'e-mail » ouvre la messagerie de l'utilisateur, texte et adresses remplis.
@@ -46,7 +61,15 @@ function BoutonsEmail({ adresses, copieCachee, objet, corps, onOuvert }) {
   )
 }
 
-export function DiffusionCr({ cr, affaire, presences, lots, archives, onPreparerVersion, signataire }) {
+/**
+ * Diffusion d'un document archivé (compte rendu, visite OPR).
+ * @param archiveEmission archive du document complet
+ * @param texte ({ versionPour, lien, expiration }) → { objet, corps }
+ * @param preparerVersion (destinataire, inclureGenerales) → archive de la version
+ * @param chargerDiffusions () → lignes, ou null si la table manque
+ * @param noter (ligne) → enregistre un e-mail préparé
+ */
+export function DiffusionDocument({ cleDocument, presences, lots, archiveEmission, optionGenerales = false, texte, preparerVersion, chargerDiffusions, noter: noterLigne }) {
   const { signalerErreur } = useCr()
   const participants = useMemo(() => participantsAvecEmail(presences), [presences])
   const entreprises = useMemo(() => entreprisesDiffusion(presences, lots), [presences, lots])
@@ -62,16 +85,15 @@ export function DiffusionCr({ cr, affaire, presences, lots, archives, onPreparer
 
   useEffect(() => {
     let abandon = false
-    diffusionsDuCr(cr.id).then(d => { if (!abandon) setDiffusions(d) }).catch(err => { console.warn('Diffusions :', err); if (!abandon) setDiffusions([]) })
+    chargerDiffusions().then(d => { if (!abandon) setDiffusions(d) }).catch(err => { console.warn('Diffusions :', err); if (!abandon) setDiffusions([]) })
     return () => { abandon = true }
-  }, [cr.id, versionHistorique])
+  }, [cleDocument, versionHistorique]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (diffusions === undefined) return null
   if (diffusions === null) {
-    return <p style={{ fontSize: 12, color: '#5E5854' }}>La diffusion par e-mail demande la migration 044 dans Supabase.</p>
+    return <p style={{ fontSize: 12, color: '#5E5854' }}>La diffusion par e-mail demande une migration à passer dans Supabase.</p>
   }
 
-  const archiveEmission = (archives ?? []).find(a => !a.destinataire)
   const adresses = participants.filter(x => selection.has(x.id)).map(x => x.email)
   const expiration = dateExpiration()
 
@@ -85,7 +107,7 @@ export function DiffusionCr({ cr, affaire, presences, lots, archives, onPreparer
     setEnCours('tous')
     try {
       const lien = await lienMail(archiveEmission.chemin)
-      setEmailTous({ ...texteEmail({ cr, affaire, lien, expiration, signataire }), archiveId: archiveEmission.id })
+      setEmailTous({ ...texte({ lien, expiration }), archiveId: archiveEmission.id })
     } catch (err) { signalerErreur(err) }
     setEnCours(null)
   }
@@ -93,15 +115,15 @@ export function DiffusionCr({ cr, affaire, presences, lots, archives, onPreparer
   const preparerLot = async (e) => {
     setEnCours(e.destinataire)
     try {
-      const archive = await onPreparerVersion(e.destinataire, inclureGenerales)
+      const archive = await preparerVersion(e.destinataire, inclureGenerales)
       const lien = await lienMail(archive.chemin)
-      setEmailsLots(m => ({ ...m, [e.destinataire]: { ...texteEmail({ cr, affaire, versionPour: e.libelle, lien, expiration, signataire }), archiveId: archive.id } }))
+      setEmailsLots(m => ({ ...m, [e.destinataire]: { ...texte({ versionPour: e.libelle, lien, expiration }), archiveId: archive.id } }))
     } catch (err) { signalerErreur(err) }
     setEnCours(null)
   }
 
   const noter = (ligne) => {
-    noterDiffusion({ affaire_id: affaire.id, cr_id: cr.id, ...ligne })
+    noterLigne(ligne)
       .then(() => setVersionHistorique(v => v + 1))
       .catch(err => console.warn('Diffusions :', err))
   }
@@ -184,10 +206,12 @@ export function DiffusionCr({ cr, affaire, presences, lots, archives, onPreparer
 
       {mode === 'entreprise' && (
         <>
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, marginBottom: 10, cursor: 'pointer' }}>
-            <input type="checkbox" checked={inclureGenerales} onChange={e => { setInclureGenerales(e.target.checked); setEmailsLots({}) }} style={{ accentColor: '#E8602C' }} />
-            Inclure les remarques générales (sans destinataire) dans chaque version
-          </label>
+          {optionGenerales && (
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, marginBottom: 10, cursor: 'pointer' }}>
+              <input type="checkbox" checked={inclureGenerales} onChange={e => { setInclureGenerales(e.target.checked); setEmailsLots({}) }} style={{ accentColor: '#E8602C' }} />
+              Inclure les remarques générales (sans destinataire) dans chaque version
+            </label>
+          )}
           {entreprises.length === 0 && <p style={{ fontSize: 12, color: '#5E5854' }}>Aucune entreprise de la feuille de présence n’est rattachée à un lot.</p>}
           <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
             {entreprises.map(e => {

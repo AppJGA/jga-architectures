@@ -43,9 +43,17 @@ export async function envoyerPhoto(affaireId, { photo, miniature, extension }) {
 export async function nettoyerFichiers(photosSupprimees) {
   const chemins = [...new Set((photosSupprimees ?? []).map((p) => p.chemin).filter(Boolean))]
   if (chemins.length === 0) return
-  const { data, error } = await supabase.from('cr_photos').select('chemin').in('chemin', chemins)
-  if (error) { console.warn('Nettoyage des photos :', error); return }
-  const fichiers = fichiersAEffacer(photosSupprimees, (data ?? []).map((l) => l.chemin))
+  // Un même fichier peut servir à un compte rendu comme à une réserve d'OPR
+  const [cr, opr] = await Promise.all([
+    supabase.from('cr_photos').select('chemin').in('chemin', chemins),
+    supabase.from('opr_photos').select('chemin').in('chemin', chemins),
+  ])
+  if (cr.error || (opr.error && !photosIndisponibles(opr.error))) {
+    console.warn('Nettoyage des photos :', cr.error ?? opr.error)
+    return
+  }
+  const encore = [...(cr.data ?? []), ...(opr.error ? [] : opr.data ?? [])].map((l) => l.chemin)
+  const fichiers = fichiersAEffacer(photosSupprimees, encore)
   if (fichiers.length === 0) return
   const { error: errSuppression } = await supabase.storage.from(BUCKET_PHOTOS).remove(fichiers)
   if (errSuppression) console.warn('Nettoyage des photos :', errSuppression)

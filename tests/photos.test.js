@@ -6,6 +6,7 @@ import { test, describe } from 'node:test'
 
 import {
   dimensionsCible, cheminsPhoto, fichiersAEffacer, formatOctets, niveauEspace, pointeFleche,
+  resumeOrphelines, paquets,
   TAILLE_PHOTO, LIMITE_STOCKAGE,
 } from '../src/modules/chantier/comptes-rendus/photosLogique.js'
 import { preparerReprise } from '../src/modules/chantier/comptes-rendus/crLogique.js'
@@ -77,4 +78,18 @@ describe('reprise des photos', () => {
     assert.equal(r.photos[0].legende, 'Fissure')
     assert.notEqual(r.photos[0].id, 'P1')
   })
+})
+
+test('resumeOrphelines : une photo et sa miniature comptent pour une', () => {
+  const r = resumeOrphelines([
+    { chemin: 'a/1.webp', taille: 250000 }, { chemin: 'a/1-mini.webp', taille: 15000 },
+    { chemin: 'a/2-mini.jpg', taille: 12000 },
+  ])
+  assert.deepEqual(r, { photos: 2, fichiers: 3, taille: 277000 })
+  assert.deepEqual(resumeOrphelines([]), { photos: 0, fichiers: 0, taille: 0 })
+})
+
+test('paquets', () => {
+  assert.deepEqual(paquets([1, 2, 3, 4, 5], 2), [[1, 2], [3, 4], [5]])
+  assert.deepEqual(paquets([], 2), [])
 })

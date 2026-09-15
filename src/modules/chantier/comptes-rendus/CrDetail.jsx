@@ -16,6 +16,7 @@ import { CrContexte, useCr } from './CrContexte'
 import { PhotosContexte } from './usePhotosRemarque'
 import { espaceUtilise } from './photosStockage'
 import { formatOctets, niveauEspace, LIMITE_STOCKAGE } from './photosLogique'
+import { NettoyageStockage } from './NettoyageStockage'
 
 // ─── Styles partagés ──────────────────────────────────────────────────────────
 
@@ -207,7 +208,7 @@ function CompteurEspace({ utilise }) {
   )
 }
 
-function ExportView({ cr, sections, presences, affaire, lotEntreprises, interlocuteurs, photos, liensPhotos, espace }) {
+function ExportView({ cr, sections, presences, affaire, lotEntreprises, interlocuteurs, photos, liensPhotos, espace, peutNettoyer, onEspaceChange }) {
   const num = String(cr.numero).padStart(2, '0')
   const [bloque, setBloque] = useState(false)
   const [avecPhotos, setAvecPhotos] = useState(true)
@@ -281,6 +282,11 @@ function ExportView({ cr, sections, presences, affaire, lotEntreprises, interloc
         </p>
       )}
       <CompteurEspace utilise={espace} />
+      {espace != null && peutNettoyer && (
+        <div style={{ maxWidth: 320, margin: '0 auto', textAlign: 'left' }}>
+          <NettoyageStockage onTermine={onEspaceChange} />
+        </div>
+      )}
     </div>
   )
 }
@@ -687,11 +693,12 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
 
   // Espace utilisé, relu quand le nombre de photos change
   const [espace, setEspace] = useState(null)
+  const [versionEspace, setVersionEspace] = useState(0)
   useEffect(() => {
     let abandon = false
     espaceUtilise().then(v => { if (!abandon) setEspace(v) }).catch(err => console.warn('Espace de stockage :', err))
     return () => { abandon = true }
-  }, [photos.length])
+  }, [photos.length, versionEspace])
 
   const contextePhotos = useMemo(() => {
     const signaler = (op) => async (...args) => {
@@ -842,6 +849,8 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
           photos={photos}
           liensPhotos={liensPhotos}
           espace={espace}
+          peutNettoyer={!lectureSeuleAffaire}
+          onEspaceChange={() => setVersionEspace(v => v + 1)}
         />
       )}
 

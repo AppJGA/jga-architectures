@@ -72,3 +72,17 @@ export function pointeFleche(x1, y1, x2, y2, longueur) {
     { x: x2 - longueur * Math.cos(angle + ouverture), y: y2 - longueur * Math.sin(angle + ouverture) },
   ]
 }
+
+// Fichiers inutilisés : une photo compte pour un, miniature comprise
+export function resumeOrphelines(fichiers) {
+  const photos = new Set((fichiers ?? []).map((f) => f.chemin.replace(/-mini(\.\w+)$/, '$1')))
+  const taille = (fichiers ?? []).reduce((s, f) => s + (Number(f.taille) || 0), 0)
+  return { photos: photos.size, fichiers: (fichiers ?? []).length, taille }
+}
+
+// Par paquets : l'API du stockage limite le nombre de fichiers par suppression
+export function paquets(liste, taille = 100) {
+  const resultat = []
+  for (let i = 0; i < liste.length; i += taille) resultat.push(liste.slice(i, i + taille))
+  return resultat
+}

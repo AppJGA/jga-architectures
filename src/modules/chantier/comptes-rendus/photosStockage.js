@@ -1,7 +1,7 @@
 // ─── Photos : échanges avec le stockage Supabase ─────────────────────────────
 
 import { supabase } from '../../../core/supabase/client'
-import { cheminsPhoto, fichiersAEffacer } from './photosLogique'
+import { cheminsPhoto, fichiersAEffacer, paquets } from './photosLogique'
 
 export const BUCKET_PHOTOS = 'cr-photos'
 
@@ -77,4 +77,31 @@ export async function espaceUtilise() {
     throw error
   }
   return Number(data) || 0
+}
+
+// Photos d'une affaire entière, avant sa suppression (vide avant la migration 039)
+export async function photosDeLAffaire(affaireId) {
+  const { data, error } = await supabase.from('cr_photos').select('chemin, chemin_miniature').eq('affaire_id', affaireId)
+  if (error) {
+    if (photosIndisponibles(error)) return []
+    throw error
+  }
+  return data ?? []
+}
+
+// Fichiers qu'aucun compte rendu n'utilise (null avant la migration 040)
+export async function fichiersOrphelins() {
+  const { data, error } = await supabase.rpc('cr_photos_orphelines')
+  if (error) {
+    if (photosIndisponibles(error)) return null
+    throw error
+  }
+  return data ?? []
+}
+
+export async function supprimerFichiers(chemins) {
+  for (const paquet of paquets(chemins)) {
+    const { error } = await supabase.storage.from(BUCKET_PHOTOS).remove(paquet)
+    if (error) throw error
+  }
 }

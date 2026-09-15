@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '../../core/supabase/client'
+import { photosDeLAffaire, nettoyerFichiers } from '../../modules/chantier/comptes-rendus/photosStockage'
 
 const AFFAIRE_FIELDS = [
   'code_affaire', 'nom', 'phase', 'avancement',
@@ -149,8 +150,15 @@ export function useAffaires() {
         console.warn('Suppression photo storage:', e)
       }
     }
+    // Les photos de chantier partent en cascade avec l'affaire ; leurs
+    // fichiers, eux, ne s'effacent que par l'API du stockage
+    const photosChantier = await photosDeLAffaire(id).catch((e) => {
+      console.warn('Photos de l’affaire :', e)
+      return []
+    })
     const { error } = await supabase.from('affaires').delete().eq('id', id)
     if (error) throw error
+    await nettoyerFichiers(photosChantier)
     await refetch()
   }
 

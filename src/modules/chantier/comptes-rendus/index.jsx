@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, useSearchParams } from 'react-router-dom'
 import { Plus, Trash2, Users, LayoutList, LayoutGrid, CalendarPlus, ArrowRight, AlertTriangle, X, Lock } from 'lucide-react'
 import { useAffaire } from '../../../shared/hooks/useAffaires'
 import { useComptesRendus } from '../../../shared/hooks/useComptesRendus'
@@ -323,7 +323,16 @@ export default function ComptesRendusModule({ lectureSeule = false }) {
   const { affaireId } = useParams()
   const { affaire } = useAffaire(affaireId)
   const { comptesRendus, loading, createCR, deleteCR } = useComptesRendus(affaireId)
-  const [selectedCrId, setSelectedCrId] = useState(null)
+  // Le CR ouvert est dans l'adresse (?cr=…) : un rechargement sur la tablette,
+  // ou le bouton Retour, retombe au bon endroit
+  const [params, setParams] = useSearchParams()
+  const selectedCrId = params.get('cr')
+  const setSelectedCrId = (id) => setParams(prev => {
+    const suivant = new URLSearchParams(prev)
+    if (id) suivant.set('cr', id)
+    else { suivant.delete('cr'); suivant.delete('visite') }
+    return suivant
+  })
   const [interloOpen, setInterloOpen] = useState(false)
   const [creating, setCreating] = useState(false)
   const [deletingCr, setDeletingCr] = useState(null)

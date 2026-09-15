@@ -244,9 +244,10 @@ export function useCompteRendu(crId, affaireId) {
   // ── Sections ─────────────────────────────────────────────────────────────────
   const addSection = useCallback(async (payload) => {
     const maxOrdre = sections.reduce((m, s) => Math.max(m, s.ordre), -1)
-    const { error } = await supabase.from('cr_sections').insert({ cr_id: crId, ordre: maxOrdre + 1, ...payload })
+    const { data, error } = await supabase.from('cr_sections').insert({ cr_id: crId, ordre: maxOrdre + 1, ...payload }).select('id').single()
     if (error) throw error
     await fetchAll()
+    return data.id
   }, [crId, sections, fetchAll])
 
   const updateSection = useCallback(async (id, payload) => {
@@ -335,24 +336,26 @@ export function useCompteRendu(crId, affaireId) {
     const sec = sections.find(s => s.sousSections?.some(ss => ss.id === sousSectionId))
     const ss  = sec?.sousSections?.find(ss => ss.id === sousSectionId)
     const maxOrdre = (ss?.remarques ?? []).reduce((m, r) => Math.max(m, r.ordre), -1)
-    const { error } = await supabase.from('cr_remarques').insert({
+    const { data, error } = await supabase.from('cr_remarques').insert({
       cr_id: crId, sous_section_id: sousSectionId,
       affaire_id: affaireId, ordre: maxOrdre + 1, ...payload,
-    })
+    }).select('id').single()
     if (error) throw error
     await fetchAll()
+    return data.id
   }, [crId, affaireId, sections, fetchAll])
 
   // Remarque directement dans une section (sans sous-section)
   const addSectionRemarque = useCallback(async (sectionId, payload) => {
     const sec = sections.find(s => s.id === sectionId)
     const maxOrdre = (sec?.directRemarques ?? []).reduce((m, r) => Math.max(m, r.ordre), -1)
-    const { error } = await supabase.from('cr_remarques').insert({
+    const { data, error } = await supabase.from('cr_remarques').insert({
       cr_id: crId, section_id: sectionId, sous_section_id: null,
       affaire_id: affaireId, ordre: maxOrdre + 1, ...payload,
-    })
+    }).select('id').single()
     if (error) throw error
     await fetchAll()
+    return data.id
   }, [crId, affaireId, sections, fetchAll])
 
   const updateRemarque = useCallback(async (id, payload) => {

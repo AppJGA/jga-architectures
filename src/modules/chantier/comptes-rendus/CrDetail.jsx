@@ -2,8 +2,9 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import {
   ArrowLeft, ArrowRight, Send, FileText, FileDown, ChevronRight,
   Users, ClipboardList, MessageSquare, Zap, LayoutDashboard,
-  Lock, RotateCcw, AlertTriangle, X, Map as IconePlan,
+  Lock, RotateCcw, AlertTriangle, X, Map as IconePlan, Smartphone,
 } from 'lucide-react'
+import { useSearchParams } from 'react-router-dom'
 import { useCompteRendu } from '../../../shared/hooks/useCompteRendu'
 import { useAffaireInterlocuteurs } from '../../../shared/hooks/useAffaireInterlocuteurs'
 import { supabase } from '../../../core/supabase/client'
@@ -21,6 +22,7 @@ import { PlansContexte } from './PlansContexte'
 import { usePlans } from './usePlans'
 import { PlansVue } from './PlansVue'
 import { PlacementPlan } from './PlacementPlan'
+import { ModeVisite } from './ModeVisite'
 import { cadrageExtrait } from './plansLogique'
 
 // ─── Styles partagés ──────────────────────────────────────────────────────────
@@ -373,7 +375,7 @@ function TuileVue({ vue, titre, sousTitre, onClick }) {
   )
 }
 
-function CrAccueil({ cr, affaire, presences, sections, onNavigate, onOuvrirSection, onEmettre, peutModifier, nbPlans, nbPastilles }) {
+function CrAccueil({ cr, affaire, presences, sections, onNavigate, onOuvrirSection, onEmettre, onVisite, peutModifier, nbPlans, nbPastilles }) {
   const [survolEditeur, setSurvolEditeur] = useState(false)
   const dateLabel = cr.date_reunion
     ? new Date(cr.date_reunion + 'T00:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })
@@ -418,6 +420,18 @@ function CrAccueil({ cr, affaire, presences, sections, onNavigate, onOuvrirSecti
         }}>
           {cr.statut === 'emis' ? 'Émis' : 'Brouillon'}
         </span>
+        <button
+          onClick={onVisite}
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 8,
+            padding: '10px 18px', minHeight: 44, borderRadius: 3, fontSize: 13, fontWeight: 600,
+            border: 'none', backgroundColor: '#E8602C', color: 'white', cursor: 'pointer',
+            boxShadow: '0 6px 16px -8px rgba(232,96,44,0.8)',
+          }}
+        >
+          <Smartphone size={15} />
+          {cr.statut !== 'emis' && peutModifier ? 'Démarrer la visite' : 'Mode visite'}
+        </button>
         {/* Émis : la réouverture se fait depuis le bandeau au-dessus */}
         {peutModifier && cr.statut !== 'emis' && (
           <button
@@ -771,6 +785,16 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
     }
   }, [photos, liens, liensPhotos, espace, ajouterPhotos, remplacerPhoto, modifierLegendePhoto, supprimerPhoto, signalerErreur])
 
+  // Mode Visite dans l'adresse (?visite=1) : il reste ouvert au rechargement
+  const [params, setParams] = useSearchParams()
+  const visite = params.get('visite') === '1'
+  const setVisite = (ouvert) => setParams(prev => {
+    const suivant = new URLSearchParams(prev)
+    if (ouvert) suivant.set('visite', '1')
+    else suivant.delete('visite')
+    return suivant
+  })
+
   const plansCr = usePlans(affaire?.id)
   const [placement, setPlacement] = useState(null) // remarque
   const toutesRemarques = useMemo(() => sections.flatMap(s => [
@@ -866,6 +890,7 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
           onNavigate={setActiveView}
           onOuvrirSection={(id) => { setActiveView('remarques'); defilerVersSection(id) }}
           onEmettre={() => setConfirmation('emettre')}
+          onVisite={() => setVisite(true)}
           peutModifier={!lectureSeuleAffaire}
           nbPlans={plansCr.plans.length}
           nbPastilles={pastilles.length}
@@ -910,6 +935,23 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
           pastilles={pastilles}
           peutGerer={!lectureSeuleAffaire}
           onAllerRemarque={(id) => { setActiveView('remarques'); defilerVers(`cr-remarque-${id}`, 4, 'center') }}
+        />
+      )}
+
+      {visite && (
+        <ModeVisite
+          cr={cr}
+          sections={sections}
+          presences={presences}
+          setPresence={setPresence}
+          lotEntreprises={lotEntreprises}
+          interlocuteurs={interlocuteurs}
+          ops={ops}
+          lectureSeule={lectureSeule}
+          erreur={erreur}
+          onFermerErreur={() => setErreur(null)}
+          signalerErreur={signalerErreur}
+          onTerminer={() => setVisite(false)}
         />
       )}
 

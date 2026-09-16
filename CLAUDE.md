@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 314 tests node --test (plannings, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR)
+npm test         # 335 tests node --test (plannings, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR)
 npx eslint src   # ~73 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -20,7 +20,7 @@ npx eslint src   # ~73 problèmes préexistants : comparer, ne pas viser zéro
 (`geometrie.test.js`) et les exports (`export.test.js`, `export-etude.test.js`,
 `export-chantier-excel.test.js`), ainsi que la reprise et les compteurs des
 comptes rendus (`comptes-rendus.test.js`, `photos.test.js`, `plans.test.js`,
-`visite.test.js`, `rapport.test.js`, `diffusion.test.js`, `avancement.test.js`, sur les fichiers `*Logique.js` du module ;
+`visite.test.js`, `rapport.test.js`, `diffusion.test.js`, `avancement.test.js`, `hors-ligne.test.js`, sur les fichiers `*Logique.js` du module ;
 `opr.test.js`, `rapportOpr.test.js` et `pv.test.js` pour le module OPR). Rien ne couvre l'interface : la logique des
 plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`,
 `types.js` de chaque module) pour rester testable.
@@ -148,6 +148,20 @@ création avec reprise de la visite précédente) et `useCompteRendu` (un CR).
   depuis le CR ou le mode Visite écrit dans `planning`. À l'émission,
   l'instantané est recopié dans `comptes_rendus.avancement_lots` : le planning
   continue d'avancer, le CR garde les chiffres du jour.
+- **Visite hors ligne** (`horsLigne/`, aucune migration) : ouvrir le mode Visite
+  avec du réseau emporte la visite — instantané du CR et images (photos, plans)
+  recopiés dans IndexedDB (`baseLocale.js`, `images.js`). Ensuite **toute
+  écriture de visite passe par `executerOperation` de `useCompteRendu`** :
+  appliquée à l'écran, puis envoyée, ou rangée dans la file si le réseau manque.
+  Deux règles à ne pas casser : **l'identifiant des lignes créées est décidé sur
+  l'appareil** (un envoi rejoué écrit la même ligne, un doublon `23505` vaut
+  succès), et **l'ordre de création est l'ordre d'envoi**. Ce que la base
+  calcule (numéro, `copie_*`, `est_clos`) manque tant que l'envoi n'a pas eu
+  lieu : l'écran affiche « n° en attente », `fileLogique.js` recalcule
+  `est_clos`. Une opération refusée trois fois est mise de côté (bandeau
+  « refusée par la base », Réessayer / Abandonner) mais **reste appliquée à
+  l'écran**. Hors ligne : ni création de CR, ni émission, ni PDF, et pas de
+  ré-annotation d'une photo déjà envoyée.
 
 ## OPR et réserves
 

@@ -5,9 +5,14 @@ import { avancementParLot, instantaneAvancement } from '../../modules/chantier/c
 import {
   photosDuCr, envoyerPhoto, nettoyerFichiers, BUCKET_PHOTOS,
 } from '../../modules/chantier/comptes-rendus/photosStockage'
-import { pastillesDuCr, poserPastille, retirerPastille } from '../../modules/chantier/comptes-rendus/plansStockage'
+import { pastillesDuCr, retirerPastille } from '../../modules/chantier/comptes-rendus/plansStockage'
 import { creerFtmDepuis } from '../../modules/chantier/ftm/creerDepuis'
 import { useLiensSignes } from '../../modules/chantier/comptes-rendus/useLiensSignes'
+import { useHorsLigne } from '../../modules/chantier/comptes-rendus/horsLigne/useHorsLigne'
+import { TYPES, creerOperation, appliquerOperation, etatAvecFile } from '../../modules/chantier/comptes-rendus/horsLigne/fileLogique'
+import { envoyerOperation, erreurReseau } from '../../modules/chantier/comptes-rendus/horsLigne/envoi'
+import { MAGASINS, ecrire as ecrireLocal } from '../../modules/chantier/comptes-rendus/horsLigne/baseLocale'
+import { cheminsPhoto } from '../../modules/chantier/comptes-rendus/photosLogique'
 
 // Jointures d'une présence : la fiche liée sert à tenir sa copie à jour
 const SELECT_PRESENCES = `
@@ -108,8 +113,30 @@ export function useCompteRendu(crId, affaireId) {
   // position de défilement.
   const dejaCharge = useRef(false)
 
-  const fetchAll = useCallback(async () => {
-    if (!crId) return
+  const horsLigne = useHorsLigne(crId)
+  const { enfiler: enfilerOperation } = horsLigne
+
+  // Une modification de visite s'affiche tout de suite, puis part — ou attend
+  // dans la file si le réseau manque. L'identifiant des lignes créées est
+  // décidé ici : la file peut être rejouée sans rien dupliquer.
+  const appliquerLocalement = useCallback((op) => {
+    switch (op.type) {
+      case TYPES.presenceDefinir:
+        setPresences(prev => appliquerOperation({ presences: prev }, op).presences)
+        break
+      case TYPES.photoAjouter:
+        setPhotos(prev => appliquerOperation({ photos: prev }, op).photos)
+        break
+      case TYPES.pastillePoser:
+        setPastilles(prev => appliquerOperation({ pastilles: prev }, op).pastilles)
+        break
+      default:
+        setSections(prev => appliquerOperation({ sections: prev }, op).sections)
+    }
+  }, [])
+
+  const chargerEnLigne = useCallback(async () => {
+    if (!crId) return null
     if (!dejaCharge.current) setLoading(true)
     const resultats = await Promise.all([
       supabase.from('comptes_rendus').select('*, profiles:redacteur_id(id, prenom, nom)').eq('id', crId).single(),
@@ -121,7 +148,8 @@ export function useCompteRendu(crId, affaireId) {
     ])
     const echec = resultats.find((r) => r.error)
     if (echec) {
-      setErreurChargement(echec.error.message)
+      // Coupure réseau : l'appelant tentera la visite gardée sur l'appareil
+      if (!erreurReseau(echec.error)) setErreurChargement(echec.error.message)
       setLoading(false)
       throw echec.error
     }
@@ -144,7 +172,7 @@ export function useCompteRendu(crId, affaireId) {
       supabase.from('lots').select('id, numero, nom, couleur').eq('affaire_id', affaireId).order('numero').then(vide),
       supabase.from('periodes_bloquees').select('date_debut, date_fin, est_bloquante').eq('affaire_id', affaireId).then(vide),
     ])
-    await obtenirLiens(photosCr.map(p => p.chemin_miniature))
+    await obtenirLiens(photosCr.map(p => p.chemin_miniature)).catch(() => {})
 
     setErreurChargement(null)
     setCr(crData)
@@ -158,7 +186,57 @@ export function useCompteRendu(crId, affaireId) {
     setPlanning({ taches, lots: lotsAffaire, periodes })
     dejaCharge.current = true
     setLoading(false)
+    return {
+      cr: crData, sections: buildTree(secData ?? [], ssData ?? [], remData ?? []),
+      presences: presData ?? [], profiles: profData ?? [], photos: photosCr, pastilles: pastillesCr,
+      zones: zonesAffaire, ftms: ftmsAffaire, planning: { taches, lots: lotsAffaire, periodes },
+    }
   }, [crId, affaireId, obtenirLiens])
+
+  // Ce que l'écran montre quand la visite s'ouvre sans réseau : l'instantané
+  // emporté, rejoué avec les modifications encore en file.
+  const chargerHorsLigne = useCallback(async () => {
+    const emporte = await horsLigne.instantane()
+    if (!emporte) return false
+    const ops = await horsLigne.relireFile()
+    const etat = etatAvecFile(emporte, ops)
+    setCr(etat.cr)
+    setSections(etat.sections ?? [])
+    setPresences(etat.presences ?? [])
+    setProfiles(etat.profiles ?? [])
+    setPhotos(etat.photos ?? [])
+    setPastilles(etat.pastilles ?? [])
+    setZones(etat.zones ?? [])
+    setFtms(etat.ftms ?? [])
+    setPlanning(etat.planning ?? { taches: [], lots: [], periodes: [] })
+    setErreurChargement(null)
+    dejaCharge.current = true
+    setLoading(false)
+    return true
+  }, [horsLigne])
+
+  // Les données fraîches deviennent l'instantané de la prochaine visite, et
+  // les modifications encore en file restent visibles par-dessus.
+  const fetchAll = useCallback(async () => {
+    if (!crId) return
+    try {
+      const charge = await chargerEnLigne()
+      if (!charge) return
+      const ops = await horsLigne.relireFile()
+      await horsLigne.preparer(charge).catch(() => {})
+      if (ops.length > 0) {
+        const etat = etatAvecFile(charge, ops)
+        setSections(etat.sections)
+        setPresences(etat.presences)
+        setPhotos(etat.photos)
+        setPastilles(etat.pastilles)
+      }
+    } catch (err) {
+      if (!erreurReseau(err)) throw err
+      const repris = await chargerHorsLigne()
+      if (!repris) throw err
+    }
+  }, [crId, chargerEnLigne, chargerHorsLigne, horsLigne])
 
   useEffect(() => {
     dejaCharge.current = false
@@ -281,13 +359,38 @@ export function useCompteRendu(crId, affaireId) {
   }, [crId, fetchAll])
 
   // ── Sections ─────────────────────────────────────────────────────────────────
+  /**
+   * Écriture de visite : appliquée à l'écran, puis envoyée — ou rangée dans la
+   * file si le réseau manque. Une erreur de la base remonte à l'appelant après
+   * avoir remis l'écran d'aplomb.
+   */
+  const executerOperation = useCallback(async (type, charge) => {
+    const op = creerOperation(type, charge, { crId })
+    appliquerLocalement(op)
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      await enfilerOperation(op)
+      return op
+    }
+    try {
+      await envoyerOperation(op)
+      await fetchAll()
+    } catch (err) {
+      if (erreurReseau(err)) {
+        await enfilerOperation(op)
+        return op
+      }
+      await fetchAll().catch(() => {})
+      throw err
+    }
+    return op
+  }, [crId, appliquerLocalement, enfilerOperation, fetchAll])
+
   const addSection = useCallback(async (payload) => {
     const maxOrdre = sections.reduce((m, s) => Math.max(m, s.ordre), -1)
-    const { data, error } = await supabase.from('cr_sections').insert({ cr_id: crId, ordre: maxOrdre + 1, ...payload }).select('id').single()
-    if (error) throw error
-    await fetchAll()
-    return data.id
-  }, [crId, sections, fetchAll])
+    const section = { id: crypto.randomUUID(), ordre: maxOrdre + 1, ...payload }
+    await executerOperation(TYPES.sectionCreer, { section })
+    return section.id
+  }, [sections, executerOperation])
 
   const updateSection = useCallback(async (id, payload) => {
     const { error } = await supabase.from('cr_sections').update(payload).eq('id', id)
@@ -375,33 +478,29 @@ export function useCompteRendu(crId, affaireId) {
     const sec = sections.find(s => s.sousSections?.some(ss => ss.id === sousSectionId))
     const ss  = sec?.sousSections?.find(ss => ss.id === sousSectionId)
     const maxOrdre = (ss?.remarques ?? []).reduce((m, r) => Math.max(m, r.ordre), -1)
-    const { data, error } = await supabase.from('cr_remarques').insert({
-      cr_id: crId, sous_section_id: sousSectionId,
-      affaire_id: affaireId, ordre: maxOrdre + 1, ...payload,
-    }).select('id').single()
-    if (error) throw error
-    await fetchAll()
-    return data.id
-  }, [crId, affaireId, sections, fetchAll])
+    const { section_id: sectionDuPayload, ...champs } = payload
+    const id = crypto.randomUUID()
+    await executerOperation(TYPES.remarqueCreer, {
+      id, affaireId, sectionId: sectionDuPayload ?? sec?.id ?? null, sousSectionId,
+      ordre: maxOrdre + 1, champs,
+    })
+    return id
+  }, [affaireId, sections, executerOperation])
 
   // Remarque directement dans une section (sans sous-section)
   const addSectionRemarque = useCallback(async (sectionId, payload) => {
     const sec = sections.find(s => s.id === sectionId)
     const maxOrdre = (sec?.directRemarques ?? []).reduce((m, r) => Math.max(m, r.ordre), -1)
-    const { data, error } = await supabase.from('cr_remarques').insert({
-      cr_id: crId, section_id: sectionId, sous_section_id: null,
-      affaire_id: affaireId, ordre: maxOrdre + 1, ...payload,
-    }).select('id').single()
-    if (error) throw error
-    await fetchAll()
-    return data.id
-  }, [crId, affaireId, sections, fetchAll])
+    const id = crypto.randomUUID()
+    await executerOperation(TYPES.remarqueCreer, {
+      id, affaireId, sectionId, sousSectionId: null, ordre: maxOrdre + 1, champs: payload,
+    })
+    return id
+  }, [affaireId, sections, executerOperation])
 
   const updateRemarque = useCallback(async (id, payload) => {
-    const { error } = await supabase.from('cr_remarques').update(payload).eq('id', id)
-    if (error) throw error
-    await fetchAll()
-  }, [fetchAll])
+    await executerOperation(TYPES.remarqueModifier, { id, champs: payload })
+  }, [executerOperation])
 
   // Statut de plusieurs remarques d'un coup (mode sélection de l'éditeur)
   const changerStatutRemarques = useCallback(async (ids, statut, clos) => {
@@ -452,22 +551,15 @@ export function useCompteRendu(crId, affaireId) {
 
   // Sous-remarque (fil de suivi)
   const addSousRemarque = useCallback(async (parentId, payload) => {
-    const { error } = await supabase.from('cr_remarques').insert({
-      cr_id: crId, parent_id: parentId, affaire_id: affaireId, ...payload,
+    await executerOperation(TYPES.suiviCreer, {
+      id: crypto.randomUUID(), parentId, affaireId, champs: payload,
     })
-    if (error) throw error
-    await fetchAll()
-  }, [crId, affaireId, fetchAll])
+  }, [affaireId, executerOperation])
 
   // ── Présences ────────────────────────────────────────────────────────────────
   const setPresence = useCallback(async (presenceId, presence) => {
-    setPresences((prev) => prev.map((p) => (p.id === presenceId ? { ...p, presence } : p)))
-    const { error } = await supabase.from('cr_presences').update({ presence }).eq('id', presenceId)
-    if (error) {
-      await fetchAll()
-      throw error
-    }
-  }, [fetchAll])
+    await executerOperation(TYPES.presenceDefinir, { presenceId, presence })
+  }, [executerOperation])
 
   // Convocation et heure, modifiées sans recharger l'écran
   const updatePresence = useCallback(async (presenceId, changes) => {
@@ -481,24 +573,31 @@ export function useCompteRendu(crId, affaireId) {
 
   // ── Photos ───────────────────────────────────────────────────────────────────
   // Compressées avant d'arriver ici (compressionPhoto.js)
+  /**
+   * Une photo passe toujours par la mémoire de l'appareil avant de partir :
+   * hors ligne elle y attend, en ligne elle en repart aussitôt. Un même chemin
+   * de fichier sert des deux côtés, l'envoi peut donc être rejoué.
+   */
   const ajouterPhotos = useCallback(async (remarqueId, compressions) => {
     const dejaLa = photos.filter(p => p.remarque_id === remarqueId)
     let ordre = dejaLa.reduce((m, p) => Math.max(m, p.ordre ?? 0), -1) + 1
-    try {
-      for (const compression of compressions) {
-        const fichier = await envoyerPhoto(affaireId, compression)
-        const { error } = await supabase.from('cr_photos').insert({
-          ...fichier, affaire_id: affaireId, cr_id: crId, remarque_id: remarqueId, ordre: ordre++,
-        })
-        if (error) {
-          await nettoyerFichiers([fichier])
-          throw error
-        }
+    for (const compression of compressions) {
+      const id = crypto.randomUUID()
+      const chemins = cheminsPhoto(affaireId, id, compression.extension)
+      const photo = {
+        id, ...chemins,
+        largeur: compression.photo.largeur, hauteur: compression.photo.hauteur,
+        poids_octets: compression.photo.blob.size + compression.miniature.blob.size,
       }
-    } finally {
-      await fetchAll()
+      await ecrireLocal(MAGASINS.fichiers, { id, photo: compression.photo.blob, miniature: compression.miniature.blob })
+      // La miniature est aussi rangée sous son chemin : l'écran l'affiche
+      // depuis l'appareil tant que le fichier n'est pas parti.
+      await ecrireLocal(MAGASINS.fichiers, { id: chemins.chemin_miniature, image: compression.miniature.blob, octets: compression.miniature.blob.size })
+      await executerOperation(TYPES.photoAjouter, {
+        affaireId, remarqueId, ordre: ordre++, cleFichier: id, photo,
+      })
     }
-  }, [photos, affaireId, crId, fetchAll])
+  }, [photos, affaireId, executerOperation])
 
   // Photo annotée : nouveau fichier, l'ancien reste pour les visites qui le
   // montrent encore (compte rendu émis, par exemple)
@@ -532,9 +631,10 @@ export function useCompteRendu(crId, affaireId) {
   // ── Pastilles sur plan ───────────────────────────────────────────────────────
   // Une par remarque : la poser à nouveau la déplace
   const placerPastille = useCallback(async (remarqueId, { planId, versionId, x, y }) => {
-    await poserPastille({ affaire_id: affaireId, cr_id: crId, remarque_id: remarqueId, plan_id: planId, version_id: versionId, x, y })
-    await fetchAll()
-  }, [affaireId, crId, fetchAll])
+    await executerOperation(TYPES.pastillePoser, {
+      id: crypto.randomUUID(), affaireId, remarqueId, planId, versionId, x, y,
+    })
+  }, [affaireId, executerOperation])
 
   const enleverPastille = useCallback(async (remarqueId) => {
     await retirerPastille(remarqueId)
@@ -554,7 +654,7 @@ export function useCompteRendu(crId, affaireId) {
   return {
     photos, liens, ajouterPhotos, remplacerPhoto, modifierLegendePhoto, supprimerPhoto, liensPhotos,
     pastilles, placerPastille, enleverPastille, zones, ftms, creerFtmPourRemarque,
-    planning, modifierAvancementTache,
+    planning, modifierAvancementTache, horsLigne,
     cr, sections, presences, profiles, loading, erreurChargement, historique,
     syncPresences, updateCr, emettre, rouvrir, updatePresence,
     addSection, updateSection, deleteSection, reorderSection, reorderSectionsByIds,

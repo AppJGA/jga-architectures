@@ -26,6 +26,7 @@ import { PlansVue } from './PlansVue'
 import { PlacementPlan } from './PlacementPlan'
 import { ModeVisite } from './ModeVisite'
 import { AvancementLots } from './AvancementLots'
+import { garderImages } from './horsLigne/images'
 import { avancementParLot, avancementGlobal, lignesAvancement } from './avancementLogique'
 
 // ─── Styles partagés ──────────────────────────────────────────────────────────
@@ -593,7 +594,7 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
   const {
     photos, liens, ajouterPhotos, remplacerPhoto, modifierLegendePhoto, supprimerPhoto, liensPhotos,
     pastilles, placerPastille, enleverPastille, zones, ftms, creerFtmPourRemarque,
-    planning, modifierAvancementTache,
+    planning, modifierAvancementTache, horsLigne,
     cr, sections, presences, profiles, loading, erreurChargement, historique,
     syncPresences, updateCr, emettre, rouvrir, updatePresence,
     addSection, updateSection, deleteSection, reorderSection, reorderSectionsByIds,
@@ -698,6 +699,19 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
   }, [creerFtmPourRemarque, ouvrirFtm, signalerErreur])
 
   const plansCr = usePlans(affaire?.id)
+
+  // Ouvrir la visite avec du réseau, c'est l'emporter : les images des photos
+  // et des plans sont recopiées sur l'appareil, le reste l'a été au chargement.
+  useEffect(() => {
+    if (!visite || !navigator.onLine || !plansCr.charge) return
+    const cheminsPhotos = photos.map(p => p.chemin_miniature)
+    const cheminsPlans = plansCr.versions.flatMap(v => [v.chemin_apercu, v.chemin].filter(Boolean))
+    Promise.all([
+      garderImages(cheminsPhotos, liensPhotos),
+      garderImages(cheminsPlans, plansCr.obtenirLiens),
+    ]).catch(err => console.warn('Images emportées :', err))
+  }, [visite, photos, plansCr.charge, plansCr.versions, plansCr.obtenirLiens, liensPhotos])
+
   const [placement, setPlacement] = useState(null) // remarque
   const toutesRemarques = useMemo(() => sections.flatMap(s => [
     ...(s.directRemarques ?? []),
@@ -931,6 +945,7 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
           ouvrirFtm={ouvrirFtm}
           planning={planning}
           modifierAvancementTache={modifierAvancementTache}
+          horsLigne={horsLigne}
           ops={ops}
           lectureSeule={lectureSeule}
           erreur={erreur}

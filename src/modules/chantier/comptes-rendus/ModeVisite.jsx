@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useContext } from 'react'
-import { Users, Search, Plus, Camera, MapPin, MessageSquare, Pencil, MoreHorizontal, WifiOff, AlertTriangle, X, LogOut, Lock, FilePen, TrendingUp } from 'lucide-react'
+import { Users, Search, Plus, Camera, MapPin, MessageSquare, Pencil, MoreHorizontal, WifiOff, AlertTriangle, X, LogOut, Lock, FilePen, TrendingUp, RefreshCw } from 'lucide-react'
 import { FILTRES_VISITE, filtreVisite, groupesVisite, compteursVisite } from './visiteLogique'
 import { STATUTS, infosStatut, estEnRetard, libelleZone } from './crLogique'
 import { PanneauRemarque, PanneauSuivi, PanneauPresences, PanneauStatuts, PanneauAvancement } from './PanneauxVisite'
@@ -99,7 +99,9 @@ function CarteRemarque({ rem, cr, lots, interlocuteurs, zones, ftms, creerFtm, o
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
-        {rem.numero != null && <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, fontWeight: 600, color: '#E8602C' }}>n°{rem.numero}</span>}
+        {rem.numero != null
+          ? <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, fontWeight: 600, color: '#E8602C' }}>n°{rem.numero}</span>
+          : <span title="Le numéro est attribué à l’envoi" style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: '#9C9591' }}>n° en attente</span>}
         {rem.sousSection && <span style={{ fontSize: 12, color: '#9C9591' }}>{rem.sousSection.code} {rem.sousSection.titre}</span>}
         {destinataire && <span style={{ fontSize: 12, fontWeight: 500, color: '#2A8A4E', background: 'rgba(42,138,78,0.10)', borderRadius: 3, padding: '2px 8px' }}>{destinataire}</span>}
         {zoneLibelle && <span style={{ fontSize: 12, fontWeight: 500, color: '#1B3A5C', background: 'rgba(27,58,92,0.10)', borderRadius: 3, padding: '2px 8px' }}>{zoneLibelle}</span>}
@@ -185,7 +187,75 @@ function CarteRemarque({ rem, cr, lots, interlocuteurs, zones, ftms, creerFtm, o
   )
 }
 
-export function ModeVisite({ cr, sections, presences, setPresence, lotEntreprises, interlocuteurs, zones = [], ftms = [], creerFtm, ouvrirFtm, planning, modifierAvancementTache, ops, lectureSeule, erreur, onFermerErreur, signalerErreur, onTerminer }) {
+// Bandeau d'état : réseau, modifications en attente, envoi en cours. C'est le
+// seul endroit où l'on parle de synchronisation — le reste de l'écran ne
+// change pas selon le réseau.
+function BandeauSynchro({ enLigne, horsLigne }) {
+  const [detail, setDetail] = useState(false)
+  if (!horsLigne) return null
+  const { resume, envoiEnCours, envoyerFile, file, rejouer, abandonner } = horsLigne
+  const enAttente = resume.total > 0
+  if (enLigne && !enAttente) return null
+  const refusees = file.filter(o => (o.essais ?? 0) >= 3)
+
+  const fond = enLigne ? '#1B3A5C' : '#1F1B17'
+  return (
+    <div role="status" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', background: fond, color: 'white', fontSize: 14, flexWrap: 'wrap' }}>
+      {enLigne ? <RefreshCw size={16} /> : <WifiOff size={16} />}
+      <span style={{ flex: 1, minWidth: 220 }}>
+        {enLigne
+          ? (envoiEnCours ? `Envoi en cours… ${resume.libelle}` : resume.libelle)
+          : `Hors connexion : tout est gardé sur l’appareil${enAttente ? ` — ${resume.libelle.toLowerCase()}` : ''}.`}
+      </span>
+      {resume.alertePhotos && (
+        <span style={{ fontSize: 13, background: 'rgba(255,255,255,0.18)', borderRadius: 3, padding: '2px 8px' }}>
+          Beaucoup de photos en attente : revenez au réseau dès que possible.
+        </span>
+      )}
+      {resume.echecs > 0 && (
+        <button type="button" onClick={() => setDetail(d => !d)} aria-expanded={detail}
+          style={{ minHeight: 44, fontSize: 13, background: '#B8412C', color: 'white', border: 'none', borderRadius: 3, padding: '0 10px', cursor: 'pointer' }}>
+          {resume.echecs} refusée{resume.echecs > 1 ? 's' : ''} par la base — voir
+        </button>
+      )}
+      {enLigne && enAttente && !envoiEnCours && (
+        <button type="button" onClick={() => envoyerFile()} style={{ minHeight: 44, padding: '0 14px', borderRadius: 3, border: '1px solid rgba(255,255,255,0.4)', background: 'none', color: 'white', fontSize: 14, cursor: 'pointer' }}>
+          Envoyer maintenant
+        </button>
+      )}
+
+      {detail && refusees.length > 0 && (
+        <ul style={{ listStyle: 'none', margin: 0, padding: 0, width: '100%', display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {refusees.map(o => (
+            <li key={o.id} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', background: 'rgba(255,255,255,0.10)', padding: '8px 10px', borderRadius: 3 }}>
+              <span style={{ flex: 1, minWidth: 200, fontSize: 13 }}>
+                {LIBELLE_OPERATION[o.type] ?? o.type} — {o.erreur ?? 'refus de la base'}
+              </span>
+              <button type="button" onClick={() => rejouer(o.id)} style={{ minHeight: 44, padding: '0 12px', borderRadius: 3, border: '1px solid rgba(255,255,255,0.4)', background: 'none', color: 'white', fontSize: 13, cursor: 'pointer' }}>
+                Réessayer
+              </button>
+              <button type="button" onClick={() => abandonner(o.id)} style={{ minHeight: 44, padding: '0 12px', borderRadius: 3, border: 'none', background: 'rgba(0,0,0,0.25)', color: 'white', fontSize: 13, cursor: 'pointer' }}>
+                Abandonner
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+const LIBELLE_OPERATION = {
+  'section.creer': 'Nouvelle section',
+  'remarque.creer': 'Nouvelle remarque',
+  'remarque.modifier': 'Modification d’une remarque',
+  'suivi.creer': 'Suivi ajouté',
+  'presence.definir': 'Présence',
+  'photo.ajouter': 'Photo',
+  'pastille.poser': 'Pastille sur un plan',
+}
+
+export function ModeVisite({ cr, sections, presences, setPresence, lotEntreprises, interlocuteurs, zones = [], ftms = [], creerFtm, ouvrirFtm, planning, modifierAvancementTache, horsLigne, ops, lectureSeule, erreur, onFermerErreur, signalerErreur, onTerminer }) {
   const [filtre, setFiltre] = useState('ouvertes')
   const [destinataire, setDestinataire] = useState('')
   const [zone, setZone] = useState('')
@@ -273,7 +343,14 @@ export function ModeVisite({ cr, sections, presences, setPresence, lotEntreprise
               Visite · CR n°{cr.numero}
               {lectureSeule && <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 500, color: '#5E5854' }}><Lock size={12} style={{ verticalAlign: -1 }} /> consultation</span>}
             </p>
-            <p style={{ fontSize: 13, color: '#9C9591' }}>{dateLabel}</p>
+            <p style={{ fontSize: 13, color: '#9C9591' }}>
+              {dateLabel}
+              {horsLigne?.prepareLe && (
+                <span title="La visite s’ouvrira même sans réseau" style={{ marginLeft: 8, color: '#2A8A4E' }}>
+                  · emportée à {new Date(horsLigne.prepareLe).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              )}
+            </p>
           </div>
           <span style={{ fontSize: 13, color: '#B8412C', fontWeight: 600 }}>{compteurs.aTraiter} à traiter</span>
           {compteurs.enRetard > 0 && <span style={{ fontSize: 13, color: 'white', background: '#B8412C', fontWeight: 600, borderRadius: 3, padding: '3px 8px' }}>{compteurs.enRetard} en retard</span>}
@@ -321,11 +398,7 @@ export function ModeVisite({ cr, sections, presences, setPresence, lotEntreprise
         </div>
       </header>
 
-      {!enLigne && (
-        <div role="status" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', background: '#1F1B17', color: 'white', fontSize: 14 }}>
-          <WifiOff size={16} /> Hors connexion : les modifications ne sont pas enregistrées tant que le réseau n’est pas revenu.
-        </div>
-      )}
+      <BandeauSynchro enLigne={enLigne} horsLigne={horsLigne} />
       {erreur && (
         <div role="alert" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', background: '#FBEAE6', color: '#7A2A1C', fontSize: 14, borderBottom: '1px solid rgba(184,65,44,0.3)' }}>
           <AlertTriangle size={16} color="#B8412C" />

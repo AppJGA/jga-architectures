@@ -167,15 +167,18 @@ export function useCompteRendu(crId, affaireId) {
       { data: profData },
     ] = resultats
     const vide = (r) => (r.error ? [] : r.data ?? [])
+    // L'affaire peut n'être pas encore chargée : interroger avec un identifiant
+    // vide ne rendait que des erreurs 400 dans la console.
+    const surAffaire = (requete) => (affaireId ? requete() : Promise.resolve([]))
     const [photosCr, pastillesCr, zonesAffaire, ftmsAffaire, taches, lotsAffaire, periodes] = await Promise.all([
       photosDuCr(crId), pastillesDuCr(crId),
       // Zones du planning (migration 047) : absentes, le choix ne s'affiche pas
-      supabase.from('planning_zones').select('id, nom, couleur, ordre').eq('affaire_id', affaireId).order('ordre').then(r => (r.error ? [] : r.data ?? [])),
+      surAffaire(() => supabase.from('planning_zones').select('id, nom, couleur, ordre').eq('affaire_id', affaireId).order('ordre').then(vide)),
       // Fiches de travaux nées d'une remarque (migration 048)
-      supabase.from('ftm').select('id, numero, decision, source_type, source_suivi_id').eq('affaire_id', affaireId).then(r => (r.error ? [] : r.data ?? [])),
-      supabase.from('planning').select('id, lot_id, num_tache, nom, debut, duree, avancement, ordre').eq('affaire_id', affaireId).order('ordre').then(vide),
-      supabase.from('lots').select('id, numero, nom, couleur').eq('affaire_id', affaireId).order('numero').then(vide),
-      supabase.from('periodes_bloquees').select('date_debut, date_fin, est_bloquante').eq('affaire_id', affaireId).then(vide),
+      surAffaire(() => supabase.from('ftm').select('id, numero, decision, source_type, source_suivi_id').eq('affaire_id', affaireId).then(vide)),
+      surAffaire(() => supabase.from('planning').select('id, lot_id, num_tache, nom, debut, duree, avancement, ordre').eq('affaire_id', affaireId).order('ordre').then(vide)),
+      surAffaire(() => supabase.from('lots').select('id, numero, nom, couleur').eq('affaire_id', affaireId).order('numero').then(vide)),
+      surAffaire(() => supabase.from('periodes_bloquees').select('date_debut, date_fin, est_bloquante').eq('affaire_id', affaireId).then(vide)),
     ])
     await obtenirLiens(photosCr.map(p => p.chemin_miniature)).catch(() => {})
 

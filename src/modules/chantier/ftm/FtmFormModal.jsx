@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { payloadFtm } from './payloadFtm'
 import { X } from 'lucide-react'
 
 const ORIGINE_OPTIONS = [
@@ -140,16 +141,7 @@ export function FtmFormModal({ open, onClose, ftm, lots = [], affaire, onSave, o
   const travHTNum = Number(form.montant_travaux_ht) || 0
   const honHTNum = Number(form.montant_honoraires_ht) || 0
 
-  const buildPayload = () => ({
-    ...form,
-    lot_id: form.lot_id || null,
-    incidence_delai_valeur: form.incidence_delai_valeur !== '' ? Number(form.incidence_delai_valeur) : null,
-    montant_travaux_ht: form.montant_travaux_ht !== '' ? Number(form.montant_travaux_ht) : null,
-    montant_honoraires_ht: form.montant_honoraires_ht !== '' ? Number(form.montant_honoraires_ht) : null,
-    date_decision: form.date_decision || null,
-    reference_chantier: form.reference_chantier || null,
-    motivation_autre: form.motivation === 'autre' ? form.motivation_autre : null,
-  })
+  const buildPayload = () => payloadFtm(form)
 
   const handleSubmit = async (withExport) => {
     setSaving(true)

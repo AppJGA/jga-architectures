@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 374 tests node --test (plannings, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR)
+npm test         # 381 tests node --test (plannings, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR)
 npx eslint src   # ~73 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -109,6 +109,12 @@ création avec reprise de la visite précédente) et `useCompteRendu` (un CR).
   émis gardent la leur, et un plan ou une version qu'ils affichent ne se
   supprime pas. La visionneuse (`VisionneusePlan.jsx`) garde ses calculs de
   zoom dans `plansLogique.js`.
+- **Aller vite à la visite** : sur le chantier, écrire une remarque doit
+  demander deux gestes, pas cinq. La page de l'affaire porte un bandeau
+  (`BandeauVisite.jsx`) qui reprend la visite en cours ou crée celle du jour ;
+  `accesVisite.js` décide de ce qu'il propose et d'où il mène — mode Visite sur
+  écran tactile, éditeur à la souris (`estTactile`). La liste des visites met
+  la visite en cours en tête, avec ses deux portes.
 - **Mode Visite** (`ModeVisite.jsx`, `PanneauxVisite.jsx`) : écran plein pour
   la tablette (iPad) ouvert par `?visite=1` ; le CR ouvert est aussi dans
   l'adresse (`?cr=`), pour survivre à un rechargement. Boutons de 44 px au

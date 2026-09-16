@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
-import { Plus, Trash2, Users, LayoutList, LayoutGrid, CalendarPlus, ArrowRight, AlertTriangle, X, Lock } from 'lucide-react'
+import { Plus, Trash2, Users, LayoutList, LayoutGrid, CalendarPlus, ArrowRight, AlertTriangle, X, Lock, Smartphone } from 'lucide-react'
 import { useAffaire } from '../../../shared/hooks/useAffaires'
 import { useComptesRendus } from '../../../shared/hooks/useComptesRendus'
 import { InterlocuteursModal } from './InterlocuteursModal'
@@ -319,6 +319,58 @@ function BandeauProchaineReunion({ dernier, onCreer }) {
 
 // ─── Module principal ─────────────────────────────────────────────────────────
 
+// La visite en cours passe avant l'historique : sur le chantier, c'est elle
+// qu'on cherche. Deux portes — le mode Visite pour le doigt, l'éditeur pour la
+// souris — au lieu d'un détour par l'accueil du compte rendu.
+function CarteVisiteEnCours({ cr, onVisite, onEditeur }) {
+  return (
+    <div style={{
+      background: 'white', border: '0.5px solid rgba(0,0,0,0.08)', borderTop: '3px solid #E8602C',
+      padding: '18px 20px', marginBottom: 14,
+      display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap',
+    }}>
+      <div style={{ flex: '1 1 220px', minWidth: 0 }}>
+        <p style={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#C9C4C0' }}>
+          Visite en cours
+        </p>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginTop: 4 }}>
+          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 26, fontWeight: 600, color: '#E8602C' }}>
+            {String(cr.numero).padStart(2, '0')}
+          </span>
+          <span style={{ fontSize: 15, color: '#1F1B17' }}>{fmtDate(cr.date_reunion)}</span>
+        </div>
+        <p style={{ fontSize: 12, color: '#9C9591', marginTop: 2 }}>
+          {cr.pointsEnCours > 0
+            ? `${cr.pointsEnCours} point${cr.pointsEnCours > 1 ? 's' : ''} en cours`
+            : 'Aucun point en cours'}
+        </p>
+      </div>
+      <button
+        type="button" onClick={onVisite}
+        style={{
+          display: 'inline-flex', alignItems: 'center', gap: 10, flexShrink: 0,
+          minHeight: 52, padding: '0 24px', border: 'none', borderRadius: 3,
+          background: '#E8602C', color: 'white', fontSize: 15, fontWeight: 600, cursor: 'pointer',
+          boxShadow: '0 10px 24px -12px rgba(232,96,44,0.9)',
+        }}
+      >
+        <Smartphone size={18} /> Ouvrir la visite
+      </button>
+      <button
+        type="button" onClick={onEditeur}
+        style={{
+          display: 'inline-flex', alignItems: 'center', gap: 8, flexShrink: 0,
+          minHeight: 52, padding: '0 18px', borderRadius: 3,
+          border: '0.5px solid rgba(0,0,0,0.15)', background: 'white', color: '#1F1B17',
+          fontSize: 14, cursor: 'pointer',
+        }}
+      >
+        Éditeur
+      </button>
+    </div>
+  )
+}
+
 export default function ComptesRendusModule({ lectureSeule = false }) {
   const { affaireId } = useParams()
   const { affaire } = useAffaire(affaireId)
@@ -327,10 +379,13 @@ export default function ComptesRendusModule({ lectureSeule = false }) {
   // ou le bouton Retour, retombe au bon endroit
   const [params, setParams] = useSearchParams()
   const selectedCrId = params.get('cr')
-  const setSelectedCrId = (id) => setParams(prev => {
+  const setSelectedCrId = (id, { visite = false } = {}) => setParams(prev => {
     const suivant = new URLSearchParams(prev)
-    if (id) suivant.set('cr', id)
-    else { suivant.delete('cr'); suivant.delete('visite') }
+    if (id) {
+      suivant.set('cr', id)
+      if (visite) suivant.set('visite', '1')
+      else suivant.delete('visite')
+    } else { suivant.delete('cr'); suivant.delete('visite') }
     return suivant
   })
   const [interloOpen, setInterloOpen] = useState(false)
@@ -393,6 +448,7 @@ export default function ComptesRendusModule({ lectureSeule = false }) {
   const brouillons = comptesRendus.length - emis
   // Trié par numéro décroissant : le premier est le dernier CR de l'affaire.
   const dernier = comptesRendus[0]
+  const enCoursVisite = comptesRendus.find(cr => cr.statut !== 'emis')
 
   return (
     <div className="jga-entree-vue">
@@ -455,6 +511,15 @@ export default function ComptesRendusModule({ lectureSeule = false }) {
           {!lectureSeule && <BoutonNouvelleVisite onClick={handleCreate} disabled={creating} />}
         </div>
       </div>
+
+      {/* La visite en cours, avant tout le reste */}
+      {!loading && enCoursVisite && (
+        <CarteVisiteEnCours
+          cr={enCoursVisite}
+          onVisite={() => setSelectedCrId(enCoursVisite.id, { visite: true })}
+          onEditeur={() => setSelectedCrId(enCoursVisite.id)}
+        />
+      )}
 
       {/* Rappel de la prochaine réunion, tant que son CR n'existe pas */}
       {!loading && !lectureSeule && dernier?.date_prochaine_reunion && (

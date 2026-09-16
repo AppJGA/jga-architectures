@@ -8,6 +8,7 @@ import {
 import { useAffaire } from '../shared/hooks/useAffaires'
 import { useAffaireCollaborateurs } from '../shared/hooks/useAffaireCollaborateurs'
 import { useAuth } from '../core/auth/useAuth'
+import { BandeauVisite } from '../modules/chantier/comptes-rendus/BandeauVisite'
 import { CollabModal } from './CollabModal'
 import { phasesPour, getAllModules } from '../modules/manifest'
 import { PhaseBadge } from '../shared/components/Badge'
@@ -920,6 +921,12 @@ function AffaireOverview({ affaire, stats, affaireId, onEdit, canEdit }) {
       position: 'relative', zIndex: 1,
       display: 'flex', flexDirection: 'column', gap: 24, maxWidth: 900,
     }}>
+      {/* Accès direct à la visite : c'est le geste du chantier, il passe avant
+          les tuiles de modules. */}
+      {affaire?.phase === 'chantier' && (
+        <BandeauVisite affaireId={affaireId} lectureSeule={!canEdit} />
+      )}
+
       {/* Phase sections */}
       {phasesVues.map((phase, i) => (
         <PhaseSection

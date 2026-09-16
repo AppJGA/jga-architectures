@@ -47,11 +47,9 @@ export function libelleSourceReserve(reserve, visite) {
  */
 export function ftmDepuisElement({ type, element, contexte, lotId }) {
   const texte = String(element?.description ?? '').trim()
-  const intitule = texte.length > 70 ? `${texte.slice(0, 67).trimEnd()}…` : texte || 'Travaux modificatifs'
   return {
     lot_id: lotId ?? element?.lot_id ?? null,
-    intitule,
-    description: texte,
+    description: texte || 'Travaux modificatifs',
     origine: 'aleas',
     decision: 'en_attente',
     source_type: type,

@@ -36,9 +36,14 @@ function buildFtmHtml(ftm, affaire, { autoPrint = true } = {}) {
   <meta charset="UTF-8" />
   <title>${ref} — ${e(affaire?.nom)}</title>
   <style>
-    @page { size: A4 portrait; margin: 20mm; }
+    /* Les marges sont dans la page elle-même : le réglage « Marges : aucune »
+       de la boîte d'impression écrase @page, et le texte se retrouvait alors
+       collé au bord de la feuille. Les marges hautes et basses restent ici,
+       pour valoir sur toutes les pages d'une fiche qui en compte plusieurs. */
+    @page { size: A4 portrait; margin: 14mm 0; }
     * { box-sizing: border-box; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
     body { font-family: Arial, sans-serif; font-size: 11pt; color: #000; margin: 0; background: white; line-height: 1.4; }
+    .feuille { padding: 6mm 16mm; }
     h1 { font-size: 17pt; font-weight: bold; margin: 14px 0 18px; border-bottom: 2px solid #000; padding-bottom: 8px; }
     h2 { font-size: 12pt; font-weight: bold; margin: 16px 0 8px; }
     hr { border: none; border-top: 1px solid #000; margin: 12px 0; }
@@ -58,6 +63,7 @@ function buildFtmHtml(ftm, affaire, { autoPrint = true } = {}) {
   </style>
 </head>
 <body>
+  <div class="feuille">
   <div class="ref-badge">${ref}</div>
 
   <img src="${logoUrl}" alt="JGA Architectures"
@@ -130,6 +136,7 @@ function buildFtmHtml(ftm, affaire, { autoPrint = true } = {}) {
   </div>
 
   ${printScript}
+  </div>
 </body>
 </html>`
 }

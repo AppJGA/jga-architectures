@@ -106,6 +106,7 @@ function FormRow({ label, children }) {
 export function FtmFormModal({ open, onClose, ftm, lots = [], affaire, onSave, onSaveAndExport }) {
   const [form, setForm] = useState(emptyForm())
   const [saving, setSaving] = useState(false)
+  const [erreur, setErreur] = useState(null)
 
   useEffect(() => {
     if (!open) return
@@ -145,6 +146,7 @@ export function FtmFormModal({ open, onClose, ftm, lots = [], affaire, onSave, o
 
   const handleSubmit = async (withExport) => {
     setSaving(true)
+    setErreur(null)
     try {
       const payload = buildPayload()
       if (withExport) {
@@ -153,6 +155,11 @@ export function FtmFormModal({ open, onClose, ftm, lots = [], affaire, onSave, o
         await onSave(payload)
       }
       onClose()
+    } catch (err) {
+      // Sans cela, un refus de la base restait dans la console : la fenêtre ne
+      // se fermait pas, sans dire pourquoi.
+      console.error(err)
+      setErreur(err?.message ?? 'La fiche n’a pas pu être enregistrée.')
     } finally {
       setSaving(false)
     }
@@ -445,12 +452,17 @@ export function FtmFormModal({ open, onClose, ftm, lots = [], affaire, onSave, o
 
         {/* Footer */}
         <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10,
+          display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap',
           padding: '14px 20px',
           borderTop: '0.5px solid rgba(0,0,0,0.1)',
           backgroundColor: '#FAF7F2',
           flexShrink: 0,
         }}>
+          {erreur && (
+            <p role="alert" style={{ flex: 1, minWidth: 200, margin: 0, fontSize: 12, color: '#B8412C' }}>
+              Non enregistré : {erreur}
+            </p>
+          )}
           <button
             onClick={onClose}
             disabled={saving}

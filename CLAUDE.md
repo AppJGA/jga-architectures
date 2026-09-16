@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 351 tests node --test (plannings, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR)
+npm test         # 364 tests node --test (plannings, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR)
 npx eslint src   # ~73 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -162,6 +162,30 @@ création avec reprise de la visite précédente) et `useCompteRendu` (un CR).
   « refusée par la base », Réessayer / Abandonner) mais **reste appliquée à
   l'écran**. Hors ligne : ni création de CR, ni émission, ni PDF, et pas de
   ré-annotation d'une photo déjà envoyée.
+
+## Fiches de travaux modificatifs (FTM)
+
+`src/modules/chantier/ftm/`, données par `useFtm`. Une fiche naît du module
+lui-même, d'une remarque de compte rendu ou d'une réserve d'OPR
+(`creerDepuis.js`) — **dans tous les cas elle a sa ligne dans le suivi
+financier** : `ligneFinanciereLogique.js` en décide la forme (référence
+`FTM-012`, catégorie tirée de l'origine, statut tiré de la décision, montant
+signé), `ligneFinanciere.js` l'écrit et referme le lien des deux côtés
+(`ftm.ligne_financiere_id` ↔ `lignes_financieres.ftm_id`). Les fiches
+orphelines sont rattrapées au chargement du module.
+
+- **La table `ftm` n'a pas de colonne `intitule`** — c'est `lignes_financieres`
+  qui en a une. Une fiche se décrit par `description`.
+- Ses colonnes à liste fermée (`type_demande`, `motivation`,
+  `incidence_delai_unite`, `decision`) acceptent une valeur connue ou `null`,
+  **jamais une chaîne vide** : `payloadFtm` s'en charge, sans quoi la base
+  refuse la fiche entière (`violates check constraint`).
+- Le PDF est une page HTML imprimée par le navigateur : ses marges sont dans la
+  page (`.feuille`), car « Marges : aucune » dans la boîte d'impression écrase
+  `@page`.
+- Vérifier une colonne sans deviner :
+  `curl -H "apikey: $VITE_SUPABASE_ANON_KEY" "$VITE_SUPABASE_URL/rest/v1/ftm?select=<colonne>&limit=1"`
+  — `[]` si elle existe, `42703` sinon.
 
 ## OPR et réserves
 

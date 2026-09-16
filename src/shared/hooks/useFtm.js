@@ -1,48 +1,46 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { supabase } from '../../core/supabase/client'
+import { assurerLigneFinanciere, rattraperLignesManquantes } from '../../modules/chantier/ftm/ligneFinanciere'
 
-function origineToCategorie(origine) {
-  return { moe: 'adaptation_moe', mo: 'demande_mo', aleas: 'aleas' }[origine] ?? 'adaptation_moe'
-}
-
-function decisionToStatut(decision) {
-  return { accepte: 'avenant_signe', renonce: 'refuse', en_attente: 'en_attente' }[decision ?? 'en_attente'] ?? 'en_attente'
-}
-
-function buildLfPayload(ftmRow, affaireId) {
-  const ref = `FTM-${String(ftmRow.numero).padStart(3, '0')}`
-  return {
-    affaire_id: affaireId,
-    lot_id: ftmRow.lot_id ?? null,
-    categorie: origineToCategorie(ftmRow.origine),
-    intitule: (ftmRow.description ?? ref).slice(0, 200),
-    montant_ht: ftmRow.montant_travaux_ht ?? 0,
-    statut: decisionToStatut(ftmRow.decision),
-    reference: ref,
-  }
-}
+// Une fiche de travaux modificatifs et sa ligne dans le suivi financier vont
+// ensemble : la forme de la ligne se décide dans `ftm/ligneFinanciereLogique.js`.
 
 export function useFtm(affaireId) {
   const [ftms, setFtms] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const rattrapageFait = useRef(false)
 
   const refetch = useCallback(async () => {
-    if (!affaireId) return
+    if (!affaireId) return []
     const { data, error: err } = await supabase
       .from('ftm')
       .select('*')
       .eq('affaire_id', affaireId)
       .order('numero', { ascending: false })
-    if (err) setError(err.message)
-    else { setFtms(data ?? []); setError(null) }
+    if (err) { setError(err.message); return [] }
+    setFtms(data ?? [])
+    setError(null)
+    return data ?? []
   }, [affaireId])
 
   useEffect(() => {
     if (!affaireId) return
+    rattrapageFait.current = false
     setLoading(true)
     refetch().finally(() => setLoading(false))
   }, [affaireId, refetch])
+
+  // Fiches d'avant le rattachement au suivi financier, ou dont l'écriture
+  // s'était arrêtée à mi-chemin : leur ligne est créée au premier affichage.
+  useEffect(() => {
+    if (!affaireId || loading || rattrapageFait.current) return
+    if (!ftms.some(f => !f.ligne_financiere_id)) return
+    rattrapageFait.current = true
+    rattraperLignesManquantes(ftms, affaireId)
+      .then((creees) => { if (creees > 0) refetch() })
+      .catch(err => console.warn('Rattrapage des lignes financières :', err))
+  }, [affaireId, loading, ftms, refetch])
 
   const createFtm = useCallback(async (data) => {
     const { data: num, error: numErr } = await supabase
@@ -56,16 +54,9 @@ export function useFtm(affaireId) {
       .single()
     if (insertErr) throw new Error(insertErr.message)
 
-    const { data: lfRow, error: lfErr } = await supabase
-      .from('lignes_financieres')
-      .insert([{ ...buildLfPayload(ftmRow, affaireId), ftm_id: ftmRow.id }])
-      .select()
-      .single()
-    if (lfErr) throw new Error(lfErr.message)
-
-    await supabase.from('ftm').update({ ligne_financiere_id: lfRow.id }).eq('id', ftmRow.id)
+    const ligneId = await assurerLigneFinanciere(ftmRow, affaireId)
     await refetch()
-    return { ...ftmRow, ligne_financiere_id: lfRow.id }
+    return { ...ftmRow, ligne_financiere_id: ligneId }
   }, [affaireId, refetch])
 
   const updateFtm = useCallback(async (id, data) => {
@@ -77,20 +68,7 @@ export function useFtm(affaireId) {
       .single()
     if (updateErr) throw new Error(updateErr.message)
 
-    const lfPayload = buildLfPayload(ftmRow, affaireId)
-    if (ftmRow.ligne_financiere_id) {
-      await supabase.from('lignes_financieres').update(lfPayload).eq('id', ftmRow.ligne_financiere_id)
-    } else {
-      const { data: lfRow } = await supabase
-        .from('lignes_financieres')
-        .insert([{ ...lfPayload, ftm_id: id }])
-        .select()
-        .single()
-      if (lfRow) {
-        await supabase.from('ftm').update({ ligne_financiere_id: lfRow.id }).eq('id', id)
-      }
-    }
-
+    await assurerLigneFinanciere(ftmRow, affaireId)
     await refetch()
     return ftmRow
   }, [affaireId, refetch])

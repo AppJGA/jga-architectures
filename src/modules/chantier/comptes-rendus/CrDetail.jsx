@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import {
   ArrowLeft, ArrowRight, Send, FileDown, ChevronRight,
   Users, ClipboardList, MessageSquare, Zap, LayoutDashboard,
-  Lock, RotateCcw, AlertTriangle, X, Map as IconePlan, Smartphone,
+  Lock, RotateCcw, AlertTriangle, X, Map as IconePlan, Smartphone, TrendingUp,
 } from 'lucide-react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { useCompteRendu } from '../../../shared/hooks/useCompteRendu'
@@ -25,6 +25,8 @@ import { usePlans } from './usePlans'
 import { PlansVue } from './PlansVue'
 import { PlacementPlan } from './PlacementPlan'
 import { ModeVisite } from './ModeVisite'
+import { AvancementLots } from './AvancementLots'
+import { avancementParLot, avancementGlobal, lignesAvancement } from './avancementLogique'
 
 // ─── Styles partagés ──────────────────────────────────────────────────────────
 
@@ -74,6 +76,14 @@ const VUES = [
     icon: IconePlan,
     couleur: '#6B4E9B',
     fondClair: 'rgba(107,78,155,0.10)',
+  },
+  {
+    id: 'avancement',
+    label: 'Avancement des lots',
+    description: 'Lu dans le planning chantier,\nfigé à l’émission',
+    icon: TrendingUp,
+    couleur: '#B8862C',
+    fondClair: 'rgba(184,134,44,0.10)',
   },
   {
     id: 'export',
@@ -237,7 +247,7 @@ function TuileVue({ vue, titre, sousTitre, onClick }) {
   )
 }
 
-function CrAccueil({ cr, affaire, presences, sections, onNavigate, onOuvrirSection, onEmettre, onVisite, peutModifier, nbPlans, nbPastilles }) {
+function CrAccueil({ cr, affaire, presences, sections, onNavigate, onOuvrirSection, onEmettre, onVisite, peutModifier, nbPlans, nbPastilles, avancement }) {
   const [survolEditeur, setSurvolEditeur] = useState(false)
   const dateLabel = cr.date_reunion
     ? new Date(cr.date_reunion + 'T00:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })
@@ -257,6 +267,7 @@ function CrAccueil({ cr, affaire, presences, sections, onNavigate, onOuvrirSecti
   const vuePresences = VUES.find(v => v.id === 'presences')
   const vueExport = VUES.find(v => v.id === 'export')
   const vuePlans = VUES.find(v => v.id === 'plans')
+  const vueAvancement = VUES.find(v => v.id === 'avancement')
 
   return (
     <div>
@@ -445,6 +456,12 @@ function CrAccueil({ cr, affaire, presences, sections, onNavigate, onOuvrirSecti
           onClick={() => onNavigate('plans')}
         />
         <TuileVue
+          vue={vueAvancement}
+          titre="Avancement"
+          sousTitre={avancement ? `${avancement.realise}% réalisé · prévu ${avancement.prevu}%` : 'Planning non renseigné'}
+          onClick={() => onNavigate('avancement')}
+        />
+        <TuileVue
           vue={vueExport}
           titre="Exporter le PDF"
           sousTitre="Aperçu avant impression"
@@ -576,6 +593,7 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
   const {
     photos, liens, ajouterPhotos, remplacerPhoto, modifierLegendePhoto, supprimerPhoto, liensPhotos,
     pastilles, placerPastille, enleverPastille, zones, ftms, creerFtmPourRemarque,
+    planning, modifierAvancementTache,
     cr, sections, presences, profiles, loading, erreurChargement, historique,
     syncPresences, updateCr, emettre, rouvrir, updatePresence,
     addSection, updateSection, deleteSection, reorderSection, reorderSectionsByIds,
@@ -584,6 +602,18 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
     addSousRemarque, changerStatutRemarques,
     setPresence, refetch,
   } = useCompteRendu(crId, affaire?.id)
+
+  // Avancement affiché et exporté : les chiffres gelés pour un CR émis
+  const lignesAvancementCr = useMemo(() => {
+    if (!cr) return []
+    return lignesAvancement(cr, avancementParLot(planning.taches, planning.lots, {
+      date: cr.date_reunion, periodes: planning.periodes,
+    }))
+  }, [cr, planning])
+  const resumeAvancement = useMemo(
+    () => (lignesAvancementCr.length > 0 ? avancementGlobal(lignesAvancementCr) : null),
+    [lignesAvancementCr],
+  )
 
   // Feuille de présence complétée à l'ouverture (rien sur un CR émis, ni pour
   // qui consulte sans droit de modification)
@@ -693,6 +723,7 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
   const fabriquerPdf = (reglages, crPdf) => genererPdfCr({
     cr: crPdf, affaire, sections, presences,
     lots: lotEntreprises.map(le => le.lots).filter(Boolean), interlocuteurs: interlocuteurs ?? [], zones,
+    avancement: lignesAvancementCr,
     photos, liensPhotos, pastilles, plansCr, reglages,
   })
 
@@ -833,6 +864,7 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
           peutModifier={!lectureSeuleAffaire}
           nbPlans={plansCr.plans.length}
           nbPastilles={pastilles.length}
+          avancement={resumeAvancement}
         />
       )}
 
@@ -871,6 +903,10 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
         />
       )}
 
+      {activeView === 'avancement' && (
+        <AvancementLots cr={cr} planning={planning} onModifierTache={modifierAvancementTache} />
+      )}
+
       {activeView === 'plans' && (
         <PlansVue
           plansCr={plansCr}
@@ -893,6 +929,8 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
           ftms={ftms}
           creerFtm={lectureSeule ? null : creerFtm}
           ouvrirFtm={ouvrirFtm}
+          planning={planning}
+          modifierAvancementTache={modifierAvancementTache}
           ops={ops}
           lectureSeule={lectureSeule}
           erreur={erreur}
@@ -927,6 +965,7 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
           photos={photos}
           liensPhotos={liensPhotos}
           zones={zones}
+          avancement={lignesAvancementCr}
           pastilles={pastilles}
           plansCr={plansCr}
           espace={espace}

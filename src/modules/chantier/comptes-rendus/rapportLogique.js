@@ -14,6 +14,7 @@ export const REGLAGES_DEFAUT = {
   photos: 'petites',        // aucune | petites | grandes
   plans: 'les_deux',        // aucun | extraits | planches | les_deux
   zones: 'non',             // non | grouper : regrouper les remarques par zone
+  avancement: 'oui',        // oui | non : tableau d'avancement des lots
 }
 
 export const PIED_AGENCE = 'JGA Architectes • 69 rue de la République, 69002 Lyon • contact@jga-architectes.fr'
@@ -243,7 +244,7 @@ const celluleContact = ({ v }) => ({ stack: [v.email, v.telephone].filter(Boolea
  * @param donnees { cr, affaire, sections (déjà sélectionnées), presences, lots,
  *   interlocuteurs, reglages, versionPour, images: { logo, photos: Map, extraits: Map, planches: [] } }
  */
-export function definitionPdf({ cr, affaire, sections, presences, lots, interlocuteurs, zones = [], reglages: brut, versionPour, images = {} }) {
+export function definitionPdf({ cr, affaire, sections, presences, lots, interlocuteurs, zones = [], avancement = [], reglages: brut, versionPour, images = {} }) {
   const reglages = reglagesEffectifs(brut)
   const complet = reglages.modele === 'complet'
   const num = String(cr.numero).padStart(2, '0')
@@ -310,6 +311,7 @@ export function definitionPdf({ cr, affaire, sections, presences, lots, interloc
         margin: [0, 0, 0, 6],
       },
       ...blocsPresences(presences, complet),
+      ...(reglages.avancement === 'oui' ? blocAvancement(avancement) : []),
       ...(reglages.zones === 'grouper' ? contenuZones() : contenuSections),
       ...blocPlanches(planches),
     ],
@@ -400,6 +402,57 @@ export function blocsPresences(presences, complet) {
     ...(participants.length > 0 ? [{ text: 'Présence : P présent · R retard · A absent · E excusé', fontSize: 7.5, color: COULEUR.gris, margin: [0, 2, 0, 0] }] : []),
     ...tableauPresences('Personnes relatives au projet', interlos, colonnesInterlos),
     ...tableauPresences('Entreprises', entreprises, colonnesEntreprises),
+  ]
+}
+
+/**
+ * Tableau d'avancement des lots. Les lignes arrivent calculées
+ * (`avancementLogique.js`) : ce sont celles du jour de la réunion, ou celles
+ * figées à l'émission.
+ */
+export function blocAvancement(lignes) {
+  if (!lignes?.length) return []
+  const total = lignes.reduce((acc, l) => {
+    acc.jours += l.jours
+    acc.realise += l.realise * l.jours
+    acc.prevu += l.prevu * l.jours
+    return acc
+  }, { jours: 0, realise: 0, prevu: 0 })
+  const moyenne = (v) => (total.jours ? Math.round(v / total.jours) : 0)
+  const ecart = (l) => {
+    const e = l.realise - l.prevu
+    return { text: e === 0 ? '—' : `${e > 0 ? '+' : ''}${e} pts`, fontSize: 8, alignment: 'right', color: e <= -5 ? '#B8412C' : e >= 5 ? '#2A8A4E' : COULEUR.gris }
+  }
+
+  return [
+    { text: 'AVANCEMENT DES LOTS', bold: true, fontSize: 10.5, color: COULEUR.orange, margin: [0, 10, 0, 4] },
+    {
+      layout: { ...tableauFin, fillColor: (i) => (i === 0 ? COULEUR.texte : i % 2 === 0 ? '#FAFAFA' : null) },
+      table: {
+        headerRows: 1,
+        widths: ['*', 50, 50, 60],
+        body: [
+          [
+            { text: 'Lot', bold: true, fontSize: 8, color: 'white' },
+            { text: 'Réalisé', bold: true, fontSize: 8, color: 'white', alignment: 'right' },
+            { text: 'Prévu', bold: true, fontSize: 8, color: 'white', alignment: 'right' },
+            { text: 'Écart', bold: true, fontSize: 8, color: 'white', alignment: 'right' },
+          ],
+          ...lignes.map((l) => [
+            { text: l.nom, fontSize: 8 },
+            { text: `${l.realise} %`, fontSize: 8, bold: true, alignment: 'right' },
+            { text: `${l.prevu} %`, fontSize: 8, color: COULEUR.gris, alignment: 'right' },
+            ecart(l),
+          ]),
+          [
+            { text: 'Opération', bold: true, fontSize: 8 },
+            { text: `${moyenne(total.realise)} %`, bold: true, fontSize: 8, alignment: 'right' },
+            { text: `${moyenne(total.prevu)} %`, fontSize: 8, color: COULEUR.gris, alignment: 'right' },
+            ecart({ realise: moyenne(total.realise), prevu: moyenne(total.prevu) }),
+          ],
+        ],
+      },
+    },
   ]
 }
 

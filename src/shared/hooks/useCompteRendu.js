@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../../core/supabase/client'
 import { copiePresence, copieAJour } from '../../modules/chantier/comptes-rendus/crLogique'
+import { avancementParLot, instantaneAvancement } from '../../modules/chantier/comptes-rendus/avancementLogique'
 import {
   photosDuCr, envoyerPhoto, nettoyerFichiers, BUCKET_PHOTOS,
 } from '../../modules/chantier/comptes-rendus/photosStockage'
@@ -98,6 +99,9 @@ export function useCompteRendu(crId, affaireId) {
   const [pastilles, setPastilles] = useState([])
   const [zones, setZones] = useState([])
   const [ftms, setFtms] = useState([])
+  // Planning chantier : l'avancement du CR en est la lecture, jamais une saisie
+  // parallèle. Le module planning peut ne pas être renseigné : liste vide.
+  const [planning, setPlanning] = useState({ taches: [], lots: [], periodes: [] })
   const { liens, obtenirLiens } = useLiensSignes(BUCKET_PHOTOS)
   // Seul le premier chargement affiche l'indicateur : il remplace l'éditeur,
   // qui perdait sinon à chaque ajout ses filtres, ses sections repliées et la
@@ -129,12 +133,16 @@ export function useCompteRendu(crId, affaireId) {
       { data: presData },
       { data: profData },
     ] = resultats
-    const [photosCr, pastillesCr, zonesAffaire, ftmsAffaire] = await Promise.all([
+    const vide = (r) => (r.error ? [] : r.data ?? [])
+    const [photosCr, pastillesCr, zonesAffaire, ftmsAffaire, taches, lotsAffaire, periodes] = await Promise.all([
       photosDuCr(crId), pastillesDuCr(crId),
       // Zones du planning (migration 047) : absentes, le choix ne s'affiche pas
       supabase.from('planning_zones').select('id, nom, couleur, ordre').eq('affaire_id', affaireId).order('ordre').then(r => (r.error ? [] : r.data ?? [])),
       // Fiches de travaux nées d'une remarque (migration 048)
       supabase.from('ftm').select('id, numero, decision, source_type, source_suivi_id').eq('affaire_id', affaireId).then(r => (r.error ? [] : r.data ?? [])),
+      supabase.from('planning').select('id, lot_id, num_tache, nom, debut, duree, avancement, ordre').eq('affaire_id', affaireId).order('ordre').then(vide),
+      supabase.from('lots').select('id, numero, nom, couleur').eq('affaire_id', affaireId).order('numero').then(vide),
+      supabase.from('periodes_bloquees').select('date_debut, date_fin, est_bloquante').eq('affaire_id', affaireId).then(vide),
     ])
     await obtenirLiens(photosCr.map(p => p.chemin_miniature))
 
@@ -147,6 +155,7 @@ export function useCompteRendu(crId, affaireId) {
     setPastilles(pastillesCr)
     setZones(zonesAffaire)
     setFtms(ftmsAffaire)
+    setPlanning({ taches, lots: lotsAffaire, periodes })
     dejaCharge.current = true
     setLoading(false)
   }, [crId, affaireId, obtenirLiens])
@@ -224,16 +233,35 @@ export function useCompteRendu(crId, affaireId) {
   // ── Émission ─────────────────────────────────────────────────────────────────
   // Émis, le compte rendu est verrouillé (en base aussi, migration 037). La
   // feuille de présence est d'abord mise à jour une dernière fois.
+  // L'avancement des lots est recopié dans le CR au moment de l'émission : le
+  // planning continuera d'avancer, le compte rendu doit garder les chiffres du
+  // jour de la visite (migration 049).
   const emettre = useCallback(async (dateEmission = new Date().toISOString()) => {
     await syncPresences()
+    const lignes = avancementParLot(planning.taches, planning.lots, {
+      date: cr?.date_reunion, periodes: planning.periodes,
+    })
+    const avancement = lignes.length > 0 ? instantaneAvancement(lignes) : null
     let { error } = await supabase.from('comptes_rendus')
-      .update({ statut: 'emis', date_emission: dateEmission }).eq('id', crId)
+      .update({ statut: 'emis', date_emission: dateEmission, avancement_lots: avancement }).eq('id', crId)
+    if (colonneAbsente(error)) {
+      ({ error } = await supabase.from('comptes_rendus').update({ statut: 'emis', date_emission: dateEmission }).eq('id', crId))
+    }
     if (colonneAbsente(error)) {
       ({ error } = await supabase.from('comptes_rendus').update({ statut: 'emis' }).eq('id', crId))
     }
     if (error) throw error
     await fetchAll()
-  }, [crId, syncPresences, fetchAll])
+  }, [crId, syncPresences, fetchAll, planning, cr?.date_reunion])
+
+  // Pointage d'une tâche depuis le compte rendu : c'est bien le planning qui
+  // est écrit, il n'y a pas de second avancement.
+  const modifierAvancementTache = useCallback(async (tacheId, valeur) => {
+    const pourcent = Math.max(0, Math.min(100, Math.round(Number(valeur) || 0)))
+    const { error } = await supabase.from('planning').update({ avancement: pourcent }).eq('id', tacheId)
+    if (error) throw error
+    setPlanning(p => ({ ...p, taches: p.taches.map(t => (t.id === tacheId ? { ...t, avancement: pourcent } : t)) }))
+  }, [])
 
   const rouvrir = useCallback(async () => {
     let { error } = await supabase.from('comptes_rendus')
@@ -526,6 +554,7 @@ export function useCompteRendu(crId, affaireId) {
   return {
     photos, liens, ajouterPhotos, remplacerPhoto, modifierLegendePhoto, supprimerPhoto, liensPhotos,
     pastilles, placerPastille, enleverPastille, zones, ftms, creerFtmPourRemarque,
+    planning, modifierAvancementTache,
     cr, sections, presences, profiles, loading, erreurChargement, historique,
     syncPresences, updateCr, emettre, rouvrir, updatePresence,
     addSection, updateSection, deleteSection, reorderSection, reorderSectionsByIds,

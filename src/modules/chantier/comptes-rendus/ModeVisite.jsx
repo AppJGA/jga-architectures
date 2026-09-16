@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, useContext } from 'react'
-import { Users, Search, Plus, Camera, MapPin, MessageSquare, Pencil, MoreHorizontal, WifiOff, AlertTriangle, X, LogOut, Lock, FilePen } from 'lucide-react'
+import { Users, Search, Plus, Camera, MapPin, MessageSquare, Pencil, MoreHorizontal, WifiOff, AlertTriangle, X, LogOut, Lock, FilePen, TrendingUp } from 'lucide-react'
 import { FILTRES_VISITE, filtreVisite, groupesVisite, compteursVisite } from './visiteLogique'
 import { STATUTS, infosStatut, estEnRetard, libelleZone } from './crLogique'
-import { PanneauRemarque, PanneauSuivi, PanneauPresences, PanneauStatuts } from './PanneauxVisite'
+import { PanneauRemarque, PanneauSuivi, PanneauPresences, PanneauStatuts, PanneauAvancement } from './PanneauxVisite'
 import { usePhotosRemarque, PhotosContexte } from './usePhotosRemarque'
 import { PhotosDeRemarque } from './PhotosRemarque'
 import { usePlansCr } from './PlansContexte'
@@ -185,7 +185,7 @@ function CarteRemarque({ rem, cr, lots, interlocuteurs, zones, ftms, creerFtm, o
   )
 }
 
-export function ModeVisite({ cr, sections, presences, setPresence, lotEntreprises, interlocuteurs, zones = [], ftms = [], creerFtm, ouvrirFtm, ops, lectureSeule, erreur, onFermerErreur, signalerErreur, onTerminer }) {
+export function ModeVisite({ cr, sections, presences, setPresence, lotEntreprises, interlocuteurs, zones = [], ftms = [], creerFtm, ouvrirFtm, planning, modifierAvancementTache, ops, lectureSeule, erreur, onFermerErreur, signalerErreur, onTerminer }) {
   const [filtre, setFiltre] = useState('ouvertes')
   const [destinataire, setDestinataire] = useState('')
   const [zone, setZone] = useState('')
@@ -279,6 +279,9 @@ export function ModeVisite({ cr, sections, presences, setPresence, lotEntreprise
           {compteurs.enRetard > 0 && <span style={{ fontSize: 13, color: 'white', background: '#B8412C', fontWeight: 600, borderRadius: 3, padding: '3px 8px' }}>{compteurs.enRetard} en retard</span>}
           <button type="button" onClick={() => setPanneau({ type: 'presences' })} style={bouton()}>
             <Users size={17} /> Présences
+          </button>
+          <button type="button" onClick={() => setPanneau({ type: 'avancement' })} style={bouton()}>
+            <TrendingUp size={17} /> Avancement
           </button>
           <button type="button" onClick={onTerminer} style={bouton('#1F1B17', 'white')}>
             <LogOut size={17} /> Terminer
@@ -384,6 +387,13 @@ export function ModeVisite({ cr, sections, presences, setPresence, lotEntreprise
           cr={cr} lectureSeule={lectureSeule} ops={ops} onFermer={() => setPanneau(null)} signalerErreur={signalerErreur}
         />
       )}
+      {panneau?.type === 'avancement' && (
+        <PanneauAvancement
+          cr={cr} planning={planning} onModifierTache={modifierAvancementTache}
+          lectureSeule={lectureSeule} onFermer={() => setPanneau(null)} signalerErreur={signalerErreur}
+        />
+      )}
+
       {panneau?.type === 'presences' && (
         <PanneauPresences presences={presences} setPresence={setPresence} lectureSeule={lectureSeule} onFermer={() => setPanneau(null)} signalerErreur={signalerErreur} />
       )}

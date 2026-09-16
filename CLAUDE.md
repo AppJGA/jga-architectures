@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 285 tests node --test (plannings, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR)
+npm test         # 314 tests node --test (plannings, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR)
 npx eslint src   # ~73 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -20,7 +20,7 @@ npx eslint src   # ~73 problèmes préexistants : comparer, ne pas viser zéro
 (`geometrie.test.js`) et les exports (`export.test.js`, `export-etude.test.js`,
 `export-chantier-excel.test.js`), ainsi que la reprise et les compteurs des
 comptes rendus (`comptes-rendus.test.js`, `photos.test.js`, `plans.test.js`,
-`visite.test.js`, `rapport.test.js`, `diffusion.test.js`, sur les fichiers `*Logique.js` du module ;
+`visite.test.js`, `rapport.test.js`, `diffusion.test.js`, `avancement.test.js`, sur les fichiers `*Logique.js` du module ;
 `opr.test.js`, `rapportOpr.test.js` et `pv.test.js` pour le module OPR). Rien ne couvre l'interface : la logique des
 plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`,
 `types.js` de chaque module) pour rester testable.
@@ -47,7 +47,7 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
 - **Accès aux données** : hooks dans `src/shared/hooks/`. `useAffaires()` pour
   la liste, `useAffaire(id)` pour une affaire (les deux font `select('*')`),
   `useAffaireCollaborateurs(id)` pour les droits (`canEdit`, `isProprietaire`).
-- **Base** : `supabase/migrations/`, numérotées, 48 fichiers, **passées à la
+- **Base** : `supabase/migrations/`, numérotées, 49 fichiers, **passées à la
   main** dans le SQL Editor de Supabase : un code qui dépend d'une nouvelle
   colonne doit tolérer son absence tant que la migration n'est pas faite. La photo de
   couverture d'une affaire est `affaires.photo_url` (migration 014, bucket
@@ -141,6 +141,13 @@ création avec reprise de la visite précédente) et `useCompteRendu` (un CR).
   `source_reserve_id`, `source_libelle`) ; le lien se relit des deux côtés par
   `ftm/lienFtm.js` et s'ouvre par `/affaires/:id/ftm?ftm=<id>`. Supprimer la
   remarque ou la réserve ne supprime pas la fiche : elle engage l'argent.
+- **Avancement des lots** (migration 049, `avancementLogique.js`) : aucune
+  saisie parallèle — les chiffres sont lus dans le planning chantier
+  (`planning.avancement`), pondérés par la durée des tâches, et comparés à ce
+  que le planning prévoyait pour la date de la réunion. Pointer une tâche
+  depuis le CR ou le mode Visite écrit dans `planning`. À l'émission,
+  l'instantané est recopié dans `comptes_rendus.avancement_lots` : le planning
+  continue d'avancer, le CR garde les chiffres du jour.
 
 ## OPR et réserves
 

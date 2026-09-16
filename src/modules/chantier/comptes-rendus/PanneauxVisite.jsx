@@ -8,6 +8,7 @@ import { BoutonSupprimer } from './BoutonSupprimer'
 import { AnnotationPhoto } from './AnnotationPhoto'
 import { compresserPhoto } from './compressionPhoto'
 import { PhotosContexte } from './usePhotosRemarque'
+import { avancementParLot, avancementGlobal, infosEcart, lignesAvancement } from './avancementLogique'
 
 // ─── Panneaux du mode Visite ─────────────────────────────────────────────────
 // Ancrés en haut de l'écran et non en bas : sur iPad, le clavier recouvrirait
@@ -441,3 +442,81 @@ export function PanneauStatuts({ remarque, onChoisir, onFermer }) {
     </Panneau>
   )
 }
+
+// ─── Avancement des lots, sur la tablette ────────────────────────────────────
+//
+// Même lecture que l'écran de bureau, en gros boutons : sur le chantier on
+// pointe un lot entier plutôt qu'une tâche à la fois.
+export function PanneauAvancement({ cr, planning, onModifierTache, lectureSeule, onFermer, signalerErreur }) {
+  const lignes = lignesAvancement(cr, avancementParLot(planning.taches, planning.lots, {
+    date: cr.date_reunion, periodes: planning.periodes,
+  }))
+  const total = avancementGlobal(lignes)
+  const [ouvert, setOuvert] = useState(null)
+
+  const pointer = (tache, valeur) => {
+    onModifierTache(tache.id, valeur).catch(signalerErreur)
+  }
+
+  return (
+    <Panneau titre="Avancement des lots" onFermer={onFermer}>
+      {lignes.length === 0 ? (
+        <p style={{ fontSize: 15, color: '#5E5854' }}>
+          Le planning chantier de cette affaire n’a pas encore de tâches.
+        </p>
+      ) : (
+        <>
+          <div style={{ background: 'white', border: '0.5px solid rgba(0,0,0,0.08)', padding: 14, display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 28, fontWeight: 600, color: '#E8602C' }}>{total.realise}%</span>
+            <span style={{ fontSize: 14, color: '#9C9591' }}>réalisé · prévu {total.prevu}%</span>
+            <span style={{ fontSize: 13, fontWeight: 500, color: infosEcart(total.ecart).couleur }}>{infosEcart(total.ecart).libelle}</span>
+          </div>
+          <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {lignes.map(l => {
+              const taches = planning.taches.filter(t => (t.lot_id ?? null) === l.lot_id)
+              const deplie = ouvert === (l.lot_id ?? 'hors-lot')
+              return (
+                <li key={l.lot_id ?? 'hors-lot'} style={{ background: 'white', border: '0.5px solid rgba(0,0,0,0.08)', borderLeft: `3px solid ${l.couleur}` }}>
+                  <button type="button" onClick={() => setOuvert(deplie ? null : (l.lot_id ?? 'hors-lot'))}
+                    style={{ width: '100%', minHeight: 56, display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', textAlign: 'left' }}>
+                    <span style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 500, color: '#1F1B17' }}>{l.nom}</span>
+                    <span style={{ fontSize: 18, fontWeight: 600, color: '#1F1B17' }}>{l.realise}%</span>
+                    <span style={{ fontSize: 12, color: '#9C9591' }}>prévu {l.prevu}%</span>
+                    <span style={{ fontSize: 12, fontWeight: 500, color: infosEcart(l.ecart).couleur }}>{infosEcart(l.ecart).libelle}</span>
+                  </button>
+                  {deplie && (
+                    <div style={{ borderTop: '0.5px solid rgba(0,0,0,0.06)', padding: '4px 14px 10px' }}>
+                      {taches.map(t => (
+                        <div key={t.id} style={{ padding: '8px 0', borderBottom: '0.5px solid rgba(0,0,0,0.04)' }}>
+                          <p style={{ fontSize: 14, color: '#1F1B17', marginBottom: 6 }}>
+                            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: '#9C9591', marginRight: 8 }}>{t.num_tache}</span>
+                            {t.nom}
+                            <span style={{ marginLeft: 8, fontWeight: 600 }}>{t.avancement ?? 0} %</span>
+                          </p>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                            {lectureSeule || l.gele ? null : PALIERS.map(v => (
+                              <button key={v} type="button" onClick={() => pointer(t, v)} aria-pressed={(t.avancement ?? 0) === v}
+                                style={{ minWidth: 56, minHeight: 44, borderRadius: 3, fontSize: 14, fontWeight: 600, cursor: 'pointer',
+                                  border: (t.avancement ?? 0) === v ? 'none' : '1px solid rgba(0,0,0,0.15)',
+                                  background: (t.avancement ?? 0) === v ? '#E8602C' : 'white',
+                                  color: (t.avancement ?? 0) === v ? 'white' : '#5E5854' }}>
+                                {v}%
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </li>
+              )
+            })}
+          </ul>
+        </>
+      )}
+    </Panneau>
+  )
+}
+
+// Paliers de pointage : sur le chantier, l'avancement se dit au quart
+const PALIERS = [0, 25, 50, 75, 100]

@@ -60,7 +60,7 @@ function fmtHorodatage(iso) {
 }
 
 export function ExportRapport({
-  cr, affaire, sections, presences, lotEntreprises, interlocuteurs, zones = [], photos, liensPhotos, pastilles, plansCr,
+  cr, affaire, sections, presences, lotEntreprises, interlocuteurs, zones = [], avancement = [], photos, liensPhotos, pastilles, plansCr,
   espace, peutGerer, onEspaceChange, archives: toutesArchives, onArchiverMaintenant, onPreparerVersion, signataire,
 }) {
   // Archives d'émission ; les versions par entreprise servent à la diffusion
@@ -79,7 +79,7 @@ export function ExportRapport({
   }
 
   const fabriquer = () => genererPdfCr({
-    cr, affaire, sections, presences, lots, interlocuteurs: interlocuteurs ?? [], zones,
+    cr, affaire, sections, presences, lots, interlocuteurs: interlocuteurs ?? [], zones, avancement,
     photos, liensPhotos, pastilles, plansCr, reglages,
   })
 
@@ -209,6 +209,10 @@ export function ExportRapport({
           {zones.length > 0 && (
             <Choix titre="Zones" valeur={reglages.zones} onChange={v => setReglages({ zones: v })}
               options={[['non', 'Par section'], ['grouper', 'Par zone']]} />
+          )}
+          {avancement.length > 0 && (
+            <Choix titre="Avancement" valeur={reglages.avancement} onChange={v => setReglages({ avancement: v })}
+              options={[['oui', 'Tableau des lots'], ['non', 'Sans']]} />
           )}
           {pastilles.length > 0 && (
             <Choix titre="Plans" valeur={reglages.plans} onChange={v => setReglages({ plans: v })}

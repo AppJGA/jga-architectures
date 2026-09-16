@@ -173,6 +173,9 @@ export function preparerReprise({ sections = [], sousSections = [], remarques = 
         statut, date_echeance: r.date_echeance ?? null,
         est_important: !!r.est_important, est_clos: clos, est_nouveau: false,
         ordre: r.ordre ?? 0,
+        // L'auteur suit sa remarque de visite en visite : une remarque écrite
+        // par un intervenant extérieur reste la sienne (migration 050)
+        ...(r.created_by !== undefined && { created_by: r.created_by ?? null }),
         ...(r.suivi_id !== undefined && {
           suivi_id: r.suivi_id ?? r.id,
           numero: r.numero ?? null,
@@ -189,6 +192,7 @@ export function preparerReprise({ sections = [], sousSections = [], remarques = 
       parent_id: idRemarque.get(r.parent_id),
       date_note: r.date_note ?? null, pour: r.pour ?? null, description: r.description,
       est_clos: !!r.est_clos, est_nouveau: false, est_important: !!r.est_important,
+      ...(r.created_by !== undefined && { created_by: r.created_by ?? null }),
     }))
 
   const lignesPhotos = photos
@@ -199,6 +203,7 @@ export function preparerReprise({ sections = [], sousSections = [], remarques = 
       chemin: ph.chemin, chemin_miniature: ph.chemin_miniature,
       largeur: ph.largeur ?? null, hauteur: ph.hauteur ?? null,
       poids_octets: ph.poids_octets ?? 0, legende: ph.legende ?? null, ordre: ph.ordre ?? 0,
+      ...(ph.created_by !== undefined && { created_by: ph.created_by ?? null }),
     }))
 
   const lignesPastilles = pastilles
@@ -208,6 +213,7 @@ export function preparerReprise({ sections = [], sousSections = [], remarques = 
       remarque_id: idRemarque.get(pa.remarque_id),
       plan_id: pa.plan_id, version_id: versionsCourantes.get(pa.plan_id) ?? pa.version_id,
       x: pa.x, y: pa.y,
+      ...(pa.created_by !== undefined && { created_by: pa.created_by ?? null }),
     }))
 
   return {

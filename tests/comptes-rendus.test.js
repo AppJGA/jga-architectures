@@ -255,3 +255,27 @@ describe('zones (migration 047)', () => {
     assert.equal(r.remarques[0].zone_id, 'Z1')
   })
 })
+
+describe('auteur d’une remarque reprise', () => {
+  test('la remarque d’un intervenant extérieur reste la sienne', () => {
+    const reprise = preparerReprise({
+      sections: [{ id: 's1', numero_romain: 'I', titre: 'Généralités', ordre: 0 }],
+      remarques: [{ id: 'r1', section_id: 's1', description: 'Vue du BET', statut: 'a_faire', created_by: 'bet-1' }],
+      photos: [{ id: 'ph1', remarque_id: 'r1', chemin: 'a/ph.webp', created_by: 'bet-1' }],
+      pastilles: [{ id: 'pa1', remarque_id: 'r1', plan_id: 'pl1', version_id: 'v1', x: 0.1, y: 0.2, created_by: 'bet-1' }],
+      crId: 'cr2', affaireId: 'a1', nouvelId: id,
+    })
+    assert.equal(reprise.remarques[0].created_by, 'bet-1')
+    assert.equal(reprise.photos[0].created_by, 'bet-1')
+    assert.equal(reprise.pastilles[0].created_by, 'bet-1')
+  })
+
+  test('sans la migration 050, la colonne n’est pas écrite', () => {
+    const reprise = preparerReprise({
+      sections: [{ id: 's1', numero_romain: 'I', titre: 'G', ordre: 0 }],
+      remarques: [{ id: 'r1', section_id: 's1', description: 'X', statut: 'a_faire' }],
+      crId: 'cr2', affaireId: 'a1', nouvelId: id,
+    })
+    assert.equal('created_by' in reprise.remarques[0], false)
+  })
+})

@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 335 tests node --test (plannings, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR)
+npm test         # 337 tests node --test (plannings, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR)
 npx eslint src   # ~73 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -47,7 +47,7 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
 - **Accès aux données** : hooks dans `src/shared/hooks/`. `useAffaires()` pour
   la liste, `useAffaire(id)` pour une affaire (les deux font `select('*')`),
   `useAffaireCollaborateurs(id)` pour les droits (`canEdit`, `isProprietaire`).
-- **Base** : `supabase/migrations/`, numérotées, 49 fichiers, **passées à la
+- **Base** : `supabase/migrations/`, numérotées, 50 fichiers, **passées à la
   main** dans le SQL Editor de Supabase : un code qui dépend d'une nouvelle
   colonne doit tolérer son absence tant que la migration n'est pas faite. La photo de
   couverture d'une affaire est `affaires.photo_url` (migration 014, bucket
@@ -183,16 +183,48 @@ civil, art. 1792-6), levée des réserves. Validés par l'agence le 2026-09-15 ;
 toute modification de formulation se fait là et se relit avec elle. PDF à
 signer à la main, archivé dans `cr-archives`.
 
-## Accès des intervenants extérieurs (prévu)
+## Accès des intervenants extérieurs
 
 Des BET ou architectes extérieurs pourront consulter les comptes rendus des
 seules affaires où ils sont invités et y ajouter leurs propres remarques
 (photos, pastilles, suivis), sans jamais toucher à celles de l'agence ni voir
-finances, FTM, plannings ou carnet d'adresses. Développement prévu après les
-étapes en cours ; aujourd'hui presque toutes les règles RLS sont « tout
-utilisateur connecté ». En attendant, toute nouvelle table porte `affaire_id`
-et, pour un contenu rédigé, `created_by uuid default auth.uid()` ; tout fichier
-stocké a un chemin qui commence par l'identifiant de l'affaire.
+finances, FTM, plannings, OPR ou carnet d'adresses. Leurs remarques entrent
+directement dans le CR, groupées et marquées à leur nom ; ils ouvrent les CR
+émis et le brouillon en cours.
+
+**Lot 1 fait (migration 050)** : les droits sont désormais tenus *en base*,
+plus seulement à l'écran.
+
+- `profiles.type_compte` — `agence` ou `exterieur`, **extérieur par défaut** :
+  un compte créé et oublié ne voit rien. Le changer demande une session
+  d'agence, ou l'éditeur SQL (`auth.uid()` nul y est traité comme
+  l'administrateur).
+- Les règles s'écrivent avec `est_agence()`, `membre_affaire(id)`,
+  `acces_affaire(id)` et `affaire_du_cr(cr_id)` — fonctions `security definer`
+  (elles lisent `profiles` et `affaire_collaborateurs` sans relancer leurs
+  propres règles). **Toute nouvelle table passe par elles**, jamais par
+  « tout utilisateur connecté ».
+- Trois familles : *agence seule* (finances, FTM, plannings, OPR, carnet,
+  outils, remarques types), *lecture des membres de l'affaire + écriture
+  agence* (comptes rendus, remarques, photos, pastilles, plans, lots, zones),
+  et le carnet limité aux entreprises qui interviennent sur ses affaires.
+- Les fichiers suivent la même règle : le stockage est filtré sur le **premier
+  dossier du chemin**, qui est l'identifiant de l'affaire (`<affaire_id>/…`).
+  C'est pour cela qu'un chemin ne se construit jamais autrement.
+- `created_by` (défaut `auth.uid()`) sur `cr_remarques`, `cr_photos`,
+  `cr_pastilles` ; `preparerReprise` le recopie, une remarque reste à son auteur
+  d'une visite à l'autre.
+- Piège : **une seule règle permissive survivante annule tout le reste**.
+  La migration retire explicitement les anciens noms (« Authenticated »,
+  « Authenticated users », « Lecture affaires authentifiées »…). Vérifier aussi
+  que chaque compte a bien une ligne dans `profiles` : sans elle,
+  `est_agence()` est faux et l'utilisateur ne voit plus rien.
+- Vérification : `pgtest/test050.mjs` (hors dépôt) rejoue la migration deux
+  fois puis interroge la base sous l'identité d'un extérieur et d'un compte
+  agence.
+
+Restent le lot 2 (filtrage à l'écran, invitation depuis l'affaire) et le lot 3
+(écriture de ses propres remarques).
 
 ## Pièges déjà rencontrés
 

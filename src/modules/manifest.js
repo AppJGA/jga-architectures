@@ -60,6 +60,8 @@ export const phases = [
         component: lazy(() => import('./chantier/comptes-rendus')),
         enabled: true,
         description: 'Suivi des visites de chantier',
+        // Seul module ouvert à un intervenant extérieur invité (migration 050)
+        exterieur: true,
       },
       {
         id: 'opr',
@@ -105,4 +107,17 @@ export const phases = [
 
 export function getAllModules() {
   return phases.flatMap(p => p.modules)
+}
+
+/**
+ * Phases et modules visibles selon le type de compte. Un intervenant
+ * extérieur ne voit que les modules marqués `exterieur`, et seulement sur les
+ * affaires où il est invité — la base le lui impose de toute façon, l'écran ne
+ * fait que ne pas montrer de portes fermées.
+ */
+export function phasesPour(estAgence = true) {
+  if (estAgence) return phases
+  return phases
+    .map((p) => ({ ...p, modules: p.modules.filter((m) => m.exterieur) }))
+    .filter((p) => p.modules.length > 0)
 }

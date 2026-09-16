@@ -12,6 +12,7 @@ const MODULES = [
     label: 'Affaires',
     description: 'Projets, chantiers et suivi des dossiers.',
     path: '/dashboard',
+    exterieur: true,
     Icon: Building2,
     accent: '#E8602C',
     bordure: '#F8B89A',
@@ -193,7 +194,7 @@ function CarteModule({ module, rang, reduit, onOpen }) {
 
 export default function HomePage() {
   const navigate = useNavigate()
-  const { user } = useAuth()
+  const { user, estAgence } = useAuth()
   const [prenom, setPrenom] = useState('')
   const reduit = useMouvementReduit()
 
@@ -322,7 +323,7 @@ export default function HomePage() {
             width: '100%',
           }}
         >
-          {MODULES.map((module, rang) => (
+          {MODULES.filter(m => estAgence || m.exterieur).map((module, rang) => (
             <CarteModule
               key={module.path}
               module={module}

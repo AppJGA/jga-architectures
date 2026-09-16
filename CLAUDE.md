@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 337 tests node --test (plannings, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR)
+npm test         # 341 tests node --test (plannings, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR)
 npx eslint src   # ~73 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -47,7 +47,7 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
 - **Accès aux données** : hooks dans `src/shared/hooks/`. `useAffaires()` pour
   la liste, `useAffaire(id)` pour une affaire (les deux font `select('*')`),
   `useAffaireCollaborateurs(id)` pour les droits (`canEdit`, `isProprietaire`).
-- **Base** : `supabase/migrations/`, numérotées, 50 fichiers, **passées à la
+- **Base** : `supabase/migrations/`, numérotées, 51 fichiers, **passées à la
   main** dans le SQL Editor de Supabase : un code qui dépend d'une nouvelle
   colonne doit tolérer son absence tant que la migration n'est pas faite. La photo de
   couverture d'une affaire est `affaires.photo_url` (migration 014, bucket
@@ -223,8 +223,28 @@ plus seulement à l'écran.
   fois puis interroge la base sous l'identité d'un extérieur et d'un compte
   agence.
 
-Restent le lot 2 (filtrage à l'écran, invitation depuis l'affaire) et le lot 3
-(écriture de ses propres remarques).
+**Lot 2 fait (migration 051 + écran)** :
+
+- `affaires` porte des montants (enveloppe, travaux, honoraires) et une règle
+  RLS travaille par ligne, jamais par colonne : la table est donc **réservée à
+  l'agence**, et un extérieur la lit par la vue `affaires_resume` (nom, code,
+  adresse, maître d'ouvrage, photo). La vue n'est pas en `security_invoker` :
+  elle filtre elle-même sur `acces_affaire(id)`. `useAffaires` / `useAffaire`
+  choisissent la source selon le type de compte.
+- `AuthProvider` expose `profil` et `estAgence`, et garde le dernier type connu
+  dans `localStorage` — sans réseau (visite de chantier), l'écran ne se réduit
+  pas faute d'avoir pu lire le profil.
+- `phasesPour(estAgence)` (manifeste) filtre les modules : un extérieur ne voit
+  que « Visites de chantier ». Même filtre dans la sidebar de l'affaire, les
+  tuiles et la vue d'ensemble. `AgenceSeule` garde les routes carnet, heures et
+  outils ; `useAffaireCollaborateurs` renvoie `canEdit = false` pour le rôle
+  `exterieur`.
+- Invitation : `CollaborateursSection`, le rôle découle du type du compte
+  trouvé (extérieur → rôle `exterieur`). Le compte lui-même se crée dans
+  Supabase (Authentication → Add user) ; son type reste « extérieur ».
+
+Reste le lot 3 : écriture de ses propres remarques (photos, pastilles, suivis),
+marquées à son nom, sans toucher à celles de l'agence.
 
 ## Pièges déjà rencontrés
 

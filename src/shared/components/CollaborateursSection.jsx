@@ -25,6 +25,7 @@ export function CollaborateursSection({ affaireId }) {
   const [searchEmail, setSearchEmail] = useState('')
   const [searchResults, setSearchResults] = useState([])
   const [confirmRemove, setConfirmRemove] = useState(null)
+  const [erreur, setErreur] = useState(null)
 
   const currentUserRole = collaborateurs.find(c => c.user_id === user?.id)?.role
   const isOwner = currentUserRole === 'proprietaire'
@@ -36,10 +37,19 @@ export function CollaborateursSection({ affaireId }) {
     setSearchResults(results)
   }
 
+  // Le type du compte décide du rôle : un compte « extérieur » ne peut être
+  // invité qu'en intervenant, un compte de l'agence qu'en collaborateur. Le
+  // type se change dans Supabase, pas ici (migration 050).
   const handleAdd = async (profile) => {
-    await addCollaborateur(profile.id)
-    setSearchEmail('')
-    setSearchResults([])
+    const role = profile.type_compte === 'exterieur' ? 'exterieur' : 'collaborateur'
+    try {
+      await addCollaborateur(profile.id, role)
+      setSearchEmail('')
+      setSearchResults([])
+      setErreur(null)
+    } catch {
+      setErreur('Ajout refusé par la base. Seule l’agence peut inviter quelqu’un.')
+    }
   }
 
   if (!affaireId) return null
@@ -75,6 +85,15 @@ export function CollaborateursSection({ affaireId }) {
                     borderRadius: 3, padding: '2px 8px', flexShrink: 0,
                   }}>
                     Responsable
+                  </span>
+                )}
+                {c.role === 'exterieur' && (
+                  <span title="Consulte les comptes rendus de cette affaire, rien d’autre" style={{
+                    fontSize: 10, fontWeight: 500,
+                    backgroundColor: 'rgba(27,58,92,0.10)', color: '#1B3A5C',
+                    borderRadius: 3, padding: '2px 8px', flexShrink: 0,
+                  }}>
+                    Intervenant extérieur
                   </span>
                 )}
                 {!isItemOwner && isOwner && (
@@ -125,13 +144,20 @@ export function CollaborateursSection({ affaireId }) {
             type="text"
             value={searchEmail}
             onChange={e => handleSearchChange(e.target.value)}
-            placeholder="Ajouter par email…"
+            placeholder="Inviter par email…"
             style={{
               width: '100%', padding: '8px 10px',
               borderRadius: 2, border: '0.5px solid rgba(0,0,0,0.12)',
               backgroundColor: '#FAFAF9', fontSize: 12, color: '#1F1B17', outline: 'none',
             }}
           />
+          {erreur && <p style={{ fontSize: 11, color: '#B8412C', marginTop: 6 }}>{erreur}</p>}
+          <p style={{ fontSize: 11, color: '#9C9591', marginTop: 6, lineHeight: 1.45 }}>
+            Un intervenant extérieur (BET, confrère) doit d’abord avoir un compte :
+            créez-le dans Supabase → Authentication → Add user, puis laissez son
+            type sur « extérieur ». Invité ici, il ne verra que les visites de
+            chantier de cette affaire.
+          </p>
           {searchResults.length > 0 && (
             <div style={{
               marginTop: 4, border: '0.5px solid rgba(0,0,0,0.1)',
@@ -152,10 +178,17 @@ export function CollaborateursSection({ affaireId }) {
                     onMouseLeave={e => e.currentTarget.style.backgroundColor = ''}
                   >
                     <Avatar name={name || p.email} email={p.email} isOwner={false} />
-                    <div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
                       <p style={{ fontSize: 12, fontWeight: 500 }}>{name || '—'}</p>
                       <p style={{ fontSize: 11, color: '#9C9591' }}>{p.email}</p>
                     </div>
+                    <span style={{
+                      fontSize: 10, fontWeight: 500, flexShrink: 0, borderRadius: 3, padding: '2px 8px',
+                      backgroundColor: p.type_compte === 'exterieur' ? 'rgba(27,58,92,0.10)' : '#F1EFE8',
+                      color: p.type_compte === 'exterieur' ? '#1B3A5C' : '#5E5854',
+                    }}>
+                      {p.type_compte === 'exterieur' ? 'Intervenant extérieur' : 'Agence'}
+                    </span>
                   </div>
                 )
               })}

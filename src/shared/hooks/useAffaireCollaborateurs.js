@@ -33,7 +33,7 @@ export function useAffaireCollaborateurs(affaireId) {
     if (userIds.length > 0) {
       const { data: profilesData } = await supabase
         .from('profiles')
-        .select('id, prenom, nom, email')
+        .select('id, prenom, nom, email, type_compte')
         .in('id', userIds)
       profilesMap = Object.fromEntries(
         (profilesData ?? []).map(p => [p.id, p])
@@ -60,18 +60,23 @@ export function useAffaireCollaborateurs(affaireId) {
   const isCollaborateur = !!currentUserId && collaborateurs.some(
     c => c.user_id === currentUserId && c.role === 'collaborateur'
   )
+  // Un intervenant extérieur consulte : il ne modifie rien de l'affaire
+  // (migration 050 ; ses propres remarques viendront avec le lot 3).
+  const estExterieur = !!currentUserId && collaborateurs.some(
+    c => c.user_id === currentUserId && c.role === 'exterieur'
+  )
   const hasAnyCollab = collaborateurs.length > 0
   // Si aucun collab défini → accès libre (évite le blocage au démarrage)
-  const canEdit = hasAnyCollab ? (isProprietaire || isCollaborateur) : true
+  const canEdit = estExterieur ? false : (hasAnyCollab ? (isProprietaire || isCollaborateur) : true)
 
-  const addCollaborateur = useCallback(async (userId) => {
+  const addCollaborateur = useCallback(async (userId, role = 'collaborateur') => {
     const { error } = await supabase
       .from('affaire_collaborateurs')
       .upsert(
-        [{ affaire_id: affaireId, user_id: userId, role: 'collaborateur', added_by: currentUserId }],
+        [{ affaire_id: affaireId, user_id: userId, role, added_by: currentUserId }],
         { onConflict: 'affaire_id,user_id' }
       )
-    if (error) console.error('Ajout collaborateur:', error)
+    if (error) { console.error('Ajout collaborateur:', error); throw error }
     await fetchData()
   }, [affaireId, currentUserId, fetchData])
 
@@ -90,7 +95,7 @@ export function useAffaireCollaborateurs(affaireId) {
   const searchProfiles = useCallback(async (emailQuery) => {
     if (!emailQuery || emailQuery.length < 3) return []
     const alreadyIn = collaborateurs.map(c => c.user_id)
-    let q = supabase.from('profiles').select('*').ilike('email', `%${emailQuery}%`).limit(6)
+    let q = supabase.from('profiles').select('id, prenom, nom, email, type_compte').ilike('email', `%${emailQuery}%`).limit(6)
     if (alreadyIn.length > 0) q = q.not('id', 'in', `(${alreadyIn.join(',')})`)
     const { data } = await q
     return data ?? []
@@ -98,7 +103,7 @@ export function useAffaireCollaborateurs(affaireId) {
 
   return {
     collaborateurs, loading, currentUserId,
-    isProprietaire, isCollaborateur, canEdit,
+    isProprietaire, isCollaborateur, estExterieur, canEdit,
     addCollaborateur, removeCollaborateur, searchProfiles,
     refetch: fetchData,
   }

@@ -33,6 +33,13 @@ function RequireAuth({ children }) {
   return user ? children : <Navigate to="/login" replace />
 }
 
+// Écrans réservés à l'agence. La base refuse déjà leurs données à un compte
+// extérieur ; cette barrière évite de lui montrer un écran vide.
+function AgenceSeule({ children }) {
+  const { estAgence } = useAuth()
+  return estAgence ? children : <Navigate to="/dashboard" replace />
+}
+
 function PlaceholderSettings() {
   return (
     <div className="flex flex-col items-center justify-center py-24 gap-2" style={{ color: 'var(--jga-beige)' }}>
@@ -75,16 +82,16 @@ export function AppRouter() {
           <Route path="affaires/:affaireId" element={<AffairePage />} />
           <Route path="affaires/:affaireId/:moduleId" element={<AffairePage />} />
 
-          <Route path="carnet-adresses" element={<Wrap><CarnetAdresses /></Wrap>} />
-          <Route path="heures" element={<Wrap><Heures /></Wrap>} />
+          <Route path="carnet-adresses" element={<AgenceSeule><Wrap><CarnetAdresses /></Wrap></AgenceSeule>} />
+          <Route path="heures" element={<AgenceSeule><Wrap><Heures /></Wrap></AgenceSeule>} />
 
           {/* Tools */}
-          <Route path="tools" element={<ToolsPage />} />
+          <Route path="tools" element={<AgenceSeule><ToolsPage /></AgenceSeule>} />
           {tools.map(tool => (
             <Route
               key={tool.id}
               path={`tools/${tool.path}`}
-              element={<Wrap><tool.component /></Wrap>}
+              element={<AgenceSeule><Wrap><tool.component /></Wrap></AgenceSeule>}
             />
           ))}
 

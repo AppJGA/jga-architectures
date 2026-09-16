@@ -1,6 +1,11 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '../../core/supabase/client'
 import { photosDeLAffaire, nettoyerFichiers } from '../../modules/chantier/comptes-rendus/photosStockage'
+import { useAuth } from '../../core/auth/useAuth'
+
+// La table `affaires` porte des montants : un compte extérieur la lit par une
+// vue allégée (migration 051), qui ne montre ni enveloppe ni honoraires.
+const sourceAffaires = (estAgence) => (estAgence ? 'affaires' : 'affaires_resume')
 
 const AFFAIRE_FIELDS = [
   'code_affaire', 'nom', 'phase', 'avancement',
@@ -28,6 +33,7 @@ function buildPayload(formData) {
 }
 
 export function useAffaires() {
+  const { estAgence } = useAuth()
   const [affaires, setAffaires] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -38,7 +44,7 @@ export function useAffaires() {
 
     // 1. Toutes les affaires
     const { data: allAffaires, error: affairesError } = await supabase
-      .from('affaires')
+      .from(sourceAffaires(estAgence))
       .select('*')
       .order('created_at', { ascending: false })
 
@@ -90,7 +96,7 @@ export function useAffaires() {
 
     setAffaires(enriched)
     setError(null)
-  }, [])
+  }, [estAgence])
 
   useEffect(() => {
     refetch().finally(() => setLoading(false))
@@ -171,14 +177,15 @@ export function useAffaires() {
 }
 
 export function useAffaire(id) {
+  const { estAgence } = useAuth()
   const [affaire, setAffaire] = useState(null)
   const [loading, setLoading] = useState(true)
 
   const refetch = useCallback(async () => {
     if (!id) return
-    const { data } = await supabase.from('affaires').select('*').eq('id', id).single()
+    const { data } = await supabase.from(sourceAffaires(estAgence)).select('*').eq('id', id).single()
     if (data) setAffaire(data)
-  }, [id])
+  }, [id, estAgence])
 
   useEffect(() => {
     if (!id) return

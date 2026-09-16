@@ -7,8 +7,9 @@ import {
 } from 'lucide-react'
 import { useAffaire } from '../shared/hooks/useAffaires'
 import { useAffaireCollaborateurs } from '../shared/hooks/useAffaireCollaborateurs'
+import { useAuth } from '../core/auth/useAuth'
 import { CollabModal } from './CollabModal'
-import { phases, getAllModules } from '../modules/manifest'
+import { phasesPour, getAllModules } from '../modules/manifest'
 import { PhaseBadge } from '../shared/components/Badge'
 
 import { AffaireFormModal } from '../dashboard/AffaireFormModal'
@@ -436,6 +437,8 @@ function ModuleItem({ mod, phaseColor, affaireId, isActive }) {
 }
 
 function ModulesSidebar({ affaireId, moduleId }) {
+  const { estAgence } = useAuth()
+  const phasesVues = phasesPour(estAgence)
   const navigate = useNavigate()
 
   const [collapsed, setCollapsed] = useState(() => {
@@ -486,7 +489,7 @@ function ModulesSidebar({ affaireId, moduleId }) {
       <div style={{ height: '0.5px', backgroundColor: 'rgba(0,0,0,0.08)', margin: '4px 0 8px' }} />
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-        {phases.map((phase, pi) => {
+        {phasesVues.map((phase, pi) => {
           const isCollapsed = collapsed[phase.id] ?? false
           return (
             <div key={phase.id}>
@@ -530,7 +533,7 @@ function ModulesSidebar({ affaireId, moduleId }) {
                 </div>
               )}
 
-              {pi < phases.length - 1 && (
+              {pi < phasesVues.length - 1 && (
                 <div style={{ height: '0.5px', backgroundColor: 'rgba(0,0,0,0.08)', margin: '4px 0' }} />
               )}
             </div>
@@ -900,10 +903,12 @@ function PhaseSection({ phase, affaire, stats, affaireId, navigate, rangBase }) 
 
 function AffaireOverview({ affaire, stats, affaireId, onEdit, canEdit }) {
   const navigate = useNavigate()
+  const { estAgence } = useAuth()
+  const phasesVues = phasesPour(estAgence)
 
   // Rang de départ de chaque phase dans la suite des décalages d'entrée, pour
   // qu'ils courent d'une section à l'autre au lieu de redémarrer à chaque phase.
-  const rangs = phases.reduce(
+  const rangs = phasesVues.reduce(
     (acc, phase) => [...acc, acc[acc.length - 1] + phase.modules.length],
     [0]
   )
@@ -916,7 +921,7 @@ function AffaireOverview({ affaire, stats, affaireId, onEdit, canEdit }) {
       display: 'flex', flexDirection: 'column', gap: 24, maxWidth: 900,
     }}>
       {/* Phase sections */}
-      {phases.map((phase, i) => (
+      {phasesVues.map((phase, i) => (
         <PhaseSection
           key={phase.id}
           phase={phase}

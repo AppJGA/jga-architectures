@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
+import { useAuth } from '../auth/useAuth'
 import {
   Building2, Calendar, BarChart2, CheckSquare, Clock,
   Wrench, Settings,
@@ -78,6 +79,7 @@ function Separator() {
 }
 
 export function Sidebar() {
+  const { estAgence } = useAuth()
   return (
     <aside
       style={{
@@ -92,13 +94,16 @@ export function Sidebar() {
         backgroundColor: 'white',
       }}
     >
-      {mainNav.map(item => (
+      {mainNav.filter(item => estAgence || item.path === '/dashboard').map(item => (
         <NavIcon key={item.path} {...item} />
       ))}
 
-      <Separator />
-
-      <NavIcon icon={Wrench} path="/tools" label="Boîte à outils" isTools />
+      {estAgence && (
+        <>
+          <Separator />
+          <NavIcon icon={Wrench} path="/tools" label="Boîte à outils" isTools />
+        </>
+      )}
 
       <div style={{ flex: 1 }} />
 

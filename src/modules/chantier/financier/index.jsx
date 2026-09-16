@@ -404,15 +404,16 @@ function LigneRow({ ligne, filter, onEdit, onDelete, onOpenFtm }) {
             onClick={() => onOpenFtm(ligne.ftm_id)}
             title={`Voir la FTM-${String(ligne.ftm_numero).padStart(3, '0')}`}
             style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              width: 20, height: 20,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+              height: 20, padding: ligne.ftm_numero != null ? '0 6px' : 0,
+              width: ligne.ftm_numero != null ? 'auto' : 20,
+              fontSize: 10, fontWeight: 600, whiteSpace: 'nowrap',
               borderRadius: 3,
               border: '0.5px solid rgba(0,0,0,0.12)',
               background: 'rgba(232,96,44,0.10)',
               color: '#E8602C',
               cursor: 'pointer',
               flexShrink: 0,
-              padding: 0,
               transition: 'all 0.15s',
             }}
             onMouseEnter={e => {
@@ -427,6 +428,7 @@ function LigneRow({ ligne, filter, onEdit, onDelete, onOpenFtm }) {
             }}
           >
             <FilePen size={11} />
+            {ligne.ftm_numero != null && `FTM-${String(ligne.ftm_numero).padStart(3, '0')}`}
           </button>
         )}
         <span style={{ fontSize: 12, color: '#1F1B17', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -456,22 +458,44 @@ function LigneRow({ ligne, filter, onEdit, onDelete, onOpenFtm }) {
 }
 
 function LotSection({ lot, filter, onAdd, onEdit, onDelete, onOpenFtm, affaireId, navigate }) {
+  // Marché de base non renseigné : le lot reste une invitation à le saisir,
+  // mais ses lignes s'affichent quand même — une FTM rattachée à ce lot
+  // comptait dans les totaux sans apparaître nulle part.
   if (!lot.marche_base_ht) {
     return (
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 8,
-        padding: '10px 14px', backgroundColor: 'white',
-        marginBottom: 6, borderRadius: 3, opacity: 0.7,
-      }}>
-        <span style={{ flex: 1, fontSize: 12, color: '#9C9591', fontStyle: 'italic' }}>
-          Lot {lot.numero} — {lot.nom}
-        </span>
-        <button
-          onClick={() => navigate(`/affaires/${affaireId}/lots-entreprises`)}
-          style={{ fontSize: 11, color: '#2A8A4E', background: 'none', border: 'none', cursor: 'pointer', whiteSpace: 'nowrap' }}
-        >
-          Marché non renseigné — configurer dans Entreprises &amp; Lots →
-        </button>
+      <div style={{ marginBottom: 8, backgroundColor: 'white', borderRadius: 2, overflow: 'hidden' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px' }}>
+          <span style={{ flex: 1, fontSize: 12, color: '#9C9591', fontStyle: 'italic' }}>
+            {lot.sansLot ? lot.nom : `Lot ${lot.numero} — ${lot.nom}`}
+          </span>
+          {lot.lignes.length > 0 && (
+            <span style={{ fontSize: 11, fontWeight: 500, color: '#E8602C', whiteSpace: 'nowrap' }}>
+              {lot.total_supplements_ht > 0 ? '+' : ''}{euro(lot.total_supplements_ht)}
+            </span>
+          )}
+          {lot.sansLot ? (
+            <span style={{ fontSize: 11, color: '#9C9591', whiteSpace: 'nowrap' }}>
+              À rattacher à un lot depuis la fiche
+            </span>
+          ) : (
+            <button
+              onClick={() => navigate(`/affaires/${affaireId}/lots-entreprises`)}
+              style={{ fontSize: 11, color: '#2A8A4E', background: 'none', border: 'none', cursor: 'pointer', whiteSpace: 'nowrap' }}
+            >
+              Marché non renseigné — configurer dans Entreprises &amp; Lots →
+            </button>
+          )}
+          {!lot.sansLot && <button
+            onClick={() => onAdd(lot.id)}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#2A8A4E', padding: 2, borderRadius: 3 }}
+            title="Ajouter une ligne"
+          >
+            <Plus size={14} />
+          </button>}
+        </div>
+        {lot.lignes.map(ligne => (
+          <LigneRow key={ligne.id} ligne={ligne} filter={filter} onEdit={onEdit} onDelete={onDelete} onOpenFtm={onOpenFtm} />
+        ))}
       </div>
     )
   }

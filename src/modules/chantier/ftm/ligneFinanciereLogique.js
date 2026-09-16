@@ -26,8 +26,9 @@ export function ligneDeFtm(ftm, affaireId) {
     affaire_id: affaireId ?? ftm?.affaire_id ?? null,
     lot_id: ftm?.lot_id ?? null,
     categorie: CATEGORIES[ftm?.origine] ?? 'adaptation_moe',
-    // L'intitulé dit d'où vient la ligne : elle n'a pas été saisie à la main
-    intitule: (description ? `${ref} — ${description}` : `${ref} — travaux modificatifs`).slice(0, 200),
+    // La référence est portée par l'étiquette de la ligne : la répéter ici
+    // ne ferait que tronquer la description dans une colonne étroite.
+    intitule: (description || 'Travaux modificatifs').slice(0, 200),
     montant_ht: ftm?.montant_travaux_ht ?? 0,
     statut: STATUTS[ftm?.decision ?? 'en_attente'] ?? 'en_attente',
     reference: ref,

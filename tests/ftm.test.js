@@ -59,7 +59,7 @@ describe('ligne financière d’une fiche', () => {
   test('la ligne dit d’où elle vient et où elle va', () => {
     const l = ligneDeFtm(fiche, 'A1')
     assert.equal(l.reference, 'FTM-012')
-    assert.match(l.intitule, /^FTM-012 — Reprise d’enduit/)
+    assert.equal(l.intitule, 'Reprise d’enduit')
     assert.equal(l.lot_id, 'L2')
     assert.equal(l.categorie, 'aleas')
   })
@@ -84,6 +84,6 @@ describe('ligne financière d’une fiche', () => {
   })
 
   test('sans description, l’intitulé reste lisible', () => {
-    assert.equal(ligneDeFtm({ ...fiche, description: '' }, 'A1').intitule, 'FTM-012 — travaux modificatifs')
+    assert.equal(ligneDeFtm({ ...fiche, description: '' }, 'A1').intitule, 'Travaux modificatifs')
   })
 })

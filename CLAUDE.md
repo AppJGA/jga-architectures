@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 364 tests node --test (plannings, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR)
+npm test         # 374 tests node --test (plannings, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR)
 npx eslint src   # ~73 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -183,6 +183,11 @@ orphelines sont rattrapées au chargement du module.
 - Le PDF est une page HTML imprimée par le navigateur : ses marges sont dans la
   page (`.feuille`), car « Marges : aucune » dans la boîte d'impression écrase
   `@page`.
+- Le tableau du suivi financier se calcule dans
+  `financier/tableauLogique.js` : **rien n'y disparaît**. Un lot sans marché de
+  base garde ses lignes (elles comptaient dans les totaux sans s'afficher), et
+  une ligne sans lot se range dans un bloc « Sans lot attribué » en fin de
+  tableau.
 - Vérifier une colonne sans deviner :
   `curl -H "apikey: $VITE_SUPABASE_ANON_KEY" "$VITE_SUPABASE_URL/rest/v1/ftm?select=<colonne>&limit=1"`
   — `[]` si elle existe, `42703` sinon.

@@ -4,7 +4,7 @@ import {
   Users, ClipboardList, MessageSquare, Zap, LayoutDashboard,
   Lock, RotateCcw, AlertTriangle, X, Map as IconePlan, Smartphone,
 } from 'lucide-react'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams, useNavigate } from 'react-router-dom'
 import { useCompteRendu } from '../../../shared/hooks/useCompteRendu'
 import { useAffaireInterlocuteurs } from '../../../shared/hooks/useAffaireInterlocuteurs'
 import { supabase } from '../../../core/supabase/client'
@@ -575,7 +575,7 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
 
   const {
     photos, liens, ajouterPhotos, remplacerPhoto, modifierLegendePhoto, supprimerPhoto, liensPhotos,
-    pastilles, placerPastille, enleverPastille, zones,
+    pastilles, placerPastille, enleverPastille, zones, ftms, creerFtmPourRemarque,
     cr, sections, presences, profiles, loading, erreurChargement, historique,
     syncPresences, updateCr, emettre, rouvrir, updatePresence,
     addSection, updateSection, deleteSection, reorderSection, reorderSectionsByIds,
@@ -656,6 +656,16 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
     else suivant.delete('visite')
     return suivant
   })
+
+  const naviguer = useNavigate()
+  const affaireId = affaire?.id
+  const ouvrirFtm = useCallback((ftm) => naviguer(`/affaires/${affaireId}/ftm?ftm=${ftm.id}`), [naviguer, affaireId])
+  const creerFtm = useCallback(async (remarque) => {
+    try {
+      const fiche = await creerFtmPourRemarque(remarque)
+      ouvrirFtm(fiche)
+    } catch (err) { signalerErreur(err) }
+  }, [creerFtmPourRemarque, ouvrirFtm, signalerErreur])
 
   const plansCr = usePlans(affaire?.id)
   const [placement, setPlacement] = useState(null) // remarque
@@ -854,6 +864,9 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
           interlocuteurs={interlocuteurs}
           lotEntreprises={lotEntreprises}
           zones={zones}
+          ftms={ftms}
+          creerFtm={lectureSeule ? null : creerFtm}
+          ouvrirFtm={ouvrirFtm}
           ops={ops}
         />
       )}
@@ -877,6 +890,9 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
           lotEntreprises={lotEntreprises}
           interlocuteurs={interlocuteurs}
           zones={zones}
+          ftms={ftms}
+          creerFtm={lectureSeule ? null : creerFtm}
+          ouvrirFtm={ouvrirFtm}
           ops={ops}
           lectureSeule={lectureSeule}
           erreur={erreur}

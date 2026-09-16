@@ -5,6 +5,7 @@ import {
   photosDuCr, envoyerPhoto, nettoyerFichiers, BUCKET_PHOTOS,
 } from '../../modules/chantier/comptes-rendus/photosStockage'
 import { pastillesDuCr, poserPastille, retirerPastille } from '../../modules/chantier/comptes-rendus/plansStockage'
+import { creerFtmDepuis } from '../../modules/chantier/ftm/creerDepuis'
 import { useLiensSignes } from '../../modules/chantier/comptes-rendus/useLiensSignes'
 
 // Jointures d'une présence : la fiche liée sert à tenir sa copie à jour
@@ -96,6 +97,7 @@ export function useCompteRendu(crId, affaireId) {
   const [photos, setPhotos] = useState([])
   const [pastilles, setPastilles] = useState([])
   const [zones, setZones] = useState([])
+  const [ftms, setFtms] = useState([])
   const { liens, obtenirLiens } = useLiensSignes(BUCKET_PHOTOS)
   // Seul le premier chargement affiche l'indicateur : il remplace l'éditeur,
   // qui perdait sinon à chaque ajout ses filtres, ses sections repliées et la
@@ -127,10 +129,12 @@ export function useCompteRendu(crId, affaireId) {
       { data: presData },
       { data: profData },
     ] = resultats
-    const [photosCr, pastillesCr, zonesAffaire] = await Promise.all([
+    const [photosCr, pastillesCr, zonesAffaire, ftmsAffaire] = await Promise.all([
       photosDuCr(crId), pastillesDuCr(crId),
       // Zones du planning (migration 047) : absentes, le choix ne s'affiche pas
       supabase.from('planning_zones').select('id, nom, couleur, ordre').eq('affaire_id', affaireId).order('ordre').then(r => (r.error ? [] : r.data ?? [])),
+      // Fiches de travaux nées d'une remarque (migration 048)
+      supabase.from('ftm').select('id, numero, decision, source_type, source_suivi_id').eq('affaire_id', affaireId).then(r => (r.error ? [] : r.data ?? [])),
     ])
     await obtenirLiens(photosCr.map(p => p.chemin_miniature))
 
@@ -142,6 +146,7 @@ export function useCompteRendu(crId, affaireId) {
     setPhotos(photosCr)
     setPastilles(pastillesCr)
     setZones(zonesAffaire)
+    setFtms(ftmsAffaire)
     dejaCharge.current = true
     setLoading(false)
   }, [crId, affaireId, obtenirLiens])
@@ -508,12 +513,19 @@ export function useCompteRendu(crId, affaireId) {
     await fetchAll()
   }, [fetchAll])
 
+  // Fiche de travaux modificatifs créée depuis une remarque
+  const creerFtmPourRemarque = useCallback(async (remarque) => {
+    const fiche = await creerFtmDepuis({ affaireId, type: 'remarque', element: remarque, contexte: cr })
+    await fetchAll()
+    return fiche
+  }, [affaireId, cr, fetchAll])
+
   // Lien de la photo entière (visionneuse, PDF)
   const liensPhotos = useCallback((chemins) => obtenirLiens(chemins), [obtenirLiens])
 
   return {
     photos, liens, ajouterPhotos, remplacerPhoto, modifierLegendePhoto, supprimerPhoto, liensPhotos,
-    pastilles, placerPastille, enleverPastille, zones,
+    pastilles, placerPastille, enleverPastille, zones, ftms, creerFtmPourRemarque,
     cr, sections, presences, profiles, loading, erreurChargement, historique,
     syncPresences, updateCr, emettre, rouvrir, updatePresence,
     addSection, updateSection, deleteSection, reorderSection, reorderSectionsByIds,

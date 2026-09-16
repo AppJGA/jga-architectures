@@ -1,7 +1,8 @@
 import { useState, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, Users, Send, RotateCcw, Lock, Plus, Camera, MapPin, Pencil, MoreHorizontal,
-  FileDown, Eye, Archive, Download, Mail, AlertTriangle, X, FileSignature,
+  FileDown, Eye, Archive, Download, Mail, AlertTriangle, X, FileSignature, FilePen,
 } from 'lucide-react'
 import { CrContexte } from '../comptes-rendus/CrContexte'
 import { PhotosContexte, usePhotosRemarque } from '../comptes-rendus/usePhotosRemarque'
@@ -23,6 +24,7 @@ import { statutPourVisite, REGLAGES_OPR_DEFAUT } from './rapportOprLogique'
 import { genererPdfOpr } from './genererRapportOpr'
 import { PanneauReserve } from './PanneauReserve'
 import { ProcesVerbaux } from './ProcesVerbaux'
+import { ftmDeReserve, resumeFtm } from '../ftm/lienFtm'
 
 // ─── Une visite OPR ou de levée ──────────────────────────────────────────────
 
@@ -44,8 +46,9 @@ function messageErreur(err) {
   return brut
 }
 
-function CarteReserve({ reserve, visite, lectureSeule, pastille, planNom, opr, onPanneau, onPlan, signalerErreur }) {
+function CarteReserve({ reserve, visite, lectureSeule, pastille, planNom, opr, onPanneau, onPlan, onFtm, ouvrirFtm, signalerErreur }) {
   const zoneLibelle = libelleZone(reserve, opr.zones)
+  const ftm = ftmDeReserve(opr.ftms, reserve)
   const photos = usePhotosRemarque(reserve)
   const statutJour = statutPourVisite(reserve, visite)
   const statut = infosStatutReserve(reserve)
@@ -67,6 +70,11 @@ function CarteReserve({ reserve, visite, lectureSeule, pastille, planNom, opr, o
         {reserve.localisation && <span style={{ fontSize: 13, fontWeight: 500, color: '#374151' }}>{reserve.localisation}</span>}
         {visite.type === 'levee' && reserve.nouvelle && <span style={{ fontSize: 12, color: '#E8602C' }}>Nouvelle</span>}
         <span style={{ flex: 1 }} />
+        {ftm && (
+          <button type="button" onClick={() => ouvrirFtm(ftm)} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 500, borderRadius: 3, padding: '2px 8px', color: resumeFtm(ftm).couleur, background: resumeFtm(ftm).fond }}>
+            <FilePen size={12} /> {resumeFtm(ftm).texte}
+          </button>
+        )}
         <span style={{ fontSize: 12, fontWeight: 600, color: statutJour.couleur, background: `${statutJour.couleur}1A`, borderRadius: 3, padding: '3px 10px' }}>{statutJour.libelle}</span>
       </div>
       <p style={{ fontSize: 16, lineHeight: 1.45, color: statut.close && !revue ? '#9CA3AF' : '#1F1B17', fontWeight: reserve.est_important ? 600 : 400 }}>
@@ -109,6 +117,9 @@ function CarteReserve({ reserve, visite, lectureSeule, pastille, planNom, opr, o
             <input type="file" accept="image/*" capture="environment" hidden onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; photos.annoterNouvelle(f) }} />
           </label>
           <button type="button" onClick={onPlan} style={bouton('white', pastille ? '#6B4E9B' : '#1F1B17')}><MapPin size={17} /> Plan</button>
+          {!ftm && (
+            <button type="button" onClick={() => onFtm(reserve)} title="Créer une fiche de travaux modificatifs" style={bouton()}><FilePen size={17} /> FTM</button>
+          )}
           {reserve.nouvelle && (
             <button type="button" onClick={() => onPanneau({ type: 'reserve', reserve })} aria-label="Modifier" style={{ ...bouton(), padding: '0 12px' }}><Pencil size={17} /></button>
           )}
@@ -285,6 +296,7 @@ function DocumentVisite({ visite, affaire, opr, plansCr, lectureSeuleAffaire, si
 }
 
 export function VisiteOpr({ visite, affaire, opr, plansCr, lectureSeuleAffaire, onRetour }) {
+  const naviguer = useNavigate()
   const [onglet, setOnglet] = useState('reserves')
   const [panneau, setPanneau] = useState(null)
   const [placement, setPlacement] = useState(null)
@@ -337,6 +349,14 @@ export function VisiteOpr({ visite, affaire, opr, plansCr, lectureSeuleAffaire, 
       else if (confirmation === 'rouvrir') await opr.rouvrirVisite(visite)
     } catch (e) { signalerErreur(e) }
     setConfirmation(null)
+  }
+
+  const ouvrirFtm = (ftm) => naviguer(`/affaires/${affaire?.id}/ftm?ftm=${ftm.id}`)
+  const creerFtm = async (reserve) => {
+    try {
+      const fiche = await opr.creerFtmPourReserve(reserve, visite)
+      ouvrirFtm(fiche)
+    } catch (err) { signalerErreur(err) }
   }
 
   const reservePlacement = placement && reservesVisite.find(r => r.id === placement.id)
@@ -403,7 +423,8 @@ export function VisiteOpr({ visite, affaire, opr, plansCr, lectureSeuleAffaire, 
                       return (
                         <CarteReserve key={r.id} reserve={r} visite={visite} lectureSeule={lectureSeule} opr={opr}
                           pastille={pastille} planNom={pastille && plansCr.plans.find(p => p.id === pastille.plan_id)?.nom}
-                          onPanneau={setPanneau} onPlan={() => setPlacement(r)} signalerErreur={signalerErreur} />
+                          onPanneau={setPanneau} onPlan={() => setPlacement(r)} onFtm={creerFtm} ouvrirFtm={ouvrirFtm}
+                          signalerErreur={signalerErreur} />
                       )
                     })}
                   </div>

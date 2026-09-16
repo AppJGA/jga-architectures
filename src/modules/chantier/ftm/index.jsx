@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, useSearchParams } from 'react-router-dom'
 import { Plus, Eye, Printer, Pencil, Trash2, FilePen } from 'lucide-react'
 import { useAffaire } from '../../../shared/hooks/useAffaires'
 import { useFtm } from '../../../shared/hooks/useFtm'
@@ -91,6 +91,11 @@ function FtmCard({ ftm, lots, affaire, onEdit, onDelete }) {
           {ftm.type_demande && (
             <span style={{ fontSize: 11, color: '#9C9591', fontStyle: 'italic' }}>{ftm.type_demande}</span>
           )}
+          {ftm.source_libelle && (
+            <span style={{ fontSize: 11, color: '#1B3A5C', background: 'rgba(27,58,92,0.10)', borderRadius: 3, padding: '1px 6px' }}>
+              Issue de : {ftm.source_libelle}
+            </span>
+          )}
         </div>
       </div>
 
@@ -166,6 +171,17 @@ export default function FtmModule() {
   const [lots, setLots] = useState([])
   const [modalOpen, setModalOpen] = useState(false)
   const [editingFtm, setEditingFtm] = useState(null)
+  // Fiche ouverte directement depuis une remarque ou une réserve (?ftm=…).
+  // Lue à chaque rendu plutôt que recopiée dans l'état : la fiche n'est
+  // connue qu'une fois le chargement terminé.
+  const [params, setParams] = useSearchParams()
+  const ftmDemandee = params.get('ftm')
+  const ficheDemandee = ftmDemandee ? ftms.find(f => f.id === ftmDemandee) ?? null : null
+  const oublierParam = () => {
+    if (ftmDemandee) setParams(p => { const q = new URLSearchParams(p); q.delete('ftm'); return q }, { replace: true })
+  }
+  const ficheOuverte = ficheDemandee ?? editingFtm
+  const fenetreOuverte = modalOpen || !!ficheDemandee
 
   useEffect(() => {
     if (!affaireId) return
@@ -174,23 +190,26 @@ export default function FtmModule() {
   }, [affaireId])
 
   const handleEdit = (ftm) => {
+    oublierParam()
     setEditingFtm(ftm)
     setModalOpen(true)
   }
 
   const handleNew = () => {
+    oublierParam()
     setEditingFtm(null)
     setModalOpen(true)
   }
 
   const handleClose = () => {
+    oublierParam()
     setModalOpen(false)
     setEditingFtm(null)
   }
 
   const handleSave = async (payload) => {
-    if (editingFtm) {
-      await updateFtm(editingFtm.id, payload)
+    if (ficheOuverte) {
+      await updateFtm(ficheOuverte.id, payload)
     } else {
       await createFtm(payload)
     }
@@ -198,8 +217,8 @@ export default function FtmModule() {
 
   const handleSaveAndExport = async (payload) => {
     let savedFtm
-    if (editingFtm) {
-      savedFtm = await updateFtm(editingFtm.id, payload)
+    if (ficheOuverte) {
+      savedFtm = await updateFtm(ficheOuverte.id, payload)
     } else {
       savedFtm = await createFtm(payload)
     }
@@ -339,9 +358,9 @@ export default function FtmModule() {
       </div>
 
       <FtmFormModal
-        open={modalOpen}
+        open={fenetreOuverte}
         onClose={handleClose}
-        ftm={editingFtm}
+        ftm={ficheOuverte}
         lots={lots}
         affaire={affaire}
         onSave={handleSave}

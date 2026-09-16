@@ -5,6 +5,7 @@ import { photosIndisponibles, envoyerPhoto, nettoyerFichiers, BUCKET_PHOTOS } fr
 import { BUCKET_ARCHIVES } from '../comptes-rendus/rapportStockage'
 import { useLiensSignes } from '../comptes-rendus/useLiensSignes'
 import { libelleLot } from './oprLogique'
+import { creerFtmDepuis } from '../ftm/creerDepuis'
 
 // ─── Données du module OPR d'une affaire ─────────────────────────────────────
 // Volumes modestes (quelques visites, quelques centaines de réserves) : tout
@@ -21,7 +22,7 @@ function verifier(resultat) {
   return resultat.data
 }
 
-const VIDE = { visites: [], reserves: [], constats: [], photos: [], pastilles: [], presences: [], archives: [], lots: [], lotEntreprises: [], zones: [], pvs: null }
+const VIDE = { visites: [], reserves: [], constats: [], photos: [], pastilles: [], presences: [], archives: [], lots: [], lotEntreprises: [], zones: [], ftms: [], pvs: null }
 
 export function useOpr(affaireId) {
   const [donnees, setDonnees] = useState(VIDE)
@@ -40,19 +41,20 @@ export function useOpr(affaireId) {
       supabase.from('lots').select('*').eq('affaire_id', affaireId).order('numero'),
       supabase.from('lot_entreprises').select('id, lot_id, lots(id, numero, nom), entreprises(id, raison_sociale, email, telephone), interlocuteurs:interlocuteur_id(prenom, nom, telephone, email)').eq('affaire_id', affaireId),
       supabase.from('planning_zones').select('id, nom, couleur, ordre').eq('affaire_id', affaireId).order('ordre'),
+      supabase.from('ftm').select('id, numero, decision, source_type, source_reserve_id').eq('affaire_id', affaireId),
     ])
     const echec = tables.find((t) => t.error)
     if (echec) {
       if (photosIndisponibles(echec.error)) return null
       throw echec.error
     }
-    const [visites, reserves, constats, photos, pastilles, presences, archives, lots, lotEntreprises, zones] = tables.map((t) => t.data ?? [])
+    const [visites, reserves, constats, photos, pastilles, presences, archives, lots, lotEntreprises, zones, ftms] = tables.map((t) => t.data ?? [])
     // Procès-verbaux : migration 046, lus à part pour que le module reste
     // utilisable tant qu'elle n'est pas passée (pvs = null)
     const pv = await supabase.from('opr_pv').select('*').eq('affaire_id', affaireId)
     if (pv.error && !photosIndisponibles(pv.error)) throw pv.error
     const pvs = pv.error ? null : pv.data ?? []
-    return { visites, reserves, constats, photos, pastilles, presences, archives, lots, lotEntreprises, zones, pvs }
+    return { visites, reserves, constats, photos, pastilles, presences, archives, lots, lotEntreprises, zones, ftms, pvs }
   }, [affaireId])
 
   const appliquer = useCallback(async (resultat) => {
@@ -240,6 +242,9 @@ export function useOpr(affaireId) {
     return data
   })
 
+  const creerFtmPourReserve = ecrire(async (reserve, visite) =>
+    creerFtmDepuis({ affaireId, type: 'reserve', element: reserve, contexte: visite, lotId: reserve.lot_id }))
+
   // ── Procès-verbaux ───────────────────────────────────────────────────────────
   const enregistrerPv = ecrire(async ({ visite, lotId, type, champs }) => {
     const existant = (donnees.pvs ?? []).find((p) => p.visite_id === visite.id && p.lot_id === lotId && p.type === type)
@@ -289,6 +294,6 @@ export function useOpr(affaireId) {
     ajouterReserve, modifierReserve, supprimerReserve, constater, annulerConstat,
     ajouterPhotos, remplacerPhoto, modifierLegendePhoto, supprimerPhoto,
     placerPastille, retirerPastille, setPresence,
-    archiver, diffusionsDeVisite, noterDiffusion, enregistrerPv, archiverPv,
+    archiver, diffusionsDeVisite, noterDiffusion, enregistrerPv, archiverPv, creerFtmPourReserve,
   }
 }

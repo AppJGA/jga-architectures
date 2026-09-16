@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef, useContext } from 'react'
-import { Users, Search, Plus, Camera, MapPin, MessageSquare, Pencil, MoreHorizontal, WifiOff, AlertTriangle, X, LogOut, Lock } from 'lucide-react'
+import { Users, Search, Plus, Camera, MapPin, MessageSquare, Pencil, MoreHorizontal, WifiOff, AlertTriangle, X, LogOut, Lock, FilePen } from 'lucide-react'
 import { FILTRES_VISITE, filtreVisite, groupesVisite, compteursVisite } from './visiteLogique'
 import { STATUTS, infosStatut, estEnRetard, libelleZone } from './crLogique'
 import { PanneauRemarque, PanneauSuivi, PanneauPresences, PanneauStatuts } from './PanneauxVisite'
 import { usePhotosRemarque, PhotosContexte } from './usePhotosRemarque'
 import { PhotosDeRemarque } from './PhotosRemarque'
 import { usePlansCr } from './PlansContexte'
+import { ftmDeRemarque, resumeFtm } from '../ftm/lienFtm'
 import { useRemarquesTypes } from './useRemarquesTypes'
 
 // ─── Mode Visite ─────────────────────────────────────────────────────────────
@@ -70,13 +71,14 @@ function libelleDestinataire(rem, lots, interlocuteurs) {
   return rem.copie_destinataire ?? null
 }
 
-function CarteRemarque({ rem, cr, lots, interlocuteurs, zones, lectureSeule, surbrillance, ops, onPanneau }) {
+function CarteRemarque({ rem, cr, lots, interlocuteurs, zones, ftms, creerFtm, ouvrirFtm, lectureSeule, surbrillance, ops, onPanneau }) {
   const photos = usePhotosRemarque(rem)
   const plansCr = usePlansCr()
   const statut = infosStatut(rem)
   const enRetard = estEnRetard(rem, cr.date_reunion)
   const destinataire = libelleDestinataire(rem, lots, interlocuteurs)
   const zoneLibelle = libelleZone(rem, zones)
+  const ftm = ftmDeRemarque(ftms, rem)
   const pastille = plansCr.pastilles.find(p => p.remarque_id === rem.id)
   const planNom = pastille && plansCr.plans.find(p => p.id === pastille.plan_id)?.nom
   const suivis = rem.sous_remarques ?? []
@@ -101,6 +103,11 @@ function CarteRemarque({ rem, cr, lots, interlocuteurs, zones, lectureSeule, sur
         {rem.sousSection && <span style={{ fontSize: 12, color: '#9C9591' }}>{rem.sousSection.code} {rem.sousSection.titre}</span>}
         {destinataire && <span style={{ fontSize: 12, fontWeight: 500, color: '#2A8A4E', background: 'rgba(42,138,78,0.10)', borderRadius: 3, padding: '2px 8px' }}>{destinataire}</span>}
         {zoneLibelle && <span style={{ fontSize: 12, fontWeight: 500, color: '#1B3A5C', background: 'rgba(27,58,92,0.10)', borderRadius: 3, padding: '2px 8px' }}>{zoneLibelle}</span>}
+        {ftm && (
+          <button type="button" onClick={() => ouvrirFtm(ftm)} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 500, borderRadius: 3, padding: '2px 8px', color: resumeFtm(ftm).couleur, background: resumeFtm(ftm).fond }}>
+            <FilePen size={12} /> {resumeFtm(ftm).texte}
+          </button>
+        )}
         <span style={{ flex: 1 }} />
         {rem.est_nouveau && <span style={{ fontSize: 12, color: '#E8602C' }}>▶ Nouvelle</span>}
         <span style={{ fontSize: 12, fontWeight: 600, color: statut.couleur, background: statut.fond, borderRadius: 3, padding: '3px 10px' }}>{statut.libelle}</span>
@@ -163,6 +170,11 @@ function CarteRemarque({ rem, cr, lots, interlocuteurs, zones, lectureSeule, sur
             <MessageSquare size={17} /> Suivi{suivis.length > 0 ? ` (${suivis.length})` : ''}
           </button>
         )}
+        {!lectureSeule && creerFtm && !ftm && (
+          <button type="button" onClick={() => creerFtm(rem)} title="Créer une fiche de travaux modificatifs" style={bouton()}>
+            <FilePen size={17} /> FTM
+          </button>
+        )}
         {!lectureSeule && (
           <button type="button" onClick={() => onPanneau({ type: 'modifier', remarque: rem })} aria-label="Modifier" style={{ ...bouton(), padding: '0 12px' }}>
             <Pencil size={17} />
@@ -173,7 +185,7 @@ function CarteRemarque({ rem, cr, lots, interlocuteurs, zones, lectureSeule, sur
   )
 }
 
-export function ModeVisite({ cr, sections, presences, setPresence, lotEntreprises, interlocuteurs, zones = [], ops, lectureSeule, erreur, onFermerErreur, signalerErreur, onTerminer }) {
+export function ModeVisite({ cr, sections, presences, setPresence, lotEntreprises, interlocuteurs, zones = [], ftms = [], creerFtm, ouvrirFtm, ops, lectureSeule, erreur, onFermerErreur, signalerErreur, onTerminer }) {
   const [filtre, setFiltre] = useState('ouvertes')
   const [destinataire, setDestinataire] = useState('')
   const [zone, setZone] = useState('')
@@ -336,6 +348,7 @@ export function ModeVisite({ cr, sections, presences, setPresence, lotEntreprise
                 {g.remarques.map(rem => (
                   <CarteRemarque
                     key={rem.id} rem={rem} cr={cr} lots={lots} interlocuteurs={interlocuteurs ?? []} zones={zones}
+                    ftms={ftms} creerFtm={creerFtm} ouvrirFtm={ouvrirFtm}
                     lectureSeule={lectureSeule} surbrillance={surbrillance === rem.id} ops={ops}
                     onPanneau={setPanneau}
                   />

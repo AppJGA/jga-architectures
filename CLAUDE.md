@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 274 tests node --test (plannings, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR)
+npm test         # 285 tests node --test (plannings, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR)
 npx eslint src   # ~73 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -47,7 +47,7 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
 - **Accès aux données** : hooks dans `src/shared/hooks/`. `useAffaires()` pour
   la liste, `useAffaire(id)` pour une affaire (les deux font `select('*')`),
   `useAffaireCollaborateurs(id)` pour les droits (`canEdit`, `isProprietaire`).
-- **Base** : `supabase/migrations/`, numérotées, 47 fichiers, **passées à la
+- **Base** : `supabase/migrations/`, numérotées, 48 fichiers, **passées à la
   main** dans le SQL Editor de Supabase : un code qui dépend d'une nouvelle
   colonne doit tolérer son absence tant que la migration n'est pas faite. La photo de
   couverture d'une affaire est `affaires.photo_url` (migration 014, bucket
@@ -131,6 +131,16 @@ création avec reprise de la visite précédente) et `useCompteRendu` (un CR).
   `destinataire` renseigné, réutilisées pour la même émission ; seules celles
   sans destinataire sont listées comme archives d'émission. `cr_diffusions`
   note les e-mails préparés, pas envoyés.
+- **Zones** (migration 047) : une remarque ou une réserve peut porter la zone
+  du planning chantier qui la concerne (`zone_id`, + `copie_zone` pour
+  l'historique). Affichage et filtre passent par `libelleZone` /
+  `grouperParZone` (`crLogique.js`).
+- **Lien vers une FTM** (migration 048) : une remarque ou une réserve donne
+  une fiche de travaux modificatifs en un bouton (`ftm/creerDepuis.js`). La
+  fiche garde son origine (`source_type`, `source_suivi_id`,
+  `source_reserve_id`, `source_libelle`) ; le lien se relit des deux côtés par
+  `ftm/lienFtm.js` et s'ouvre par `/affaires/:id/ftm?ftm=<id>`. Supprimer la
+  remarque ou la réserve ne supprime pas la fiche : elle engage l'argent.
 
 ## OPR et réserves
 

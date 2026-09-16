@@ -284,6 +284,12 @@ plus seulement à l'écran.
   l'état courant, puis appliquer et enregistrer le même résultat.
 - **Supabase ne lève pas d'exception** : l'échec est dans `{ error }` de la
   réponse. Un `try/catch` seul laisse passer les écritures ratées.
+- **Un hook qui renvoie un objet neuf à chaque rendu ne se met pas dans les
+  dépendances d'un `useCallback`.** `useHorsLigne` rendait `{ enLigne, file, … }`
+  sans `useMemo` ; `fetchAll` en dépendait, changeait donc d'identité à chaque
+  rendu, et son `useEffect` relançait le chargement en boucle — 500 rendus et
+  200 requêtes en cinq secondes, la console noire d'erreurs. Dépendre des
+  fonctions (stables) plutôt que de l'objet, et mémoriser l'objet rendu.
 - **Jamais de `Math.floor` sur un écart en millisecondes entre deux dates.**
   Entre l'hiver et l'été, il manque une heure : un lundi tombait dans la
   semaine précédente. Utiliser `joursEntre` (`chantier/planning/geometrie.js`).

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { MAGASINS, lire, ecrire, effacer, operationsDuCr, disponible } from './baseLocale'
 import { aEnvoyer, resumeFile, ESSAIS_MAX } from './fileLogique'
 import { envoyerOperation, erreurReseau } from './envoi'
@@ -112,9 +112,11 @@ export function useHorsLigne(crId) {
     await relireFile()
   }, [relireFile])
 
-  return {
+  // Objet stable : `useCompteRendu` s'en sert dans des `useCallback`, et un
+  // objet neuf à chaque rendu y relançait le chargement en boucle.
+  return useMemo(() => ({
     enLigne, file, resume: resumeFile(file), envoiEnCours, prepareLe,
     enfiler, envoyerFile, preparer, instantane, rejouer, abandonner, relireFile,
     utilisable: disponible(),
-  }
+  }), [enLigne, file, envoiEnCours, prepareLe, enfiler, envoyerFile, preparer, instantane, rejouer, abandonner, relireFile])
 }

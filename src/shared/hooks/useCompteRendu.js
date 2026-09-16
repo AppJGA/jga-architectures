@@ -114,7 +114,12 @@ export function useCompteRendu(crId, affaireId) {
   const dejaCharge = useRef(false)
 
   const horsLigne = useHorsLigne(crId)
-  const { enfiler: enfilerOperation } = horsLigne
+  // Les fonctions, pas l'objet : ce sont elles qui sont stables, et c'est d'elles
+  // que dépendent le chargement et les écritures.
+  const {
+    enfiler: enfilerOperation, instantane: instantaneLocal,
+    relireFile, preparer: preparerHorsLigne,
+  } = horsLigne
 
   // Une modification de visite s'affiche tout de suite, puis part — ou attend
   // dans la file si le réseau manque. L'identifiant des lignes créées est
@@ -196,9 +201,9 @@ export function useCompteRendu(crId, affaireId) {
   // Ce que l'écran montre quand la visite s'ouvre sans réseau : l'instantané
   // emporté, rejoué avec les modifications encore en file.
   const chargerHorsLigne = useCallback(async () => {
-    const emporte = await horsLigne.instantane()
+    const emporte = await instantaneLocal()
     if (!emporte) return false
-    const ops = await horsLigne.relireFile()
+    const ops = await relireFile()
     const etat = etatAvecFile(emporte, ops)
     setCr(etat.cr)
     setSections(etat.sections ?? [])
@@ -213,7 +218,7 @@ export function useCompteRendu(crId, affaireId) {
     dejaCharge.current = true
     setLoading(false)
     return true
-  }, [horsLigne])
+  }, [instantaneLocal, relireFile])
 
   // Les données fraîches deviennent l'instantané de la prochaine visite, et
   // les modifications encore en file restent visibles par-dessus.
@@ -222,8 +227,8 @@ export function useCompteRendu(crId, affaireId) {
     try {
       const charge = await chargerEnLigne()
       if (!charge) return
-      const ops = await horsLigne.relireFile()
-      await horsLigne.preparer(charge).catch(() => {})
+      const ops = await relireFile()
+      await preparerHorsLigne(charge).catch(() => {})
       if (ops.length > 0) {
         const etat = etatAvecFile(charge, ops)
         setSections(etat.sections)
@@ -236,7 +241,7 @@ export function useCompteRendu(crId, affaireId) {
       const repris = await chargerHorsLigne()
       if (!repris) throw err
     }
-  }, [crId, chargerEnLigne, chargerHorsLigne, horsLigne])
+  }, [crId, chargerEnLigne, chargerHorsLigne, relireFile, preparerHorsLigne])
 
   useEffect(() => {
     dejaCharge.current = false

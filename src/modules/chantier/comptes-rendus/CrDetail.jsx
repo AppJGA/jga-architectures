@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { useCompteRendu } from '../../../shared/hooks/useCompteRendu'
+import { useAuth } from '../../../core/auth/useAuth'
 import { useAffaireInterlocuteurs } from '../../../shared/hooks/useAffaireInterlocuteurs'
 import { supabase } from '../../../core/supabase/client'
 import { CrPresences } from './CrPresences'
@@ -567,6 +568,7 @@ function messageErreur(err) {
 }
 
 export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffaire = false }) {
+  const { user, estAgence } = useAuth()
   const [activeView, setActiveView] = useState(null)
   const { interlocuteurs } = useAffaireInterlocuteurs(affaire?.id)
   const [lotEntreprises, setLotEntreprises] = useState([])
@@ -594,7 +596,7 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
   const {
     photos, liens, ajouterPhotos, remplacerPhoto, modifierLegendePhoto, supprimerPhoto, liensPhotos,
     pastilles, placerPastille, enleverPastille, zones, ftms, creerFtmPourRemarque,
-    planning, modifierAvancementTache, horsLigne,
+    planning, modifierAvancementTache, horsLigne, sectionDesIntervenants,
     cr, sections, presences, profiles, loading, erreurChargement, historique,
     syncPresences, updateCr, emettre, rouvrir, updatePresence,
     addSection, updateSection, deleteSection, reorderSection, reorderSectionsByIds,
@@ -631,7 +633,7 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
       addSection, updateSection, deleteSection, reorderSection, reorderSectionsByIds,
       addSousSection, updateSousSection, deleteSousSection, reorderSousSection,
       addRemarque, addSectionRemarque, updateRemarque, deleteRemarque, reorderRemarque, reorderSectionRemarque,
-      addSousRemarque, changerStatutRemarques,
+      addSousRemarque, changerStatutRemarques, sectionDesIntervenants,
     }
     return Object.fromEntries(Object.entries(brutes).map(([nom, op]) => [nom, async (...args) => {
       try {
@@ -646,7 +648,7 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
     addSection, updateSection, deleteSection, reorderSection, reorderSectionsByIds,
     addSousSection, updateSousSection, deleteSousSection, reorderSousSection,
     addRemarque, addSectionRemarque, updateRemarque, deleteRemarque, reorderRemarque, reorderSectionRemarque,
-    addSousRemarque, changerStatutRemarques, signalerErreur,
+    addSousRemarque, changerStatutRemarques, sectionDesIntervenants, signalerErreur,
   ])
 
   // Espace utilisé, relu quand le nombre de photos change
@@ -722,8 +724,16 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
     ouvrirPlacement: setPlacement,
   }), [plansCr.disponible, plansCr.plans, plansCr.versions, pastilles])
 
-  const lectureSeule = lectureSeuleAffaire || cr?.statut === 'emis'
-  const contexte = useMemo(() => ({ lectureSeule, signalerErreur }), [lectureSeule, signalerErreur])
+  // Un intervenant extérieur consulte l'affaire (lectureSeuleAffaire), mais
+  // dépose ses propres observations tant que le compte rendu est un brouillon
+  // (migrations 050 à 052). Ses droits sont tenus en base ; ici, on n'affiche
+  // que les boutons qui aboutiront.
+  const contributeur = !estAgence && cr?.statut !== 'emis'
+  const lectureSeule = (lectureSeuleAffaire && !contributeur) || cr?.statut === 'emis'
+  const contexte = useMemo(
+    () => ({ lectureSeule, contributeur, utilisateurId: user?.id ?? null, profils: profiles, signalerErreur }),
+    [lectureSeule, contributeur, user?.id, profiles, signalerErreur],
+  )
 
   // Archive PDF de chaque émission (migration 043 ; null tant qu'elle manque)
   const [archives, setArchives] = useState(null)
@@ -737,7 +747,7 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
   const fabriquerPdf = (reglages, crPdf) => genererPdfCr({
     cr: crPdf, affaire, sections, presences,
     lots: lotEntreprises.map(le => le.lots).filter(Boolean), interlocuteurs: interlocuteurs ?? [], zones,
-    avancement: lignesAvancementCr,
+    avancement: lignesAvancementCr, profils: profiles,
     photos, liensPhotos, pastilles, plansCr, reglages,
   })
 
@@ -981,6 +991,7 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
           liensPhotos={liensPhotos}
           zones={zones}
           avancement={lignesAvancementCr}
+          profils={profiles}
           pastilles={pastilles}
           plansCr={plansCr}
           espace={espace}

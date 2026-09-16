@@ -395,3 +395,42 @@ export function grouperParZone(elements, zones) {
   }
   return [...parZone.values()].sort((a, b) => a.ordre - b.ordre || String(a.libelle ?? 'zz').localeCompare(String(b.libelle ?? 'zz')))
 }
+
+// ─── Qui peut toucher à quoi (migrations 050 à 052) ──────────────────────────
+//
+// L'agence écrit tout le compte rendu. Un intervenant extérieur invité n'écrit
+// que ses propres lignes, et seulement tant que le CR n'est pas émis. La base
+// impose déjà ces règles : ici, il s'agit de ne pas afficher des boutons qui
+// échoueraient.
+
+/**
+ * @param acces { lectureSeule, contributeur, utilisateurId }
+ *   - lectureSeule : CR émis, ou affaire consultée sans droit d'écriture
+ *   - contributeur : intervenant extérieur qui peut déposer ses observations
+ */
+export function peutModifierRemarque(remarque, acces) {
+  const { lectureSeule, contributeur, utilisateurId } = acces ?? {}
+  if (lectureSeule) return false
+  if (!contributeur) return true
+  return !!utilisateurId && remarque?.created_by === utilisateurId
+}
+
+/** Un suivi s'ajoute sous n'importe quelle remarque : il n'en modifie aucune. */
+export function peutRepondre(acces) {
+  return !(acces?.lectureSeule)
+}
+
+/** Sections, statuts des autres, présences : l'agence seule. */
+export function peutOrganiser(acces) {
+  return !(acces?.lectureSeule) && !(acces?.contributeur)
+}
+
+/**
+ * Auteur à afficher sur une remarque : seulement lorsqu'elle vient d'un
+ * intervenant extérieur — celles de l'agence n'ont pas à être signées.
+ */
+export function auteurExterieur(remarque, profils) {
+  const auteur = (profils ?? []).find((p) => p.id === remarque?.created_by)
+  if (!auteur || auteur.type_compte !== 'exterieur') return null
+  return [auteur.prenom, auteur.nom].filter(Boolean).join(' ') || auteur.email || 'Intervenant extérieur'
+}

@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 341 tests node --test (plannings, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR)
+npm test         # 351 tests node --test (plannings, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR)
 npx eslint src   # ~73 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -47,7 +47,7 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
 - **Accès aux données** : hooks dans `src/shared/hooks/`. `useAffaires()` pour
   la liste, `useAffaire(id)` pour une affaire (les deux font `select('*')`),
   `useAffaireCollaborateurs(id)` pour les droits (`canEdit`, `isProprietaire`).
-- **Base** : `supabase/migrations/`, numérotées, 51 fichiers, **passées à la
+- **Base** : `supabase/migrations/`, numérotées, 52 fichiers, **passées à la
   main** dans le SQL Editor de Supabase : un code qui dépend d'une nouvelle
   colonne doit tolérer son absence tant que la migration n'est pas faite. La photo de
   couverture d'une affaire est `affaires.photo_url` (migration 014, bucket
@@ -243,8 +243,28 @@ plus seulement à l'écran.
   trouvé (extérieur → rôle `exterieur`). Le compte lui-même se crée dans
   Supabase (Authentication → Add user) ; son type reste « extérieur ».
 
-Reste le lot 3 : écriture de ses propres remarques (photos, pastilles, suivis),
-marquées à son nom, sans toucher à celles de l'agence.
+**Lot 3 fait (migration 052)** : un intervenant écrit ses propres observations.
+
+- Elles se rangent dans la section « Observations des intervenants »
+  (`type_section = 'intervenants'`), créée à la demande par
+  `section_intervenants(cr)` — un extérieur ne crée pas de section. La fonction
+  est `security definer` et refuse un CR émis ou une affaire qui n'est pas la
+  sienne.
+- Règles RLS adossées à `created_by` : il ajoute, modifie et supprime **ses**
+  lignes (remarques, photos, pastilles), photos et pastilles seulement sur
+  **ses** remarques (`remarque_de_lauteur`). Un suivi, lui, s'ajoute sous
+  n'importe quelle remarque : il ne la modifie pas. Le déclencheur
+  `cr_auteur_fige` empêche de s'approprier une ligne de l'agence. Le verrou des
+  CR émis (037) s'applique avant tout.
+- Stockage : il dépose dans le dossier de son affaire et ne retire que ses
+  propres fichiers (`owner`).
+- Écran : `CrContexte` porte `contributeur`, `utilisateurId` et `profils` ;
+  `peutModifierRemarque` / `peutOrganiser` / `auteurExterieur` (`crLogique.js`)
+  décident des boutons affichés, dans l'éditeur comme en mode Visite. Une
+  observation extérieure est signée à l'écran et dans le PDF.
+- Attention : un refus RLS sur un `update` ou un `delete` **ne lève pas
+  d'erreur**, il ne touche aucune ligne. Un test qui attend une exception passe
+  à côté — compter les lignes (voir `pgtest/test050.mjs`).
 
 ## Pièges déjà rencontrés
 

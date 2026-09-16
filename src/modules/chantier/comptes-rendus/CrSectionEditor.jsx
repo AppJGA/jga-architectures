@@ -2,12 +2,13 @@ import { useState, useMemo, createContext, useContext } from 'react'
 import {
   Plus, Pencil, ChevronDown, ChevronUp, ChevronRight, X,
   GripVertical, MessageSquarePlus, ToggleLeft, ToggleRight, MessageSquare,
-  Check, RotateCcw, Search, History, CheckSquare, MapPin, FilePen,
+  Check, RotateCcw, Search, History, CheckSquare, MapPin, FilePen, UserPen,
 } from 'lucide-react'
 import { CATEGORIE_META } from '../../../shared/hooks/useAffaireInterlocuteurs'
 import {
   dateDuJour, STATUTS, FAMILLES_STATUT, STATUT_PAR_DEFAUT, statutNormalise, infosStatut,
   estEnRetard, historiqueRemarque, passeFiltre, FILTRE_VIDE, filtreActif, libelleZone,
+  peutModifierRemarque, peutOrganiser, auteurExterieur,
 } from './crLogique'
 import { useCr } from './CrContexte'
 import { ftmDeRemarque, resumeFtm } from '../ftm/lienFtm'
@@ -423,7 +424,10 @@ function RemarqueRow({ rem, idx, total, crDate, suggestions, lots, interlocuteur
   const [editOpen, setEditOpen]       = useState(false)
   const [addingSuivi, setAddingSuivi] = useState(false)
   const [historiqueOuvert, setHistoriqueOuvert] = useState(false)
-  const { lectureSeule } = useCr()
+  const acces = useCr()
+  // Un intervenant extérieur ne touche qu'à ses propres remarques
+  const lectureSeule = !peutModifierRemarque(rem, acces)
+  const signature = auteurExterieur(rem, acces.profils)
   const { modeSelection, selection, basculerSelection, historiqueDe, dateReference, ftms, creerFtm, ouvrirFtm } = useContext(EditeurContexte)
   const fmtD = (d) => fmtJour(d)
   const statut = infosStatut(rem)
@@ -533,6 +537,11 @@ function RemarqueRow({ rem, idx, total, crDate, suggestions, lots, interlocuteur
               {zoneLibelle}
             </span>
           )}
+          {signature && (
+            <span title="Observation d’un intervenant extérieur" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 5, marginRight: 8, padding: '2px 7px', borderRadius: 3, fontSize: 11, color: '#6B4E9B', background: 'rgba(107,78,155,0.10)' }}>
+              <UserPen size={11} /> {signature}
+            </span>
+          )}
           {pastille && (
             <button
               type="button" onClick={() => plansCr.ouvrirPlacement(rem)} data-compact
@@ -632,7 +641,8 @@ function SousSectionBlock({ ss, sectionId, ssIdx, ssTotal, crDate, suggestions, 
   const [addRem, setAddRem]         = useState(false)
   const [editSs, setEditSs]         = useState(false)
   const [ssCode, setSsCode]         = useState(ss.code)
-  const { lectureSeule } = useCr()
+  // Titres, ordre, ajout : l'agence. Un intervenant dépose ailleurs.
+  const lectureSeule = !peutOrganiser(useCr())
   const [ssTitre, setSsTitre]       = useState(ss.titre)
 
   return (
@@ -827,7 +837,7 @@ function SectionBlock({ section, sIdx, sTotal, crDate, suggestions, lots, interl
   const [editTitle, setEditTitle]     = useState(false)
   const [editRomain, setEditRomain]   = useState(section.numero_romain)
   const [editTitre, setEditTitre]     = useState(section.titre)
-  const { lectureSeule } = useCr()
+  const lectureSeule = !peutOrganiser(useCr())
 
   const sectionType = section.type_section ?? 'general'
 
@@ -1110,8 +1120,13 @@ function FilterBar({ filtre, setFiltre, lots, interlocuteurs, zones = [], nbVisi
 // Évolution 2: sous-section optionnelle ("Directement dans la section")
 
 function NewRemarqueModal({ sections, crDate, suggestions, lots, interlocuteurs, zones, ops, onClose }) {
-  const [secId, setSecId] = useState(sections[0]?.id ?? '')
-  const sec     = sections.find(s => s.id === secId)
+  const { contributeur } = useCr()
+  // Pour un intervenant extérieur, une seule destination possible
+  const sectionsOffertes = contributeur
+    ? sections.filter(s => s.type_section === 'intervenants')
+    : sections
+  const [secId, setSecId] = useState(sectionsOffertes[0]?.id ?? '')
+  const sec     = sectionsOffertes.find(s => s.id === secId)
   const sousSecs = sec?.sousSections ?? []
   const [ssId, setSsId] = useState('')  // vide = directement dans la section
 
@@ -1120,7 +1135,7 @@ function NewRemarqueModal({ sections, crDate, suggestions, lots, interlocuteurs,
     setSsId('')
   }
 
-  if (sections.length === 0) return (
+  if (sectionsOffertes.length === 0) return (
     <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }} onClick={onClose}>
       <div style={{ backgroundColor: 'white', borderRadius: 0, padding: '28px 32px', maxWidth: 420, width: '100%' }} onClick={e => e.stopPropagation()}>
         <p style={{ fontSize: 13, color: '#5E5854', marginBottom: 16 }}>Aucune section disponible. Ajoutez d'abord une section avant d'ajouter une remarque.</p>
@@ -1141,7 +1156,7 @@ function NewRemarqueModal({ sections, crDate, suggestions, lots, interlocuteurs,
           <div style={{ flex: 1 }}>
             <label style={LABEL}>Section</label>
             <select value={secId} onChange={e => handleSecChange(e.target.value)} style={{ ...INPUT, cursor: 'pointer' }} onFocus={focusOn} onBlur={focusOff}>
-              {sections.map(s => (
+              {sectionsOffertes.map(s => (
                 <option key={s.id} value={s.id}>{s.numero_romain} — {s.titre}</option>
               ))}
             </select>
@@ -1193,7 +1208,25 @@ export function CrSectionEditor({ sections, crId, crDate, interlocuteurs, lotEnt
   const [globalAddOpen, setGlobalAddOpen] = useState(false)
   const [dragId, setDragId]             = useState(null)
   const [dropBeforeId, setDropBeforeId] = useState(null)
-  const { lectureSeule } = useCr()
+  const acces = useCr()
+  const { lectureSeule, contributeur } = acces
+  // Sections et actions de masse : l'agence seule
+  const organiser = peutOrganiser(acces)
+  const [depotEnCours, setDepotEnCours] = useState(false)
+
+  // Un intervenant extérieur ne choisit pas la section : ses observations vont
+  // dans « Observations des intervenants », créée à la demande (migration 052).
+  const deposerObservation = async () => {
+    setDepotEnCours(true)
+    try {
+      await ops.sectionDesIntervenants()
+      setGlobalAddOpen(true)
+    } catch (err) {
+      acces.signalerErreur(err)
+    } finally {
+      setDepotEnCours(false)
+    }
+  }
 
   const lots = (lotEntreprises ?? []).map(le => le.lots).filter(Boolean)
 
@@ -1281,7 +1314,7 @@ export function CrSectionEditor({ sections, crId, crDate, interlocuteurs, lotEnt
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
           <FilterBar filtre={filtre} setFiltre={setFiltre} lots={lots} interlocuteurs={interlocuteurs ?? []} zones={zones} nbVisibles={visibles.length} nbTotal={toutes.length} />
           <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-          {!lectureSeule && !modeSelection && toutes.length > 0 && (
+          {organiser && !modeSelection && toutes.length > 0 && (
             <button
               onClick={() => setModeSelection(true)}
               style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 2, fontSize: 12, border: '0.5px solid rgba(0,0,0,0.15)', backgroundColor: 'white', color: '#374151', cursor: 'pointer' }}
@@ -1290,7 +1323,8 @@ export function CrSectionEditor({ sections, crId, crDate, interlocuteurs, lotEnt
             </button>
           )}
           {!lectureSeule && <button
-            onClick={() => setGlobalAddOpen(true)}
+            onClick={contributeur ? deposerObservation : () => setGlobalAddOpen(true)}
+            disabled={depotEnCours}
             style={{
               display: 'inline-flex', alignItems: 'center', gap: 6,
               padding: '7px 14px', borderRadius: 2, fontSize: 12, fontWeight: 500,
@@ -1298,7 +1332,7 @@ export function CrSectionEditor({ sections, crId, crDate, interlocuteurs, lotEnt
               flexShrink: 0,
             }}
           >
-            <MessageSquarePlus size={13} /> Nouvelle remarque
+            <MessageSquarePlus size={13} /> {contributeur ? 'Ajouter une observation' : 'Nouvelle remarque'}
           </button>}
           </div>
         </div>
@@ -1378,7 +1412,7 @@ export function CrSectionEditor({ sections, crId, crDate, interlocuteurs, lotEnt
       </div>
 
       {/* Ajouter une section */}
-      {lectureSeule ? null : addSec ? (
+      {!organiser ? null : addSec ? (
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '10px 14px', backgroundColor: 'white', borderRadius: 2, border: '0.5px solid rgba(0,0,0,0.08)', marginBottom: 8 }}>
           <input
             value={newSec.numero_romain}

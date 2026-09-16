@@ -7,8 +7,14 @@ import { createContext, useContext } from 'react'
 //   modification. Les actions d'édition sont alors masquées.
 // - signalerErreur : affiche l'échec d'un enregistrement dans le bandeau du
 //   compte rendu, au lieu de le laisser dans la console.
+// - contributeur : intervenant extérieur invité (migrations 050 à 052). Il
+//   n'écrit que ses propres remarques ; `utilisateurId` sert à les reconnaître,
+//   `profils` à signer celles des intervenants.
 export const CrContexte = createContext({
   lectureSeule: false,
+  contributeur: false,
+  utilisateurId: null,
+  profils: [],
   signalerErreur: () => {},
 })
 

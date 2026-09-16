@@ -144,7 +144,7 @@ export function useCompteRendu(crId, affaireId) {
       supabase.from('cr_sous_sections').select('*').eq('cr_id', crId).order('ordre'),
       supabase.from('cr_remarques').select('*').eq('cr_id', crId).order('ordre'),
       supabase.from('cr_presences').select(SELECT_PRESENCES).eq('cr_id', crId),
-      supabase.from('profiles').select('id, prenom, nom'),
+      supabase.from('profiles').select('id, prenom, nom, email, type_compte'),
     ])
     const echec = resultats.find((r) => r.error)
     if (echec) {
@@ -488,6 +488,15 @@ export function useCompteRendu(crId, affaireId) {
   }, [affaireId, sections, executerOperation])
 
   // Remarque directement dans une section (sans sous-section)
+  // Section « Observations des intervenants », créée à la demande par la base
+  // (migration 052) : un intervenant extérieur ne crée pas de section.
+  const sectionDesIntervenants = useCallback(async () => {
+    const { data, error } = await supabase.rpc('section_intervenants', { cr: crId })
+    if (error) throw error
+    await fetchAll()
+    return data
+  }, [crId, fetchAll])
+
   const addSectionRemarque = useCallback(async (sectionId, payload) => {
     const sec = sections.find(s => s.id === sectionId)
     const maxOrdre = (sec?.directRemarques ?? []).reduce((m, r) => Math.max(m, r.ordre), -1)
@@ -654,7 +663,7 @@ export function useCompteRendu(crId, affaireId) {
   return {
     photos, liens, ajouterPhotos, remplacerPhoto, modifierLegendePhoto, supprimerPhoto, liensPhotos,
     pastilles, placerPastille, enleverPastille, zones, ftms, creerFtmPourRemarque,
-    planning, modifierAvancementTache, horsLigne,
+    planning, modifierAvancementTache, horsLigne, sectionDesIntervenants,
     cr, sections, presences, profiles, loading, erreurChargement, historique,
     syncPresences, updateCr, emettre, rouvrir, updatePresence,
     addSection, updateSection, deleteSection, reorderSection, reorderSectionsByIds,

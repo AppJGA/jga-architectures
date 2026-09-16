@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useContext } from 'react'
 import { Users, Search, Plus, Camera, MapPin, MessageSquare, Pencil, MoreHorizontal, WifiOff, AlertTriangle, X, LogOut, Lock, FilePen, TrendingUp, RefreshCw } from 'lucide-react'
 import { FILTRES_VISITE, filtreVisite, groupesVisite, compteursVisite } from './visiteLogique'
-import { STATUTS, infosStatut, estEnRetard, libelleZone } from './crLogique'
+import { STATUTS, infosStatut, estEnRetard, libelleZone, peutModifierRemarque, auteurExterieur } from './crLogique'
+import { useCr } from './CrContexte'
 import { PanneauRemarque, PanneauSuivi, PanneauPresences, PanneauStatuts, PanneauAvancement } from './PanneauxVisite'
 import { usePhotosRemarque, PhotosContexte } from './usePhotosRemarque'
 import { PhotosDeRemarque } from './PhotosRemarque'
@@ -71,7 +72,11 @@ function libelleDestinataire(rem, lots, interlocuteurs) {
   return rem.copie_destinataire ?? null
 }
 
-function CarteRemarque({ rem, cr, lots, interlocuteurs, zones, ftms, creerFtm, ouvrirFtm, lectureSeule, surbrillance, ops, onPanneau }) {
+function CarteRemarque({ rem, cr, lots, interlocuteurs, zones, ftms, creerFtm, ouvrirFtm, lectureSeule: lectureSeuleCr, surbrillance, ops, onPanneau }) {
+  // Un intervenant extérieur ne touche qu'à ses propres observations
+  const acces = useCr()
+  const lectureSeule = lectureSeuleCr || !peutModifierRemarque(rem, acces)
+  const signature = auteurExterieur(rem, acces.profils)
   const photos = usePhotosRemarque(rem)
   const plansCr = usePlansCr()
   const statut = infosStatut(rem)
@@ -105,6 +110,7 @@ function CarteRemarque({ rem, cr, lots, interlocuteurs, zones, ftms, creerFtm, o
         {rem.sousSection && <span style={{ fontSize: 12, color: '#9C9591' }}>{rem.sousSection.code} {rem.sousSection.titre}</span>}
         {destinataire && <span style={{ fontSize: 12, fontWeight: 500, color: '#2A8A4E', background: 'rgba(42,138,78,0.10)', borderRadius: 3, padding: '2px 8px' }}>{destinataire}</span>}
         {zoneLibelle && <span style={{ fontSize: 12, fontWeight: 500, color: '#1B3A5C', background: 'rgba(27,58,92,0.10)', borderRadius: 3, padding: '2px 8px' }}>{zoneLibelle}</span>}
+        {signature && <span style={{ fontSize: 12, fontWeight: 500, color: '#6B4E9B', background: 'rgba(107,78,155,0.10)', borderRadius: 3, padding: '2px 8px' }}>{signature}</span>}
         {ftm && (
           <button type="button" onClick={() => ouvrirFtm(ftm)} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 500, borderRadius: 3, padding: '2px 8px', color: resumeFtm(ftm).couleur, background: resumeFtm(ftm).fond }}>
             <FilePen size={12} /> {resumeFtm(ftm).texte}
@@ -264,6 +270,7 @@ export function ModeVisite({ cr, sections, presences, setPresence, lotEntreprise
   const [surbrillance, setSurbrillance] = useState(null)
   const champRecherche = useRef(null)
   const enLigne = useEnLigne()
+  const { contributeur } = useCr()
   const typesAgence = useRemarquesTypes()
   const { ajouterPhotos } = useContext(PhotosContexte)
   useEcranAllume()
@@ -314,7 +321,11 @@ export function ModeVisite({ cr, sections, presences, setPresence, lotEntreprise
       return
     }
     let id
-    if (!emplacement) {
+    if (contributeur) {
+      // Ses observations vont dans la section dédiée (migration 052)
+      const sectionId = await ops.sectionDesIntervenants()
+      id = await ops.addSectionRemarque(sectionId, payload)
+    } else if (!emplacement) {
       const sectionId = await ops.addSection({ numero_romain: 'I', titre: 'Observations générales', type_section: 'general' })
       id = await ops.addSectionRemarque(sectionId, payload)
     } else if (emplacement.sousSectionId) {

@@ -4,7 +4,7 @@
 // description du document pour pdfmake. Sans navigateur : les images arrivent
 // déjà prêtes (data URL JPEG) ; testée par tests/rapport.test.js.
 
-import { infosStatut, estEnRetard, affichagePresence, grouperParZone, libelleZone } from './crLogique'
+import { infosStatut, estEnRetard, affichagePresence, grouperParZone, libelleZone, auteurExterieur } from './crLogique'
 
 export const REGLAGES_DEFAUT = {
   modele: 'complet',        // complet | synthese
@@ -133,7 +133,7 @@ export function lignePhotos(photos, taille) {
 }
 
 function lignesRemarque(rem, contexte) {
-  const { lots, interlocuteurs, dateReference, images, reglages } = contexte
+  const { lots, interlocuteurs, dateReference, images, reglages, profils } = contexte
   const statut = infosStatut(rem)
   const retard = estEnRetard(rem, dateReference)
   const destinataire = destinataireDe(rem, lots, interlocuteurs)
@@ -146,6 +146,9 @@ function lignesRemarque(rem, contexte) {
         ...(destinataire ? [{ text: `(${destinataire})`, fontSize: 7, italics: true, color: COULEUR.gris }] : []),
         ...(rem._section ? [{ text: rem._section, fontSize: 7, color: COULEUR.grisClair }] : []),
         ...(!rem._section && libelleZone(rem, contexte.zones) ? [{ text: libelleZone(rem, contexte.zones), fontSize: 7, color: '#1B3A5C' }] : []),
+        // L'observation d'un intervenant extérieur est signée : le lecteur doit
+        // savoir qu'elle ne vient pas de l'agence (migration 050).
+        ...(auteurExterieur(rem, profils) ? [{ text: auteurExterieur(rem, profils), fontSize: 7, italics: true, color: '#6B4E9B' }] : []),
       ],
     },
     {
@@ -244,11 +247,11 @@ const celluleContact = ({ v }) => ({ stack: [v.email, v.telephone].filter(Boolea
  * @param donnees { cr, affaire, sections (déjà sélectionnées), presences, lots,
  *   interlocuteurs, reglages, versionPour, images: { logo, photos: Map, extraits: Map, planches: [] } }
  */
-export function definitionPdf({ cr, affaire, sections, presences, lots, interlocuteurs, zones = [], avancement = [], reglages: brut, versionPour, images = {} }) {
+export function definitionPdf({ cr, affaire, sections, presences, lots, interlocuteurs, zones = [], avancement = [], profils = [], reglages: brut, versionPour, images = {} }) {
   const reglages = reglagesEffectifs(brut)
   const complet = reglages.modele === 'complet'
   const num = String(cr.numero).padStart(2, '0')
-  const contexte = { lots, interlocuteurs, zones, dateReference: cr.date_reunion, images, reglages }
+  const contexte = { lots, interlocuteurs, zones, profils, dateReference: cr.date_reunion, images, reglages }
   const prochaine = cr.date_prochaine_reunion
     ? `${jour(cr.date_prochaine_reunion, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}${cr.heure_prochaine_reunion ? ` à ${cr.heure_prochaine_reunion.slice(0, 5)}` : ''}`
     : 'À définir'

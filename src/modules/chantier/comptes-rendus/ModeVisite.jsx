@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useContext } from 'react'
 import { Users, Search, Plus, Camera, MapPin, MessageSquare, Pencil, MoreHorizontal, WifiOff, AlertTriangle, X, LogOut, Lock } from 'lucide-react'
 import { FILTRES_VISITE, filtreVisite, groupesVisite, compteursVisite } from './visiteLogique'
-import { STATUTS, infosStatut, estEnRetard } from './crLogique'
+import { STATUTS, infosStatut, estEnRetard, libelleZone } from './crLogique'
 import { PanneauRemarque, PanneauSuivi, PanneauPresences, PanneauStatuts } from './PanneauxVisite'
 import { usePhotosRemarque, PhotosContexte } from './usePhotosRemarque'
 import { PhotosDeRemarque } from './PhotosRemarque'
@@ -70,12 +70,13 @@ function libelleDestinataire(rem, lots, interlocuteurs) {
   return rem.copie_destinataire ?? null
 }
 
-function CarteRemarque({ rem, cr, lots, interlocuteurs, lectureSeule, surbrillance, ops, onPanneau }) {
+function CarteRemarque({ rem, cr, lots, interlocuteurs, zones, lectureSeule, surbrillance, ops, onPanneau }) {
   const photos = usePhotosRemarque(rem)
   const plansCr = usePlansCr()
   const statut = infosStatut(rem)
   const enRetard = estEnRetard(rem, cr.date_reunion)
   const destinataire = libelleDestinataire(rem, lots, interlocuteurs)
+  const zoneLibelle = libelleZone(rem, zones)
   const pastille = plansCr.pastilles.find(p => p.remarque_id === rem.id)
   const planNom = pastille && plansCr.plans.find(p => p.id === pastille.plan_id)?.nom
   const suivis = rem.sous_remarques ?? []
@@ -99,6 +100,7 @@ function CarteRemarque({ rem, cr, lots, interlocuteurs, lectureSeule, surbrillan
         {rem.numero != null && <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, fontWeight: 600, color: '#E8602C' }}>n°{rem.numero}</span>}
         {rem.sousSection && <span style={{ fontSize: 12, color: '#9C9591' }}>{rem.sousSection.code} {rem.sousSection.titre}</span>}
         {destinataire && <span style={{ fontSize: 12, fontWeight: 500, color: '#2A8A4E', background: 'rgba(42,138,78,0.10)', borderRadius: 3, padding: '2px 8px' }}>{destinataire}</span>}
+        {zoneLibelle && <span style={{ fontSize: 12, fontWeight: 500, color: '#1B3A5C', background: 'rgba(27,58,92,0.10)', borderRadius: 3, padding: '2px 8px' }}>{zoneLibelle}</span>}
         <span style={{ flex: 1 }} />
         {rem.est_nouveau && <span style={{ fontSize: 12, color: '#E8602C' }}>▶ Nouvelle</span>}
         <span style={{ fontSize: 12, fontWeight: 600, color: statut.couleur, background: statut.fond, borderRadius: 3, padding: '3px 10px' }}>{statut.libelle}</span>
@@ -171,9 +173,10 @@ function CarteRemarque({ rem, cr, lots, interlocuteurs, lectureSeule, surbrillan
   )
 }
 
-export function ModeVisite({ cr, sections, presences, setPresence, lotEntreprises, interlocuteurs, ops, lectureSeule, erreur, onFermerErreur, signalerErreur, onTerminer }) {
+export function ModeVisite({ cr, sections, presences, setPresence, lotEntreprises, interlocuteurs, zones = [], ops, lectureSeule, erreur, onFermerErreur, signalerErreur, onTerminer }) {
   const [filtre, setFiltre] = useState('ouvertes')
   const [destinataire, setDestinataire] = useState('')
+  const [zone, setZone] = useState('')
   const [recherche, setRecherche] = useState('')
   const [panneau, setPanneau] = useState(null)
   const [surbrillance, setSurbrillance] = useState(null)
@@ -185,7 +188,7 @@ export function ModeVisite({ cr, sections, presences, setPresence, lotEntreprise
 
   const lots = (lotEntreprises ?? []).map(le => le.lots).filter(Boolean)
     .filter((l, i, a) => a.findIndex(x => x.id === l.id) === i)
-  const groupes = groupesVisite(sections, filtreVisite(filtre, destinataire, recherche), cr.date_reunion)
+  const groupes = groupesVisite(sections, filtreVisite(filtre, destinataire, recherche, zone), cr.date_reunion)
   const compteurs = compteursVisite(sections, cr.date_reunion)
 
   // La page derrière ne défile plus tant que la visite est ouverte
@@ -241,6 +244,7 @@ export function ModeVisite({ cr, sections, presences, setPresence, lotEntreprise
     if (commeType) await typesAgence.ajouter(payload.description).catch(signalerErreur)
     if (filtre !== 'toutes' && filtre !== 'ouvertes') setFiltre('toutes')
     setDestinataire('')
+    setZone('')
     setRecherche('')
     montrer(id)
   }
@@ -277,6 +281,14 @@ export function ModeVisite({ cr, sections, presences, setPresence, lotEntreprise
           ))}
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {zones.length > 0 && (
+            <select value={zone} onChange={e => setZone(e.target.value)} aria-label="Zone"
+              style={{ minHeight: 44, padding: '0 10px', fontSize: 15, borderRadius: 3, border: `1px solid ${zone ? '#1B3A5C' : 'rgba(0,0,0,0.15)'}`, background: 'white', flexShrink: 0, maxWidth: 200 }}>
+              <option value="">Toutes zones</option>
+              <option value="sans-zone">Sans zone</option>
+              {zones.map(z => <option key={z.id} value={z.id}>{z.nom}</option>)}
+            </select>
+          )}
           {(lots.length > 0 || (interlocuteurs ?? []).length > 0) && (
             <select value={destinataire} onChange={e => setDestinataire(e.target.value)} aria-label="Destinataire"
               style={{ minHeight: 44, padding: '0 10px', fontSize: 15, borderRadius: 3, border: `1px solid ${destinataire ? '#E8602C' : 'rgba(0,0,0,0.15)'}`, background: 'white', flexShrink: 0, maxWidth: 220 }}>
@@ -323,7 +335,7 @@ export function ModeVisite({ cr, sections, presences, setPresence, lotEntreprise
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {g.remarques.map(rem => (
                   <CarteRemarque
-                    key={rem.id} rem={rem} cr={cr} lots={lots} interlocuteurs={interlocuteurs ?? []}
+                    key={rem.id} rem={rem} cr={cr} lots={lots} interlocuteurs={interlocuteurs ?? []} zones={zones}
                     lectureSeule={lectureSeule} surbrillance={surbrillance === rem.id} ops={ops}
                     onPanneau={setPanneau}
                   />
@@ -346,7 +358,7 @@ export function ModeVisite({ cr, sections, presences, setPresence, lotEntreprise
       {(panneau?.type === 'nouvelle' || panneau?.type === 'modifier') && (
         <PanneauRemarque
           remarque={panneau.type === 'modifier' ? panneau.remarque : null}
-          cr={cr} sections={sections} lots={lots} interlocuteurs={interlocuteurs ?? []}
+          cr={cr} sections={sections} lots={lots} interlocuteurs={interlocuteurs ?? []} zones={zones}
           typesAgence={typesAgence}
           onEnregistrer={enregistrerRemarque}
           onFermer={() => setPanneau(null)}

@@ -60,7 +60,7 @@ function fmtHorodatage(iso) {
 }
 
 export function ExportRapport({
-  cr, affaire, sections, presences, lotEntreprises, interlocuteurs, photos, liensPhotos, pastilles, plansCr,
+  cr, affaire, sections, presences, lotEntreprises, interlocuteurs, zones = [], photos, liensPhotos, pastilles, plansCr,
   espace, peutGerer, onEspaceChange, archives: toutesArchives, onArchiverMaintenant, onPreparerVersion, signataire,
 }) {
   // Archives d'émission ; les versions par entreprise servent à la diffusion
@@ -79,7 +79,7 @@ export function ExportRapport({
   }
 
   const fabriquer = () => genererPdfCr({
-    cr, affaire, sections, presences, lots, interlocuteurs: interlocuteurs ?? [],
+    cr, affaire, sections, presences, lots, interlocuteurs: interlocuteurs ?? [], zones,
     photos, liensPhotos, pastilles, plansCr, reglages,
   })
 
@@ -205,6 +205,10 @@ export function ExportRapport({
           {photos.length > 0 && (
             <Choix titre="Photos" valeur={reglages.modele === 'synthese' && reglages.photos === 'grandes' ? 'petites' : reglages.photos} onChange={v => setReglages({ photos: v })}
               options={[['aucune', 'Aucune'], ['petites', 'Petites'], ...(reglages.modele === 'synthese' ? [] : [['grandes', 'Grandes']])]} />
+          )}
+          {zones.length > 0 && (
+            <Choix titre="Zones" valeur={reglages.zones} onChange={v => setReglages({ zones: v })}
+              options={[['non', 'Par section'], ['grouper', 'Par zone']]} />
           )}
           {pastilles.length > 0 && (
             <Choix titre="Plans" valeur={reglages.plans} onChange={v => setReglages({ plans: v })}

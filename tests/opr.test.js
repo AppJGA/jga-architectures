@@ -7,7 +7,7 @@ import { test, describe } from 'node:test'
 
 import {
   groupesVisiteOpr, tableauParLot, statutAvantVisite, peutSupprimerReserve, passeFiltreReserve,
-  reserveEnRetard, lotsAvecEntreprise, infosStatutReserve,
+  reserveEnRetard, lotsAvecEntreprise, infosStatutReserve, libelleZone, grouperParZone,
 } from '../src/modules/chantier/opr/oprLogique.js'
 
 const lots = [{ id: 'L2', numero: 2, nom: 'Gros œuvre' }, { id: 'L5', numero: 5, nom: 'Serrurerie' }, { id: 'L7', numero: 7, nom: 'Peinture' }]
@@ -89,4 +89,29 @@ describe('filtres et statuts', () => {
 
 test('lotsAvecEntreprise', () => {
   assert.deepEqual(lotsAvecEntreprise(lots, [{ lot_id: 'L5' }, { lot_id: 'L2' }]).map((l) => l.id), ['L2', 'L5'])
+})
+
+describe('zones', () => {
+  const zones = [{ id: 'Z1', nom: 'Bâtiment A' }, { id: 'Z2', nom: 'Bâtiment B' }]
+  test('libelleZone : zone actuelle, sinon nom recopié', () => {
+    assert.equal(libelleZone({ zone_id: 'Z2' }, zones), 'Bâtiment B')
+    assert.equal(libelleZone({ zone_id: null, copie_zone: 'Ancienne zone' }, zones), 'Ancienne zone')
+    assert.equal(libelleZone({}, zones), null)
+  })
+  test('grouperParZone : ordre des zones du planning, sans zone à la fin', () => {
+    const g = grouperParZone([
+      { id: 'a', zone_id: 'Z2', copie_zone: 'Bâtiment B' },
+      { id: 'b' },
+      { id: 'c', zone_id: 'Z1', copie_zone: 'Bâtiment A' },
+      { id: 'd', zone_id: 'Z2', copie_zone: 'Bâtiment B' },
+    ], zones)
+    assert.deepEqual(g.map((x) => [x.libelle, x.elements.map((e) => e.id)]), [
+      ['Bâtiment A', ['c']], ['Bâtiment B', ['a', 'd']], [null, ['b']],
+    ])
+  })
+  test('filtre par zone', () => {
+    const reserves = [{ numero: 1, statut: 'ouverte', zone_id: 'Z1', description: 'x' }, { numero: 2, statut: 'ouverte', description: 'y' }]
+    assert.deepEqual(reserves.filter((r) => passeFiltreReserve(r, { zone: 'Z1' }, '2026-10-01')).map((r) => r.numero), [1])
+    assert.deepEqual(reserves.filter((r) => passeFiltreReserve(r, { zone: 'sans-zone' }, '2026-10-01')).map((r) => r.numero), [2])
+  })
 })

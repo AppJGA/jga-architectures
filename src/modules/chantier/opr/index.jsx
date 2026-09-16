@@ -8,7 +8,7 @@ import { useOpr } from './useOpr'
 import { VisiteOpr } from './VisiteOpr'
 import {
   TYPES_VISITE, STATUTS_RESERVE, tableauParLot, passeFiltreReserve, infosStatutReserve, reserveEnRetard,
-  lotsAvecEntreprise, libelleLot,
+  lotsAvecEntreprise, libelleLot, libelleZone,
 } from './oprLogique'
 
 // ─── Module OPR : visites et suivi des réserves ──────────────────────────────
@@ -64,7 +64,7 @@ function NouvelleVisite({ type, lots, lotsOuverts, onCreer, onFermer }) {
 }
 
 function SuiviReserves({ opr, onOuvrirVisite }) {
-  const [filtre, setFiltre] = useState({ statut: 'ouvertes', lotId: '', recherche: '' })
+  const [filtre, setFiltre] = useState({ statut: 'ouvertes', lotId: '', zone: '', recherche: '' })
   const aujourdHui = dateDuJour()
   const tableau = tableauParLot(opr.reserves, opr.lots, aujourdHui)
   const liste = opr.reserves.filter(r => passeFiltreReserve(r, filtre, aujourdHui))
@@ -110,6 +110,13 @@ function SuiviReserves({ opr, onOuvrirVisite }) {
           {opr.lots.map(l => <option key={l.id} value={l.id}>{libelleLot(l)}</option>)}
           <option value="sans-lot">Sans lot</option>
         </select>
+        {opr.zones.length > 0 && (
+          <select value={filtre.zone} onChange={e => setFiltre(f => ({ ...f, zone: e.target.value }))} aria-label="Zone" style={{ minHeight: 36, padding: '0 8px', fontSize: 13, border: `0.5px solid ${filtre.zone ? '#1B3A5C' : 'rgba(0,0,0,0.15)'}`, borderRadius: 3 }}>
+            <option value="">Toutes les zones</option>
+            <option value="sans-zone">Sans zone</option>
+            {opr.zones.map(z => <option key={z.id} value={z.id}>{z.nom}</option>)}
+          </select>
+        )}
         <div style={{ position: 'relative', flex: '1 1 200px' }}>
           <Search size={15} color="#9C9591" style={{ position: 'absolute', left: 10, top: 11 }} />
           <input type="search" value={filtre.recherche} onChange={e => setFiltre(f => ({ ...f, recherche: e.target.value }))} placeholder="Rechercher, n°…"
@@ -129,6 +136,7 @@ function SuiviReserves({ opr, onOuvrirVisite }) {
               <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: '#E8602C', minWidth: 36 }}>n°{r.numero}</span>
               <span style={{ fontSize: 12, color: '#5E5854', minWidth: 140 }}>{libelleLot(lot, r.copie_lot)}</span>
               <span style={{ flex: '1 1 260px', fontSize: 14 }}>
+                {libelleZone(r, opr.zones) && <span style={{ fontSize: 11, color: '#1B3A5C', background: 'rgba(27,58,92,0.10)', borderRadius: 3, padding: '1px 6px', marginRight: 6 }}>{libelleZone(r, opr.zones)}</span>}
                 {r.localisation && <strong style={{ fontWeight: 500 }}>{r.localisation} — </strong>}{r.description}
               </span>
               {r.date_limite && <span style={{ fontSize: 12, color: retard ? '#B8412C' : '#9C9591', fontWeight: retard ? 600 : 400 }}>{new Date(`${r.date_limite}T00:00:00`).toLocaleDateString('fr-FR')}</span>}

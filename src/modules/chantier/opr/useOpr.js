@@ -21,7 +21,7 @@ function verifier(resultat) {
   return resultat.data
 }
 
-const VIDE = { visites: [], reserves: [], constats: [], photos: [], pastilles: [], presences: [], archives: [], lots: [], lotEntreprises: [], pvs: null }
+const VIDE = { visites: [], reserves: [], constats: [], photos: [], pastilles: [], presences: [], archives: [], lots: [], lotEntreprises: [], zones: [], pvs: null }
 
 export function useOpr(affaireId) {
   const [donnees, setDonnees] = useState(VIDE)
@@ -39,19 +39,20 @@ export function useOpr(affaireId) {
       supabase.from('opr_archives').select('*').eq('affaire_id', affaireId).order('emis_le', { ascending: false }),
       supabase.from('lots').select('*').eq('affaire_id', affaireId).order('numero'),
       supabase.from('lot_entreprises').select('id, lot_id, lots(id, numero, nom), entreprises(id, raison_sociale, email, telephone), interlocuteurs:interlocuteur_id(prenom, nom, telephone, email)').eq('affaire_id', affaireId),
+      supabase.from('planning_zones').select('id, nom, couleur, ordre').eq('affaire_id', affaireId).order('ordre'),
     ])
     const echec = tables.find((t) => t.error)
     if (echec) {
       if (photosIndisponibles(echec.error)) return null
       throw echec.error
     }
-    const [visites, reserves, constats, photos, pastilles, presences, archives, lots, lotEntreprises] = tables.map((t) => t.data ?? [])
+    const [visites, reserves, constats, photos, pastilles, presences, archives, lots, lotEntreprises, zones] = tables.map((t) => t.data ?? [])
     // Procès-verbaux : migration 046, lus à part pour que le module reste
     // utilisable tant qu'elle n'est pas passée (pvs = null)
     const pv = await supabase.from('opr_pv').select('*').eq('affaire_id', affaireId)
     if (pv.error && !photosIndisponibles(pv.error)) throw pv.error
     const pvs = pv.error ? null : pv.data ?? []
-    return { visites, reserves, constats, photos, pastilles, presences, archives, lots, lotEntreprises, pvs }
+    return { visites, reserves, constats, photos, pastilles, presences, archives, lots, lotEntreprises, zones, pvs }
   }, [affaireId])
 
   const appliquer = useCallback(async (resultat) => {

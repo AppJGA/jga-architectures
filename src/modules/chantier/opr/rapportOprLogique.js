@@ -3,7 +3,7 @@
 import {
   COULEUR, jour, tableauFin, lignePhotos, piedPdf, entetePdf, blocAffaire, blocsPresences, blocPlanches,
 } from '../comptes-rendus/rapportLogique'
-import { TYPES_VISITE, infosStatutReserve, reserveEnRetard, tableauParLot } from './oprLogique'
+import { TYPES_VISITE, infosStatutReserve, reserveEnRetard, tableauParLot, grouperParZone } from './oprLogique'
 
 export const REGLAGES_OPR_DEFAUT = { photos: 'petites', plans: 'extraits', lot: '' }
 
@@ -65,7 +65,7 @@ function lignesReserve(r, { visite, images, reglages }) {
  *   lot si version), toutesReserves (pour le récapitulatif), lots, presences,
  *   reglages, versionPour, images }
  */
-export function definitionPdfOpr({ visite, affaire, groupes, toutesReserves, lots, presences, reglages: brut, versionPour, images = {} }) {
+export function definitionPdfOpr({ visite, affaire, groupes, toutesReserves, lots, zones = [], presences, reglages: brut, versionPour, images = {} }) {
   const reglages = { ...REGLAGES_OPR_DEFAUT, ...brut }
   const type = TYPES_VISITE[visite.type]
   const num = String(visite.numero).padStart(2, '0')
@@ -121,19 +121,23 @@ export function definitionPdfOpr({ visite, affaire, groupes, toutesReserves, lot
             table: { widths: ['*'], body: [[{ text: g.libelle.toUpperCase(), bold: true, fontSize: 10.5, fillColor: '#FFF8F5' }]] },
             layout: { hLineWidth: (i) => (i === 1 ? 1.2 : 0), vLineWidth: () => 0, hLineColor: () => COULEUR.orange, paddingLeft: () => 6, paddingTop: () => 5, paddingBottom: () => 5 },
           },
-          g.reserves.length === 0
-            ? { text: 'Aucune réserve', italics: true, fontSize: 8, color: COULEUR.grisClair, margin: [0, 2, 0, 6] }
-            : {
-              layout: tableauFin,
-              table: {
-                headerRows: 1, dontBreakRows: true,
-                widths: [30, 80, '*', 60, 62],
-                body: [
-                  ['N°', 'Localisation', 'Description', 'Délai', 'Statut'].map((t) => ({ text: t.toUpperCase(), fontSize: 7, bold: true, color: COULEUR.gris })),
-                  ...g.reserves.flatMap((r) => lignesReserve(r, contexte)),
-                ],
+          ...(g.reserves.length === 0
+            ? [{ text: 'Aucune réserve', italics: true, fontSize: 8, color: COULEUR.grisClair, margin: [0, 2, 0, 6] }]
+            : grouperParZone(g.reserves, zones).flatMap((parZone, i, tout) => [
+              // Sous-titre de zone seulement s'il y en a plusieurs dans le lot
+              ...(tout.length > 1 ? [{ text: parZone.libelle ?? 'Sans zone', bold: true, fontSize: 9, color: '#1B3A5C', margin: [2, i ? 6 : 2, 0, 4] }] : []),
+              {
+                layout: tableauFin,
+                table: {
+                  headerRows: 1, dontBreakRows: true,
+                  widths: [30, 80, '*', 60, 62],
+                  body: [
+                    ['N°', 'Localisation', 'Description', 'Délai', 'Statut'].map((t) => ({ text: t.toUpperCase(), fontSize: 7, bold: true, color: COULEUR.gris })),
+                    ...parZone.elements.flatMap((r) => lignesReserve(r, contexte)),
+                  ],
+                },
               },
-            },
+            ])),
         ],
       })),
       ...(visite.observations ? [

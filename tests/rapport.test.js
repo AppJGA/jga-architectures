@@ -108,3 +108,25 @@ describe('definitionPdf', () => {
     assert.ok(!sans.includes('AAA') && !sans.includes('BBB') && !sans.includes('CCC'))
   })
 })
+
+test('PDF regroupé par zone : un bloc par zone, section rappelée, sans zone à la fin', () => {
+  const zones = [{ id: 'Z1', nom: 'Bâtiment A' }, { id: 'Z2', nom: 'Bâtiment B' }]
+  const sectionsZonees = [
+    { id: 'S1', numero_romain: 'I', titre: 'Général', sousSections: [
+      { id: 'SS1', code: '1', titre: 'Planning', remarques: [
+        { id: 'a', numero: 1, description: 'Enduit', statut: 'a_faire', zone_id: 'Z2', copie_zone: 'Bâtiment B', sous_remarques: [] },
+        { id: 'b', numero: 2, description: 'Sans zone ici', statut: 'a_faire', sous_remarques: [] },
+      ] },
+    ], directRemarques: [{ id: 'c', numero: 3, description: 'Trémie', statut: 'a_faire', zone_id: 'Z1', copie_zone: 'Bâtiment A', sous_remarques: [] }] },
+  ]
+  const def = definitionPdf({
+    cr: { numero: 1, date_reunion: '2026-09-15', statut: 'brouillon' }, affaire: { nom: 'GS' },
+    sections: sectionsZonees, presences: [], lots: [], interlocuteurs: [], zones,
+    reglages: { zones: 'grouper' },
+  })
+  const t = textes(def.content)
+  const zonesAffichees = t.filter((x) => ['BÂTIMENT A', 'BÂTIMENT B', 'SANS ZONE'].includes(x))
+  assert.deepEqual(zonesAffichees, ['BÂTIMENT A', 'BÂTIMENT B', 'SANS ZONE'])
+  assert.ok(t.includes('I · 1'), 'la sous-section est rappelée')
+  assert.ok(t.join(' | ').includes('Trémie'))
+})

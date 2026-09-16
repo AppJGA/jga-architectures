@@ -2,7 +2,9 @@
 //
 // Sans navigateur ni base, pour être testée (tests/opr.test.js).
 
-import { sansAccents } from '../comptes-rendus/crLogique'
+import { sansAccents, libelleZone, grouperParZone } from '../comptes-rendus/crLogique'
+
+export { libelleZone, grouperParZone }
 
 export const STATUTS_RESERVE = [
   { code: 'ouverte',    libelle: 'Ouverte',    couleur: '#B8412C', fond: 'rgba(184,65,44,0.10)', close: false },
@@ -118,17 +120,19 @@ export function peutSupprimerReserve(reserve, constats) {
 }
 
 /** Filtre du suivi des réserves */
-export function passeFiltreReserve(reserve, { statut = 'ouvertes', lotId = '', recherche = '' }, dateReference) {
+export function passeFiltreReserve(reserve, { statut = 'ouvertes', lotId = '', zone = '', recherche = '' }, dateReference) {
   const infos = infosStatutReserve(reserve)
   if (statut === 'ouvertes' && infos.close) return false
   if (statut === 'retard' && !reserveEnRetard(reserve, dateReference)) return false
   if (PAR_CODE.has(statut) && reserve.statut !== statut) return false
   if (lotId && (lotId === 'sans-lot' ? reserve.lot_id : reserve.lot_id !== lotId)) return false
+  if (zone === 'sans-zone' && (reserve.zone_id || reserve.copie_zone)) return false
+  if (zone && zone !== 'sans-zone' && reserve.zone_id !== zone) return false
   const q = sansAccents(recherche).trim()
   if (q) {
     const num = q.replace(/^n\s*°?\s*/, '')
     if (/^\d+$/.test(num)) return String(reserve.numero) === num
-    const texte = sansAccents([reserve.description, reserve.localisation].filter(Boolean).join(' '))
+    const texte = sansAccents([reserve.description, reserve.localisation, reserve.copie_zone].filter(Boolean).join(' '))
     if (!q.split(/\s+/).every((m) => texte.includes(m))) return false
   }
   return true

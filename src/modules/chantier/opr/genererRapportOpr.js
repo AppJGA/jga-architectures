@@ -21,7 +21,7 @@ export async function genererPdfOpr({ visite, affaire, opr, plansCr, reglages: b
   const lot = reglages.lot ? opr.lots.find((l) => l.id === reglages.lot) : null
   const versionPour = lot ? libelleLot(lot) : null
   const definition = definitionPdfOpr({
-    visite, affaire, groupes, toutesReserves: opr.reserves, lots: opr.lots,
+    visite, affaire, groupes, toutesReserves: opr.reserves, lots: opr.lots, zones: opr.zones,
     presences: opr.presences.filter((p) => p.visite_id === visite.id), reglages, versionPour, images,
   })
   const blob = await pdfMake.createPdf(definition).getBlob()

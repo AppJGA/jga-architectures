@@ -575,7 +575,7 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
 
   const {
     photos, liens, ajouterPhotos, remplacerPhoto, modifierLegendePhoto, supprimerPhoto, liensPhotos,
-    pastilles, placerPastille, enleverPastille,
+    pastilles, placerPastille, enleverPastille, zones,
     cr, sections, presences, profiles, loading, erreurChargement, historique,
     syncPresences, updateCr, emettre, rouvrir, updatePresence,
     addSection, updateSection, deleteSection, reorderSection, reorderSectionsByIds,
@@ -682,7 +682,7 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
 
   const fabriquerPdf = (reglages, crPdf) => genererPdfCr({
     cr: crPdf, affaire, sections, presences,
-    lots: lotEntreprises.map(le => le.lots).filter(Boolean), interlocuteurs: interlocuteurs ?? [],
+    lots: lotEntreprises.map(le => le.lots).filter(Boolean), interlocuteurs: interlocuteurs ?? [], zones,
     photos, liensPhotos, pastilles, plansCr, reglages,
   })
 
@@ -853,6 +853,7 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
           crDate={cr.date_reunion}
           interlocuteurs={interlocuteurs}
           lotEntreprises={lotEntreprises}
+          zones={zones}
           ops={ops}
         />
       )}
@@ -875,6 +876,7 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
           setPresence={setPresence}
           lotEntreprises={lotEntreprises}
           interlocuteurs={interlocuteurs}
+          zones={zones}
           ops={ops}
           lectureSeule={lectureSeule}
           erreur={erreur}
@@ -908,6 +910,7 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
           interlocuteurs={interlocuteurs}
           photos={photos}
           liensPhotos={liensPhotos}
+          zones={zones}
           pastilles={pastilles}
           plansCr={plansCr}
           espace={espace}

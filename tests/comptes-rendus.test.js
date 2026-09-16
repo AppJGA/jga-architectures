@@ -236,3 +236,22 @@ describe('passeFiltre', () => {
     assert.equal(passeFiltre(r, f({ recherche: 'plâtre' })), false)
   })
 })
+
+describe('zones (migration 047)', () => {
+  test('filtre par zone et recherche sur le nom de zone', () => {
+    const r = { statut: 'a_faire', description: 'Enduit', zone_id: 'Z1', copie_zone: 'Bâtiment A' }
+    assert.equal(passeFiltre(r, { ...FILTRE_VIDE, zone: 'Z1' }), true)
+    assert.equal(passeFiltre(r, { ...FILTRE_VIDE, zone: 'Z2' }), false)
+    assert.equal(passeFiltre({ statut: 'a_faire', description: 'x' }, { ...FILTRE_VIDE, zone: 'sans-zone' }), true)
+    assert.equal(passeFiltre(r, { ...FILTRE_VIDE, zone: 'sans-zone' }), false)
+    assert.equal(passeFiltre(r, { ...FILTRE_VIDE, recherche: 'batiment a' }), true)
+  })
+  test('la reprise garde la zone', () => {
+    let n = 0
+    const r = preparerReprise({
+      sections: [{ id: 'S1', numero_romain: 'I', titre: 'G' }], sousSections: [], crId: 'CR2', affaireId: 'A', nouvelId: () => `z-${++n}`,
+      remarques: [{ id: 'R1', section_id: 'S1', description: 'ouverte', statut: 'a_faire', zone_id: 'Z1', copie_zone: 'Bâtiment A' }],
+    })
+    assert.equal(r.remarques[0].zone_id, 'Z1')
+  })
+})

@@ -7,7 +7,7 @@ import {
 import { CATEGORIE_META } from '../../../shared/hooks/useAffaireInterlocuteurs'
 import {
   dateDuJour, STATUTS, FAMILLES_STATUT, STATUT_PAR_DEFAUT, statutNormalise, infosStatut,
-  estEnRetard, historiqueRemarque, passeFiltre, FILTRE_VIDE, filtreActif,
+  estEnRetard, historiqueRemarque, passeFiltre, FILTRE_VIDE, filtreActif, libelleZone,
 } from './crLogique'
 import { useCr } from './CrContexte'
 import { BoutonSupprimer } from './BoutonSupprimer'
@@ -122,7 +122,7 @@ function destinataireIntrouvable(rem, lots, interlocuteurs) {
 // ─── Formulaire de remarque ────────────────────────────────────────────────────
 // Évolution 1: 'general' → aucune attribution, 'interlocuteurs' → sélect combiné
 
-function RemarqueForm({ initial, crDate, suggestions, lots, interlocuteurs, sectionType, onSave, onCancel, onDelete }) {
+function RemarqueForm({ initial, crDate, suggestions, lots, interlocuteurs, zones = [], sectionType, onSave, onCancel, onDelete }) {
   const today = crDate ?? dateDuJour()
   // Une remarque créée maintenant est nouvelle dans cette visite (▶) ; la
   // reprise dans la visite suivante retire le repère.
@@ -130,7 +130,7 @@ function RemarqueForm({ initial, crDate, suggestions, lots, interlocuteurs, sect
     date_note: today, pour: '', description: '',
     statut: STATUT_PAR_DEFAUT, date_echeance: '',
     est_important: false, est_nouveau: true,
-    lot_id: '', interlocuteur_id: '',
+    lot_id: '', interlocuteur_id: '', zone_id: '',
     ...(initial ? {
       date_note:        initial.date_note ?? today,
       pour:             initial.pour ?? '',
@@ -141,6 +141,7 @@ function RemarqueForm({ initial, crDate, suggestions, lots, interlocuteurs, sect
       est_nouveau:      !!initial.est_nouveau,
       lot_id:           initial.lot_id ?? '',
       interlocuteur_id: initial.interlocuteur_id ?? '',
+      zone_id:          initial.zone_id ?? '',
     } : {}),
   }))
   const [saving, setSaving]     = useState(false)
@@ -179,6 +180,7 @@ function RemarqueForm({ initial, crDate, suggestions, lots, interlocuteurs, sect
         est_nouveau:      !!form.est_nouveau,
         lot_id:           sectionType === 'general' ? null : (form.lot_id || null),
         interlocuteur_id: sectionType === 'general' ? null : (form.interlocuteur_id || null),
+        ...(zones.length > 0 && { zone_id: form.zone_id || null }),
       })
     } catch (err) { console.error(err) }
     setSaving(false)
@@ -221,6 +223,16 @@ function RemarqueForm({ initial, crDate, suggestions, lots, interlocuteurs, sect
                   })}
                 </optgroup>
               )}
+            </select>
+          </div>
+        )}
+
+        {zones.length > 0 && (
+          <div>
+            <label style={LABEL} htmlFor="remarque-zone">Zone</label>
+            <select id="remarque-zone" value={form.zone_id ?? ''} onChange={e => set('zone_id', e.target.value)} style={{ ...INPUT, cursor: 'pointer' }} onFocus={focusOn} onBlur={focusOff}>
+              <option value="">— Sans zone —</option>
+              {zones.map(z => <option key={z.id} value={z.id}>{z.nom}</option>)}
             </select>
           </div>
         )}
@@ -405,7 +417,7 @@ function SousRemarqueForm({ crDate, onSave, onCancel }) {
 // ─── Affichage d'une remarque ──────────────────────────────────────────────────
 // Évolution 4: sous_remarques + bouton "+ Suivi"
 
-function RemarqueRow({ rem, idx, total, crDate, suggestions, lots, interlocuteurs, sectionType, onEdit, onDelete, onReorder, onAddSousRemarque, noReorder, hidden }) {
+function RemarqueRow({ rem, idx, total, crDate, suggestions, lots, interlocuteurs, zones, sectionType, onEdit, onDelete, onReorder, onAddSousRemarque, noReorder, hidden }) {
   const [editOpen, setEditOpen]       = useState(false)
   const [addingSuivi, setAddingSuivi] = useState(false)
   const [historiqueOuvert, setHistoriqueOuvert] = useState(false)
@@ -415,6 +427,7 @@ function RemarqueRow({ rem, idx, total, crDate, suggestions, lots, interlocuteur
   const statut = infosStatut(rem)
   const enRetard = estEnRetard(rem, dateReference)
   const etapes = historiqueDe(rem)
+  const zoneLibelle = libelleZone(rem, zones)
   const photos = usePhotosRemarque(rem)
   const plansCr = usePlansCr()
   const pastille = plansCr.pastilles.find(p => p.remarque_id === rem.id)
@@ -434,6 +447,7 @@ function RemarqueRow({ rem, idx, total, crDate, suggestions, lots, interlocuteur
         suggestions={suggestions}
         lots={lots}
         interlocuteurs={interlocuteurs}
+        zones={zones}
         sectionType={sectionType}
         onSave={async (data) => { await onEdit(rem.id, data); setEditOpen(false) }}
         onCancel={() => setEditOpen(false)}
@@ -501,6 +515,11 @@ function RemarqueRow({ rem, idx, total, crDate, suggestions, lots, interlocuteur
             >
               <History size={11} /> Historique · depuis le CR n°{etapes[0].crNumero}
             </button>
+          )}
+          {zoneLibelle && (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, marginTop: 5, marginRight: 8, padding: '2px 7px', borderRadius: 3, fontSize: 11, color: '#1B3A5C', background: 'rgba(27,58,92,0.10)' }}>
+              {zoneLibelle}
+            </span>
           )}
           {pastille && (
             <button
@@ -588,7 +607,7 @@ function RemarqueRow({ rem, idx, total, crDate, suggestions, lots, interlocuteur
 
 // ─── Sous-section ──────────────────────────────────────────────────────────────
 
-function SousSectionBlock({ ss, sectionId, ssIdx, ssTotal, crDate, suggestions, lots, interlocuteurs, sectionType, ops, filterFn }) {
+function SousSectionBlock({ ss, sectionId, ssIdx, ssTotal, crDate, suggestions, lots, interlocuteurs, zones, sectionType, ops, filterFn }) {
   const [collapsed, setCollapsed]   = useState(false)
   const [addRem, setAddRem]         = useState(false)
   const [editSs, setEditSs]         = useState(false)
@@ -639,6 +658,7 @@ function SousSectionBlock({ ss, sectionId, ssIdx, ssTotal, crDate, suggestions, 
               suggestions={suggestions}
               lots={lots}
               interlocuteurs={interlocuteurs}
+              zones={zones}
               sectionType={sectionType}
               onSave={async (data) => {
                 // Inclure section_id pour faciliter la navigation
@@ -658,6 +678,7 @@ function SousSectionBlock({ ss, sectionId, ssIdx, ssTotal, crDate, suggestions, 
               suggestions={suggestions}
               lots={lots}
               interlocuteurs={interlocuteurs}
+              zones={zones}
               sectionType={sectionType}
               onEdit={ops.updateRemarque}
               onDelete={ops.deleteRemarque}
@@ -678,7 +699,7 @@ function SousSectionBlock({ ss, sectionId, ssIdx, ssTotal, crDate, suggestions, 
 // ─── Vue groupée par destinataire (sections interlocuteurs) ───────────────────
 // Évolution 3: tri par interlocuteur puis par date
 
-function InterlocuteursGroupedView({ section, crDate, suggestions, lots, interlocuteurs, ops, filterFn }) {
+function InterlocuteursGroupedView({ section, crDate, suggestions, lots, interlocuteurs, zones, ops, filterFn }) {
   const allRems = [
     ...(section.directRemarques ?? []),
     ...(section.sousSections ?? []).flatMap(ss => ss.remarques ?? []),
@@ -757,6 +778,7 @@ function InterlocuteursGroupedView({ section, crDate, suggestions, lots, interlo
               suggestions={suggestions}
               lots={lots}
               interlocuteurs={interlocuteurs ?? []}
+              zones={zones}
               sectionType="interlocuteurs"
               onEdit={ops.updateRemarque}
               onDelete={ops.deleteRemarque}
@@ -776,7 +798,7 @@ function InterlocuteursGroupedView({ section, crDate, suggestions, lots, interlo
 // Évolution 2: remarques directes + bouton dédié
 // Évolution 3: vue groupée pour sections 'interlocuteurs'
 
-function SectionBlock({ section, sIdx, sTotal, crDate, suggestions, lots, interlocuteurs, ops, filterFn, onDragStart, onDragOver, onDrop, onDragEnd, isDragging }) {
+function SectionBlock({ section, sIdx, sTotal, crDate, suggestions, lots, interlocuteurs, zones, ops, filterFn, onDragStart, onDragOver, onDrop, onDragEnd, isDragging }) {
   const [open, setOpen]               = useState(true)
   const [addSs, setAddSs]             = useState(false)
   const [addDirectRem, setAddDirectRem] = useState(false)
@@ -867,6 +889,7 @@ function SectionBlock({ section, sIdx, sTotal, crDate, suggestions, lots, interl
               suggestions={suggestions}
               lots={lots}
               interlocuteurs={interlocuteurs}
+              zones={zones}
               ops={ops}
               filterFn={filterFn}
             />
@@ -884,6 +907,7 @@ function SectionBlock({ section, sIdx, sTotal, crDate, suggestions, lots, interl
                   suggestions={suggestions}
                   lots={lots}
                   interlocuteurs={interlocuteurs}
+                  zones={zones}
                   sectionType={sectionType}
                   ops={ops}
                   filterFn={filterFn}
@@ -908,6 +932,7 @@ function SectionBlock({ section, sIdx, sTotal, crDate, suggestions, lots, interl
                       suggestions={suggestions}
                       lots={lots}
                       interlocuteurs={interlocuteurs}
+                      zones={zones}
                       sectionType={sectionType}
                       onEdit={ops.updateRemarque}
                       onDelete={ops.deleteRemarque}
@@ -929,6 +954,7 @@ function SectionBlock({ section, sIdx, sTotal, crDate, suggestions, lots, interl
                 suggestions={suggestions}
                 lots={lots}
                 interlocuteurs={interlocuteurs}
+                zones={zones}
                 sectionType={sectionType}
                 onSave={async (data) => { await ops.addSectionRemarque(section.id, data); setAddDirectRem(false) }}
                 onCancel={() => setAddDirectRem(false)}
@@ -976,7 +1002,7 @@ function SectionBlock({ section, sIdx, sTotal, crDate, suggestions, lots, interl
 
 // ─── Barre de filtre ──────────────────────────────────────────────────────────
 
-function FilterBar({ filtre, setFiltre, lots, interlocuteurs, nbVisibles, nbTotal }) {
+function FilterBar({ filtre, setFiltre, lots, interlocuteurs, zones = [], nbVisibles, nbTotal }) {
   const basculerFamille = (id) => setFiltre(f => ({
     ...f, familles: f.familles.includes(id) ? f.familles.filter(x => x !== id) : [...f.familles, id],
   }))
@@ -1024,6 +1050,17 @@ function FilterBar({ filtre, setFiltre, lots, interlocuteurs, nbVisibles, nbTota
         )}
       </div>
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+        {zones.length > 0 && (
+          <select
+            value={filtre.zone} aria-label="Zone"
+            onChange={e => setFiltre(f => ({ ...f, zone: e.target.value }))}
+            style={{ height: 30, padding: '0 8px', borderRadius: 2, fontSize: 12, border: `0.5px solid ${filtre.zone ? '#1B3A5C' : 'rgba(0,0,0,0.12)'}`, backgroundColor: 'white', outline: 'none', color: '#1F1B17', cursor: 'pointer', maxWidth: 200 }}
+          >
+            <option value="">Toutes les zones</option>
+            <option value="sans-zone">Sans zone</option>
+            {zones.map(z => <option key={z.id} value={z.id}>{z.nom}</option>)}
+          </select>
+        )}
         {FAMILLES_STATUT.map(f => {
           const actif = filtre.familles.includes(f.id)
           return (
@@ -1052,7 +1089,7 @@ function FilterBar({ filtre, setFiltre, lots, interlocuteurs, nbVisibles, nbTota
 // ─── Modal nouvelle remarque globale ──────────────────────────────────────────
 // Évolution 2: sous-section optionnelle ("Directement dans la section")
 
-function NewRemarqueModal({ sections, crDate, suggestions, lots, interlocuteurs, ops, onClose }) {
+function NewRemarqueModal({ sections, crDate, suggestions, lots, interlocuteurs, zones, ops, onClose }) {
   const [secId, setSecId] = useState(sections[0]?.id ?? '')
   const sec     = sections.find(s => s.id === secId)
   const sousSecs = sec?.sousSections ?? []
@@ -1108,6 +1145,7 @@ function NewRemarqueModal({ sections, crDate, suggestions, lots, interlocuteurs,
           suggestions={suggestions}
           lots={lots}
           interlocuteurs={interlocuteurs}
+          zones={zones}
           sectionType={sec?.type_section ?? 'general'}
           onSave={async (data) => {
             if (ssId) {
@@ -1126,7 +1164,7 @@ function NewRemarqueModal({ sections, crDate, suggestions, lots, interlocuteurs,
 
 // ─── Export principal ─────────────────────────────────────────────────────────
 
-export function CrSectionEditor({ sections, crId, crDate, interlocuteurs, lotEntreprises, ops, historique }) {
+export function CrSectionEditor({ sections, crId, crDate, interlocuteurs, lotEntreprises, zones = [], ops, historique }) {
   const [addSec, setAddSec]             = useState(false)
   const [newSec, setNewSec]             = useState({ numero_romain: '', titre: '' })
   const [filtre, setFiltre]             = useState(FILTRE_VIDE)
@@ -1220,7 +1258,7 @@ export function CrSectionEditor({ sections, crId, crDate, interlocuteurs, lotEnt
       {/* Barre supérieure : filtres, sélection, nouvelle remarque */}
       <div style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: '#FAF7F2', paddingBottom: 10, marginBottom: 4 }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
-          <FilterBar filtre={filtre} setFiltre={setFiltre} lots={lots} interlocuteurs={interlocuteurs ?? []} nbVisibles={visibles.length} nbTotal={toutes.length} />
+          <FilterBar filtre={filtre} setFiltre={setFiltre} lots={lots} interlocuteurs={interlocuteurs ?? []} zones={zones} nbVisibles={visibles.length} nbTotal={toutes.length} />
           <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
           {!lectureSeule && !modeSelection && toutes.length > 0 && (
             <button
@@ -1295,6 +1333,7 @@ export function CrSectionEditor({ sections, crId, crDate, interlocuteurs, lotEnt
             suggestions={suggestions}
             lots={lots}
             interlocuteurs={interlocuteurs ?? []}
+            zones={zones}
             ops={ops}
             filterFn={filterFn}
             isDragging={dragId === sec.id}
@@ -1365,6 +1404,7 @@ export function CrSectionEditor({ sections, crId, crDate, interlocuteurs, lotEnt
           suggestions={suggestions}
           lots={lots}
           interlocuteurs={interlocuteurs ?? []}
+          zones={zones}
           ops={ops}
           onClose={() => setGlobalAddOpen(false)}
         />

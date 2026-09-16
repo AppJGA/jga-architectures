@@ -167,6 +167,8 @@ export function preparerReprise({ sections = [], sousSections = [], remarques = 
         // Le libellé d'un lot ou d'un interlocuteur supprimé depuis ; absent
         // tant que la migration 037 n'est pas passée
         ...(r.copie_destinataire !== undefined && { copie_destinataire: r.copie_destinataire }),
+        // Zone du planning (migration 047) : absente avant, comme le destinataire
+        ...(r.zone_id !== undefined && { zone_id: r.zone_id ?? null }),
         date_note: r.date_note ?? null, pour: r.pour ?? null, description: r.description,
         statut, date_echeance: r.date_echeance ?? null,
         est_important: !!r.est_important, est_clos: clos, est_nouveau: false,
@@ -328,16 +330,17 @@ export function historiqueRemarque(remarque, remarques, crs) {
 
 // ─── Filtres de l'éditeur ────────────────────────────────────────────────────
 
-export const FILTRE_VIDE = { familles: [], destinataire: '', enRetard: false, recherche: '' }
+export const FILTRE_VIDE = { familles: [], destinataire: '', zone: '', enRetard: false, recherche: '' }
 
 export function filtreActif(filtre) {
-  return filtre.familles.length > 0 || !!filtre.destinataire || filtre.enRetard || !!filtre.recherche.trim()
+  return filtre.familles.length > 0 || !!filtre.destinataire || !!filtre.zone || filtre.enRetard || !!filtre.recherche.trim()
 }
 
 /**
  * La remarque passe-t-elle le filtre ?
  * - familles : couleurs de statut retenues (aucune = toutes) ;
  * - destinataire : '' (tous), 'aucun', 'lot:<id>' ou 'interlo:<id>' ;
+ * - zone : '' (toutes), 'sans-zone' ou identifiant de zone ;
  * - enRetard : seulement les échéances dépassées à `dateReference` ;
  * - recherche : mots du texte, initiales « pour », destinataire, ou numéro (« 12 », « n°12 »).
  */
@@ -347,13 +350,42 @@ export function passeFiltre(r, filtre, dateReference) {
   if (d === 'aucun' && (r.lot_id || r.interlocuteur_id || r.copie_destinataire)) return false
   if (d.startsWith('lot:') && r.lot_id !== d.slice(4)) return false
   if (d.startsWith('interlo:') && r.interlocuteur_id !== d.slice(8)) return false
+  const z = filtre.zone ?? ''
+  if (z === 'sans-zone' && (r.zone_id || r.copie_zone)) return false
+  if (z && z !== 'sans-zone' && r.zone_id !== z) return false
   if (filtre.enRetard && !estEnRetard(r, dateReference)) return false
   const q = sansAccents(filtre.recherche).trim()
   if (q) {
     const numero = q.replace(/^n\s*°?\s*/, '')
     if (/^\d+$/.test(numero)) return String(r.numero ?? '') === numero
-    const texte = sansAccents([r.description, r.pour, r.copie_destinataire].filter(Boolean).join(' '))
+    const texte = sansAccents([r.description, r.pour, r.copie_destinataire, r.copie_zone].filter(Boolean).join(' '))
     if (!q.split(/\s+/).every((mot) => texte.includes(mot))) return false
   }
   return true
+}
+
+// ─── Zones du planning (migration 047) ───────────────────────────────────────
+
+// Nom de la zone d'une remarque ou d'une réserve : la zone actuelle, sinon le
+// nom recopié (zone supprimée du planning depuis)
+export function libelleZone(element, zones) {
+  if (element?.zone_id) {
+    const z = (zones ?? []).find((x) => x.id === element.zone_id)
+    if (z) return z.nom
+  }
+  return element?.copie_zone ?? null
+}
+
+/** Réserves d'un lot rangées par zone (zones du planning, sans zone à la fin) */
+export function grouperParZone(elements, zones) {
+  const parZone = new Map()
+  for (const e of elements ?? []) {
+    const cle = e.zone_id ?? e.copie_zone ?? 'sans-zone'
+    const libelle = libelleZone(e, zones)
+    const ordre = (zones ?? []).findIndex((z) => z.id === e.zone_id)
+    const groupe = parZone.get(cle) ?? { cle, libelle, ordre: ordre < 0 ? Infinity : ordre, elements: [] }
+    groupe.elements.push(e)
+    parZone.set(cle, groupe)
+  }
+  return [...parZone.values()].sort((a, b) => a.ordre - b.ordre || String(a.libelle ?? 'zz').localeCompare(String(b.libelle ?? 'zz')))
 }

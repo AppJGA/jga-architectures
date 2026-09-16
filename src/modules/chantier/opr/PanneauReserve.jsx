@@ -19,9 +19,10 @@ const puce = (actif, couleur = '#1F1B17') => ({
   color: actif ? 'white' : '#1F1B17', fontWeight: actif ? 600 : 400, display: 'inline-flex', alignItems: 'center', gap: 6,
 })
 
-export function PanneauReserve({ reserve, lotParDefaut, lots, localisations, dateVisite, peutSupprimer, onEnregistrer, onSupprimer, onFermer, signalerErreur }) {
+export function PanneauReserve({ reserve, lotParDefaut, lots, zones = [], localisations, dateVisite, peutSupprimer, onEnregistrer, onSupprimer, onFermer, signalerErreur }) {
   const modification = !!reserve
   const [lotId, setLotId] = useState(reserve?.lot_id ?? lotParDefaut ?? lots[0]?.id ?? '')
+  const [zoneId, setZoneId] = useState(reserve?.zone_id ?? '')
   const [localisation, setLocalisation] = useState(reserve?.localisation ?? '')
   const [description, setDescription] = useState(reserve?.description ?? '')
   const [dateLimite, setDateLimite] = useState(reserve?.date_limite ?? '')
@@ -46,6 +47,7 @@ export function PanneauReserve({ reserve, lotParDefaut, lots, localisations, dat
     try {
       await onEnregistrer({
         lot_id: lotId || null, localisation: normaliserTexte(localisation) || null,
+        ...(zones.length > 0 && { zone_id: zoneId || null }),
         description: texte, date_limite: dateLimite || null, est_important: important,
       }, photos.map(p => p.compression))
       onFermer()
@@ -83,6 +85,16 @@ export function PanneauReserve({ reserve, lotParDefaut, lots, localisations, dat
           <button type="button" aria-pressed={!lotId} onClick={() => setLotId('')} style={puce(!lotId)}>Sans lot</button>
         </div>
       </div>
+
+      {zones.length > 0 && (
+        <div>
+          <span style={LABEL}>Zone</span>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            <button type="button" onClick={() => setZoneId('')} style={puce(!zoneId)}>Sans zone</button>
+            {zones.map(z => <button key={z.id} type="button" onClick={() => setZoneId(z.id)} style={puce(zoneId === z.id, '#1B3A5C')}>{z.nom}</button>)}
+          </div>
+        </div>
+      )}
 
       <div>
         <label style={LABEL} htmlFor="reserve-localisation">Localisation</label>

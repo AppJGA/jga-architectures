@@ -69,7 +69,7 @@ function ecrireMemoire(cle, valeur) {
 
 // ─── Nouvelle remarque / modifier ────────────────────────────────────────────
 
-export function PanneauRemarque({ remarque, cr, sections, lots, interlocuteurs, typesAgence, onEnregistrer, onFermer, signalerErreur }) {
+export function PanneauRemarque({ remarque, cr, sections, lots, interlocuteurs, zones = [], typesAgence, onEnregistrer, onFermer, signalerErreur }) {
   const modification = !!remarque
   const cleMemoire = `jga-visite-emplacement-${cr.id}`
   const liste = emplacements(sections)
@@ -81,6 +81,7 @@ export function PanneauRemarque({ remarque, cr, sections, lots, interlocuteurs, 
   const [pour, setPour] = useState(remarque?.pour ?? '')
   const [statut, setStatut] = useState(remarque ? statutNormalise(remarque) : STATUT_PAR_DEFAUT)
   const [echeance, setEcheance] = useState(remarque?.date_echeance ?? '')
+  const [zoneId, setZoneId] = useState(remarque?.zone_id ?? '')
   const [destinataire, setDestinataire] = useState(remarque?.lot_id ? `lot:${remarque.lot_id}` : remarque?.interlocuteur_id ? `interlo:${remarque.interlocuteur_id}` : '')
   const [important, setImportant] = useState(!!remarque?.est_important)
   const [commeType, setCommeType] = useState(false)
@@ -115,6 +116,7 @@ export function PanneauRemarque({ remarque, cr, sections, lots, interlocuteurs, 
       const payload = {
         description: texte, pour: pour.trim() || null, statut, est_clos: PAR_CODE.get(statut).clos,
         date_echeance: echeance || null, est_important: important,
+        ...(zones.length > 0 && { zone_id: zoneId || null }),
         lot_id: typeSection === 'interlocuteurs' && destinataire.startsWith('lot:') ? destinataire.slice(4) : null,
         interlocuteur_id: typeSection === 'interlocuteurs' && destinataire.startsWith('interlo:') ? destinataire.slice(8) : null,
       }
@@ -150,6 +152,18 @@ export function PanneauRemarque({ remarque, cr, sections, lots, interlocuteurs, 
             {liste.length === 0 && <option value="nouvelle">Observations générales (nouvelle section)</option>}
             {liste.map(e => <option key={e.valeur} value={e.valeur}>{e.libelle}</option>)}
           </select>
+        </div>
+      )}
+
+      {zones.length > 0 && (
+        <div>
+          <span style={LABEL}>Zone</span>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            <button type="button" onClick={() => setZoneId('')} style={puce(!zoneId)}>Sans zone</button>
+            {zones.map(z => (
+              <button key={z.id} type="button" onClick={() => setZoneId(z.id)} style={puce(zoneId === z.id, '#1B3A5C')}>{z.nom}</button>
+            ))}
+          </div>
         </div>
       )}
 

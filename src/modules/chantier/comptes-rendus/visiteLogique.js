@@ -16,9 +16,9 @@ export const FILTRES_VISITE = [
   { id: 'toutes', libelle: 'Toutes', familles: [] },
 ]
 
-export function filtreVisite(id, destinataire = '', recherche = '') {
+export function filtreVisite(id, destinataire = '', recherche = '', zone = '') {
   const f = FILTRES_VISITE.find((x) => x.id === id) ?? FILTRES_VISITE[0]
-  return { ...FILTRE_VIDE, familles: f.familles, enRetard: !!f.enRetard, destinataire, recherche }
+  return { ...FILTRE_VIDE, familles: f.familles, enRetard: !!f.enRetard, destinataire, recherche, zone }
 }
 
 /**

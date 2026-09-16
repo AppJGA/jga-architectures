@@ -95,6 +95,7 @@ export function useCompteRendu(crId, affaireId) {
   const [historique, setHistorique] = useState({ remarques: [], crs: [] })
   const [photos, setPhotos] = useState([])
   const [pastilles, setPastilles] = useState([])
+  const [zones, setZones] = useState([])
   const { liens, obtenirLiens } = useLiensSignes(BUCKET_PHOTOS)
   // Seul le premier chargement affiche l'indicateur : il remplace l'éditeur,
   // qui perdait sinon à chaque ajout ses filtres, ses sections repliées et la
@@ -126,7 +127,11 @@ export function useCompteRendu(crId, affaireId) {
       { data: presData },
       { data: profData },
     ] = resultats
-    const [photosCr, pastillesCr] = await Promise.all([photosDuCr(crId), pastillesDuCr(crId)])
+    const [photosCr, pastillesCr, zonesAffaire] = await Promise.all([
+      photosDuCr(crId), pastillesDuCr(crId),
+      // Zones du planning (migration 047) : absentes, le choix ne s'affiche pas
+      supabase.from('planning_zones').select('id, nom, couleur, ordre').eq('affaire_id', affaireId).order('ordre').then(r => (r.error ? [] : r.data ?? [])),
+    ])
     await obtenirLiens(photosCr.map(p => p.chemin_miniature))
 
     setErreurChargement(null)
@@ -136,9 +141,10 @@ export function useCompteRendu(crId, affaireId) {
     setProfiles(profData ?? [])
     setPhotos(photosCr)
     setPastilles(pastillesCr)
+    setZones(zonesAffaire)
     dejaCharge.current = true
     setLoading(false)
-  }, [crId, obtenirLiens])
+  }, [crId, affaireId, obtenirLiens])
 
   useEffect(() => {
     dejaCharge.current = false
@@ -507,7 +513,7 @@ export function useCompteRendu(crId, affaireId) {
 
   return {
     photos, liens, ajouterPhotos, remplacerPhoto, modifierLegendePhoto, supprimerPhoto, liensPhotos,
-    pastilles, placerPastille, enleverPastille,
+    pastilles, placerPastille, enleverPastille, zones,
     cr, sections, presences, profiles, loading, erreurChargement, historique,
     syncPresences, updateCr, emettre, rouvrir, updatePresence,
     addSection, updateSection, deleteSection, reorderSection, reorderSectionsByIds,

@@ -17,7 +17,7 @@ import { lienArchive } from '../comptes-rendus/rapportStockage'
 import { ajouterDictee, normaliserTexte } from '../comptes-rendus/visiteLogique'
 import { formatOctets } from '../comptes-rendus/photosLogique'
 import {
-  TYPES_VISITE, STATUTS_RESERVE, groupesVisiteOpr, infosStatutReserve, reserveEnRetard, peutSupprimerReserve, libelleLot,
+  TYPES_VISITE, STATUTS_RESERVE, groupesVisiteOpr, infosStatutReserve, reserveEnRetard, peutSupprimerReserve, libelleLot, libelleZone,
 } from './oprLogique'
 import { statutPourVisite, REGLAGES_OPR_DEFAUT } from './rapportOprLogique'
 import { genererPdfOpr } from './genererRapportOpr'
@@ -45,6 +45,7 @@ function messageErreur(err) {
 }
 
 function CarteReserve({ reserve, visite, lectureSeule, pastille, planNom, opr, onPanneau, onPlan, signalerErreur }) {
+  const zoneLibelle = libelleZone(reserve, opr.zones)
   const photos = usePhotosRemarque(reserve)
   const statutJour = statutPourVisite(reserve, visite)
   const statut = infosStatutReserve(reserve)
@@ -62,6 +63,7 @@ function CarteReserve({ reserve, visite, lectureSeule, pastille, planNom, opr, o
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
         <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, fontWeight: 600, color: '#E8602C' }}>n°{reserve.numero}</span>
+        {zoneLibelle && <span style={{ fontSize: 12, fontWeight: 500, color: '#1B3A5C', background: 'rgba(27,58,92,0.10)', borderRadius: 3, padding: '2px 8px' }}>{zoneLibelle}</span>}
         {reserve.localisation && <span style={{ fontSize: 13, fontWeight: 500, color: '#374151' }}>{reserve.localisation}</span>}
         {visite.type === 'levee' && reserve.nouvelle && <span style={{ fontSize: 12, color: '#E8602C' }}>Nouvelle</span>}
         <span style={{ flex: 1 }} />
@@ -435,7 +437,7 @@ export function VisiteOpr({ visite, affaire, opr, plansCr, lectureSeuleAffaire, 
 
         {panneau?.type === 'reserve' && (
           <PanneauReserve
-            reserve={panneau.reserve ?? null} lotParDefaut={panneau.lotId} lots={lotsVisite.length ? lotsVisite : opr.lots}
+            reserve={panneau.reserve ?? null} lotParDefaut={panneau.lotId} lots={lotsVisite.length ? lotsVisite : opr.lots} zones={opr.zones}
             localisations={localisations} dateVisite={visite.date_visite}
             peutSupprimer={panneau.reserve ? peutSupprimerReserve(panneau.reserve, opr.constats) : false}
             onEnregistrer={async (champs, compressions) => {

@@ -4,7 +4,7 @@
 // description du document pour pdfmake. Sans navigateur : les images arrivent
 // déjà prêtes (data URL JPEG) ; testée par tests/rapport.test.js.
 
-import { infosStatut, estEnRetard, affichagePresence } from './crLogique'
+import { infosStatut, estEnRetard, affichagePresence, grouperParZone, libelleZone } from './crLogique'
 
 export const REGLAGES_DEFAUT = {
   modele: 'complet',        // complet | synthese
@@ -13,6 +13,7 @@ export const REGLAGES_DEFAUT = {
   inclureGenerales: true,   // version par destinataire : garder les remarques sans destinataire
   photos: 'petites',        // aucune | petites | grandes
   plans: 'les_deux',        // aucun | extraits | planches | les_deux
+  zones: 'non',             // non | grouper : regrouper les remarques par zone
 }
 
 export const PIED_AGENCE = 'JGA Architectes • 69 rue de la République, 69002 Lyon • contact@jga-architectes.fr'
@@ -142,6 +143,8 @@ function lignesRemarque(rem, contexte) {
         { text: [rem.est_nouveau ? { text: '» ', color: COULEUR.orange } : '', jour(rem.date_note) || '—'], fontSize: 8, color: COULEUR.gris },
         ...(rem.pour ? [{ text: rem.pour, fontSize: 8, bold: true, color: COULEUR.orange }] : []),
         ...(destinataire ? [{ text: `(${destinataire})`, fontSize: 7, italics: true, color: COULEUR.gris }] : []),
+        ...(rem._section ? [{ text: rem._section, fontSize: 7, color: COULEUR.grisClair }] : []),
+        ...(!rem._section && libelleZone(rem, contexte.zones) ? [{ text: libelleZone(rem, contexte.zones), fontSize: 7, color: '#1B3A5C' }] : []),
       ],
     },
     {
@@ -240,14 +243,33 @@ const celluleContact = ({ v }) => ({ stack: [v.email, v.telephone].filter(Boolea
  * @param donnees { cr, affaire, sections (déjà sélectionnées), presences, lots,
  *   interlocuteurs, reglages, versionPour, images: { logo, photos: Map, extraits: Map, planches: [] } }
  */
-export function definitionPdf({ cr, affaire, sections, presences, lots, interlocuteurs, reglages: brut, versionPour, images = {} }) {
+export function definitionPdf({ cr, affaire, sections, presences, lots, interlocuteurs, zones = [], reglages: brut, versionPour, images = {} }) {
   const reglages = reglagesEffectifs(brut)
   const complet = reglages.modele === 'complet'
   const num = String(cr.numero).padStart(2, '0')
-  const contexte = { lots, interlocuteurs, dateReference: cr.date_reunion, images, reglages }
+  const contexte = { lots, interlocuteurs, zones, dateReference: cr.date_reunion, images, reglages }
   const prochaine = cr.date_prochaine_reunion
     ? `${jour(cr.date_prochaine_reunion, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}${cr.heure_prochaine_reunion ? ` à ${cr.heure_prochaine_reunion.slice(0, 5)}` : ''}`
     : 'À définir'
+
+  // Regroupement par zone : la structure en sections laisse place aux zones du
+  // planning, le titre de section restant rappelé sur chaque remarque.
+  const contenuZones = () => {
+    const avecSection = (sections ?? []).flatMap((s) => [
+      ...(s.sousSections ?? []).flatMap((ss) => (ss.remarques ?? []).map((r) => ({ ...r, _section: `${s.numero_romain} · ${ss.code}` }))),
+      ...(s.directRemarques ?? []).map((r) => ({ ...r, _section: s.numero_romain })),
+    ])
+    return grouperParZone(avecSection, zones).map((g) => ({
+      stack: [
+        {
+          margin: [0, 10, 0, 6],
+          table: { widths: ['*'], body: [[{ text: (g.libelle ?? 'Sans zone').toUpperCase(), bold: true, fontSize: 10.5, fillColor: '#F2F5F9' }]] },
+          layout: { hLineWidth: (i) => (i === 1 ? 1.2 : 0), vLineWidth: () => 0, hLineColor: () => '#1B3A5C', paddingLeft: () => 6, paddingTop: () => 5, paddingBottom: () => 5 },
+        },
+        tableauRemarques(g.elements, contexte),
+      ],
+    }))
+  }
 
   const contenuSections = (sections ?? []).map((s) => ({
     stack: [
@@ -288,7 +310,7 @@ export function definitionPdf({ cr, affaire, sections, presences, lots, interloc
         margin: [0, 0, 0, 6],
       },
       ...blocsPresences(presences, complet),
-      ...contenuSections,
+      ...(reglages.zones === 'grouper' ? contenuZones() : contenuSections),
       ...blocPlanches(planches),
     ],
   }

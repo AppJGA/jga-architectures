@@ -5,6 +5,7 @@ import { useAffaire } from '../../../shared/hooks/useAffaires'
 import { useFtm } from '../../../shared/hooks/useFtm'
 import { supabase } from '../../../core/supabase/client'
 import { FtmFormModal } from './FtmFormModal'
+import { ModaleConfirmation } from '../../../shared/components/ModaleConfirmation'
 import { generateFtmPdf } from './generateFtmPdf'
 
 const ORIGINE_COLOR = { moe: '#E8602C', mo: '#1B3A5C', aleas: '#2A8A4E' }
@@ -28,7 +29,6 @@ function fmtMontant(v) {
 }
 
 function FtmCard({ ftm, lots, affaire, onEdit, onDelete }) {
-  const [confirmDelete, setConfirmDelete] = useState(false)
   const origineColor = ORIGINE_COLOR[ftm.origine] ?? '#9C9591'
   const badge = DECISION_BADGE[ftm.decision ?? 'en_attente']
   const ref = `FTM-${String(ftm.numero).padStart(3, '0')}`
@@ -122,32 +122,13 @@ function FtmCard({ ftm, lots, affaire, onEdit, onDelete }) {
         >
           <Pencil size={14} />
         </button>
-        {confirmDelete ? (
-          <>
-            <button
-              onClick={() => { onDelete(ftm.id); setConfirmDelete(false) }}
-              style={{ ...iconBtnStyle, color: '#B8412C', borderColor: '#fca5a5' }}
-              title="Confirmer la suppression"
-            >
-              <Trash2 size={14} />
-            </button>
-            <button
-              onClick={() => setConfirmDelete(false)}
-              style={iconBtnStyle}
-              title="Annuler"
-            >
-              ✕
-            </button>
-          </>
-        ) : (
-          <button
-            onClick={() => setConfirmDelete(true)}
-            style={iconBtnStyle}
-            title="Supprimer"
-          >
-            <Trash2 size={14} />
-          </button>
-        )}
+        <button
+          onClick={() => onDelete(ftm)}
+          style={iconBtnStyle}
+          title="Supprimer la fiche"
+        >
+          <Trash2 size={14} />
+        </button>
       </div>
     </div>
   )
@@ -169,6 +150,8 @@ export default function FtmModule() {
   const { affaire } = useAffaire(affaireId)
   const { ftms, loading, createFtm, updateFtm, deleteFtm } = useFtm(affaireId)
   const [lots, setLots] = useState([])
+  const [aSupprimer, setASupprimer] = useState(null)
+  const [erreurSuppression, setErreurSuppression] = useState(null)
   const [modalOpen, setModalOpen] = useState(false)
   const [editingFtm, setEditingFtm] = useState(null)
   // Fiche ouverte directement depuis une remarque ou une réserve (?ftm=…).
@@ -227,8 +210,17 @@ export default function FtmModule() {
     }
   }
 
-  const handleDelete = async (id) => {
-    await deleteFtm(id)
+  // Supprimer une fiche retire aussi sa ligne du suivi financier : la
+  // confirmation le dit, plutôt que de laisser un montant disparaître.
+  const handleDelete = async () => {
+    if (!aSupprimer) return
+    try {
+      await deleteFtm(aSupprimer.id)
+      setASupprimer(null)
+    } catch (err) {
+      console.error(err)
+      setErreurSuppression(err?.message ?? 'La fiche n’a pas pu être supprimée.')
+    }
   }
 
   const ftmsAcceptes = ftms.filter(f => f.decision === 'accepte')
@@ -351,7 +343,7 @@ export default function FtmModule() {
               lots={lots}
               affaire={affaire}
               onEdit={handleEdit}
-              onDelete={handleDelete}
+              onDelete={setASupprimer}
             />
           ))
         )}
@@ -366,6 +358,34 @@ export default function FtmModule() {
         onSave={handleSave}
         onSaveAndExport={handleSaveAndExport}
       />
+
+      {aSupprimer && (
+        <ModaleConfirmation
+          danger
+          titre={`Supprimer la fiche FTM-${String(aSupprimer.numero).padStart(3, '0')} ?`}
+          texte="La fiche et sa ligne du suivi financier seront retirées ensemble. Cette suppression est définitive."
+          details={
+            <>
+              <p style={{ margin: 0, fontWeight: 500 }}>{aSupprimer.description || 'Travaux modificatifs'}</p>
+              <p style={{ margin: '4px 0 0', fontSize: 12, color: '#5E5854' }}>
+                {[
+                  lots.find(l => l.id === aSupprimer.lot_id)?.nom,
+                  aSupprimer.montant_travaux_ht != null && aSupprimer.montant_travaux_ht !== 0
+                    ? `${aSupprimer.montant_travaux_ht > 0 ? '+' : ''}${fmtMontant(aSupprimer.montant_travaux_ht)} HT`
+                    : 'Montant non renseigné',
+                  DECISION_BADGE[aSupprimer.decision ?? 'en_attente'].label,
+                ].filter(Boolean).join(' · ')}
+              </p>
+              {erreurSuppression && (
+                <p role="alert" style={{ margin: '8px 0 0', fontSize: 12, color: '#B8412C' }}>{erreurSuppression}</p>
+              )}
+            </>
+          }
+          libelle="Supprimer la fiche"
+          onConfirmer={handleDelete}
+          onAnnuler={() => { setASupprimer(null); setErreurSuppression(null) }}
+        />
+      )}
 
       <style>{`@keyframes jga-spin { to { transform: rotate(360deg); } }`}</style>
     </div>

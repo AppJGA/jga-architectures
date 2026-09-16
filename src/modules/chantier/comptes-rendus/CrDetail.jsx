@@ -26,6 +26,7 @@ import { usePlans } from './usePlans'
 import { PlansVue } from './PlansVue'
 import { PlacementPlan } from './PlacementPlan'
 import { ModeVisite } from './ModeVisite'
+import { ModaleConfirmation } from '../../../shared/components/ModaleConfirmation'
 import { AvancementLots } from './AvancementLots'
 import { garderImages } from './horsLigne/images'
 import { avancementParLot, avancementGlobal, lignesAvancement } from './avancementLogique'
@@ -536,31 +537,6 @@ function BandeauErreur({ message, onFermer }) {
 }
 
 // Confirmation d'émission ou de réouverture
-function ModaleConfirmation({ titre, texte, libelle, couleur, onConfirmer, onAnnuler }) {
-  const [enCours, setEnCours] = useState(false)
-  return (
-    <div onClick={onAnnuler} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.3)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-      <div role="dialog" aria-modal="true" onClick={e => e.stopPropagation()} style={{ background: 'white', padding: '24px 28px', maxWidth: 440, width: '100%', border: '0.5px solid rgba(0,0,0,0.08)' }}>
-        <p style={{ fontSize: 15, fontWeight: 500, color: '#1F1B17', marginBottom: 10 }}>{titre}</p>
-        <p style={{ fontSize: 13, color: '#5E5854', lineHeight: 1.6, marginBottom: 22 }}>{texte}</p>
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button onClick={onAnnuler} style={{ padding: '8px 16px', borderRadius: 2, border: '0.5px solid rgba(0,0,0,0.15)', background: 'transparent', fontSize: 13, cursor: 'pointer', color: '#374151' }}>
-            Annuler
-          </button>
-          <button
-            disabled={enCours}
-            onClick={async () => { setEnCours(true); await onConfirmer(); setEnCours(false) }}
-            style={{ padding: '8px 16px', borderRadius: 2, border: 'none', background: couleur, color: 'white', fontSize: 13, fontWeight: 500, cursor: 'pointer', opacity: enCours ? 0.6 : 1 }}
-          >
-            {enCours ? 'Enregistrement…' : libelle}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// Message lisible pour une erreur Supabase ou JavaScript
 function messageErreur(err) {
   const brut = err?.message ?? String(err)
   if (/Failed to fetch|NetworkError/i.test(brut)) return 'Connexion au serveur impossible : vérifiez la connexion internet et réessayez.'

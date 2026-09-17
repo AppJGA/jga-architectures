@@ -44,7 +44,7 @@ const ACTIONS = [
 ]
 const PETALE = 64
 const DISQUE = 68
-const PETALES = positionsPetales(ACTIONS)
+
 
 /**
  * Voile, barre mise en avant et couronne d'actions.
@@ -54,7 +54,8 @@ const PETALES = positionsPetales(ACTIONS)
  *              [{ left, width }] quand des fermetures coupent la barre
  * @param objet 'tâche' | 'phase', pour les libellés d'accessibilité
  */
-export function MenuRadial({ barre, numero, duree, objet = 'tâche', onAction, onFermer }) {
+export function MenuRadial({ barre, numero, duree, objet = 'tâche', actions = null, onAction, onFermer }) {
+  const PETALES = positionsPetales(actions ? ACTIONS.filter((a) => actions.includes(a.action)) : ACTIONS)
   const centreX = barre.left + barre.width / 2
   const centreY = barre.haut + barre.hauteurLigne / 2
   const morceaux = barre.fragments ?? [{ left: barre.left, width: barre.width }]
@@ -88,7 +89,7 @@ export function MenuRadial({ barre, numero, duree, objet = 'tâche', onAction, o
 
       <div
         role="menu"
-        aria-label={`Actions sur la ${objet} ${numero}`}
+        aria-label={`Actions sur ${objet === 'segment' ? 'le' : 'la'} ${objet} ${numero}`}
         style={{ position: 'absolute', left: centreX, top: centreY, width: 0, height: 0, zIndex: 60 }}
       >
         <div className="jga-disque" style={{
@@ -156,7 +157,7 @@ export function EditionBarre({ barre, mode, ecart, objet = 'tâche', onPoigneeDo
 
       {mode === 'move' ? (
         <div
-          aria-label={`Glisser pour déplacer la ${objet}`}
+          aria-label={`Glisser pour déplacer ${objet === 'segment' ? 'le' : 'la'} ${objet}`}
           onPointerDown={(e) => onPoigneeDown(e, 'move')}
           style={{ ...poignee, left: barre.left + barre.width / 2 - 34, width: 68, gap: 3 }}
         >

@@ -339,6 +339,15 @@ plus seulement à l'écran.
   timeline — jamais de coordonnées à recaler. Un segment ajouté d'un geste se
   pose selon `segmentParDefaut.js` de chaque planning, la même règle que le
   bouton de la fiche.
+- **Un segment se manipule comme une barre** : toucher → sa roue
+  (`ACTIONS_SEGMENT` : Réglages, Déplacer, Allonger, Supprimer) et recadrage ;
+  Déplacer / Allonger → `EditionBarre`. Sa sélection (`selectionSeg`) est
+  distincte de celle des tâches ou phases, et en exclut l'ouverture simultanée.
+  Les gestes passent par les **événements pointeur**, jamais `mousedown` :
+  au doigt, un segment ne glisse qu'en mode d'édition, sinon le planning
+  défile. Piège déjà rencontré : le drapeau « le geste a bougé » doit se
+  remettre à zéro **à chaque contact**, pas seulement au début d'un
+  glissement — sinon le toucher qui suit un glissement est avalé.
 - **Une action du planning = une étape d'historique.** L'annulation écrit tout
   l'écart avec l'instantané : une action sans instantané est défaite en même
   temps que la précédente.

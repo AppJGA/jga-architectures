@@ -1168,6 +1168,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
             onTaskUpdate={handleTaskUpdate}
             onTaskDuplicate={handleDuplicateTask}
             onTaskAddSegment={(t) => handleSegmentAjout(t.id, segmentParDefautTache(t, getSegmentsForTache(t.id), periodes))}
+            onSegmentDelete={(seg) => handleSegmentSuppression(seg.id)}
             onTaskDelete={setDeletingTask}
             onSelectionChange={setTacheSelectionneeId}
             onDependencyCreate={handleDependencyCreate}

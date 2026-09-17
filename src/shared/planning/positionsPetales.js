@@ -20,3 +20,7 @@ export function positionsPetales(actions, rayon = RAYON_COURONNE) {
 export function ecartEntrePetales(n, rayon = RAYON_COURONNE, taille = TAILLE_PETALE) {
   return 2 * rayon * Math.sin(Math.PI / n) - taille
 }
+
+// Couronne d'un segment : il se règle dans la fiche de sa tâche (ou de sa
+// phase), et ne se duplique pas — seules restent les actions qui lui parlent.
+export const ACTIONS_SEGMENT = ['params', 'move', 'resize', 'del']

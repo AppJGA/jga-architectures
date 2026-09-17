@@ -1,6 +1,7 @@
 import { useMemo, useRef, useCallback, useState, useEffect, useLayoutEffect } from 'react'
 import { GitBranch } from 'lucide-react'
 import { MenuRadial, EditionBarre, BandeauLien } from '../../../shared/planning/MenuRadial'
+import { ACTIONS_SEGMENT } from '../../../shared/planning/positionsPetales'
 import { recadrerSurBarre } from '../../../shared/planning/recadrage'
 import {
   parseDate,
@@ -288,6 +289,7 @@ export function GanttTimeline({
   onTaskDuplicate, onTaskDelete, onTaskAddSegment, onSelectionChange,
   zones = [], colorMode = 'lot', viewMode = 'day', zoomLevel = 1,
   getSegmentsForTache, segments = [], updateSegmentLocal, onSegmentCommit, onSegmentDragBegin, onSegmentDragCancel,
+  onSegmentDelete,
   dependances = [], onSegmentDependencyCreate, onSegmentDependencyDelete,
   periodes = [], dragOverTaskId = null,
   drawMode = false, onDrawCreate, scrollRef = null,
@@ -610,6 +612,14 @@ export function GanttTimeline({
   const [selection, setSelection] = useState(null)
   const selectionTache = selection ? tasks.find((t) => t.id === selection.taskId) ?? null : null
 
+  // Même roue et mêmes modes pour un segment : { segmentId, mode, origine }.
+  // Une seule sélection à la fois — ouvrir l'une referme l'autre.
+  const [selectionSeg, setSelectionSeg] = useState(null)
+  const segmentSelectionne = selectionSeg ? segments.find((sg) => sg.id === selectionSeg.segmentId) ?? null : null
+  const segEnEdition = useCallback((segmentId, mode) => (
+    selectionSeg?.segmentId === segmentId && (mode ? selectionSeg.mode === mode : ['move', 'resize'].includes(selectionSeg.mode))
+  ), [selectionSeg])
+
   useEffect(() => { onSelectionChange?.(selectionTache?.id ?? null) }, [selectionTache?.id, onSelectionChange])
 
   // Bornes d'une barre pendant un geste, lues par le rendu : la barre, ses
@@ -643,13 +653,19 @@ export function GanttTimeline({
   // { segmentId, tacheId, startX, originalDateDebut }
   const segmentDragRef = useRef({ moved: false })
 
+  // À la souris, un segment se glisse directement. Au doigt, seulement en mode
+  // Déplacer de ce segment : ailleurs le geste reste un toucher, qui ouvre la
+  // roue — et le défilement du planning reste possible.
   const handleSegmentMouseDown = useCallback((e, segment) => {
     if (drawMode) return
-    if (e.button !== 0) return
+    if (e.pointerType === 'mouse' && e.button !== 0) return
+    // Chaque nouveau contact efface la trace du geste précédent : sans cela, le
+    // toucher qui suit un glissement passait pour sa fin et n'ouvrait rien.
+    segmentDragRef.current = { moved: false }
+    if (e.pointerType && e.pointerType !== 'mouse' && !segEnEdition(segment.id, 'move')) return
     e.stopPropagation()
     e.preventDefault()
 
-    segmentDragRef.current = { moved: false }
     onSegmentDragBegin?.('Déplacement d’un segment')
     setDraggingSegment({
       segmentId: segment.id,
@@ -657,7 +673,7 @@ export function GanttTimeline({
       startX: e.clientX,
       originalDateDebut: segment.date_debut,
     })
-  }, [drawMode, onSegmentDragBegin])
+  }, [drawMode, onSegmentDragBegin, segEnEdition])
 
   useEffect(() => {
     if (!draggingSegment) return
@@ -676,9 +692,9 @@ export function GanttTimeline({
     const handleMouseUp = async (e) => {
       setDraggingSegment(null)
       const dateFinale = dateSous(e.clientX - startX)
-      // Un simple clic (pour ouvrir la tâche) n'écrit rien et n'entre pas dans
-      // l'historique.
-      if (!segmentDragRef.current.moved || dateFinale === originalDateDebut) {
+      // Un simple clic (pour ouvrir la roue) n'écrit rien et n'entre pas dans
+      // l'historique ; un geste interrompu par le système non plus.
+      if (e.type === 'pointercancel' || !segmentDragRef.current.moved || dateFinale === originalDateDebut) {
         updateSegmentLocal?.(segmentId, { date_debut: originalDateDebut })
         onSegmentDragCancel?.()
         return
@@ -687,11 +703,13 @@ export function GanttTimeline({
       await onSegmentCommit?.(segmentId, { date_debut: dateFinale }, { date_debut: originalDateDebut })
     }
 
-    window.addEventListener('mousemove', handleMouseMove)
-    window.addEventListener('mouseup', handleMouseUp)
+    window.addEventListener('pointermove', handleMouseMove)
+    window.addEventListener('pointerup', handleMouseUp)
+    window.addEventListener('pointercancel', handleMouseUp)
     return () => {
-      window.removeEventListener('mousemove', handleMouseMove)
-      window.removeEventListener('mouseup', handleMouseUp)
+      window.removeEventListener('pointermove', handleMouseMove)
+      window.removeEventListener('pointerup', handleMouseUp)
+      window.removeEventListener('pointercancel', handleMouseUp)
     }
   }, [draggingSegment, geo, periodes, updateSegmentLocal, onSegmentCommit, onSegmentDragCancel])
 
@@ -702,7 +720,8 @@ export function GanttTimeline({
   const [resizingSegment, setResizingSegment] = useState(null)
 
   const handleSegmentResizeStart = useCallback((e, segment, side) => {
-    if (drawMode || e.button !== 0) return
+    if (drawMode) return
+    if (e.pointerType === 'mouse' && e.button !== 0) return
     e.stopPropagation()
     e.preventDefault()
     // Même drapeau que le drag : il empêche le clic de fin de geste (qui remonte
@@ -740,8 +759,8 @@ export function GanttTimeline({
 
     const handleMouseUp = async (e) => {
       const changes = computeChanges(e.clientX - startX)
-      const inchange = changes.duree_jours === originalDuree
-        && (changes.date_debut ?? originalDateDebut) === originalDateDebut
+      const inchange = e.type === 'pointercancel' || (changes.duree_jours === originalDuree
+        && (changes.date_debut ?? originalDateDebut) === originalDateDebut)
       setResizingSegment(null)
       if (inchange) {
         updateSegmentLocal?.(segmentId, { date_debut: originalDateDebut, duree_jours: originalDuree })
@@ -752,11 +771,13 @@ export function GanttTimeline({
       await onSegmentCommit?.(segmentId, changes, { date_debut: originalDateDebut, duree_jours: originalDuree })
     }
 
-    window.addEventListener('mousemove', handleMouseMove)
-    window.addEventListener('mouseup', handleMouseUp)
+    window.addEventListener('pointermove', handleMouseMove)
+    window.addEventListener('pointerup', handleMouseUp)
+    window.addEventListener('pointercancel', handleMouseUp)
     return () => {
-      window.removeEventListener('mousemove', handleMouseMove)
-      window.removeEventListener('mouseup', handleMouseUp)
+      window.removeEventListener('pointermove', handleMouseMove)
+      window.removeEventListener('pointerup', handleMouseUp)
+      window.removeEventListener('pointercancel', handleMouseUp)
     }
   }, [resizingSegment, viewMode, geo, periodes, updateSegmentLocal, onSegmentCommit, onSegmentDragCancel])
 
@@ -952,17 +973,38 @@ export function GanttTimeline({
       setSelection(null)
       return
     }
+    setSelectionSeg(null)
     setSelection({ taskId, mode: 'menu' })
     recadrerSurBarre(scrollRef, `[data-taskid="${taskId}"]`, camera)
   }, [selection, creerLien, scrollRef])
 
   // En mode Lier, toucher un segment en fait la suite de la tâche choisie
+  // Ailleurs, il ouvre sa roue et recadre la vue sur lui, comme une barre.
   const toucherSegment = useCallback((seg) => {
-    if (selection?.mode !== 'lien') return false
-    creerLien({ type: 'task', taskId: selection.taskId }, { type: 'segment', segmentId: seg.id })
+    if (selection?.mode === 'lien') {
+      creerLien({ type: 'task', taskId: selection.taskId }, { type: 'segment', segmentId: seg.id })
+      setSelection(null)
+      return true
+    }
     setSelection(null)
+    setSelectionSeg({ segmentId: seg.id, mode: 'menu' })
+    recadrerSurBarre(scrollRef, `[data-segmentid="${seg.id}"]`, camera)
     return true
-  }, [selection, creerLien])
+  }, [selection, creerLien, scrollRef])
+
+  const actionMenuSegment = useCallback((action) => {
+    const seg = segmentSelectionne
+    if (!seg) { setSelectionSeg(null); return }
+    if (action === 'move' || action === 'resize') {
+      setSelectionSeg({ segmentId: seg.id, mode: action, origine: { date_debut: seg.date_debut, duree_jours: seg.duree_jours } })
+      return
+    }
+    setSelectionSeg(null)
+    if (action === 'params') {
+      const tache = tasks.find((t) => t.id === seg.tache_id)
+      if (tache) onTaskClick(tache)
+    } else if (action === 'del') onSegmentDelete?.(seg)
+  }, [segmentSelectionne, tasks, onTaskClick, onSegmentDelete])
 
   const actionMenu = useCallback((action) => {
     const task = selectionTache
@@ -1051,7 +1093,7 @@ export function GanttTimeline({
   }, [connectingFrom, hoveredPoint])
 
   useEffect(() => {
-    const h = (e) => { if (e.key === 'Escape') { setConnectingFrom(null); setSelection(null) } }
+    const h = (e) => { if (e.key === 'Escape') { setConnectingFrom(null); setSelection(null); setSelectionSeg(null) } }
     window.addEventListener('keydown', h)
     return () => window.removeEventListener('keydown', h)
   }, [])
@@ -1497,6 +1539,7 @@ export function GanttTimeline({
                 task={tacheAffichee(row.task)} lot={rowLot}
                 enEdition={selectionTache?.id === row.task.id && ['move', 'resize'].includes(selection?.mode)}
                 onSegmentTap={toucherSegment}
+                segmentEnEditionId={['move', 'resize'].includes(selectionSeg?.mode) ? selectionSeg.segmentId : null}
                 barColor={getBarColor(row.task, rowLot, zones, colorMode)}
                 rowHeight={rowHeight} geo={geo}
                 dragOverTaskId={dragOverTaskId} drawMode={drawMode}
@@ -1536,6 +1579,7 @@ export function GanttTimeline({
                     task={tacheAffichee(task)} lot={lot}
                         enEdition={selectionTache?.id === task.id && ['move', 'resize'].includes(selection?.mode)}
                     onSegmentTap={toucherSegment}
+                segmentEnEditionId={['move', 'resize'].includes(selectionSeg?.mode) ? selectionSeg.segmentId : null}
                     barColor={getBarColor(task, lot, zones, colorMode)}
                     rowHeight={rowHeight} geo={geo}
                     dragOverTaskId={dragOverTaskId} drawMode={drawMode}
@@ -1573,6 +1617,7 @@ export function GanttTimeline({
                     task={tacheAffichee(task)} lot={null}
                         enEdition={selectionTache?.id === task.id && ['move', 'resize'].includes(selection?.mode)}
                     onSegmentTap={toucherSegment}
+                segmentEnEditionId={['move', 'resize'].includes(selectionSeg?.mode) ? selectionSeg.segmentId : null}
                     barColor={getBarColor(task, null, zones, colorMode)}
                     rowHeight={rowHeight} geo={geo}
                     dragOverTaskId={dragOverTaskId} drawMode={drawMode}
@@ -1728,6 +1773,60 @@ export function GanttTimeline({
           return null
         })()}
 
+        {/* ── Roue et modes d'édition d'un segment ─────────────────────── */}
+        {segmentSelectionne && (() => {
+          const ligne = rowIndexMap[rowKey('segment', segmentSelectionne.id)]
+          if (ligne === undefined) return null
+          const tache = tasks.find((t) => t.id === segmentSelectionne.tache_id) ?? null
+          const lot = tache ? lots.find((l) => l.id === tache.lot_id) ?? null : null
+          const { left, width } = computeGeometry(parseDate(segmentSelectionne.date_debut), segmentSelectionne.duree_jours, geo)
+          const couleur = segmentSelectionne.zone_id
+            ? zones.find((z) => z.id === segmentSelectionne.zone_id)?.couleur
+            : null
+          const barre = {
+            left, width, haut: rowY(ligne), hauteurLigne: rowHeight, barPad: BAR_PAD,
+            fond: { background: couleur ?? (tache ? getBarColor(tache, lot, zones, colorMode) : '#9C9591') },
+          }
+          const numeroTache = tache
+            ? (lot ? `${lot.num_lot ?? String(lot.numero ?? '').padStart(2, '0')}-${tache.num_tache}` : tache.num_tache)
+            : '—'
+
+          if (selectionSeg.mode === 'menu') {
+            return (
+              <MenuRadial
+                barre={barre}
+                objet="segment"
+                actions={ACTIONS_SEGMENT}
+                numero={numeroTache}
+                duree={`seg. ${segmentSelectionne.duree_jours} j`}
+                onAction={actionMenuSegment}
+                onFermer={() => setSelectionSeg(null)}
+              />
+            )
+          }
+
+          // Écart depuis l'ouverture du mode : jours ouvrés gagnés ou perdus
+          const origine = selectionSeg.origine ?? segmentSelectionne
+          const avant = parseDate(origine.date_debut)
+          const apres = parseDate(segmentSelectionne.date_debut)
+          const ecart = selectionSeg.mode === 'move'
+            ? (apres >= avant ? dureeEntre(avant, apres, periodes) - 1 : -(dureeEntre(apres, avant, periodes) - 1))
+            : (segmentSelectionne.duree_jours ?? 0) - (origine.duree_jours ?? 0)
+          return (
+            <EditionBarre
+              barre={barre}
+              mode={selectionSeg.mode}
+              objet="segment"
+              ecart={ecart === 0 ? '±0 j' : `${ecart > 0 ? '+' : ''}${ecart} j`}
+              onPoigneeDown={(e, type) => {
+                if (type === 'move') handleSegmentMouseDown(e, segmentSelectionne)
+                else handleSegmentResizeStart(e, segmentSelectionne, type === 'resize-left' ? 'left' : 'right')
+              }}
+              onTerminer={() => setSelectionSeg(null)}
+            />
+          )
+        })()}
+
         {/* Today marker */}
         {todayOffset != null && <div style={{
           position: 'absolute', top: 0, bottom: 0, zIndex: 20,
@@ -1844,7 +1943,7 @@ function TaskBarRow({
   draggingSegmentId, onSegmentDragStart, segmentDragMovedRef,
   onSegmentResizeStart, resizingSegmentId,
   onBarDragStart, onBarClick, onConnectionPointClick, onConnectionPointHover,
-  enEdition = false, onSegmentTap,
+  enEdition = false, onSegmentTap, segmentEnEditionId = null,
 }) {
   const [isHovered, setIsHovered] = useState(false)
   const color = barColor ?? lot?.couleur ?? '#94a3b8'
@@ -2001,9 +2100,11 @@ function TaskBarRow({
         const segShowStartDot = isConnecting && !segIsOwnSource ? true : isHovered
         const segShowEndDot = isConnecting ? false : isHovered
 
+        const segEdite = segmentEnEditionId === seg.id
         return (
           <div key={seg.id}>
             <div
+              data-segmentid={seg.id}
               title={`${task.nom} — segment`}
               style={{
                 position: 'absolute',
@@ -2015,8 +2116,11 @@ function TaskBarRow({
                 outlineOffset: -2,
                 cursor: isDraggingThis ? 'grabbing' : 'grab',
                 zIndex: isDraggingThis ? 25 : 8,
+                // En mode Déplacer, le doigt tire le segment au lieu de faire
+                // défiler le planning
+                touchAction: segEdite ? 'none' : undefined,
               }}
-              onMouseDown={(e) => {
+              onPointerDown={(e) => {
                 if (e.target.dataset.seghandle) return
                 onSegmentDragStart(e, seg)
               }}
@@ -2036,7 +2140,7 @@ function TaskBarRow({
                   width: HANDLE_W, cursor: 'ew-resize', zIndex: 10,
                   background: 'rgba(255,255,255,0.3)',
                 }}
-                onMouseDown={(e) => onSegmentResizeStart?.(e, seg, 'left')}
+                onPointerDown={(e) => onSegmentResizeStart?.(e, seg, 'left')}
                 onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,0,0,0.2)'}
                 onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.3)'}
               />
@@ -2048,7 +2152,7 @@ function TaskBarRow({
                   width: HANDLE_W, cursor: 'ew-resize', zIndex: 10,
                   background: 'rgba(255,255,255,0.3)',
                 }}
-                onMouseDown={(e) => onSegmentResizeStart?.(e, seg, 'right')}
+                onPointerDown={(e) => onSegmentResizeStart?.(e, seg, 'right')}
                 onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,0,0,0.2)'}
                 onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.3)'}
               />

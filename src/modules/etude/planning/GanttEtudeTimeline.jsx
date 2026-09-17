@@ -1,6 +1,7 @@
 import { useMemo, useRef, useCallback, useState, useEffect, useLayoutEffect } from 'react'
 import { GitBranch } from 'lucide-react'
 import { MenuRadial, EditionBarre, BandeauLien } from '../../../shared/planning/MenuRadial'
+import { ACTIONS_SEGMENT } from '../../../shared/planning/positionsPetales'
 import { recadrerSurBarre } from '../../../shared/planning/recadrage'
 import {
   getWeekStart, addWeeks, weeksBetween, getCurrentWeek, computeLagSemaines,
@@ -59,7 +60,7 @@ export function GanttEtudeTimeline({
   periodes = [],
   drawMode = false, onDrawCreate,
   rowHeight = 44,
-  onPhaseDuplicate, onPhaseDelete, onPhaseAddSegment, onSelectionChange, scrollRef = null,
+  onPhaseDuplicate, onPhaseDelete, onPhaseAddSegment, onSegmentDelete, onSelectionChange, scrollRef = null,
 }) {
   const metrics = rowMetrics(rowHeight)
   // ── Reference week — reçue depuis GanttEtude (dynamique, -4 sem de marge) ─────
@@ -214,9 +215,25 @@ export function GanttEtudeTimeline({
   // le geste, aucune écriture avant le relâchement.
   const segDragRef = useRef(null)
   const [draggingSeg, setDraggingSeg] = useState(null)
+  // Roue et modes d'un segment : { segmentId, phaseId, mode, origine }
+  const [selectionSeg, setSelectionSeg] = useState(null)
+  // Position du segment pendant le geste, lue par l'anneau et les poignées du
+  // mode d'édition pour qu'ils suivent le doigt
+  const [apercuSeg, setApercuSeg] = useState(null)
 
+  // À la souris, un segment se glisse directement. Au doigt, seulement dans le
+  // mode Déplacer ou Allonger de ce segment : ailleurs le geste est un toucher
+  // (roue), et le planning doit pouvoir défiler.
   const startSegDrag = useCallback((e, seg, type) => {
     if (drawMode) return
+    if (e.pointerType === 'mouse' && e.button !== 0) return
+    // Chaque nouveau contact efface la trace du geste précédent : sans cela, le
+    // toucher qui suit un glissement passait pour sa fin et n'ouvrait rien.
+    dragState.moved = false
+    if (e.pointerType && e.pointerType !== 'mouse') {
+      const modeAttendu = type === 'move' ? 'move' : 'resize'
+      if (selectionSeg?.segmentId !== seg.id || selectionSeg.mode !== modeAttendu) return
+    }
     e.preventDefault(); e.stopPropagation()
     dragState.moved = false
     const origLeft = weeksBetween(refWeek.semaine, refWeek.annee, seg.semaine_debut, seg.annee_debut) * semWidth
@@ -233,8 +250,8 @@ export function GanttEtudeTimeline({
     onSegmentDragBegin?.(type === 'move'
       ? 'Déplacement d’un segment'
       : 'Redimensionnement d’un segment')
-    document.body.style.cursor = type === 'move' ? 'grabbing' : 'ew-resize'
-  }, [refWeek, semWidth, drawMode, onSegmentDragBegin])
+    if (e.pointerType === 'mouse') document.body.style.cursor = type === 'move' ? 'grabbing' : 'ew-resize'
+  }, [refWeek, semWidth, drawMode, onSegmentDragBegin, selectionSeg])
 
   // Géométrie d'un segment après un déplacement de `delta` semaines
   const segChangesFor = useCallback((drag, delta) => {
@@ -429,6 +446,7 @@ export function GanttEtudeTimeline({
     }
     // Phase venue de Notion : rien à déplacer ni lier, ses réglages seulement
     if (phase.id == null) { onPhaseClick(phase); return }
+    setSelectionSeg(null)
     setSelection({ phaseId: phase.id, mode: 'menu' })
     recadrerSurBarre(scrollRef, `[data-phaseid="${phase.id}"]`, camera)
   }, [selection, creerLien, scrollRef, onPhaseClick])
@@ -438,13 +456,43 @@ export function GanttEtudeTimeline({
     if (selectionPhase) startBarDrag(e, selectionPhase, type)
   }, [selectionPhase, startBarDrag])
 
-  // En mode Lier, toucher un segment lie sa phase
-  const toucherSegment = useCallback((phase) => {
-    if (selection?.mode !== 'lien') return false
-    creerLien(selection.phaseId, phase.id)
+  // En mode Lier, toucher un segment lie sa phase. Sinon, il ouvre sa roue et
+  // recadre la vue sur lui, comme une barre de phase.
+  const toucherSegment = useCallback((phase, seg) => {
+    if (selection?.mode === 'lien') {
+      creerLien(selection.phaseId, phase.id)
+      setSelection(null)
+      return true
+    }
+    if (!seg) return false
     setSelection(null)
+    setSelectionSeg({ segmentId: seg.id, phaseId: phase.id, mode: 'menu' })
+    recadrerSurBarre(scrollRef, `[data-segid="${seg.id}"]`, camera)
     return true
-  }, [selection, creerLien])
+  }, [selection, creerLien, scrollRef])
+
+  const segmentSelectionne = selectionSeg ? segments.find((sg) => sg.id === selectionSeg.segmentId) ?? null : null
+
+  // Grandes poignées du mode d'édition d'un segment
+  const poigneeDownSegment = useCallback((e, type) => {
+    if (segmentSelectionne) startSegDrag(e, segmentSelectionne, type)
+  }, [segmentSelectionne, startSegDrag])
+
+  const actionMenuSegment = useCallback((action) => {
+    const seg = segmentSelectionne
+    if (!seg) { setSelectionSeg(null); return }
+    if (action === 'move' || action === 'resize') {
+      setSelectionSeg((sel) => ({
+        ...sel, mode: action,
+        origine: { semaine_debut: seg.semaine_debut, annee_debut: seg.annee_debut, duree_semaines: seg.duree_semaines },
+      }))
+      return
+    }
+    const phase = phases.find((p) => p.id === selectionSeg?.phaseId)
+    setSelectionSeg(null)
+    if (action === 'params' && phase) onPhaseClick(phase)
+    else if (action === 'del') onSegmentDelete?.(seg)
+  }, [segmentSelectionne, selectionSeg, phases, onPhaseClick, onSegmentDelete])
 
   const actionMenu = useCallback((action) => {
     const phase = selectionPhase
@@ -544,16 +592,18 @@ export function GanttEtudeTimeline({
       }
       if (c.duree_semaines != null) el.style.width = `${c.duree_semaines * semWidth}px`
     }
-  }, [semWidth, segChangesFor])
+    if (selectionSeg?.segmentId === drag.segId) setApercuSeg({ segId: drag.segId, ...segChangesFor(drag, delta) })
+  }, [semWidth, segChangesFor, selectionSeg])
 
   const handleMouseUp = useCallback((e) => {
     if (!segDragRef.current) return
     const drag = segDragRef.current
     const delta = Math.round((e.clientX - drag.startX) / semWidth)
     const changes = segChangesFor(drag, delta)
-    const bouge = (changes.semaine_debut != null && changes.semaine_debut !== drag.origSemaine)
+    const bouge = e.type !== 'pointercancel' && (
+      (changes.semaine_debut != null && changes.semaine_debut !== drag.origSemaine)
       || (changes.annee_debut != null && changes.annee_debut !== drag.origAnnee)
-      || (changes.duree_semaines != null && changes.duree_semaines !== drag.origDuree)
+      || (changes.duree_semaines != null && changes.duree_semaines !== drag.origDuree))
     if (bouge) {
       dragState.moved = true
       updateSegmentLocal?.(drag.segId, changes)
@@ -568,6 +618,7 @@ export function GanttEtudeTimeline({
       }
     }
     segDragRef.current = null
+    setApercuSeg(null)
     // `dragState.moved` n'est PAS réinitialisé ici : le clic qui suit le
     // mouseup doit encore pouvoir le lire pour ne pas rouvrir la modale.
     // Le prochain début de geste le remet à false.
@@ -576,7 +627,7 @@ export function GanttEtudeTimeline({
   }, [semWidth, segChangesFor, updateSegmentLocal, onSegmentCommit])
 
   useEffect(() => {
-    const h = (e) => { if (e.key === 'Escape') setSelection(null) }
+    const h = (e) => { if (e.key === 'Escape') { setSelection(null); setSelectionSeg(null) } }
     window.addEventListener('keydown', h)
     return () => window.removeEventListener('keydown', h)
   }, [])
@@ -589,9 +640,10 @@ export function GanttEtudeTimeline({
         cursor: drawMode ? 'crosshair' : 'default',
       }}
       onMouseDown={handleDrawMouseDown}
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseUp}
+      onPointerMove={handleMouseMove}
+      onPointerUp={handleMouseUp}
+      onPointerCancel={handleMouseUp}
+      onPointerLeave={handleMouseUp}
     >
       {/* ── HEADER ──────────────────────────────────────────────────────────────── */}
       <div style={{
@@ -762,6 +814,7 @@ export function GanttEtudeTimeline({
             onBarDragStart={startBarDrag}
             onBarClick={onPhaseClick}
             onSegmentTap={toucherSegment}
+            segmentEnEditionId={['move', 'resize'].includes(selectionSeg?.mode) ? selectionSeg.segmentId : null}
             isCritical={criticalIds?.has(phase.id) ?? false}
             segments={getSegmentsForPhase ? getSegmentsForPhase(phase.id) : []}
             draggingSegId={draggingSeg}
@@ -892,6 +945,51 @@ export function GanttEtudeTimeline({
           }
           return null
         })()}
+
+        {/* ── Roue et modes d'édition d'un segment ─────────────────────── */}
+        {segmentSelectionne && (() => {
+          const phase = phases.find((p) => p.id === selectionSeg.phaseId)
+          if (!phase) return null
+          const haut = rowOffsets[clePhase(phase)]
+          if (haut === undefined) return null
+          const affiche = apercuSeg?.segId === segmentSelectionne.id
+            ? { ...segmentSelectionne, ...apercuSeg } : segmentSelectionne
+          const barre = {
+            left: weeksBetween(refWeek.semaine, refWeek.annee, affiche.semaine_debut, affiche.annee_debut) * semWidth,
+            width: Math.max(affiche.duree_semaines, 1) * semWidth,
+            haut, hauteurLigne: rowHeight, barPad: metrics.barPad,
+            fond: getBarStyle(phase, getPhaseCouleur(phase)),
+          }
+
+          if (selectionSeg.mode === 'menu') {
+            return (
+              <MenuRadial
+                barre={barre}
+                objet="segment"
+                actions={ACTIONS_SEGMENT}
+                numero={libelleCourt(phase.nom)}
+                duree={`seg. ${segmentSelectionne.duree_semaines} sem.`}
+                onAction={actionMenuSegment}
+                onFermer={() => setSelectionSeg(null)}
+              />
+            )
+          }
+
+          const origine = selectionSeg.origine ?? segmentSelectionne
+          const ecart = selectionSeg.mode === 'move'
+            ? weeksBetween(origine.semaine_debut, origine.annee_debut, affiche.semaine_debut, affiche.annee_debut)
+            : affiche.duree_semaines - origine.duree_semaines
+          return (
+            <EditionBarre
+              barre={barre}
+              objet="segment"
+              mode={selectionSeg.mode}
+              ecart={ecart === 0 ? '±0 sem.' : `${ecart > 0 ? '+' : ''}${ecart} sem.`}
+              onPoigneeDown={poigneeDownSegment}
+              onTerminer={() => setSelectionSeg(null)}
+            />
+          )
+        })()}
       </div>
 
       {selectionPhase && selection?.mode === 'lien' && <BandeauLien objet="phase" onAnnuler={() => setSelection(null)} />}
@@ -938,7 +1036,7 @@ export function GanttEtudeTimeline({
 function PhaseBarRow({
   phase, periodes = [], semWidth, refSemaine, refAnnee, rowHeight = 44,
   isDragging, enEdition = false, modeLien = false,
-  onBarDragStart, onBarClick, onSegmentTap,
+  onBarDragStart, onBarClick, onSegmentTap, segmentEnEditionId = null,
   isCritical,
   segments = [], draggingSegId, onSegmentDragStart,
 }) {
@@ -1129,15 +1227,18 @@ function PhaseBarRow({
                 outlineOffset: -2,
                 cursor: isDraggingSeg ? 'grabbing' : 'grab',
                 zIndex: isDraggingSeg ? 25 : 8,
+                // En mode d'édition, le doigt tire le segment au lieu de faire
+                // défiler le planning
+                touchAction: segmentEnEditionId === seg.id ? 'none' : undefined,
               }}
-              onMouseDown={(e) => {
+              onPointerDown={(e) => {
                 if (e.target.dataset.seghandle) return
                 onSegmentDragStart?.(e, seg, 'move')
               }}
               onClick={(e) => {
                 e.stopPropagation()
                 if (dragState.moved) return
-                if (onSegmentTap?.(phase)) return
+                if (onSegmentTap?.(phase, seg)) return
                 onBarClick(phase)
               }}
             >
@@ -1149,7 +1250,7 @@ function PhaseBarRow({
                   width: HANDLE_W, cursor: 'ew-resize', zIndex: 10,
                   background: 'rgba(255,255,255,0.3)',
                 }}
-                onMouseDown={(e) => onSegmentDragStart?.(e, seg, 'resize-left')}
+                onPointerDown={(e) => onSegmentDragStart?.(e, seg, 'resize-left')}
               />
               <div
                 data-seghandle="right"
@@ -1159,7 +1260,7 @@ function PhaseBarRow({
                   width: HANDLE_W, cursor: 'ew-resize', zIndex: 10,
                   background: 'rgba(255,255,255,0.3)',
                 }}
-                onMouseDown={(e) => onSegmentDragStart?.(e, seg, 'resize-right')}
+                onPointerDown={(e) => onSegmentDragStart?.(e, seg, 'resize-right')}
               />
 
               {/* Phase administrative : le texte s'écrit DANS la barre */}

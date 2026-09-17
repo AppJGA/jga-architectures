@@ -837,6 +837,7 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
             scrollRef={timelineRef}
             onPhaseDuplicate={handleDuplicatePhase}
             onPhaseAddSegment={(p) => handleAddSegment(p.id, segmentParDefautPhase(p, getSegmentsForPhase(p.id)))}
+            onSegmentDelete={(seg) => handleDeleteSegment(seg.id)}
             onPhaseDelete={setPhaseASupprimer}
             onSelectionChange={setPhaseSelectionneeId}
           />

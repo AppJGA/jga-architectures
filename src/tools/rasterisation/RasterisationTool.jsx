@@ -143,8 +143,8 @@ export function RasterisationTool() {
           addLog('  Analyse du dessin et regroupement des traits…')
           let { octets, stats } = await allegerPdf(brut.slice(), { progression: avancer(0, 40) })
           addLog(`  ${stats.traits.toLocaleString('fr-FR')} traits dans la page · ${stats.blocsFusionnes.toLocaleString('fr-FR')} regroupés`)
-          if (stats.traitsCaches || stats.posesCachees) {
-            addLog(`  Retirés car invisibles : ${stats.traitsCaches.toLocaleString('fr-FR')} traits, ${stats.posesCachees.toLocaleString('fr-FR')} symboles`)
+          if (stats.traitsCaches || stats.posesCachees || stats.aplatsCaches) {
+            addLog(`  Retirés car invisibles : ${stats.traitsCaches.toLocaleString('fr-FR')} traits, ${stats.posesCachees.toLocaleString('fr-FR')} motifs, ${stats.aplatsCaches.toLocaleString('fr-FR')} aplats`)
           }
 
           // Contrôle au pixel : une page qui diffère est laissée intacte

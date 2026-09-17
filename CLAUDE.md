@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 432 tests node --test (plannings, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF)
+npm test         # 440 tests node --test (plannings, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF)
 npx eslint src   # ~73 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -311,14 +311,24 @@ trois à cinq fois plus rapide dans pdf.js.
 
 - **Deux leviers.** ArchiCAD écrit chaque trait dans son propre bloc
   `q /G1 gs couleur RG tracé S Q` : les blocs identiques qui se suivent sont
-  regroupés en un seul trait (`fusion.js`). Et ce qui est entièrement caché
-  sous un aplat opaque posé après lui — le cas des vues superposées — est
-  retiré (`analyse.js`), y compris des symboles (`Do`) posés des milliers de
-  fois.
-- **Prudence de l'analyse** : un aplat ne masque que s'il est opaque, sans mode
-  de fusion ni masque doux, convexe, fait de segments droits, et seulement
-  dans sa découpe (convexe elle aussi). Masque et élément doivent être dans le
-  **même calque** : sinon masquer un calque dans Acrobat ferait un trou.
+  regroupés en un seul trait (`fusion.js`). Et ce qui ne se voit pas est
+  retiré (`analyse.js`) : ce qui est entièrement recouvert par des aplats
+  opaques posés après lui (vues superposées), et ce qui tombe entièrement hors
+  de sa découpe — ArchiCAD pose ses motifs de hachure (`Do`, des milliers de
+  fois) sur tout le rectangle englobant d'une zone, puis la découpe à sa forme.
+- **Trame de visibilité** (`trame.js`) : la page est reparcourue à l'envers
+  sur une grille de 2 pixels par point ; chaque zone (aplat, découpe) y a des
+  pixels « possibles » (touchés) et « sûrs » (entièrement dedans). Un élément
+  n'est retiré que si tous ses pixels possibles sont sûrement recouverts :
+  formes quelconques (non convexes, trouées, courbes) et aplats cumulés sont
+  gérés, et une grille grossière ne coûte que du gain, jamais du dessin. Deux
+  aplats posés bord à bord laissent une jointure incertaine — c'est voulu.
+- **Prudence de l'analyse** : un aplat ne masque que s'il est opaque, de
+  couleur unie, sans mode de fusion ni masque doux. Masque et élément doivent
+  être dans le **même calque** : sinon masquer un calque dans Acrobat ferait
+  un trou. Une découpe s'applique même calque masqué. Dans un symbole, seuls
+  les aplats sont enregistrés : garder ses traits (750 000 sur le plan de
+  masse) faisait passer l'analyse de 190 Mo à près de 900 Mo.
 - **Fusion seulement des traits opaques** : deux traits semi-transparents qui
   se croisent foncent au croisement, un trait unique non.
 - **Contrôle au pixel** (`controle.js`, `comparaison.js`) : chaque page est

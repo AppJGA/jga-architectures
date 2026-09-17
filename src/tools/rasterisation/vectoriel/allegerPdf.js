@@ -29,7 +29,7 @@ export async function allegerPdf(donnees, { respecterCalques = true, progression
   const doc = await PDFDocument.load(donnees, { updateMetadata: false, ignoreEncryption: false })
   const pages = doc.getPages()
   const stats = {
-    pages: pages.length, traits: 0, traitsCaches: 0, poses: 0, posesCachees: 0,
+    pages: pages.length, traits: 0, traitsCaches: 0, poses: 0, posesCachees: 0, aplatsCaches: 0,
     blocsFusionnes: 0, traitsFusionnes: 0, symbolesReecrits: 0,
     octetsAvant: 0, octetsApres: 0,
   }
@@ -49,6 +49,7 @@ export async function allegerPdf(donnees, { respecterCalques = true, progression
     stats.traitsCaches += analyse.stats.traitsCaches
     stats.poses += analyse.stats.poses
     stats.posesCachees += analyse.stats.posesCachees
+    stats.aplatsCaches += analyse.stats.aplatsCaches
 
     const { octets: nouveau, stats: s } = reecrireFlux(contenu, {
       suppressions: analyse.suppressions,

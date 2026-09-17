@@ -57,6 +57,8 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
 
 - **Français partout** : commentaires, messages de commit, noms de variables
   métier. Les commits suivent `feat:` / `fix:` / `chore:` / `test:`.
+- **Les réponses de Claude à l'utilisateur sont toujours en français**, y
+  compris les comptes rendus de fin de tâche et les questions posées.
 - **Styles inline**, pas de Tailwind. Les couleurs passent par les variables CSS
   de `src/index.css` (`--jga-orange`, `--jga-green`, `--jga-beige`…).
 - **Animations** : les `@keyframes` et les classes d'entrée vivent dans

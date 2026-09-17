@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
+import { segmentParDefautTache } from './segmentParDefaut'
 import { Trash2, Save, X, Plus, Minimize2, Maximize2, ChevronRight } from 'lucide-react'
-import { parseDate, formatDateISO, computeLag, dernierJourTache, dureeEntre, addWorkingDaysBlocked } from './types'
+import { parseDate, formatDateISO, computeLag, dernierJourTache, dureeEntre } from './types'
 import { creeraitUnCycle, entityKey } from './propagation'
 import { DatePickerISO } from '../../../shared/components/DatePickerISO'
 
@@ -197,22 +198,12 @@ export function TacheEditModal({
   const handleAddSegment = async () => {
     if (!task?.id || !addSegment) return
 
-    // Lendemain ouvré de la fin de la tâche principale, fermetures comprises
-    const lendemainOuvre = (debut, duree) =>
-      addWorkingDaysBlocked(dernierJourTache(debut, duree ?? 5, periodes), 1, periodes)
-    let defaultDate = lendemainOuvre(form.debut, form.duree)
-
-    if (segmentsDeTache.length > 0) {
-      const last = segmentsDeTache[segmentsDeTache.length - 1]
-      const lastNext = lendemainOuvre(last.date_debut, last.duree_jours)
-      if (lastNext > defaultDate) defaultDate = lastNext
-    }
-
-    await addSegment(task.id, {
-      date_debut: formatDateISO(defaultDate),
-      duree_jours: form.duree ?? 5,
-      zone_id: form.zone_id ?? null,
-    })
+    // Même règle que la roue d'une barre (`segmentParDefaut.js`), appliquée
+    // aux valeurs en cours de saisie
+    await addSegment(task.id, segmentParDefautTache(
+      { debut: form.debut, duree: form.duree, zone_id: form.zone_id },
+      segmentsDeTache, periodes,
+    ))
   }
 
   // Nouveau lot : prochain numéro libre de ce lot (modifiable), en création

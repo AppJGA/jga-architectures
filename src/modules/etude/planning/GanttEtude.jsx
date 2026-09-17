@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo } from 'react'
+import { segmentParDefautPhase } from './segmentParDefaut'
 import { X, ZoomIn, ZoomOut, Trash2 } from 'lucide-react'
 import { supabase } from '../../../core/supabase/client'
 import {
@@ -835,6 +836,7 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
             rowHeight={rowHeight}
             scrollRef={timelineRef}
             onPhaseDuplicate={handleDuplicatePhase}
+            onPhaseAddSegment={(p) => handleAddSegment(p.id, segmentParDefautPhase(p, getSegmentsForPhase(p.id)))}
             onPhaseDelete={setPhaseASupprimer}
             onSelectionChange={setPhaseSelectionneeId}
           />

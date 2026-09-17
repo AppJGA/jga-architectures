@@ -285,7 +285,7 @@ export function GanttTimeline({
   tasks, lots, rows = null, dayWidth, rowHeight, showConnections,
   jalons = [], onJalonClick,
   onTaskClick, onTaskUpdate, onDependencyCreate, onDependencyDelete,
-  onTaskDuplicate, onTaskDelete, onSelectionChange,
+  onTaskDuplicate, onTaskDelete, onTaskAddSegment, onSelectionChange,
   zones = [], colorMode = 'lot', viewMode = 'day', zoomLevel = 1,
   getSegmentsForTache, segments = [], updateSegmentLocal, onSegmentCommit, onSegmentDragBegin, onSegmentDragCancel,
   dependances = [], onSegmentDependencyCreate, onSegmentDependencyDelete,
@@ -972,8 +972,9 @@ export function GanttTimeline({
     setSelection(null)
     if (action === 'params') onTaskClick(task)
     else if (action === 'dup') onTaskDuplicate?.(task)
+    else if (action === 'segment') onTaskAddSegment?.(task)
     else if (action === 'del') onTaskDelete?.(task)
-  }, [selectionTache, onTaskClick, onTaskDuplicate, onTaskDelete])
+  }, [selectionTache, onTaskClick, onTaskDuplicate, onTaskAddSegment, onTaskDelete])
 
   // Bornes d'une barre pendant un geste : même calcul pour l'aperçu et au
   // relâchement, pour que la barre ne saute pas.

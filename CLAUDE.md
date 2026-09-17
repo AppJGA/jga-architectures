@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 381 tests node --test (plannings, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR)
+npm test         # 396 tests node --test (plannings, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR)
 npx eslint src   # ~73 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -332,6 +332,13 @@ plus seulement à l'écran.
   week-ends et fermetures bloquantes. Toute fin de barre, d'export ou de délai
   passe par `dernierJourTache` ; ne jamais ajouter des jours calendaires à une
   durée.
+- **Roue d'une barre de planning** (`shared/planning/MenuRadial.jsx`, commune
+  aux deux plannings) : les pétales se placent par le calcul
+  (`positionsPetales.js`, répartition égale depuis midi). Ajouter une action,
+  c'est une ligne dans `ACTIONS` et un cas dans l'`actionMenu` de chaque
+  timeline — jamais de coordonnées à recaler. Un segment ajouté d'un geste se
+  pose selon `segmentParDefaut.js` de chaque planning, la même règle que le
+  bouton de la fiche.
 - **Une action du planning = une étape d'historique.** L'annulation écrit tout
   l'écart avec l'instantané : une action sans instantané est défaite en même
   temps que la précédente.

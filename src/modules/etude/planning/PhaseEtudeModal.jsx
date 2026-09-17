@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
+import { segmentParDefautPhase } from './segmentParDefaut'
 import { X, Trash2, Plus, Minimize2, Maximize2, ChevronRight } from 'lucide-react'
 import {
-  getWeekStart, getCurrentWeek, addWeeks, weeksBetween,
+  getWeekStart, getCurrentWeek, addWeeks,
   computeLagSemaines, getPhaseCouleur, descendantsPhase, normaliserSemaine,
 } from './types'
 import { construirePayloadPhase, champsModifiesPhase } from './formulairePhaseEtude'
@@ -381,16 +382,12 @@ export function PhaseEtudeModal({
   // Nouveau segment : juste après la fin de la phase, ou du dernier segment
   const handleAddSegment = async () => {
     if (!phase?.id || !addSegment) return
-    let debut = addWeeks(form.semaine_debut, form.annee_debut, Number(form.duree_semaines) || 1)
-    segmentsDePhase.forEach((seg) => {
-      const fin = addWeeks(seg.semaine_debut, seg.annee_debut, seg.duree_semaines)
-      if (weeksBetween(debut.semaine, debut.annee, fin.semaine, fin.annee) > 0) debut = fin
-    })
-    await addSegment(phase.id, {
-      semaine_debut: debut.semaine,
-      annee_debut: debut.annee,
-      duree_semaines: 2,
-    })
+    // Même règle que la roue d'une barre (`segmentParDefaut.js`), appliquée
+    // aux valeurs en cours de saisie
+    await addSegment(phase.id, segmentParDefautPhase(
+      { semaine_debut: form.semaine_debut, annee_debut: form.annee_debut, duree_semaines: form.duree_semaines },
+      segmentsDePhase,
+    ))
   }
 
   return (

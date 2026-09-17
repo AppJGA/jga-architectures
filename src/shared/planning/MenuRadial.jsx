@@ -9,6 +9,8 @@
 // Tout est positionné dans le repère du corps de la timeline (celui des lignes
 // et des flèches) : `left`/`width` de la barre, `haut` de sa ligne.
 
+import { positionsPetales } from './positionsPetales'
+
 // Icônes de la maquette, reprises telles quelles (tracés 24×24)
 const ICONES = {
   params: <><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" /></>,
@@ -16,6 +18,8 @@ const ICONES = {
   resize: <><path d="M4 5v14M20 9l3 3-3 3" /><path d="M4 12h19" /></>,
   dep: <><path d="M6 3v12" /><circle cx="18" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><path d="M18 9a9 9 0 0 1-9 9" /></>,
   dup: <><rect x="9" y="9" width="12" height="12" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></>,
+  // Deux barres à la suite, la seconde marquée d'un + : un segment qui s'ajoute
+  segment: <><rect x="2" y="9" width="10" height="6" rx="1" /><path d="M18 7v10M13 12h10" /></>,
   del: <path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14" />,
 }
 
@@ -28,18 +32,19 @@ function Icone({ nom, taille = 20, couleur = '#1F1B17', epaisseur = 1.6 }) {
   )
 }
 
-// Pétales dans l'ordre des aiguilles d'une montre, depuis midi. Le décalage est
-// celui du centre du pétale par rapport au centre de la couronne.
-const PETALES = [
-  { action: 'params', libelle: 'Réglages', dx: 0, dy: -90 },
-  { action: 'move', libelle: 'Déplacer', dx: 78, dy: -46 },
-  { action: 'resize', libelle: 'Allonger', dx: 78, dy: 46 },
-  { action: 'dep', libelle: 'Lier', dx: 0, dy: 90 },
-  { action: 'dup', libelle: 'Dupliquer', dx: -78, dy: 46 },
-  { action: 'del', libelle: 'Supprimer', dx: -78, dy: -46, danger: true },
+// Pétales dans l'ordre des aiguilles d'une montre, depuis midi.
+const ACTIONS = [
+  { action: 'params', libelle: 'Réglages' },
+  { action: 'move', libelle: 'Déplacer' },
+  { action: 'resize', libelle: 'Allonger' },
+  { action: 'segment', libelle: 'Segment' },
+  { action: 'dep', libelle: 'Lier' },
+  { action: 'dup', libelle: 'Dupliquer' },
+  { action: 'del', libelle: 'Supprimer', danger: true },
 ]
 const PETALE = 64
 const DISQUE = 68
+const PETALES = positionsPetales(ACTIONS)
 
 /**
  * Voile, barre mise en avant et couronne d'actions.

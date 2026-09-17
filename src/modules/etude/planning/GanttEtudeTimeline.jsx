@@ -59,7 +59,7 @@ export function GanttEtudeTimeline({
   periodes = [],
   drawMode = false, onDrawCreate,
   rowHeight = 44,
-  onPhaseDuplicate, onPhaseDelete, onSelectionChange, scrollRef = null,
+  onPhaseDuplicate, onPhaseDelete, onPhaseAddSegment, onSelectionChange, scrollRef = null,
 }) {
   const metrics = rowMetrics(rowHeight)
   // ── Reference week — reçue depuis GanttEtude (dynamique, -4 sem de marge) ─────
@@ -454,8 +454,9 @@ export function GanttEtudeTimeline({
     setSelection(null)
     if (action === 'params') onPhaseClick(phase)
     else if (action === 'dup') onPhaseDuplicate?.(phase)
+    else if (action === 'segment') onPhaseAddSegment?.(phase)
     else if (action === 'del') onPhaseDelete?.(phase)
-  }, [selectionPhase, onPhaseClick, onPhaseDuplicate, onPhaseDelete])
+  }, [selectionPhase, onPhaseClick, onPhaseDuplicate, onPhaseAddSegment, onPhaseDelete])
 
   // Le calque de fermeture du menu ne couvre que les lignes : un clic plus bas
   // (planning court) ou sur l'en-tête doit aussi le refermer. Les clics sur une

@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
+import { segmentParDefautTache } from './segmentParDefaut'
 import { Trash2, X, ZoomIn, ZoomOut, Calendar, Eye, Layers, Palette } from 'lucide-react'
 import { parseDate, formatDateISO, addWorkingDays, addWorkingDaysBlocked, dernierJourTache } from './types'
 import {
@@ -1166,6 +1167,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
             onTaskClick={(t) => handleOpenTaskModal(t, 'edit')}
             onTaskUpdate={handleTaskUpdate}
             onTaskDuplicate={handleDuplicateTask}
+            onTaskAddSegment={(t) => handleSegmentAjout(t.id, segmentParDefautTache(t, getSegmentsForTache(t.id), periodes))}
             onTaskDelete={setDeletingTask}
             onSelectionChange={setTacheSelectionneeId}
             onDependencyCreate={handleDependencyCreate}

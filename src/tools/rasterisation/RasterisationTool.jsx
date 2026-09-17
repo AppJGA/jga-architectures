@@ -6,6 +6,12 @@ import { Layers, Upload, X, CheckCircle, AlertCircle } from 'lucide-react'
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl
 
+// L'allègement vectoriel (pdf-lib et son analyse) n'est chargé qu'à l'usage
+const chargerAllegement = () => Promise.all([
+  import('./vectoriel/allegerPdf'),
+  import('./vectoriel/controle'),
+])
+
 function formatSize(bytes) {
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} ko`
   return `${(bytes / (1024 * 1024)).toFixed(1)} Mo`
@@ -122,7 +128,45 @@ export function RasterisationTool() {
         const scale = dpi / 72
         const base = entry.name.replace(/\.pdf$/i, '')
 
-        addLog(`  ${total} page(s) à ${dpi} dpi → ${format === 'pdf' ? 'PDF aplati' : format.toUpperCase()}`)
+        if (format === 'vectoriel') {
+          pdfDoc.destroy()
+          addLog(`  ${total} page(s) → PDF vectoriel allégé`)
+          const [{ allegerPdf }, { controlerAllegement }] = await chargerAllegement()
+          const avancer = (debut, part) => (fraction) => setFiles(prev => prev.map(f =>
+            f.id === entry.id ? { ...f, progress: Math.round(debut + fraction * part) } : f
+          ))
+
+          // pdf.js a pris possession du tampon lu plus haut (transféré à son
+          // processus de rendu) : le fichier est relu pour l'allègement
+          const brut = new Uint8Array(await entry.file.arrayBuffer())
+
+          addLog('  Analyse du dessin et regroupement des traits…')
+          let { octets, stats } = await allegerPdf(brut.slice(), { progression: avancer(0, 40) })
+          addLog(`  ${stats.traits.toLocaleString('fr-FR')} traits dans la page · ${stats.blocsFusionnes.toLocaleString('fr-FR')} regroupés`)
+          if (stats.traitsCaches || stats.posesCachees) {
+            addLog(`  Retirés car invisibles : ${stats.traitsCaches.toLocaleString('fr-FR')} traits, ${stats.posesCachees.toLocaleString('fr-FR')} symboles`)
+          }
+
+          // Contrôle au pixel : une page qui diffère est laissée intacte
+          addLog('  Contrôle du dessin, page par page…')
+          const controle = await controlerAllegement(brut, octets, { progression: avancer(40, 50) })
+          const ecarts = controle.filter(c => !c.conforme).map(c => c.page)
+          if (ecarts.length) {
+            addLog(`  Différence détectée page(s) ${ecarts.join(', ')} : laissée(s) intacte(s)`, true)
+            ;({ octets, stats } = await allegerPdf(brut.slice(), { pagesExclues: new Set(ecarts) }))
+          }
+
+          if (ecarts.length === total) {
+            addLog('  Aucune page n’a pu être allégée sans changer le dessin : fichier non modifié.', true)
+          } else {
+            const avant = brut.length
+            addLog(`  Dessin identique · ${formatSize(avant)} → ${formatSize(octets.length)}`)
+            downloadBlob(new Blob([octets], { type: 'application/pdf' }), `${base}_allege.pdf`)
+            addLog(`  → ${base}_allege.pdf`)
+          }
+        } else {
+          addLog(`  ${total} page(s) à ${dpi} dpi → ${format === 'pdf' ? 'PDF aplati' : format.toUpperCase()}`)
+        }
 
         if (format === 'pdf') {
           // 1re passe : rendu de toutes les pages en canvas
@@ -166,7 +210,7 @@ export function RasterisationTool() {
           pdf.save(`${base}_aplati.pdf`)
           addLog(`  → ${base}_aplati.pdf`)
 
-        } else {
+        } else if (format !== 'vectoriel') {
           const ext = format === 'jpeg' ? 'jpg' : 'png'
           const mime = format === 'jpeg' ? 'image/jpeg' : 'image/png'
           const q = format === 'jpeg' ? jpegQuality / 100 : undefined
@@ -241,7 +285,7 @@ export function RasterisationTool() {
             Aplatisseur de plan
           </h1>
           <p style={{ fontSize: 12, color: '#9C9591', margin: 0 }}>
-            Convertit les plans PDF vectoriels en images bitmap aplaties
+            Aplatit un plan en image, ou l’allège en gardant le vectoriel
           </p>
         </div>
       </div>
@@ -395,7 +439,8 @@ export function RasterisationTool() {
           <select
             value={dpi}
             onChange={e => setDpi(+e.target.value)}
-            disabled={isProcessing}
+            disabled={isProcessing || format === 'vectoriel'}
+            title={format === 'vectoriel' ? 'Sans objet : le plan reste vectoriel' : undefined}
             style={selectStyle}
           >
             <option value={72}>72 dpi</option>
@@ -417,7 +462,8 @@ export function RasterisationTool() {
             disabled={isProcessing}
             style={selectStyle}
           >
-            <option value="pdf">PDF aplati</option>
+            <option value="pdf">PDF aplati (image)</option>
+            <option value="vectoriel">PDF vectoriel allégé</option>
             <option value="png">Images PNG</option>
             <option value="jpeg">Images JPEG</option>
           </select>
@@ -436,6 +482,16 @@ export function RasterisationTool() {
           </div>
         )}
       </div>
+
+      {format === 'vectoriel' && (
+        <p style={{ fontSize: 12, color: '#5E5854', lineHeight: 1.55, margin: '-6px 0 16px' }}>
+          Le plan reste vectoriel : les traits identiques qui se suivent sont regroupés, et ce qui est
+          entièrement caché sous une vue superposée est retiré. Chaque page est ensuite comparée
+          à l’original au pixel près ; une page où le dessin changerait est laissée intacte.
+          Les calques restent affichables un par un. À l’écran, en vue d’ensemble, les hachures très
+          serrées peuvent paraître un peu plus denses ; à l’impression, le dessin est identique.
+        </p>
+      )}
 
       {/* Main button */}
       <button
@@ -458,8 +514,8 @@ export function RasterisationTool() {
         {isProcessing
           ? 'Traitement en cours…'
           : pending.length > 0
-            ? `Aplatir les plans (${pending.length} fichier${pending.length > 1 ? 's' : ''})`
-            : 'Aplatir les plans'
+            ? `${format === 'vectoriel' ? 'Alléger' : 'Aplatir'} les plans (${pending.length} fichier${pending.length > 1 ? 's' : ''})`
+            : format === 'vectoriel' ? 'Alléger les plans' : 'Aplatir les plans'
         }
       </button>
 

@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 396 tests node --test (plannings, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR)
+npm test         # 432 tests node --test (plannings, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF)
 npx eslint src   # ~73 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -300,6 +300,39 @@ plus seulement à l'écran.
 - Attention : un refus RLS sur un `update` ou un `delete` **ne lève pas
   d'erreur**, il ne touche aucune ligne. Un test qui attend une exception passe
   à côté — compter les lignes (voir `pgtest/test050.mjs`).
+
+## Aplatisseur de plan (`src/tools/rasterisation/`)
+
+Deux sorties : **aplatir** (chaque page rendue en image par pdf.js, puis jsPDF)
+et **alléger en gardant le vectoriel** (`vectoriel/`, pdf-lib chargé à la
+demande). L'allègement a été conçu sur un plan de masse ArchiCAD de 890 000
+traits : 2,74 millions d'opérations de dessin ramenées à 0,29 million, rendu
+trois à cinq fois plus rapide dans pdf.js.
+
+- **Deux leviers.** ArchiCAD écrit chaque trait dans son propre bloc
+  `q /G1 gs couleur RG tracé S Q` : les blocs identiques qui se suivent sont
+  regroupés en un seul trait (`fusion.js`). Et ce qui est entièrement caché
+  sous un aplat opaque posé après lui — le cas des vues superposées — est
+  retiré (`analyse.js`), y compris des symboles (`Do`) posés des milliers de
+  fois.
+- **Prudence de l'analyse** : un aplat ne masque que s'il est opaque, sans mode
+  de fusion ni masque doux, convexe, fait de segments droits, et seulement
+  dans sa découpe (convexe elle aussi). Masque et élément doivent être dans le
+  **même calque** : sinon masquer un calque dans Acrobat ferait un trou.
+- **Fusion seulement des traits opaques** : deux traits semi-transparents qui
+  se croisent foncent au croisement, un trait unique non.
+- **Contrôle au pixel** (`controle.js`, `comparaison.js`) : chaque page est
+  rendue avant et après par pdf.js à l'échelle 1 ; une page où un trait
+  apparaît ou disparaît est laissée intacte.
+- Limite connue et acceptée par l'agence (2026-09-17, « ce qui compte, c'est
+  l'impression ») : dans les moteurs à anticrénelage par tracé (Aperçu, et
+  sans doute Acrobat), des traits regroupés qui se touchent remplissent mieux
+  leurs pixels — les hachures très serrées paraissent plus denses en vue
+  d'ensemble à l'écran. Identique en zoomant et à l'impression. Le contrôle
+  pdf.js ne voit pas cet écart.
+- Piège : `pdfjs.getDocument({ data })` **transfère** le tampon à son worker ;
+  relu ensuite, il est vide (« detached ArrayBuffer »). Relire le fichier, ou
+  passer une copie.
 
 ## Pièges déjà rencontrés
 

@@ -5,7 +5,7 @@ export const tools = [
     id: 'rasterisation',
     label: 'Aplatisseur de plan',
     icon: 'Layers',
-    description: 'Convertit les plans PDF vectoriels en images bitmap aplaties',
+    description: 'Aplatit un plan en image, ou l’allège en gardant le vectoriel',
     path: 'rasterisation',
     component: lazy(() => import('./rasterisation')),
     enabled: true,

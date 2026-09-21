@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 474 tests node --test (plannings, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF)
+npm test         # 477 tests node --test (plannings, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF)
 npx eslint src   # ~73 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -316,7 +316,10 @@ navigateur. Ce qui leur est commun vit dans `src/shared/planning/export/`.
   avant d'entrer dans la page.
 - **Grille** : `bordureGauche(niveau, granularite)` — mois foncé, semaine
   moyenne, jour discret ; en vue Semaines plus de lignes de jour, en vue Mois
-  seulement les mois. L'étude est traitée en Semaines.
+  seulement les mois. L'étude est traitée en Semaines. Les lignes
+  horizontales prennent la teinte des mois, un peu plus fines
+  (`TRAIT_HORIZONTAL`), et le bandeau des périodes est coupé à chaque début
+  de mois pour que la ligne de mois le traverse.
 - **Périodes** : fond uni (les hachures moiraient à l'impression), trait aux
   vraies dates de début et de fin, bandeau qui les nomme sous les dates. Au
   chantier, **un seul bloc par période et par ligne**, sous la grille

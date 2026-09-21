@@ -84,6 +84,12 @@ describe('périodes', () => {
     assert.match(pastelPdf('pas-une-couleur', 0.3), /^rgb\(\d+,\d+,\d+\)$/)
   })
 
+  test('le bandeau se coupe aux mois, le libellé reste sur le premier morceau', () => {
+    const p = { id: 'p' }
+    const g = groupesDePeriodes([p, p, p, p], [false, false, true, false])
+    assert.deepEqual(g.map(x => [x.debut, x.nombre, x.premier]), [[0, 2, true], [2, 2, false]])
+  })
+
   test('groupes de colonnes consécutives', () => {
     const p = { id: 'p' }
     assert.deepEqual(groupesDePeriodes([null, p, p, null]).map(g => [g.periode?.id ?? null, g.nombre]),

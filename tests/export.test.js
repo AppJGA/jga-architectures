@@ -168,6 +168,23 @@ describe('PDF chantier — périodes', () => {
     assert.match(thead, /class="hdr-periode" colspan="5"[^>]*>Congés</)
   })
 
+  test('la ligne de mois traverse le bandeau des périodes', () => {
+    generatePlanningChantierPdf(paramsPdfChantier({
+      dateFin: '2026-04-10',
+      periodes: [{ id: 'p', label: 'Pâques', date_debut: '2026-03-30', date_fin: '2026-04-03', couleur: '#B8412C' }],
+    }))
+    const thead = htmlGenere.slice(htmlGenere.indexOf('<thead>'), htmlGenere.indexOf('</thead>'))
+    const morceaux = [...thead.matchAll(/class="hdr-periode" colspan="(\d+)" style="border-left:([^;]*);background[^>]*>([^<]*)</g)]
+      .map(m => [Number(m[1]), m[2], m[3]])
+    assert.deepEqual(morceaux, [[2, '1px solid #a8a8a8', 'Pâques'], [3, '1.5px solid #5f5f5f', '']])
+  })
+
+  test('lignes horizontales à la teinte des mois', () => {
+    generatePlanningChantierPdf(paramsPdfChantier())
+    assert.ok(corpsPdf().includes('border-bottom:1px solid #5f5f5f'))
+    assert.ok(!corpsPdf().includes('#f0f0f0'))
+  })
+
   test('sans période, pas de bandeau', () => {
     generatePlanningChantierPdf(paramsPdfChantier())
     assert.ok(!htmlGenere.includes('class="hdr-periode"'))

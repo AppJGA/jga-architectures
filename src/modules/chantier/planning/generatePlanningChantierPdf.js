@@ -5,7 +5,7 @@ import { legendeCouleurs } from './legende'
 import { echapperHtml } from '../../../shared/echapperHtml'
 import {
   bordureGauche, niveauDuJour, pastelPdf, fondPeriode, traitPeriode, stylePause,
-  estBloquante, groupesDePeriodes,
+  estBloquante, groupesDePeriodes, TRAIT_HORIZONTAL,
 } from '../../../shared/planning/export/grilleExport'
 import { nettoyerHtml, estVide } from '../../../shared/planning/export/texteRiche'
 
@@ -279,14 +279,20 @@ function buildJalonBand(jalons, days, dayWidths) {
 
 // Bandeau qui nomme les périodes, sous les en-têtes de dates : une cellule
 // par période, à sa couleur, avec son libellé
-function buildBandePeriodes(days, periodes) {
+// Le bandeau est coupé à chaque début de mois : la ligne de mois le traverse
+// et fait le lien entre les en-têtes et les lignes de tâches.
+function buildBandePeriodes(days, periodes, granularite) {
   const parJour = days.map(d => periodeDuJour(d, periodes))
   if (!parJour.some(Boolean)) return ''
-  const cellules = groupesDePeriodes(parJour).map(({ periode, nombre }) => {
-    if (!periode) return `<th class="hdr-periode" colspan="${nombre}"></th>`
+  const debutsDeMois = days.map(d => d.getDate() === 1)
+  const cellules = groupesDePeriodes(parJour, debutsDeMois).map(({ periode, debut, nombre, premier }) => {
+    const trait = `border-left:${bordureGauche(niveauDuJour(days[debut]), granularite)};`
+    if (!periode) return `<th class="hdr-periode" colspan="${nombre}" style="${trait}"></th>`
     const couleur = echapperHtml(pastelPdf(periode.couleur ?? '#B8412C', 1))
-    const libelle = echapperHtml(periode.label ?? periode.nom ?? '')
-    return `<th class="hdr-periode" colspan="${nombre}" style="background:${fondPeriode(periode)};color:${couleur}" title="${libelle}">${libelle}</th>`
+    // Le libellé n'est écrit qu'une fois, au début de la période ; il peut
+    // déborder sur le morceau suivant, d'où le z-index
+    const libelle = premier ? echapperHtml(periode.label ?? periode.nom ?? '') : ''
+    return `<th class="hdr-periode" colspan="${nombre}" style="${trait}background:${fondPeriode(periode)};color:${couleur};${libelle ? 'z-index:1;' : ''}">${libelle}</th>`
   }).join('')
   return `<tr><th class="plabel" style="background:#FAFAF9;font-size:5.5pt;color:#9C9591;text-align:center">Périodes</th>${cellules}</tr>`
 }
@@ -437,7 +443,7 @@ function buildTaskRow(task, color, days, dayWidths, jalons, todayStr, ctx, rowIn
       .map(j => `<div style="position:absolute;top:0;bottom:0;left:50%;width:1.5px;background:${echapperHtml(j.couleur)};opacity:0.55;z-index:5"></div>`)
       .join('')
 
-    return `<td style="width:${dayWidths[idx].toFixed(2)}mm;border-bottom:0.5px solid #f0f0f0;border-left:${borderLeft};height:${dens.rowMm}mm;padding:0;overflow:visible;position:relative;background:${bg}">${fonds.get(idx) ?? ''}${parJour.get(idx) ?? ''}${jalonLines}</td>`
+    return `<td style="width:${dayWidths[idx].toFixed(2)}mm;border-bottom:${TRAIT_HORIZONTAL};border-left:${borderLeft};height:${dens.rowMm}mm;padding:0;overflow:visible;position:relative;background:${bg}">${fonds.get(idx) ?? ''}${parJour.get(idx) ?? ''}${jalonLines}</td>`
   }).join('')
 
   const suffixe = rowInfo?.suffixe
@@ -509,7 +515,7 @@ function buildHtml({
   const yearHeaders  = showYearRow ? buildYearHeaders(days) : ''
   const monthHeaders = buildMonthHeaders(days, !showYearRow, viewMode)
   const weekHeaders  = showWeekRow ? buildWeekHeaders(days, viewMode) : ''
-  const bandePeriodes = buildBandePeriodes(days, periodes)
+  const bandePeriodes = buildBandePeriodes(days, periodes, viewMode)
   const dayHeaders   = showDayRow ? buildDayHeaders(days, dayWidths, todayStr) : ''
 
   // ── Corps du tableau : groupé par lot (défaut) ou par zone ──
@@ -523,7 +529,7 @@ function buildHtml({
       if (row.type === 'header-zone') {
         const couleur = echapperHtml(row.couleur ?? '#C9C4C0')
         lotsRows += `<tr>
-          <td colspan="${1 + days.length}" style="background:${couleur}18;color:${couleur};font-weight:bold;font-size:${dens.groupPt}pt;padding:0 2mm;height:${dens.groupMm}mm;border-bottom:1px solid ${couleur}">
+          <td colspan="${1 + days.length}" style="background:${couleur}18;color:${couleur};font-weight:bold;font-size:${dens.groupPt}pt;padding:0 2mm;height:${dens.groupMm}mm;border-bottom:${TRAIT_HORIZONTAL}">
             ${echapperHtml((row.displayName ?? '').toUpperCase())}
           </td>
         </tr>`
@@ -550,7 +556,7 @@ function buildHtml({
       if (!lotTasks.length) return
       const couleurLot = echapperHtml(lot.couleur)
       lotsRows += `<tr>
-        <td colspan="${1 + days.length}" style="background:${couleurLot}18;color:${couleurLot};font-weight:bold;font-size:${dens.groupPt}pt;padding:0 2mm;height:${dens.groupMm}mm;border-bottom:0.5px solid rgba(0,0,0,0.08)">
+        <td colspan="${1 + days.length}" style="background:${couleurLot}18;color:${couleurLot};font-weight:bold;font-size:${dens.groupPt}pt;padding:0 2mm;height:${dens.groupMm}mm;border-bottom:${TRAIT_HORIZONTAL}">
           ${echapperHtml(lot.num_lot)} – ${echapperHtml(lot.nom)}
         </td>
       </tr>`
@@ -558,7 +564,7 @@ function buildHtml({
     })
     const unassigned = tasks.filter(t => t.lot_id == null)
     if (unassigned.length > 0) {
-      lotsRows += `<tr><td colspan="${1 + days.length}" style="color:#9C9591;font-weight:bold;font-size:${dens.groupPt}pt;padding:0 2mm;height:${dens.groupMm}mm;border-bottom:0.5px solid rgba(0,0,0,0.08)">Sans lot</td></tr>`
+      lotsRows += `<tr><td colspan="${1 + days.length}" style="color:#9C9591;font-weight:bold;font-size:${dens.groupPt}pt;padding:0 2mm;height:${dens.groupMm}mm;border-bottom:${TRAIT_HORIZONTAL}">Sans lot</td></tr>`
       unassigned.forEach(t => { lotsRows += buildTaskRow(t, getBarColor(t, null, zones, colorMode), days, dayWidths, jalons, todayStr, rowCtx) })
     }
   }
@@ -614,7 +620,7 @@ function buildHtml({
   .hdr-periode { font-size: ${(dens.labelPt - 1).toFixed(1)}pt; font-weight: bold; text-align: left; white-space: nowrap; overflow: visible; position: relative; padding: ${(dens.hdrPadMm * 0.6).toFixed(2)}mm 1mm; border-bottom: 0.5px solid #ddd; }
   .hdr-day   { font-size: ${(dens.labelPt - 1.5).toFixed(1)}pt; text-align: center; border-bottom: 0.5px solid #ddd; padding: ${(dens.hdrPadMm * 0.5).toFixed(2)}mm 0; }
 
-  .plabel { width: ${LABEL_COL_MM}mm; border: 0.5px solid #eee; border-right: 1px solid #ccc; padding: 0 1.5mm; vertical-align: middle; overflow: hidden; white-space: nowrap; height: ${dens.rowMm}mm; font-size: ${dens.labelPt}pt; color: #1F1B17; }
+  .plabel { width: ${LABEL_COL_MM}mm; border: 0.5px solid #eee; border-bottom: ${TRAIT_HORIZONTAL}; border-right: 1px solid #ccc; padding: 0 1.5mm; vertical-align: middle; overflow: hidden; white-space: nowrap; height: ${dens.rowMm}mm; font-size: ${dens.labelPt}pt; color: #1F1B17; }
 
   .legend { margin-top: 5mm; padding-top: 3mm; border-top: 0.5px solid #eee; display: flex; align-items: center; gap: 5mm; flex-wrap: wrap; }
   .leg-title { font-size: 5.5pt; font-weight: bold; color: #9C9591; text-transform: uppercase; letter-spacing: 0.05em; }

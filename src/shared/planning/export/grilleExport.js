@@ -11,6 +11,9 @@ export const TRAITS_GRILLE = {
   jour: '0.5px solid #e6e6e6',
 }
 
+// Lignes horizontales : la teinte des mois, un peu plus fines
+export const TRAIT_HORIZONTAL = '1px solid #5f5f5f'
+
 // Ce que chaque granularité montre : en semaines, les jours n'ont pas de
 // colonne lisible ; en mois, les semaines non plus
 const NIVEAUX_VISIBLES = {
@@ -79,17 +82,20 @@ export function stylePause(couleurBarre, periode) {
 }
 
 /**
- * Regroupe des colonnes consécutives qui portent la même période (ou aucune),
- * pour le bandeau qui nomme les périodes sous les en-têtes de dates.
+ * Regroupe des colonnes consécutives qui portent la même période (ou aucune).
  * @param periodesParColonne tableau parallèle aux colonnes : période ou null
- * @returns [{ periode, debut, nombre }]
+ * @param coupures tableau parallèle : vrai si la colonne ouvre un nouveau
+ *   morceau quoi qu'il arrive — le bandeau des périodes se coupe aux mois,
+ *   pour que la ligne de mois le traverse
+ * @returns [{ periode, debut, nombre, premier }] — `premier` : ce morceau
+ *   ouvre sa période (c'est lui qui porte le libellé)
  */
-export function groupesDePeriodes(periodesParColonne) {
+export function groupesDePeriodes(periodesParColonne, coupures = []) {
   const groupes = []
   periodesParColonne.forEach((p, i) => {
     const dernier = groupes[groupes.length - 1]
-    if (dernier && dernier.periode === p) dernier.nombre++
-    else groupes.push({ periode: p ?? null, debut: i, nombre: 1 })
+    if (dernier && dernier.periode === (p ?? null) && !coupures[i]) dernier.nombre++
+    else groupes.push({ periode: p ?? null, debut: i, nombre: 1, premier: !dernier || dernier.periode !== (p ?? null) })
   })
   return groupes
 }

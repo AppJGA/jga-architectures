@@ -7,6 +7,7 @@ import { assignLabelLanes } from '../../chantier/planning/jalonLayout'
 import { echapperHtml } from '../../../shared/echapperHtml'
 import {
   bordureGauche, pastelPdf, fondPeriode, traitPeriode, stylePause, estBloquante, groupesDePeriodes,
+  TRAIT_HORIZONTAL,
 } from '../../../shared/planning/export/grilleExport'
 import { nettoyerHtml, estVide } from '../../../shared/planning/export/texteRiche'
 
@@ -97,10 +98,13 @@ function bordsPeriode(w, periode) {
 function buildBandePeriodes(weeks, periodes) {
   const parSemaine = weeks.map(w => periodeDeLaSemaine(w, periodes))
   if (!parSemaine.some(Boolean)) return ''
-  const cellules = groupesDePeriodes(parSemaine).map(({ periode, nombre }) => {
-    if (!periode) return `<th class="hdr-periode" colspan="${nombre}"></th>`
-    const libelle = echapperHtml(periode.label ?? periode.nom ?? '')
-    return `<th class="hdr-periode" colspan="${nombre}" style="background:${fondPeriode(periode)};color:${pastelPdf(periode.couleur ?? '#B8412C', 1)}">${libelle}</th>`
+  // Coupé à chaque début de mois : la ligne de mois traverse le bandeau
+  const debutsDeMois = weeks.map(w => isFirstWeekOfMonth(w.semaine, w.annee))
+  const cellules = groupesDePeriodes(parSemaine, debutsDeMois).map(({ periode, debut, nombre, premier }) => {
+    const bord = `border-left:${trait(debutsDeMois[debut])};`
+    if (!periode) return `<th class="hdr-periode" colspan="${nombre}" style="${bord}"></th>`
+    const libelle = premier ? echapperHtml(periode.label ?? periode.nom ?? '') : ''
+    return `<th class="hdr-periode" colspan="${nombre}" style="${bord}background:${fondPeriode(periode)};color:${pastelPdf(periode.couleur ?? '#B8412C', 1)};${libelle ? 'z-index:1;' : ''}">${libelle}</th>`
   }).join('')
   return `<tr><th class="plabel" style="background:#FAFAF9;font-size:5.5pt;color:#9C9591;text-align:center">Périodes</th>${cellules}</tr>`
 }
@@ -346,13 +350,13 @@ function buildHtml({
   .wk-cur     { background: rgba(232,96,44,0.10); color: #E8602C; font-weight: bold; }
   .hdr-periode { font-size: ${(dens.labelPt - 1.5).toFixed(1)}pt; font-weight: bold; text-align: left; white-space: nowrap; overflow: visible; position: relative; padding: ${(dens.hdrPadMm * 0.6).toFixed(2)}mm 1mm; border-bottom: 0.5px solid #ddd; }
 
-  .plabel       { border: 0.5px solid #eee; border-right: 1px solid #ccc; padding: 0 1.5mm; vertical-align: middle; overflow: hidden; white-space: nowrap; height: ${dens.rowMm}mm; }
+  .plabel       { border: 0.5px solid #eee; border-bottom: ${TRAIT_HORIZONTAL}; border-right: 1px solid #ccc; padding: 0 1.5mm; vertical-align: middle; overflow: hidden; white-space: nowrap; height: ${dens.rowMm}mm; }
   .lbl-moe      { font-weight: bold; font-size: ${dens.labelPt}pt; color: #1F1B17; }
   .lbl-moa      { font-weight: normal; font-size: ${dens.barLabelPt}pt; color: #4b5563; padding-left: 4mm; }
   .lbl-adm      { font-style: italic; font-size: ${dens.barLabelPt}pt; color: #92400E; }
   .lbl-chantier { font-weight: 500; font-size: ${dens.labelPt}pt; color: #1e40af; }
 
-  .pcell    { border-top: 0.5px solid #f0f0f0; border-bottom: 0.5px solid #f0f0f0; height: ${dens.rowMm}mm; padding: 0; overflow: visible; }
+  .pcell    { border-top: ${TRAIT_HORIZONTAL}; border-bottom: ${TRAIT_HORIZONTAL}; height: ${dens.rowMm}mm; padding: 0; overflow: visible; }
 
   .bar          { position: absolute; top: ${dens.barPadTopMm}mm; bottom: ${dens.barPadBotMm}mm; z-index: 2; overflow: hidden; }
   .seg          { position: absolute; top: 0; bottom: 0; display: flex; align-items: center; justify-content: center; font-size: ${dens.barLabelPt}pt; font-weight: bold; color: white; border-right: 1px solid rgba(255,255,255,0.5); }

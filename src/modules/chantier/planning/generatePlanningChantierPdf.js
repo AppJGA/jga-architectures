@@ -3,6 +3,11 @@ import { assignLabelLanes } from './jalonLayout'
 import { buildRowsByZone } from './groupByZone'
 import { legendeCouleurs } from './legende'
 import { echapperHtml } from '../../../shared/echapperHtml'
+import {
+  bordureGauche, niveauDuJour, pastelPdf, fondPeriode, traitPeriode, stylePause,
+  estBloquante, groupesDePeriodes,
+} from '../../../shared/planning/export/grilleExport'
+import { nettoyerHtml, estVide } from '../../../shared/planning/export/texteRiche'
 
 // ─── Densité des lignes ───────────────────────────────────────────────────────
 //
@@ -144,7 +149,7 @@ function buildYearHeaders(days) {
   ).join('')
 }
 
-function buildMonthHeaders(days, includeYear) {
+function buildMonthHeaders(days, includeYear, granularite) {
   const months = []
   days.forEach((d) => {
     const label = includeYear
@@ -152,14 +157,14 @@ function buildMonthHeaders(days, includeYear) {
       : d.toLocaleDateString('fr-FR', { month: 'long' })
     const last = months[months.length - 1]
     if (last && last.label === label) last.count++
-    else months.push({ label, count: 1 })
+    else months.push({ label, count: 1, premier: d })
   })
   return months.map(m =>
-    `<th class="hdr-month" colspan="${m.count}">${m.label.charAt(0).toUpperCase() + m.label.slice(1)}</th>`
+    `<th class="hdr-month" colspan="${m.count}" style="border-left:${bordureGauche(niveauDuJour(m.premier), granularite)}">${m.label.charAt(0).toUpperCase() + m.label.slice(1)}</th>`
   ).join('')
 }
 
-function buildWeekHeaders(days) {
+function buildWeekHeaders(days, granularite) {
   const weeks = []
   days.forEach((d) => {
     const wn = getISOWeek(d)
@@ -170,10 +175,10 @@ function buildWeekHeaders(days) {
     const wKey = formatDateISO(lundi)
     const last = weeks[weeks.length - 1]
     if (last && last.key === wKey) last.count++
-    else weeks.push({ key: wKey, wn, count: 1 })
+    else weeks.push({ key: wKey, wn, count: 1, premier: d })
   })
   return weeks.map(w =>
-    `<th class="hdr-week" colspan="${w.count}">S${w.wn}</th>`
+    `<th class="hdr-week" colspan="${w.count}" style="border-left:${bordureGauche(niveauDuJour(w.premier), granularite)}">S${w.wn}</th>`
   ).join('')
 }
 
@@ -192,26 +197,6 @@ function periodeDuJour(day, periodes) {
     return d >= debut && d <= fin
   })
   return couvrantes.find(p => p.est_bloquante !== false) ?? couvrantes[0] ?? null
-}
-
-// Pochage désaturé : la couleur de la période mélangée à du blanc. Les hachures
-// diagonales bavaient à l'impression (moiré, aplats irréguliers) ; un aplat
-// pastel opaque sort proprement sur toutes les imprimantes.
-function pastelPdf(hex, opacite) {
-  const h = (hex || '#B8412C').replace('#', '')
-  const canal = (i) => {
-    const c = parseInt(h.slice(i, i + 2), 16)
-    return Math.round(c * opacite + 255 * (1 - opacite))
-  }
-  return `rgb(${canal(0)},${canal(2)},${canal(4)})`
-}
-
-// Fond d'une cellule couverte par une période : pochage soutenu si elle est
-// bloquante, très pâle si elle est informative.
-function fondPeriode(periode) {
-  return periode.est_bloquante !== false
-    ? pastelPdf(periode.couleur ?? '#B8412C', 0.20)
-    : pastelPdf(periode.couleur ?? '#9C9591', 0.10)
 }
 
 // Index d'une date dans `days`, liste de jours consécutifs à minuit : l'arrondi
@@ -292,23 +277,35 @@ function buildJalonBand(jalons, days, dayWidths) {
   return `<div style="position:relative;height:${hauteurMm.toFixed(2)}mm;border-bottom:1px solid #E9E2D6;margin-bottom:1mm">${marqueurs}</div>`
 }
 
+// Bandeau qui nomme les périodes, sous les en-têtes de dates : une cellule
+// par période, à sa couleur, avec son libellé
+function buildBandePeriodes(days, periodes) {
+  const parJour = days.map(d => periodeDuJour(d, periodes))
+  if (!parJour.some(Boolean)) return ''
+  const cellules = groupesDePeriodes(parJour).map(({ periode, nombre }) => {
+    if (!periode) return `<th class="hdr-periode" colspan="${nombre}"></th>`
+    const couleur = echapperHtml(pastelPdf(periode.couleur ?? '#B8412C', 1))
+    const libelle = echapperHtml(periode.label ?? periode.nom ?? '')
+    return `<th class="hdr-periode" colspan="${nombre}" style="background:${fondPeriode(periode)};color:${couleur}" title="${libelle}">${libelle}</th>`
+  }).join('')
+  return `<tr><th class="plabel" style="background:#FAFAF9;font-size:5.5pt;color:#9C9591;text-align:center">Périodes</th>${cellules}</tr>`
+}
+
 function buildDayHeaders(days, dayWidths, todayStr) {
   return days.map((d, i) => {
     const isWE = isWeekend(d)
     const isToday = formatDateISO(d) === todayStr
-    const isMonthStart = d.getDate() === 1
-    const isMonday = d.getDay() === 1
     const label = d.toLocaleDateString('fr-FR', { weekday: 'narrow' })
     const w = dayWidths[i].toFixed(2)
     const bg = isToday ? 'rgba(232,96,44,0.10)' : isWE ? 'rgba(0,0,0,0.04)' : 'transparent'
     const color = isToday ? '#E8602C' : isWE ? 'rgba(155,143,133,0.5)' : '#9C9591'
-    const borderLeft = isMonthStart ? '1.5px solid #bbb' : isMonday ? '1px solid rgba(0,0,0,0.25)' : '0.5px solid #eee'
+    const borderLeft = bordureGauche(niveauDuJour(d), 'day')
     return `<th class="hdr-day" style="width:${w}mm;background:${bg};color:${color};border-left:${borderLeft}">${dayWidths[i] >= 2.5 ? label : ''}</th>`
   }).join('')
 }
 
 function buildTaskRow(task, color, days, dayWidths, jalons, todayStr, ctx, rowInfo) {
-  const { segments = [], periodes = [], zones = [], density } = ctx ?? {}
+  const { segments = [], periodes = [], zones = [], density, granularite = 'day' } = ctx ?? {}
   const dens = densityConfig(density)
   // En groupement par zone, une tâche peut n'apparaître que par ses segments
   // (ligne dupliquée) : `showMainBar` et `visibleSegmentIds` viennent alors de
@@ -355,6 +352,26 @@ function buildTaskRow(task, color, days, dayWidths, jalons, todayStr, ctx, rowIn
     }
   }
 
+  // Portions d'une barre qui traversent une période bloquante : la barre
+  // continue, mais ces jours ne comptent pas — on y laisse voir la période
+  const pauses = (geo, couleur) => {
+    let html = ''
+    let i = geo.startIdx
+    while (i <= geo.endIdx) {
+      const p = periodeDuJour(days[i], periodes)
+      if (!p || !estBloquante(p)) { i++; continue }
+      let fin = i
+      while (fin + 1 <= geo.endIdx && periodeDuJour(days[fin + 1], periodes) === p) fin++
+      let gauche = 0
+      for (let k = geo.startIdx; k < i; k++) gauche += dayWidths[k]
+      let largeur = 0
+      for (let k = i; k <= fin; k++) largeur += dayWidths[k]
+      html += `<div data-pause="1" style="position:absolute;left:${gauche.toFixed(2)}mm;width:${largeur.toFixed(2)}mm;top:${dens.barPadMm}mm;bottom:${dens.barPadMm}mm;${stylePause(couleur, p)}z-index:6;pointer-events:none"></div>`
+      i = fin + 1
+    }
+    return html
+  }
+
   const mainGeo = showMainBar && bornes
     ? plageVisible(days, dayWidths, bornes.debut, bornes.dernierJour)
     : null
@@ -367,7 +384,7 @@ function buildTaskRow(task, color, days, dayWidths, jalons, todayStr, ctx, rowIn
       ? `<span style="margin-left:1.5mm;font-size:5.5pt;color:#9C9591">${avancement}%</span>`
       : ''
     ajouter(mainGeo.startIdx, `
-        <div data-task-id="${echapperHtml(task.id)}" data-type="task" style="position:absolute;left:0;width:${mainGeo.widthMm.toFixed(2)}mm;top:${dens.barPadMm}mm;bottom:${dens.barPadMm}mm;background:${color};z-index:4;overflow:hidden">${progressBar}</div>
+        <div data-task-id="${echapperHtml(task.id)}" data-type="task" style="position:absolute;left:0;width:${mainGeo.widthMm.toFixed(2)}mm;top:${dens.barPadMm}mm;bottom:${dens.barPadMm}mm;background:${color};z-index:4;overflow:hidden">${progressBar}</div>${pauses(mainGeo, color)}
         <div style="position:absolute;left:${mainGeo.widthMm.toFixed(2)}mm;padding-left:3px;top:0;bottom:0;display:flex;align-items:center;white-space:nowrap;font-size:${dens.barLabelPt}pt;color:#1F1B17;z-index:10">${labelLigne}${labelAvancement}</div>`)
   }
 
@@ -380,39 +397,37 @@ function buildTaskRow(task, color, days, dayWidths, jalons, todayStr, ctx, rowIn
       const geo = computeBarGeometry(days, dayWidths, seg.date_debut, seg.duree_jours, periodes)
       if (!geo || geo.widthMm <= 0) return
       const segColor = getSegColor(seg, color, zones)
-      let html = `<div data-segment-id="${echapperHtml(seg.id)}" data-task-id="${echapperHtml(task.id)}" data-type="segment" style="position:absolute;left:0;width:${geo.widthMm.toFixed(2)}mm;top:${dens.barPadMm}mm;bottom:${dens.barPadMm}mm;background:${segColor};outline:1px dashed rgba(255,255,255,0.6);outline-offset:-1px;z-index:3;overflow:hidden"></div>`
+      let html = `<div data-segment-id="${echapperHtml(seg.id)}" data-task-id="${echapperHtml(task.id)}" data-type="segment" style="position:absolute;left:0;width:${geo.widthMm.toFixed(2)}mm;top:${dens.barPadMm}mm;bottom:${dens.barPadMm}mm;background:${segColor};outline:1px dashed rgba(255,255,255,0.6);outline-offset:-1px;z-index:3;overflow:hidden"></div>${pauses(geo, segColor)}`
       if (seg.afficher_nom) {
         html += `<div style="position:absolute;left:${geo.widthMm.toFixed(2)}mm;padding-left:3px;top:0;bottom:0;display:flex;align-items:center;white-space:nowrap;font-size:5.5pt;color:#1F1B17;z-index:10">${echapperHtml(seg.nom ?? task.nom)}</div>`
       }
       ajouter(geo.startIdx, html)
     })
 
-  const cells = days.map((d, idx) => {
-    const isWE = isWeekend(d)
-    const isMonthStart = d.getDate() === 1
-    const isMonday = d.getDay() === 1
-    const borderLeft = isMonthStart ? '1.5px solid #ccc' : isMonday ? '1px solid rgba(0,0,0,0.15)' : '0.5px solid #f0f0f0'
-    // Priorité de fond de cellule : tâche/segment (barres, au-dessus) > période bloquée > week-end > vide.
-    // Comme les barres sont des <div> opaques positionnés par-dessus, il suffit d'appliquer
-    // le hachurage sur toutes les cellules bloquées : les barres le masquent naturellement
-    // là où elles passent.
-    // Une période s'étend sur plusieurs colonnes : son trait d'encadrement ne
-    // doit apparaître qu'à ses extrémités, sinon il double la grille.
-    const periode = periodeDuJour(d, periodes)
-    const bg = periode
-      ? fondPeriode(periode)
-      : isWE ? 'rgba(0,0,0,0.03)' : 'transparent'
-
-    // Le trait est calé sur les dates réelles de la période, non sur les
-    // colonnes voisines : une période qui déborde de la plage imprimée
-    // continue hors cadre et ne doit pas sembler s'y arrêter.
-    let bordsPeriode = ''
-    if (periode && periode.est_bloquante !== false) {
-      const trait = `1.5px solid ${echapperHtml(periode.couleur ?? '#B8412C')}66`
-      const jour = formatDateISO(d)
-      if (jour === periode.date_debut) bordsPeriode += `border-left:${trait};`
-      if (jour === periode.date_fin) bordsPeriode += `border-right:${trait};`
+  // Fond des périodes : un seul bloc par période et par ligne, posé sous la
+  // grille et les barres (z-index négatif). Un fond par cellule laissait voir
+  // un fil clair entre deux jours à l'écran (chaque bord adouci séparément).
+  const fonds = new Map()
+  groupesDePeriodes(days.map(d => periodeDuJour(d, periodes))).forEach(({ periode, debut, nombre }) => {
+    if (!periode) return
+    let largeur = 0
+    for (let k = debut; k < debut + nombre; k++) largeur += dayWidths[k]
+    // Le trait est calé sur les dates réelles de la période : une période qui
+    // déborde de la plage imprimée continue hors cadre et ne s'y ferme pas
+    let bords = ''
+    if (estBloquante(periode)) {
+      const trait = echapperHtml(traitPeriode(periode))
+      if (formatDateISO(days[debut]) === periode.date_debut) bords += `border-left:${trait};`
+      if (formatDateISO(days[debut + nombre - 1]) === periode.date_fin) bords += `border-right:${trait};`
     }
+    fonds.set(debut, `<div data-periode="1" style="position:absolute;left:0;top:0;bottom:0;width:${largeur.toFixed(2)}mm;background:${fondPeriode(periode)};${bords}box-sizing:border-box;z-index:-1;pointer-events:none"></div>`)
+  })
+
+  const cells = days.map((d, idx) => {
+    // Le grisé du week-end n'a de sens que là où les jours se lisent
+    const isWE = granularite === 'day' && isWeekend(d)
+    const borderLeft = bordureGauche(niveauDuJour(d), granularite)
+    const bg = isWE ? 'rgba(0,0,0,0.03)' : 'transparent'
 
     // Repère vertical du jalon, sans libellé : celui-ci est rendu une seule fois
     // dans la bande dédiée au-dessus du tableau (buildJalonBand).
@@ -422,7 +437,7 @@ function buildTaskRow(task, color, days, dayWidths, jalons, todayStr, ctx, rowIn
       .map(j => `<div style="position:absolute;top:0;bottom:0;left:50%;width:1.5px;background:${echapperHtml(j.couleur)};opacity:0.55;z-index:5"></div>`)
       .join('')
 
-    return `<td style="width:${dayWidths[idx].toFixed(2)}mm;border-bottom:0.5px solid #f0f0f0;border-left:${borderLeft};height:${dens.rowMm}mm;padding:0;overflow:visible;position:relative;background:${bg};${bordsPeriode}">${parJour.get(idx) ?? ''}${jalonLines}</td>`
+    return `<td style="width:${dayWidths[idx].toFixed(2)}mm;border-bottom:0.5px solid #f0f0f0;border-left:${borderLeft};height:${dens.rowMm}mm;padding:0;overflow:visible;position:relative;background:${bg}">${fonds.get(idx) ?? ''}${parJour.get(idx) ?? ''}${jalonLines}</td>`
   }).join('')
 
   const suffixe = rowInfo?.suffixe
@@ -441,6 +456,7 @@ function buildHtml({
   zones = [], colorMode = 'lot', viewMode = 'day',
   segments = [], dependances = [], periodes = [], showDependances = true,
   groupMode = 'lot', density = 'normal',
+  texteEntete = '', textePied = '',
 }) {
   const dens = densityConfig(density)
   const dStart = parseDate(dateDebut)
@@ -450,7 +466,9 @@ function buildHtml({
   const contentMm = largeurMm - 20 - LABEL_COL_MM
   const dayWidths = computeDayWidths(days, contentMm, viewMode)
   const todayStr = formatDateISO(new Date())
-  const rowCtx = { segments, periodes, zones, density }
+  const rowCtx = { segments, periodes, zones, density, granularite: viewMode }
+  const entete = estVide(texteEntete) ? '' : nettoyerHtml(texteEntete)
+  const pied = estVide(textePied) ? '' : nettoyerHtml(textePied)
 
   // Chemins critiques : deux sources, comme dans la timeline interactive — les
   // dépendances tâche→tâche historiques (`depends_on`) et la table étendue
@@ -489,8 +507,9 @@ function buildHtml({
   const showWeekRow = viewMode !== 'month'
   const showDayRow = viewMode === 'day'
   const yearHeaders  = showYearRow ? buildYearHeaders(days) : ''
-  const monthHeaders = buildMonthHeaders(days, !showYearRow)
-  const weekHeaders  = showWeekRow ? buildWeekHeaders(days) : ''
+  const monthHeaders = buildMonthHeaders(days, !showYearRow, viewMode)
+  const weekHeaders  = showWeekRow ? buildWeekHeaders(days, viewMode) : ''
+  const bandePeriodes = buildBandePeriodes(days, periodes)
   const dayHeaders   = showDayRow ? buildDayHeaders(days, dayWidths, todayStr) : ''
 
   // ── Corps du tableau : groupé par lot (défaut) ou par zone ──
@@ -544,18 +563,20 @@ function buildHtml({
     }
   }
 
-  // Légende des couleurs de barres — source commune avec l'export Excel
-  const legCouleurs = legendeCouleurs({ tasks, lots, zones, colorMode, groupMode })
+  // Légende : d'abord celle de l'écran (source commune avec l'export Excel),
+  // puis les conventions de dessin utiles au lecteur du papier
+  const legCouleurs = legendeCouleurs({ lots, zones, colorMode, groupMode })
   const legCouleursHtml = legCouleurs.entrees.length
     ? `<span class="leg-sous-titre">${echapperHtml(legCouleurs.titre)}</span>` + legCouleurs.entrees.map(e => `
   <div class="leg-item">
     <div class="leg-swatch" style="background:${echapperHtml(e.couleur)}"></div>
     ${echapperHtml(e.label)}
-  </div>`).join('') + '<div style="border-left:0.5px solid #ddd;height:8px;margin:0 2mm"></div>'
+  </div>`).join('') + '<div class="leg-sep"></div>'
     : ''
   const legNoteHtml = legCouleurs.note
     ? `<div class="leg-item" style="font-style:italic;color:#9C9591">${echapperHtml(legCouleurs.note)}</div>`
     : ''
+  const exemplePeriode = { couleur: '#B8412C' }
 
   return `<!DOCTYPE html>
 <html lang="fr">
@@ -569,7 +590,11 @@ function buildHtml({
 
   .header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 6mm; padding-bottom: 4mm; border-bottom: 1.5px solid #E8602C; }
   .logo { height: 14mm; width: auto; }
-  .header-right { text-align: right; }
+  .header-right { text-align: right; flex-shrink: 0; }
+  .texte-entete { flex: 1; min-width: 0; margin: 0 8mm; font-size: 8.5pt; color: #1F1B17; line-height: 1.45; }
+  .texte-pied { margin-top: 4mm; font-size: 8.5pt; color: #1F1B17; line-height: 1.45; }
+  .texte-entete ul, .texte-entete ol, .texte-pied ul, .texte-pied ol { padding-left: 5mm; }
+  .texte-entete p, .texte-pied p { margin: 0 0 1mm; }
   .header-title { font-size: 12pt; font-weight: bold; color: #1F1B17; margin-bottom: 2mm; }
   .header-sub { font-size: 7.5pt; color: #5E5854; line-height: 1.6; }
   .header-period { font-size: 7.5pt; color: #E8602C; font-weight: bold; margin-top: 1mm; }
@@ -586,6 +611,7 @@ function buildHtml({
   .hdr-year  { background: #F5F2F0; font-size: ${dens.groupPt}pt; font-weight: bold; color: #1F1B17; text-align: center; border: 0.5px solid #ddd; padding: ${dens.hdrPadMm}mm 0; }
   .hdr-month { background: #FAF7F2; font-size: ${dens.labelPt}pt; font-weight: bold; color: #E8602C; text-align: center; border: 0.5px solid #ddd; padding: ${dens.hdrPadMm}mm 0; }
   .hdr-week  { background: #FAFAF9; font-size: ${(dens.labelPt - 1).toFixed(1)}pt; color: #9C9591; text-align: center; border: 0.5px solid #ddd; padding: ${(dens.hdrPadMm * 0.6).toFixed(2)}mm 0; }
+  .hdr-periode { font-size: ${(dens.labelPt - 1).toFixed(1)}pt; font-weight: bold; text-align: left; white-space: nowrap; overflow: visible; position: relative; padding: ${(dens.hdrPadMm * 0.6).toFixed(2)}mm 1mm; border-bottom: 0.5px solid #ddd; }
   .hdr-day   { font-size: ${(dens.labelPt - 1.5).toFixed(1)}pt; text-align: center; border-bottom: 0.5px solid #ddd; padding: ${(dens.hdrPadMm * 0.5).toFixed(2)}mm 0; }
 
   .plabel { width: ${LABEL_COL_MM}mm; border: 0.5px solid #eee; border-right: 1px solid #ccc; padding: 0 1.5mm; vertical-align: middle; overflow: hidden; white-space: nowrap; height: ${dens.rowMm}mm; font-size: ${dens.labelPt}pt; color: #1F1B17; }
@@ -594,7 +620,8 @@ function buildHtml({
   .leg-title { font-size: 5.5pt; font-weight: bold; color: #9C9591; text-transform: uppercase; letter-spacing: 0.05em; }
   .leg-item { display: flex; align-items: center; gap: 1.5mm; font-size: 6pt; color: #4b5563; }
   .leg-sous-titre { font-size: 6pt; font-weight: bold; color: #9C9591; text-transform: uppercase; letter-spacing: 0.04em; }
-  .leg-swatch { width: 8mm; height: 3mm; }
+  .leg-swatch { width: 8mm; height: 3mm; box-sizing: border-box; }
+  .leg-sep { border-left: 0.5px solid #ddd; height: 8px; margin: 0 2mm; }
 
   .footer { margin-top: 4mm; padding-top: 2mm; border-top: 0.5px solid #eee; font-size: 6pt; color: #9C9591; display: flex; justify-content: space-between; }
 </style>
@@ -603,6 +630,7 @@ function buildHtml({
 
 <div class="header">
   <img src="${logoUrl}" class="logo" alt="JGA" onerror="this.style.display='none'" />
+  ${entete ? `<div class="texte-entete">${entete}</div>` : ''}
   <div class="header-right">
     <div class="header-title">Planning de chantier — ${nomAffaire}</div>
     <div class="header-sub">
@@ -637,6 +665,7 @@ function buildHtml({
         <th class="plabel" style="background:#FAFAF9"></th>
         ${dayHeaders}
       </tr>` : ''}
+      ${bandePeriodes}
     </thead>
     <tbody>${lotsRows}</tbody>
   </table>
@@ -649,19 +678,18 @@ function buildHtml({
 
 <script id="deps-data" type="application/json">${depsJson}</script>
 
+${pied ? `<div class="texte-pied">${pied}</div>` : ''}
+
 <div class="legend">
   <span class="leg-title">Légende</span>
   ${legCouleursHtml}
+  <span class="leg-sous-titre">Conventions</span>
   <div class="leg-item">
-    <div class="leg-swatch" style="background:#E8602C"></div>
-    Barre de tâche (couleur ${colorMode === 'zone' ? 'de la zone' : 'du lot'})
-  </div>
-  <div class="leg-item">
-    <div class="leg-swatch" style="background:rgba(0,0,0,0.22)"></div>
+    <div class="leg-swatch" style="background:#9C9591;position:relative;overflow:hidden"><div style="position:absolute;left:0;top:0;bottom:0;width:45%;background:rgba(0,0,0,0.22)"></div></div>
     Avancement
   </div>
   <div class="leg-item">
-    <div class="leg-swatch" style="background:repeating-linear-gradient(45deg, #E8602C28, #E8602C28 4px, #E8602C55 4px, #E8602C55 8px);border:1px dashed #E8602C80"></div>
+    <div class="leg-swatch" style="background:repeating-linear-gradient(45deg, #9C959128, #9C959128 4px, #9C959155 4px, #9C959155 8px);border:1px dashed #9C959180"></div>
     Délai avant / après
   </div>
   <div class="leg-item">
@@ -669,12 +697,16 @@ function buildHtml({
     Segment
   </div>
   <div class="leg-item">
-    <div class="leg-swatch" style="background:${pastelPdf('#B8412C', 0.20)};border-left:1.5px solid #B8412C66;border-right:1.5px solid #B8412C66"></div>
+    <div class="leg-swatch" style="background:${fondPeriode(exemplePeriode)};border-left:${traitPeriode(exemplePeriode)};border-right:${traitPeriode(exemplePeriode)}"></div>
     Période bloquante
   </div>
   <div class="leg-item">
-    <div class="leg-swatch" style="background:${pastelPdf('#B8412C', 0.10)}"></div>
+    <div class="leg-swatch" style="background:${fondPeriode({ ...exemplePeriode, est_bloquante: false })}"></div>
     Période informative
+  </div>
+  <div class="leg-item">
+    <div class="leg-swatch" style="${stylePause('#5E5854', exemplePeriode)}"></div>
+    Tâche en pause pendant une période (jours non comptés)
   </div>
   ${showDependances ? `<div class="leg-item">
     <svg width="10mm" height="4mm" viewBox="0 0 38 16" style="overflow:visible">
@@ -683,9 +715,8 @@ function buildHtml({
     </svg>
     Dépendance (chemin critique)
   </div>` : ''}
-  <div style="border-left:0.5px solid #ddd;height:8px;margin:0 2mm"></div>
   <div class="leg-item">
-    <div style="width:8mm;border-top:2px solid #8B5CF6"></div>
+    <div style="width:8mm;border-top:2px solid #E8602C"></div>
     Jalon
   </div>
   ${legNoteHtml}

@@ -125,72 +125,160 @@ describe('PDF chantier — structure', () => {
 })
 
 describe('PDF chantier — périodes', () => {
-  const conges = [{ id: 'p1', nom: 'Congés', date_debut: '2026-03-09', date_fin: '2026-03-13', couleur: '#B8412C' }]
+  const conges = [{ id: 'p1', label: 'Congés', date_debut: '2026-03-09', date_fin: '2026-03-13', couleur: '#B8412C' }]
+  const melange = (o) => `rgb(${Math.round(0xB8 * o + 255 * (1 - o))},${Math.round(0x41 * o + 255 * (1 - o))},${Math.round(0x2C * o + 255 * (1 - o))})`
+  const trait = `2px solid ${melange(0.85)}`
 
-  test('une période bloquante est peinte en aplat pastel opaque', () => {
+  test('une période bloquante est peinte en aplat soutenu', () => {
     generatePlanningChantierPdf(paramsPdfChantier({ periodes: conges }))
-    // #B8412C mélangé à 20 % avec du blanc
-    const attendu = `rgb(${Math.round(0xB8 * 0.2 + 255 * 0.8)},${Math.round(0x41 * 0.2 + 255 * 0.8)},${Math.round(0x2C * 0.2 + 255 * 0.8)})`
-    assert.ok(corpsPdf().includes(`background:${attendu}`), attendu)
+    assert.ok(corpsPdf().includes(`background:${melange(0.30)}`))
   })
 
-  test('les hachures ont disparu', () => {
+  test('pas de hachures dans les cellules : elles bavaient à l’impression', () => {
     generatePlanningChantierPdf(paramsPdfChantier({ periodes: conges }))
-    assert.ok(!/repeating-linear-gradient\(45deg, rgba\(184,65,44/.test(htmlGenere))
+    assert.ok(!/<td[^>]*repeating-linear-gradient/.test(corpsPdf()))
   })
 
   test('une période informative est plus pâle et sans encadrement', () => {
     generatePlanningChantierPdf(paramsPdfChantier({
       periodes: [{ ...conges[0], est_bloquante: false }],
     }))
-    const clair = `rgb(${Math.round(0xB8 * 0.1 + 255 * 0.9)},${Math.round(0x41 * 0.1 + 255 * 0.9)},${Math.round(0x2C * 0.1 + 255 * 0.9)})`
-    assert.ok(corpsPdf().includes(`background:${clair}`))
-    assert.ok(!/border-right:1\.5px solid/.test(corpsPdf()))
+    assert.ok(corpsPdf().includes(`background:${melange(0.15)}`))
+    assert.ok(!corpsPdf().includes(`border-right:${trait}`))
   })
 
   test('l’encadrement ne marque que les deux extrémités', () => {
     generatePlanningChantierPdf(paramsPdfChantier({ periodes: conges }))
     const c = corpsPdf()
-    // Un trait de chaque côté par ligne de tâche, et pas davantage : sans quoi
-    // la période doublerait la grille sur toute sa largeur
-    assert.equal((c.match(/border-left:1\.5px solid #B8412C66/g) ?? []).length, TACHES.length)
-    assert.equal((c.match(/border-right:1\.5px solid #B8412C66/g) ?? []).length, TACHES.length)
+    const compter = (motif) => c.split(motif).length - 1
+    assert.equal(compter(`border-left:${trait}`), TACHES.length)
+    assert.equal(compter(`border-right:${trait}`), TACHES.length)
   })
 
   test('une période qui déborde de la plage ne s’encadre pas', () => {
     generatePlanningChantierPdf(paramsPdfChantier({
-      periodes: [{ id: 'p1', nom: 'Longue', date_debut: '2026-02-01', date_fin: '2026-04-30', couleur: '#B8412C' }],
+      periodes: [{ id: 'p1', label: 'Longue', date_debut: '2026-02-01', date_fin: '2026-04-30', couleur: '#B8412C' }],
     }))
-    assert.equal((corpsPdf().match(/border-left:1\.5px solid #B8412C66/g) ?? []).length, 0)
+    assert.ok(!corpsPdf().includes(`border-left:${trait}`))
+  })
+
+  test('un bandeau nomme la période sous les dates', () => {
+    generatePlanningChantierPdf(paramsPdfChantier({ periodes: conges }))
+    const thead = htmlGenere.slice(htmlGenere.indexOf('<thead>'), htmlGenere.indexOf('</thead>'))
+    assert.match(thead, /class="hdr-periode" colspan="5"[^>]*>Congés</)
+  })
+
+  test('sans période, pas de bandeau', () => {
+    generatePlanningChantierPdf(paramsPdfChantier())
+    assert.ok(!htmlGenere.includes('class="hdr-periode"'))
+  })
+
+  test('une barre qui traverse une période y est « en pause »', () => {
+    // Terrassement : 5 jours à partir du 2 mars ; la fermeture du 3 au 5 la
+    // prolonge jusqu'au 9 — les trois jours de fermeture sont en pause
+    generatePlanningChantierPdf(paramsPdfChantier({
+      tasks: [TACHES[0]],
+      periodes: [{ id: 'p', label: 'Fermeture', date_debut: '2026-03-03', date_fin: '2026-03-05', couleur: '#B8412C' }],
+    }))
+    const pauses = [...corpsPdf().matchAll(/data-pause="1" style="position:absolute;left:([\d.]+)mm;width:([\d.]+)mm/g)]
+    assert.equal(pauses.length, 1)
+    assert.ok(Number(pauses[0][1]) > 0, 'la pause commence après le premier jour')
+    assert.ok(corpsPdf().includes('repeating-linear-gradient(45deg, #E8602C'), 'rayures de la couleur de la barre')
+  })
+
+  test('une période informative ne met pas la barre en pause', () => {
+    generatePlanningChantierPdf(paramsPdfChantier({
+      tasks: [TACHES[0]],
+      periodes: [{ id: 'p', label: 'Info', date_debut: '2026-03-03', date_fin: '2026-03-05', couleur: '#B8412C', est_bloquante: false }],
+    }))
+    assert.ok(!corpsPdf().includes('data-pause'))
+  })
+})
+
+describe('PDF chantier — grille selon la granularité', () => {
+  const MOIS = 'border-left:1.5px solid #5f5f5f'
+  const SEMAINE = 'border-left:1px solid #a8a8a8'
+  const JOUR = 'border-left:0.5px solid #e6e6e6'
+  const params = (viewMode) => paramsPdfChantier({ viewMode, dateDebut: '2026-02-23', dateFin: '2026-03-20' })
+
+  test('en jours : mois, semaines et jours sont tracés', () => {
+    generatePlanningChantierPdf(params('day'))
+    const c = corpsPdf()
+    assert.ok(c.includes(MOIS) && c.includes(SEMAINE) && c.includes(JOUR))
+  })
+
+  test('en semaines : plus de lignes de jour', () => {
+    generatePlanningChantierPdf(params('week'))
+    const c = corpsPdf()
+    assert.ok(c.includes(MOIS) && c.includes(SEMAINE))
+    assert.ok(!c.includes(JOUR))
+  })
+
+  test('en mois : seules les lignes de mois restent', () => {
+    generatePlanningChantierPdf(params('month'))
+    const c = corpsPdf()
+    assert.ok(c.includes(MOIS))
+    assert.ok(!c.includes(SEMAINE) && !c.includes(JOUR))
+  })
+
+  test('le grisé du week-end ne reste qu’en vue jours', () => {
+    generatePlanningChantierPdf(params('week'))
+    assert.ok(!corpsPdf().includes('rgba(0,0,0,0.03)'))
+    generatePlanningChantierPdf(params('day'))
+    assert.ok(corpsPdf().includes('rgba(0,0,0,0.03)'))
+  })
+})
+
+describe('PDF chantier — textes libres', () => {
+  test('le texte d’en-tête se place entre le logo et le titre', () => {
+    generatePlanningChantierPdf(paramsPdfChantier({ texteEntete: '<b>Version contractuelle</b>' }))
+    const entete = htmlGenere.slice(htmlGenere.indexOf('<div class="header">'), htmlGenere.indexOf('<div class="header-right">'))
+    assert.ok(entete.includes('class="logo"'))
+    assert.match(entete, /<div class="texte-entete"><b>Version contractuelle<\/b><\/div>/)
+  })
+
+  test('le texte du bas se place sous le planning, avant la légende', () => {
+    generatePlanningChantierPdf(paramsPdfChantier({ textePied: 'Sous réserve des intempéries' }))
+    const i = htmlGenere.indexOf('<div class="texte-pied">')
+    assert.ok(i > htmlGenere.indexOf('</table>') && i < htmlGenere.indexOf('<div class="legend">'))
+  })
+
+  test('le texte est nettoyé : ni script ni attribut', () => {
+    generatePlanningChantierPdf(paramsPdfChantier({ texteEntete: '<p onclick="x()">A<script>alert(1)</script></p>' }))
+    assert.ok(htmlGenere.includes('<div class="texte-entete"><p>A</p></div>'))
+    assert.ok(!htmlGenere.includes('alert(1)'))
+  })
+
+  test('un texte vide n’ajoute aucun bloc', () => {
+    generatePlanningChantierPdf(paramsPdfChantier({ texteEntete: '<div><br></div>', textePied: '&nbsp;' }))
+    assert.ok(!htmlGenere.includes('class="texte-entete"') && !htmlGenere.includes('class="texte-pied"'))
   })
 })
 
 describe('PDF chantier — légende et groupement', () => {
-  test('mode zone : les zones sont énumérées', () => {
+  test('couleur par zone : toutes les zones, puis « Sans zone », comme à l’écran', () => {
     generatePlanningChantierPdf(paramsPdfChantier({ colorMode: 'zone', groupMode: 'zone' }))
     const l = legendePdf()
     assert.match(l, /leg-sous-titre">Zones</)
-    assert.ok(l.includes('Bâtiment A') && l.includes('Bâtiment B'))
-    assert.match(l, /Barre de tâche \(couleur de la zone\)/)
+    assert.ok(l.includes('Bâtiment A') && l.includes('Bâtiment B') && l.includes('Sans zone'))
     assert.match(l, /Tâches groupées par zone/)
   })
 
-  test('l’export classique par lot ne gagne aucune entrée', () => {
+  test('couleur par lot : tous les lots, même groupés par lot', () => {
     generatePlanningChantierPdf(paramsPdfChantier({ colorMode: 'lot', groupMode: 'lot' }))
     const l = legendePdf()
-    assert.ok(!/leg-sous-titre/.test(l))
-    assert.match(l, /Barre de tâche \(couleur du lot\)/)
+    assert.match(l, /leg-sous-titre">Lots</)
+    assert.ok(l.includes('01 – Gros œuvre') && l.includes('02 – Charpente'))
   })
 
-  test('groupé par zone mais colorié par lot : les lots sont énumérés', () => {
-    generatePlanningChantierPdf(paramsPdfChantier({ colorMode: 'lot', groupMode: 'zone' }))
-    assert.match(legendePdf(), /leg-sous-titre">Lots</)
-    assert.ok(legendePdf().includes('01 Gros œuvre'))
+  test('la convention orange « Barre de tâche » a disparu', () => {
+    generatePlanningChantierPdf(paramsPdfChantier())
+    assert.ok(!legendePdf().includes('Barre de tâche'))
   })
 
   test('les conventions restent présentes dans tous les modes', () => {
     generatePlanningChantierPdf(paramsPdfChantier({ colorMode: 'zone', groupMode: 'zone' }))
-    for (const conv of ['Avancement', 'Délai avant / après', 'Segment', 'Période bloquante', 'Jalon']) {
+    for (const conv of ['Avancement', 'Délai avant / après', 'Segment', 'Période bloquante', 'en pause', 'Jalon']) {
       assert.ok(legendePdf().includes(conv), conv)
     }
     assert.equal((htmlGenere.match(/<div class="legend">/g) ?? []).length, 1)
@@ -324,43 +412,26 @@ describe('PDF chantier — étendue d’une tâche', () => {
 })
 
 describe('légende — règles de composition', () => {
-  test('couleur par zone : les zones sont listées dans leur ordre', () => {
-    const l = legendeCouleurs({ tasks: TACHES, lots: LOTS, zones: ZONES, colorMode: 'zone', groupMode: 'zone' })
+  test('couleur par zone : les zones dans leur ordre, puis « Sans zone »', () => {
+    const l = legendeCouleurs({ lots: LOTS, zones: [...ZONES].reverse(), colorMode: 'zone', groupMode: 'zone' })
     assert.equal(l.titre, 'Zones')
-    assert.deepEqual(l.entrees.map(e => e.label), ['Bâtiment A', 'Bâtiment B'])
+    assert.deepEqual(l.entrees.map(e => e.label), ['Bâtiment A', 'Bâtiment B', 'Sans zone'])
   })
 
-  test('« Sans zone » n’apparaît que si une barre porte ce gris', () => {
-    const sans = legendeCouleurs({ tasks: TACHES, zones: ZONES, colorMode: 'zone', groupMode: 'zone' })
-    assert.ok(!sans.entrees.some(e => e.label === 'Sans zone'))
-
-    const avec = legendeCouleurs({
-      tasks: [...TACHES, { id: 3, nom: 'Divers', zone_id: null }],
-      zones: ZONES, colorMode: 'zone', groupMode: 'zone',
-    })
-    assert.equal(avec.entrees.at(-1).label, 'Sans zone')
-  })
-
-  test('une zone supprimée laisse ses tâches en gris', () => {
+  test('couleur par lot : tous les lots, y compris sans tâche', () => {
     const l = legendeCouleurs({
-      tasks: [{ id: 1, zone_id: 'disparue' }], zones: ZONES,
-      colorMode: 'zone', groupMode: 'zone',
+      lots: [...LOTS, { id: 9, num_lot: '03', nom: 'Vide', couleur: '#000', ordre: 2 }],
+      colorMode: 'lot', groupMode: 'lot',
     })
-    assert.ok(l.entrees.some(e => e.label === 'Sans zone'))
-  })
-
-  test('lot + groupement par lot : aucune entrée ajoutée', () => {
-    const l = legendeCouleurs({ tasks: TACHES, lots: LOTS, colorMode: 'lot', groupMode: 'lot' })
-    assert.deepEqual(l.entrees, [])
+    assert.equal(l.titre, 'Lots')
+    assert.deepEqual(l.entrees.map(e => e.label), ['01 – Gros œuvre', '02 – Charpente', '03 – Vide'])
     assert.equal(l.note, null)
   })
 
-  test('un lot sans tâche n’encombre pas la légende', () => {
-    const l = legendeCouleurs({
-      tasks: [TACHES[0]], lots: [...LOTS, { id: 9, num_lot: '03', nom: 'Vide', couleur: '#000' }],
-      colorMode: 'lot', groupMode: 'zone',
-    })
-    assert.deepEqual(l.entrees.map(e => e.label), ['01 Gros œuvre'])
+  test('le groupement par zone ajoute seulement une note', () => {
+    const l = legendeCouleurs({ lots: LOTS, colorMode: 'lot', groupMode: 'zone' })
+    assert.equal(l.entrees.length, 2)
+    assert.equal(l.note, 'Tâches groupées par zone')
   })
 
   test('appel sans argument : aucune exception', () => {

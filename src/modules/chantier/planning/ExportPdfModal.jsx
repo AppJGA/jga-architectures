@@ -2,6 +2,8 @@ import { useState, useMemo, useEffect } from 'react'
 import { FileDown, X } from 'lucide-react'
 import { parseDate, formatDateISO, addWorkingDays } from './types'
 import { generatePlanningChantierPdf, intervallesTache } from './generatePlanningChantierPdf'
+import { SectionTextesPdf } from '../../../shared/planning/export/SectionTextesPdf'
+import { lireTextesExport, ecrireTextesExport } from '../../../shared/planning/export/textesExport'
 
 const LABEL = {
   fontSize: 10, fontWeight: 700, textTransform: 'uppercase',
@@ -70,6 +72,8 @@ function computeRange(tasks, segments, periodes) {
 // de la plage, et l'effet d'ouverture écraserait les dates saisies.
 const AUCUN = []
 
+const TEXTES_VIDES = { entete: '', pied: '' }
+
 export function ExportPdfModal({
   open, onClose, lots = [], tasks = [], jalons = [], affaire = {},
   zones = [], colorMode = 'lot', viewMode = 'day', groupMode = 'lot', rowHeight = 36,
@@ -98,6 +102,17 @@ export function ExportPdfModal({
   const [exportDependances, setExportDependances] = useState(true)
   const [exportGroupMode, setExportGroupMode] = useState(groupMode ?? 'lot')
   const [exportDensity, setExportDensity] = useState(() => densityFromRowHeight(rowHeight))
+  // Textes relus à chaque ouverture : l'éditeur n'est rempli qu'à ce moment-là
+  const textesInitiaux = useMemo(
+    () => (open ? lireTextesExport('chantier', affaire?.id) : TEXTES_VIDES),
+    [open, affaire?.id]
+  )
+  const [textes, setTextes] = useState(textesInitiaux)
+  const [textesVus, setTextesVus] = useState(textesInitiaux)
+  if (textesVus !== textesInitiaux) {
+    setTextesVus(textesInitiaux)
+    setTextes(textesInitiaux)
+  }
 
   useEffect(() => {
     if (!open) return
@@ -148,6 +163,7 @@ export function ExportPdfModal({
 
   const handleGenerate = () => {
     if (!isValid) return
+    ecrireTextesExport('chantier', affaire?.id, textes)
     generatePlanningChantierPdf({
       tasks: tachesInPeriod,
       lots,
@@ -168,6 +184,8 @@ export function ExportPdfModal({
       showDependances: exportDependances,
       groupMode: zones.length > 0 ? exportGroupMode : 'lot',
       density: exportDensity,
+      texteEntete: textes.entete,
+      textePied: textes.pied,
     })
     onClose()
   }
@@ -492,6 +510,9 @@ export function ExportPdfModal({
               Pré-sélectionnée selon la densité affichée à l'écran.
             </p>
           </div>
+
+          {/* ── B5) TEXTES ── */}
+          <SectionTextesPdf initiaux={textesInitiaux} textes={textes} onChange={setTextes} />
 
           {/* ── C) RÉSUMÉ ── */}
           <div style={{ borderRadius: 2, backgroundColor: '#FAF7F2', border: '0.5px solid rgba(0,0,0,0.08)', padding: '12px 16px' }}>

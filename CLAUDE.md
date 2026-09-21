@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 440 tests node --test (plannings, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF)
+npm test         # 474 tests node --test (plannings, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF)
 npx eslint src   # ~73 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -302,6 +302,31 @@ plus seulement à l'écran.
 - Attention : un refus RLS sur un `update` ou un `delete` **ne lève pas
   d'erreur**, il ne touche aucune ligne. Un test qui attend une exception passe
   à côté — compter les lignes (voir `pgtest/test050.mjs`).
+
+## Export PDF des plannings
+
+Chantier (`chantier/planning/generatePlanningChantierPdf.js`) et étude
+(`etude/planning/generatePlanningEtudePdf.js`) : une page HTML imprimée par le
+navigateur. Ce qui leur est commun vit dans `src/shared/planning/export/`.
+
+- **Textes libres** en tête (entre logo et titre) et sous le planning :
+  `EditeurTexte.jsx` (gras, italique, souligné, puces), mémorisés par affaire
+  sur l'appareil (`textesExport.js`). Le HTML passe **toujours** par
+  `nettoyerHtml` (`texteRiche.js`, liste fermée de balises, aucun attribut)
+  avant d'entrer dans la page.
+- **Grille** : `bordureGauche(niveau, granularite)` — mois foncé, semaine
+  moyenne, jour discret ; en vue Semaines plus de lignes de jour, en vue Mois
+  seulement les mois. L'étude est traitée en Semaines.
+- **Périodes** : fond uni (les hachures moiraient à l'impression), trait aux
+  vraies dates de début et de fin, bandeau qui les nomme sous les dates. Au
+  chantier, **un seul bloc par période et par ligne**, sous la grille
+  (`z-index:-1`) : un fond par cellule laissait un fil clair entre deux jours.
+- **Barre en pause** : la barre traverse la période bloquante (l'étude aussi,
+  sur le papier ; l'écran garde ses fragments), la portion en pause montre la
+  période à travers des rayures (`stylePause`).
+- **Légende** = celle de l'écran (`legende.js` : tous les lots, ou toutes les
+  zones puis « Sans zone ») + les conventions de dessin. L'Excel du chantier
+  lit la même source.
 
 ## Aplatisseur de plan (`src/tools/rasterisation/`)
 

@@ -5,6 +5,14 @@ import {
 } from './types'
 import { assignLabelLanes } from '../../chantier/planning/jalonLayout'
 import { echapperHtml } from '../../../shared/echapperHtml'
+import {
+  bordureGauche, pastelPdf, fondPeriode, traitPeriode, stylePause, estBloquante, groupesDePeriodes,
+} from '../../../shared/planning/export/grilleExport'
+import { nettoyerHtml, estVide } from '../../../shared/planning/export/texteRiche'
+
+// L'étude est en semaines : pas de lignes de jour
+const GRANULARITE = 'week'
+const trait = (debutDeMois) => bordureGauche(debutDeMois ? 'mois' : 'semaine', GRANULARITE)
 
 function isFirstWeekOfMonth(semaine, annee) {
   const date = getWeekStart(semaine, annee)
@@ -37,7 +45,7 @@ function buildMonthHeaders(weeks) {
     }
   })
   return months.map(m =>
-    `<th colspan="${m.count}" class="week-month">${m.label}</th>`
+    `<th colspan="${m.count}" class="week-month" style="border-left:${trait(true)}">${m.label}</th>`
   ).join('')
 }
 
@@ -45,7 +53,7 @@ function buildWeekHeaders(weeks, cw) {
   return weeks.map(w => {
     const isCurrent = w.semaine === cw.semaine && w.annee === cw.annee
     const isStart = isFirstWeekOfMonth(w.semaine, w.annee)
-    return `<th class="week-num${isCurrent ? ' wk-cur' : ''}${isStart ? ' wk-ms' : ''}">S${w.semaine}</th>`
+    return `<th class="week-num${isCurrent ? ' wk-cur' : ''}" style="border-left:${trait(isStart)}">S${w.semaine}</th>`
   }).join('')
 }
 
@@ -63,13 +71,6 @@ function densityConfig(density) {
   return DENSITY_CONFIG[density] ?? DENSITY_CONFIG.normal
 }
 
-// Fond d'une cellule couverte par une période : hachures si bloquante, aplat
-// très clair si informative (mêmes conventions que le planning chantier).
-function hexToRgb(hex) {
-  const h = (hex || '#B8412C').replace('#', '')
-  return `${parseInt(h.slice(0, 2), 16)},${parseInt(h.slice(2, 4), 16)},${parseInt(h.slice(4, 6), 16)}`
-}
-
 function periodeDeLaSemaine(w, periodes) {
   const couvrantes = (periodes ?? []).filter(p => {
     const d = weekOfDate(p.date_debut)
@@ -81,11 +82,27 @@ function periodeDeLaSemaine(w, periodes) {
   return couvrantes.find(p => p.est_bloquante !== false) ?? couvrantes[0] ?? null
 }
 
-function fondPeriode(periode) {
-  const rgb = hexToRgb(periode.couleur)
-  return periode.est_bloquante !== false
-    ? `repeating-linear-gradient(45deg, rgba(${rgb},0.08), rgba(${rgb},0.08) 3px, rgba(${rgb},0.15) 3px, rgba(${rgb},0.15) 6px)`
-    : `rgba(${rgb},0.06)`
+// Première et dernière semaine d'une période : c'est là qu'on la borde
+function bordsPeriode(w, periode) {
+  if (!periode || !estBloquante(periode)) return ''
+  const d = weekOfDate(periode.date_debut)
+  const f = weekOfDate(periode.date_fin)
+  let bords = ''
+  if (d && d.semaine === w.semaine && d.annee === w.annee) bords += `border-left:${traitPeriode(periode)};`
+  if (f && f.semaine === w.semaine && f.annee === w.annee) bords += `border-right:${traitPeriode(periode)};`
+  return bords
+}
+
+// Bandeau qui nomme les périodes, sous les semaines
+function buildBandePeriodes(weeks, periodes) {
+  const parSemaine = weeks.map(w => periodeDeLaSemaine(w, periodes))
+  if (!parSemaine.some(Boolean)) return ''
+  const cellules = groupesDePeriodes(parSemaine).map(({ periode, nombre }) => {
+    if (!periode) return `<th class="hdr-periode" colspan="${nombre}"></th>`
+    const libelle = echapperHtml(periode.label ?? periode.nom ?? '')
+    return `<th class="hdr-periode" colspan="${nombre}" style="background:${fondPeriode(periode)};color:${pastelPdf(periode.couleur ?? '#B8412C', 1)}">${libelle}</th>`
+  }).join('')
+  return `<tr><th class="plabel" style="background:#FAFAF9;font-size:5.5pt;color:#9C9591;text-align:center">Périodes</th>${cellules}</tr>`
 }
 
 // Répartition ①②③ d'un fragment dont seules les semaines [debut, debut + duree[
@@ -133,18 +150,30 @@ function buildPhaseRows(phases, weeks, jalons, segments = [], periodes = [], den
       chantier:      'lbl-chantier',
     }[phase.type_tache] ?? 'lbl-moa'
 
-    // Fragments : les semaines bloquantes coupent la barre (même règle qu'à l'écran)
+    // Les semaines bloquantes ne comptent pas dans la durée (même règle qu'à
+    // l'écran). Sur le papier, la barre reste continue : les semaines
+    // neutralisées y sont « en pause », la période se voit à travers.
     const fragments = computePhaseFragments(phase, periodes)
     const segsParFragment = distributeSegmentsAcrossFragments(phase, fragments)
-    const fragsIndexes = fragments.map((f, fi) => {
-      const place = placerDansPeriode(weeks, f.semaine_debut, f.annee_debut, f.duree_semaines)
-      return place && {
-        idx: place.idx,
-        duree: place.duree,
-        sousDurees: decouperSousDurees(segsParFragment[fi] ?? [], place.masquees, place.duree),
+    const morceaux = []
+    fragments.forEach((f, fi) => {
+      if (fi > 0) {
+        const prec = fragments[fi - 1]
+        const finPrec = addWeeks(prec.semaine_debut, prec.annee_debut, prec.duree_semaines)
+        const trou = weeksBetween(finPrec.semaine, finPrec.annee, f.semaine_debut, f.annee_debut)
+        if (trou > 0) {
+          morceaux.push({ pause: true, semaine: finPrec.semaine, annee: finPrec.annee, duree: trou, periode: periodeDeLaSemaine(finPrec, periodes) })
+        }
       }
+      morceaux.push({ pause: false, semaine: f.semaine_debut, annee: f.annee_debut, duree: f.duree_semaines, sous: segsParFragment[fi] ?? [] })
+    })
+    const places = morceaux.map(m => {
+      const place = placerDansPeriode(weeks, m.semaine, m.annee, m.duree)
+      return place && { ...m, idx: place.idx, duree: place.duree, masquees: place.masquees }
     }).filter(Boolean)
-    const dernierFrag = fragsIndexes[fragsIndexes.length - 1] ?? null
+    const barre = places.length
+      ? { idx: places[0].idx, span: places[places.length - 1].idx + places[places.length - 1].duree - places[0].idx }
+      : null
 
     // Segments de la phase : chacun démarre dans sa propre cellule — la
     // première de la période s'il a commencé avant
@@ -160,35 +189,34 @@ function buildPhaseRows(phases, weeks, jalons, segments = [], periodes = [], den
       const ms = isFirstWeekOfMonth(w.semaine, w.annee)
       let content = ''
 
-      const fragIci = fragsIndexes.find(f => f.idx === idx)
-      if (fragIci) {
-        const spanCount = fragIci.duree
-        const estDernier = fragIci === dernierFrag
-        // Répartition ①②③ propre à CE fragment : une sous-durée coupée par des
-        // congés se poursuit sur le fragment suivant.
-        let segments = ''
-        if (phase.type_tache === 'etude' && fragIci.sousDurees.length > 0) {
+      if (barre && barre.idx === idx) {
+        const spanCount = barre.span
+        const pct = (semaines) => (semaines / spanCount) * 100
+        let interieur = ''
+        places.forEach(m => {
+          const gauche = pct(m.idx - barre.idx)
+          if (m.pause) {
+            interieur += `<div data-pause="1" style="position:absolute;top:0;bottom:0;left:${gauche}%;width:${pct(m.duree)}%;${stylePause(color, m.periode)}z-index:3"></div>`
+            return
+          }
+          // Répartition ①②③ propre à ce fragment : une sous-durée coupée par
+          // des congés reprend après la pause
+          if (phase.type_tache !== 'etude') return
           const opacite = { 1: 0.15, 2: 0.25, 3: 0.35 }
-          let offset = 0
-          segments = fragIci.sousDurees.map(sub => {
-            const pct = (sub.duree / spanCount) * 100
-            const div = `<div class="seg" style="left:${offset}%;width:${pct}%;background:rgba(0,0,0,${opacite[sub.num]})">${sub.num}</div>`
-            offset += pct
-            return div
-          }).join('')
-        }
+          let offset = gauche
+          decouperSousDurees(m.sous, m.masquees, m.duree).forEach(sub => {
+            interieur += `<div class="seg" style="left:${offset}%;width:${pct(sub.duree)}%;background:rgba(0,0,0,${opacite[sub.num]})">${sub.num}</div>`
+            offset += pct(sub.duree)
+          })
+        })
 
         const barText = phase.type_tache === 'administratif' && phase.label_barre
           ? `<span class="bar-inner-txt">${echapperHtml(phase.label_barre)}</span>`
           : ''
 
         const isMoe = phase.type_tache === 'etude'
-        const barStyle = `left:0;width:${spanCount * 100}%;${fondBarre}`
-
-        content = `<div class="bar" style="${barStyle}">${segments}${barText}</div>`
-        if (estDernier) {
-          content += `<div style="position:absolute;left:calc(${spanCount * 100}% + 3px);top:0;bottom:0;display:flex;align-items:center;white-space:nowrap;font-size:${dens.barLabelPt}pt;font-weight:${isMoe ? 'bold' : 'normal'};color:#1F1B17;z-index:10;">${nom}</div>`
-        }
+        content = `<div class="bar" style="left:0;width:${spanCount * 100}%;${fondBarre}">${interieur}${barText}</div>`
+        content += `<div style="position:absolute;left:calc(${spanCount * 100}% + 3px);top:0;bottom:0;display:flex;align-items:center;white-space:nowrap;font-size:${dens.barLabelPt}pt;font-weight:${isMoe ? 'bold' : 'normal'};color:#1F1B17;z-index:10;">${nom}</div>`
       }
 
       // Barres de segment (mêmes couleur et géométrie que dans la timeline)
@@ -212,7 +240,7 @@ function buildPhaseRows(phases, weeks, jalons, segments = [], periodes = [], den
       const periode = periodeDeLaSemaine(w, periodes)
       const bg = periode ? `background:${fondPeriode(periode)};` : ''
 
-      return `<td class="pcell${ms ? ' ms' : ''}" style="position:relative;${bg}">${content}${segContent}${jalonLines}</td>`
+      return `<td class="pcell" style="position:relative;border-left:${trait(ms)};${bg}${bordsPeriode(w, periode)}">${content}${segContent}${jalonLines}</td>`
     }).join('')
 
     return `<tr><td class="plabel ${labelCls}">${nom}</td>${cells}</tr>`
@@ -256,6 +284,7 @@ function buildJalonBand(jalons, weeks, labelColMm, weekWidthMm) {
 function buildHtml({
   phases, jalons, affaire, semaineDebut, anneeDebut, semaineFin, anneeFin,
   largeurMm, hauteurMm, segments = [], periodes = [], density = 'normal',
+  texteEntete = '', textePied = '',
 }) {
   const dens = densityConfig(density)
   const weeks = buildWeeksList(semaineDebut, anneeDebut, semaineFin, anneeFin)
@@ -270,6 +299,10 @@ function buildHtml({
   const weekHeaders  = buildWeekHeaders(weeks, cw)
   const phaseRows    = buildPhaseRows(phases, weeks, jalons, segments, periodes, density)
   const jalonBand    = buildJalonBand(jalons, weeks, labelColMm, weekWidthMm)
+  const bandePeriodes = buildBandePeriodes(weeks, periodes)
+  const entete = estVide(texteEntete) ? '' : nettoyerHtml(texteEntete)
+  const pied = estVide(textePied) ? '' : nettoyerHtml(textePied)
+  const exemplePeriode = { couleur: '#B8412C' }
 
   const dateStr    = new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })
   const nomAffaire  = echapperHtml(affaire?.nom)
@@ -288,7 +321,12 @@ function buildHtml({
 
   .header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 6mm; padding-bottom: 4mm; border-bottom: 1.5px solid #E8602C; }
   .logo { height: 13mm; width: auto; }
-  .header-right { text-align: right; }
+  .header-right { text-align: right; flex-shrink: 0; }
+  .texte-entete { flex: 1; min-width: 0; margin: 0 8mm; font-size: 8.5pt; color: #1F1B17; line-height: 1.45; }
+  .texte-pied { margin-top: 4mm; font-size: 8.5pt; color: #1F1B17; line-height: 1.45; }
+  .texte-entete ul, .texte-entete ol, .texte-pied ul, .texte-pied ol { padding-left: 5mm; }
+  .texte-entete p, .texte-pied p { margin: 0 0 1mm; }
+  .leg-sous-titre { font-size: 6pt; font-weight: bold; color: #9C9591; text-transform: uppercase; letter-spacing: 0.04em; }
   .header-title { font-size: 12pt; font-weight: bold; color: #1F1B17; margin-bottom: 2mm; }
   .header-sub { font-size: 7.5pt; color: #5E5854; line-height: 1.6; }
   .header-period { font-size: 7.5pt; color: #E8602C; font-weight: bold; margin-top: 1mm; }
@@ -306,7 +344,7 @@ function buildHtml({
   .week-month { background: #FAF7F2; font-size: ${dens.labelPt}pt; font-weight: bold; color: #E8602C; text-align: center; border: 0.5px solid #ddd; padding: ${dens.hdrPadMm}mm 0; }
   .week-num   { background: #FAFAF9; font-size: ${(dens.labelPt - 1.5).toFixed(1)}pt; color: #9C9591; text-align: center; border: 0.5px solid #ddd; padding: ${(dens.hdrPadMm * 0.8).toFixed(2)}mm 0; }
   .wk-cur     { background: rgba(232,96,44,0.10); color: #E8602C; font-weight: bold; }
-  .wk-ms      { border-left: 1.5px solid #bbb; }
+  .hdr-periode { font-size: ${(dens.labelPt - 1.5).toFixed(1)}pt; font-weight: bold; text-align: left; white-space: nowrap; overflow: visible; position: relative; padding: ${(dens.hdrPadMm * 0.6).toFixed(2)}mm 1mm; border-bottom: 0.5px solid #ddd; }
 
   .plabel       { border: 0.5px solid #eee; border-right: 1px solid #ccc; padding: 0 1.5mm; vertical-align: middle; overflow: hidden; white-space: nowrap; height: ${dens.rowMm}mm; }
   .lbl-moe      { font-weight: bold; font-size: ${dens.labelPt}pt; color: #1F1B17; }
@@ -314,8 +352,7 @@ function buildHtml({
   .lbl-adm      { font-style: italic; font-size: ${dens.barLabelPt}pt; color: #92400E; }
   .lbl-chantier { font-weight: 500; font-size: ${dens.labelPt}pt; color: #1e40af; }
 
-  .pcell    { border: 0.5px solid #f0f0f0; height: ${dens.rowMm}mm; padding: 0; overflow: visible; }
-  .pcell.ms { border-left: 1.5px solid #ccc; }
+  .pcell    { border-top: 0.5px solid #f0f0f0; border-bottom: 0.5px solid #f0f0f0; height: ${dens.rowMm}mm; padding: 0; overflow: visible; }
 
   .bar          { position: absolute; top: ${dens.barPadTopMm}mm; bottom: ${dens.barPadBotMm}mm; z-index: 2; overflow: hidden; }
   .seg          { position: absolute; top: 0; bottom: 0; display: flex; align-items: center; justify-content: center; font-size: ${dens.barLabelPt}pt; font-weight: bold; color: white; border-right: 1px solid rgba(255,255,255,0.5); }
@@ -328,7 +365,7 @@ function buildHtml({
   .legend    { margin-top: 5mm; padding-top: 3mm; border-top: 0.5px solid #eee; display: flex; align-items: center; gap: 5mm; flex-wrap: wrap; }
   .leg-title { font-size: 5.5pt; font-weight: bold; color: #9C9591; text-transform: uppercase; letter-spacing: 0.05em; }
   .leg-item  { display: flex; align-items: center; gap: 1.5mm; font-size: 6pt; color: #4b5563; }
-  .leg-swatch{ width: 7mm; height: 2.5mm; }
+  .leg-swatch{ width: 7mm; height: 2.5mm; box-sizing: border-box; }
   .leg-num   { width: 4mm; height: 4mm; background: rgba(232,162,0,0.25); color: #B07C00; font-size: 5.5pt; font-weight: bold; display: flex; align-items: center; justify-content: center; }
 
   .footer { margin-top: 4mm; padding-top: 2mm; border-top: 0.5px solid #eee; font-size: 6pt; color: #9C9591; display: flex; justify-content: space-between; }
@@ -338,6 +375,7 @@ function buildHtml({
 
 <div class="header">
   <img src="${logoUrl}" class="logo" alt="JGA" onerror="this.style.display='none'" />
+  ${entete ? `<div class="texte-entete">${entete}</div>` : ''}
   <div class="header-right">
     <div class="header-title">Planning d'étude — ${nomAffaire}</div>
     <div class="header-sub">
@@ -364,29 +402,33 @@ function buildHtml({
         <th class="plabel" style="background:#FAFAF9"></th>
         ${weekHeaders}
       </tr>
+      ${bandePeriodes}
     </thead>
     <tbody>${phaseRows}</tbody>
   </table>
 </div>
 
+${pied ? `<div class="texte-pied">${pied}</div>` : ''}
+
 <div class="legend">
   <span class="leg-title">Légende</span>
   ${[
-    { c: TYPE_COLORS.etude, l: 'MOE' },
-    { c: TYPE_COLORS.validation, l: 'Validation MOA' },
-    { c: TYPE_COLORS.administratif, l: 'Administratif (bariolé)', bariole: true },
-    { c: TYPE_COLORS.chantier, l: 'Chantier' },
-  ].map(i => `<div class="leg-item"><div class="leg-swatch" style="background:${i.bariole ? adminGradient(i.c) : i.c};${i.bariole ? 'border:2px solid #1F1B17;box-sizing:border-box;' : ''}"></div>${i.l}</div>`).join('')}
+    { c: TYPE_COLORS.etude, l: 'Phase MOE (ESQ, APS, APD…)' },
+    { c: TYPE_COLORS.validation, l: 'Validation / Visa' },
+    { c: TYPE_COLORS.administratif, l: 'Période administrative', bariole: true },
+    { c: TYPE_COLORS.chantier, l: 'Phase chantier' },
+  ].map(i => `<div class="leg-item"><div class="leg-swatch" style="background:${i.bariole ? adminGradient(i.c) : i.c};${i.bariole ? 'border:2px solid #1F1B17;' : ''}"></div>${i.l}</div>`).join('')}
   <div style="border-left:0.5px solid #ddd;height:8px;margin:0 2mm"></div>
   ${[['1','Architecte'],['2','BET'],['3','Économiste']].map(([n,l]) =>
     `<div class="leg-item"><div class="leg-num">${n}</div>${l}</div>`
   ).join('')}
   <div style="border-left:0.5px solid #ddd;height:8px;margin:0 2mm"></div>
+  <span class="leg-sous-titre">Conventions</span>
   <div class="leg-item"><div class="leg-swatch" style="background:#E8A200;opacity:0.85;outline:1px dashed rgba(255,255,255,0.6);outline-offset:-1px"></div>Segment</div>
-  <div class="leg-item"><div class="leg-swatch" style="background:repeating-linear-gradient(45deg, rgba(184,65,44,0.15), rgba(184,65,44,0.15) 3px, rgba(184,65,44,0.28) 3px, rgba(184,65,44,0.28) 6px)"></div>Période bloquante</div>
-  <div class="leg-item"><div class="leg-swatch" style="background:rgba(184,65,44,0.10);border:0.5px solid rgba(184,65,44,0.25)"></div>Période informative</div>
-  <div style="border-left:0.5px solid #ddd;height:8px;margin:0 2mm"></div>
-  <div class="leg-item"><div style="width:8mm;border-top:2px solid #E8602C"></div>Jalon</div>
+  <div class="leg-item"><div class="leg-swatch" style="background:${fondPeriode(exemplePeriode)};border-left:${traitPeriode(exemplePeriode)};border-right:${traitPeriode(exemplePeriode)}"></div>Période bloquante</div>
+  <div class="leg-item"><div class="leg-swatch" style="background:${fondPeriode({ ...exemplePeriode, est_bloquante: false })}"></div>Période informative</div>
+  <div class="leg-item"><div class="leg-swatch" style="${stylePause('#5E5854', exemplePeriode)}"></div>Phase en pause pendant une période (semaines non comptées)</div>
+  <div class="leg-item"><div style="width:8mm;border-top:2px solid #8B5CF6"></div>Jalon</div>
 </div>
 
 <div class="footer">

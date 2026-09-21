@@ -197,3 +197,9 @@ body {
   .jga-entree-vue, .jga-respire,
   .jga-petale, .jga-disque, .jga-voile { animation: none; }
 }
+
+/* Éditeur des textes du PDF de planning : indication tant que la zone est vide */
+.editeur-texte-pdf:empty::before { content: attr(data-placeholder); color: #9C9591; font-style: italic; pointer-events: none; }
+.editeur-texte-pdf ul, .editeur-texte-pdf ol { padding-left: 18px; margin: 2px 0; }
+.editeur-texte-pdf ul { list-style: disc; }
+.editeur-texte-pdf ol { list-style: decimal; }

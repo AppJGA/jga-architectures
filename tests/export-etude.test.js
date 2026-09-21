@@ -156,3 +156,59 @@ describe('période d’export', () => {
     assert.deepEqual(retenus.map((s) => s.id), ['b'])
   })
 })
+
+describe('PDF étude — périodes et barre en pause', () => {
+  // S11 2026 : du lundi 9 au dimanche 15 mars
+  const conges = [{ id: 'p', label: 'Congés', date_debut: '2026-03-09', date_fin: '2026-03-13', couleur: '#B8412C' }]
+
+  test('la phase reste une seule barre, la semaine bloquée y est en pause', () => {
+    generatePlanningEtudePdf(params({ phases: [phase()], periodes: conges }))
+    // S10 → S14 : 4 semaines comptées + 1 en pause
+    assert.deepEqual(largeursBarres(), [500])
+    const pauses = [...htmlGenere.matchAll(/data-pause="1" style="position:absolute;top:0;bottom:0;left:([\d.]+)%;width:([\d.]+)%/g)]
+      .map((m) => [Number(m[1]), Number(m[2])])
+    assert.deepEqual(pauses, [[20, 20]])
+  })
+
+  test('les intervenants reprennent après la pause', () => {
+    generatePlanningEtudePdf(params({ phases: [phase({ duree_arch: 2, duree_bet: 2 })], periodes: conges }))
+    const sousBarres = [...htmlGenere.matchAll(/class="seg" style="left:([\d.]+)%;width:([\d.]+)%[^"]*">(\d)</g)]
+      .map((m) => [Number(m[1]), Number(m[2]), m[3]])
+    assert.deepEqual(sousBarres, [[0, 20, '1'], [40, 20, '1'], [60, 40, '2']])
+  })
+
+  test('le nom de la phase n’est écrit qu’une fois, au bout de la barre', () => {
+    generatePlanningEtudePdf(params({ phases: [phase()], periodes: conges }))
+    assert.equal(htmlGenere.split('>APS</div>').length - 1, 1)
+  })
+
+  test('un bandeau nomme la période sous les semaines', () => {
+    generatePlanningEtudePdf(params({ periodes: conges }))
+    assert.match(htmlGenere, /class="hdr-periode" colspan="1"[^>]*>Congés</)
+  })
+
+  test('grille : traits de mois et de semaine, jamais de jour', () => {
+    generatePlanningEtudePdf(params())
+    assert.ok(htmlGenere.includes('border-left:1.5px solid #5f5f5f'))
+    assert.ok(htmlGenere.includes('border-left:1px solid #a8a8a8'))
+    assert.ok(!htmlGenere.includes('0.5px solid #e6e6e6'))
+  })
+})
+
+describe('PDF étude — textes et légende', () => {
+  test('textes d’en-tête et du bas', () => {
+    generatePlanningEtudePdf(params({ texteEntete: '<i>Indice B</i>', textePied: '<ul><li>Note</li></ul>' }))
+    assert.ok(htmlGenere.includes('<div class="texte-entete"><i>Indice B</i></div>'))
+    assert.ok(htmlGenere.includes('<div class="texte-pied"><ul><li>Note</li></ul></div>'))
+  })
+
+  test('la légende reprend les libellés de l’écran, puis les conventions', () => {
+    generatePlanningEtudePdf(params())
+    const l = htmlGenere.slice(htmlGenere.indexOf('<div class="legend">'), htmlGenere.indexOf('<div class="footer">'))
+    for (const libelle of ['Phase MOE (ESQ, APS, APD…)', 'Validation / Visa', 'Période administrative', 'Phase chantier', 'Architecte', 'BET', 'Économiste']) {
+      assert.ok(l.includes(libelle), libelle)
+    }
+    assert.ok(l.indexOf('Phase chantier') < l.indexOf('Conventions'))
+    assert.ok(l.includes('border-top:2px solid #8B5CF6'), 'jalon à la couleur des jalons d’étude')
+  })
+})

@@ -3,6 +3,8 @@ import { FileDown, X } from 'lucide-react'
 import { weeksBetween, densityFromRowHeight, normaliserSemaine } from './types'
 import { generatePlanningEtudePdf } from './generatePlanningEtudePdf'
 import { calculerPeriodeExport, phasesDansPeriode, segmentsDansPeriode } from './periodeExportEtude'
+import { SectionTextesPdf } from '../../../shared/planning/export/SectionTextesPdf'
+import { lireTextesExport, ecrireTextesExport } from '../../../shared/planning/export/textesExport'
 
 const LABEL = {
   fontSize: 10, fontWeight: 700, textTransform: 'uppercase',
@@ -44,6 +46,8 @@ const saisieValide = (semaine, annee) =>
   Number.isInteger(semaine) && semaine >= 1 && semaine <= 53
   && Number.isInteger(annee) && annee >= 2000 && annee <= 2100
 
+const TEXTES_VIDES = { entete: '', pied: '' }
+
 export function ExportEtudeModal({
   open, onClose, taches = [], jalons = [], affaire = {}, segments = [], periodes = [],
   rowHeight = 36, onExportExcel,
@@ -63,6 +67,17 @@ export function ExportEtudeModal({
   const [customH,      setCustomH]      = useState(297)
   const [isLandscape,  setIsLandscape]  = useState(true)
   const [exportDensity, setExportDensity] = useState(() => densityFromRowHeight(rowHeight))
+  // Textes relus à chaque ouverture : l'éditeur n'est rempli qu'à ce moment-là
+  const textesInitiaux = useMemo(
+    () => (open ? lireTextesExport('etude', affaire?.id) : TEXTES_VIDES),
+    [open, affaire?.id]
+  )
+  const [textes, setTextes] = useState(textesInitiaux)
+  const [textesVus, setTextesVus] = useState(textesInitiaux)
+  if (textesVus !== textesInitiaux) {
+    setTextesVus(textesInitiaux)
+    setTextes(textesInitiaux)
+  }
 
   useEffect(() => {
     if (!open) return
@@ -122,6 +137,7 @@ export function ExportEtudeModal({
 
   const handleGenerate = () => {
     if (!isValid) return
+    ecrireTextesExport('etude', affaire?.id, textes)
     generatePlanningEtudePdf({
       phases: tachesInPeriod,
       jalons: jalonInPeriod,
@@ -135,6 +151,8 @@ export function ExportEtudeModal({
       segments: segmentsInPeriod,
       periodes,
       density: exportDensity,
+      texteEntete: textes.entete,
+      textePied: textes.pied,
     })
     onClose()
   }
@@ -295,6 +313,9 @@ export function ExportEtudeModal({
               Pré-sélectionnée selon la densité affichée à l'écran.
             </p>
           </div>
+
+          {/* ── B3) TEXTES ── */}
+          <SectionTextesPdf initiaux={textesInitiaux} textes={textes} onChange={setTextes} />
 
           {/* ── C) RÉSUMÉ ── */}
           <div style={{ borderRadius: 2, backgroundColor: '#FAF7F2', border: '0.5px solid rgba(0,0,0,0.08)', padding: '12px 16px' }}>

@@ -1,3 +1,4 @@
+import { usePincementZoom } from '../../../shared/planning/usePincementZoom'
 import { useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo } from 'react'
 import { segmentParDefautPhase } from './segmentParDefaut'
 import { X, ZoomIn, ZoomOut, Trash2 } from 'lucide-react'
@@ -241,6 +242,21 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
   }, [loading, error])
 
   useEffect(() => () => clearTimeout(zoomToastTimer.current), [])
+
+  // ── Zoom au pincement (iPad), mêmes bornes que la molette ─────────────────────
+  usePincementZoom(timelineRef, {
+    actif: !loading && !error,
+    lire: () => semWidth,
+    appliquer: setSemWidth,
+    min: SEM_WIDTH_MIN,
+    max: SEM_WIDTH_MAX,
+    pas: 0.5,
+    surZoom: () => {
+      setShowZoomToast(true)
+      clearTimeout(zoomToastTimer.current)
+      zoomToastTimer.current = setTimeout(() => setShowZoomToast(false), 1500)
+    },
+  })
 
   // ── Pan (clic molette + glisser) ──────────────────────────────────────────────
   const [isPanning, setIsPanning] = useState(false)
@@ -808,6 +824,8 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
           onMouseDown={handleTimelineMouseDown}
           style={{
             flex: 1, overflow: 'auto',
+            // Défilement à un doigt ; le zoom à deux doigts est celui du planning
+            touchAction: 'pan-x pan-y',
             cursor: isPanning ? 'grabbing' : 'default',
             userSelect: isPanning ? 'none' : 'auto',
           }}
@@ -852,7 +870,7 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
             fontFamily: "'JetBrains Mono', monospace", fontWeight: 500,
             pointerEvents: 'none', zIndex: 50,
           }}>
-            {semWidth} px/sem
+            {Math.round(semWidth)} px/sem
           </div>
         )}
 
@@ -981,7 +999,7 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
                   cursor: 'pointer', fontFamily: "'JetBrains Mono', monospace",
                 }}
               >
-                {semWidth} px/s
+                {Math.round(semWidth)} px/s
               </span>
             </div>
           </div>

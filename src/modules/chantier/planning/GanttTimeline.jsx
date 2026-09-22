@@ -2,7 +2,7 @@ import { useMemo, useRef, useCallback, useState, useEffect, useLayoutEffect } fr
 import { GitBranch } from 'lucide-react'
 import { MenuRadial, EditionBarre, BandeauLien } from '../../../shared/planning/MenuRadial'
 import { ACTIONS_SEGMENT } from '../../../shared/planning/positionsPetales'
-import { recadrerSurBarre } from '../../../shared/planning/recadrage'
+import { recadrerSurBarre, arreterRecadrageAuPincement } from '../../../shared/planning/recadrage'
 import {
   parseDate,
   formatDateISO,
@@ -951,6 +951,7 @@ export function GanttTimeline({
   // ── Recadrage « caméra » sur la barre touchée (cf. recadrerSurBarre) ─────────
   const camera = useRef(null)
   useEffect(() => () => { if (camera.current) cancelAnimationFrame(camera.current) }, [])
+  useEffect(() => arreterRecadrageAuPincement(scrollRef, camera), [scrollRef])
 
   // Le calque de fermeture du menu ne couvre que les lignes : un clic plus bas
   // (planning court) ou sur l'en-tête doit aussi le refermer. Les clics sur une

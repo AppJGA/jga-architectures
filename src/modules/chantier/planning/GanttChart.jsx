@@ -1,3 +1,4 @@
+import { usePincementZoom } from '../../../shared/planning/usePincementZoom'
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { segmentParDefautTache } from './segmentParDefaut'
 import { Trash2, X, ZoomIn, ZoomOut, Calendar, Eye, Layers, Palette } from 'lucide-react'
@@ -271,6 +272,21 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
   }, [viewMode, isLoading, error])
 
   useEffect(() => () => clearTimeout(zoomToastTimer.current), [])
+
+  // ── Zoom au pincement (iPad), mêmes bornes que la molette ───────────────────────
+  usePincementZoom(timelineRef, {
+    actif: !isLoading && !error,
+    lire: () => (viewMode === 'day' ? dayWidth : zoomLevel),
+    appliquer: (v) => (viewMode === 'day' ? setDayWidth(v) : setZoomLevel(v)),
+    min: viewMode === 'day' ? DAY_WIDTH_MIN : ZOOM_LEVEL_MIN,
+    max: viewMode === 'day' ? DAY_WIDTH_MAX : ZOOM_LEVEL_MAX,
+    pas: viewMode === 'day' ? 0.5 : 0.01,
+    surZoom: () => {
+      setShowZoomToast(true)
+      clearTimeout(zoomToastTimer.current)
+      zoomToastTimer.current = setTimeout(() => setShowZoomToast(false), 1500)
+    },
+  })
 
   // ── Pan (clic molette + glisser) ────────────────────────────────────────────────
   const [isPanning, setIsPanning] = useState(false)
@@ -1148,6 +1164,8 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
           onMouseDown={handleTimelineMouseDown}
           style={{
             flex: 1, overflow: 'auto',
+            // Défilement à un doigt ; le zoom à deux doigts est celui du planning
+            touchAction: 'pan-x pan-y',
             cursor: drawMode ? 'crosshair' : isPanning ? 'grabbing' : 'default',
             userSelect: isPanning ? 'none' : 'auto',
           }}
@@ -1201,7 +1219,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
             pointerEvents: 'none', zIndex: 50,
             transition: 'opacity 0.3s',
           }}>
-            {viewMode === 'day' ? `${dayWidth} px/j` : `${Math.round(zoomLevel * 100)}%`}
+            {viewMode === 'day' ? `${Math.round(dayWidth)} px/j` : `${Math.round(zoomLevel * 100)}%`}
           </div>
         )}
 
@@ -1356,7 +1374,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
                     cursor: 'pointer', fontFamily: "'JetBrains Mono', monospace",
                   }}
                 >
-                  {viewMode === 'day' ? `${dayWidth}px` : `${Math.round(zoomLevel * 100)}%`}
+                  {viewMode === 'day' ? `${Math.round(dayWidth)}px` : `${Math.round(zoomLevel * 100)}%`}
                 </span>
               </div>
             </div>

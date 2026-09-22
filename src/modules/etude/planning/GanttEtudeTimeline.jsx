@@ -2,7 +2,7 @@ import { useMemo, useRef, useCallback, useState, useEffect, useLayoutEffect } fr
 import { GitBranch } from 'lucide-react'
 import { MenuRadial, EditionBarre, BandeauLien } from '../../../shared/planning/MenuRadial'
 import { ACTIONS_SEGMENT } from '../../../shared/planning/positionsPetales'
-import { recadrerSurBarre } from '../../../shared/planning/recadrage'
+import { recadrerSurBarre, arreterRecadrageAuPincement } from '../../../shared/planning/recadrage'
 import {
   getWeekStart, addWeeks, weeksBetween, getCurrentWeek, computeLagSemaines,
   getPhaseCouleur, adminGradient, rowMetrics,
@@ -436,6 +436,7 @@ export function GanttEtudeTimeline({
   // Recadrage « caméra » sur la barre touchée (cf. recadrerSurBarre)
   const camera = useRef(null)
   useEffect(() => () => { if (camera.current) cancelAnimationFrame(camera.current) }, [])
+  useEffect(() => arreterRecadrageAuPincement(scrollRef, camera), [scrollRef])
 
   // Toucher (ou clic sans glisser) une barre de phase
   const toucherPhase = useCallback((phase) => {

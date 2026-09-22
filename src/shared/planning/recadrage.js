@@ -46,3 +46,19 @@ export function recadrerSurBarre(voletRef, selecteur, camera) {
   }
   camera.current = requestAnimationFrame(avance)
 }
+
+/**
+ * Arrête le recadrage en cours dès qu'un pincement commence sur le volet
+ * (`usePincementZoom` émet `jga-pincement`) : les deux se disputeraient le
+ * défilement. Renvoie la fonction de nettoyage, pour un `useEffect`.
+ */
+export function arreterRecadrageAuPincement(voletRef, camera) {
+  const volet = voletRef?.current
+  if (!volet) return undefined
+  const arreter = () => {
+    if (camera.current) cancelAnimationFrame(camera.current)
+    camera.current = null
+  }
+  volet.addEventListener('jga-pincement', arreter)
+  return () => volet.removeEventListener('jga-pincement', arreter)
+}

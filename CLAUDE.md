@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 477 tests node --test (plannings, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF)
+npm test         # 484 tests node --test (plannings, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF)
 npx eslint src   # ~73 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -421,6 +421,16 @@ trois à cinq fois plus rapide dans pdf.js.
   défile. Piège déjà rencontré : le drapeau « le geste a bougé » doit se
   remettre à zéro **à chaque contact**, pas seulement au début d'un
   glissement — sinon le toucher qui suit un glissement est avalé.
+- **Zoom au pincement (iPad)** : `usePincementZoom` (`shared/planning/`),
+  branché sur le volet défilant des deux éditeurs, calcul pur dans
+  `pincement.js`. Il suit les événements **tactiles** (les pointeurs finissent
+  en `pointercancel` dès que Safari croit à un défilement) ; le volet porte
+  `touch-action: pan-x pan-y` et `gesture*` est bloqué, sinon Safari zoome la
+  page entière. Quand un deuxième doigt se pose, le geste du premier reçoit un
+  `pointercancel` synthétique : **tout geste de barre ou de segment doit
+  traiter `pointercancel` comme une annulation** (rien d'enregistré, pas de
+  roue) — c'est ce qui empêche un pincement de déplacer une barre. Seul le
+  temps zoome ; au chantier, la vue (Jours/Semaines/Mois) ne change pas.
 - **Une action du planning = une étape d'historique.** L'annulation écrit tout
   l'écart avec l'instantané : une action sans instantané est défaite en même
   temps que la précédente.

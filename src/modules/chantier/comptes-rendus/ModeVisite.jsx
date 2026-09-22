@@ -347,6 +347,8 @@ export function ModeVisite({ cr, sections, presences, setPresence, lotEntreprise
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 300, background: '#F5F1E9', display: 'flex', flexDirection: 'column' }}>
+      {/* Bande sous la barre d'état de l'iPad (app installée) : même raison que dans AppShell */}
+      <div style={{ height: 'env(safe-area-inset-top)', background: '#1F1B17', flexShrink: 0 }} />
       <header style={{ background: 'white', borderBottom: '0.5px solid rgba(0,0,0,0.1)', padding: '10px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <div style={{ flex: '1 1 220px', minWidth: 0 }}>

@@ -35,7 +35,7 @@ export function Panneau({ titre, onFermer, occupe = false, children, pied }) {
   }, [onFermer, occupe])
 
   return (
-    <div onClick={occupe ? undefined : onFermer} style={{ position: 'fixed', inset: 0, zIndex: 320, background: 'rgba(20,18,16,0.45)', display: 'flex', justifyContent: 'center', alignItems: 'flex-start', padding: '16px 16px 0' }}>
+    <div onClick={occupe ? undefined : onFermer} style={{ position: 'fixed', inset: 0, zIndex: 320, background: 'rgba(20,18,16,0.45)', display: 'flex', justifyContent: 'center', alignItems: 'flex-start', padding: 'calc(16px + env(safe-area-inset-top)) 16px 0' }}>
       <div role="dialog" aria-modal="true" aria-label={titre} onClick={e => e.stopPropagation()}
         style={{ width: '100%', maxWidth: 720, maxHeight: 'calc(100dvh - 32px)', background: '#FAF7F2', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 60px -20px rgba(0,0,0,0.5)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: 'white', borderBottom: '0.5px solid rgba(0,0,0,0.08)' }}>

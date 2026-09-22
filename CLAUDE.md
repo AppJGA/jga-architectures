@@ -376,6 +376,14 @@ trois à cinq fois plus rapide dans pdf.js.
 
 ## Pièges déjà rencontrés
 
+- **App installée sur l'iPad : l'écran passe sous la barre d'état** (heure,
+  batterie), à cause de `black-translucent` (index.html). `AppShell` et le mode
+  Visite réservent `env(safe-area-inset-top)` dans une bande sombre (l'heure
+  s'écrit en blanc) ; tout nouvel écran plein ou panneau ancré en haut doit en
+  faire autant.
+- **Tablette : `index.css` impose 48 px de hauteur à tout champ** (`pointer:
+  coarse`). Un champ logé dans une ligne de planning ou de tableau doit poser
+  `minHeight: 0` en ligne, sinon il déborde de sa ligne.
 - **Une animation CSS prime sur le style inline.** Un `animation: … both` fige
   l'élément sur sa dernière image et écrase ensuite tout `opacity` ou
   `transform` inline (survol, atténuation). Utiliser `backwards`, ou porter

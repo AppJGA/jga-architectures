@@ -53,7 +53,9 @@ function ChampAvancement({ valeur, onValider, style, onFocus, onBlur }) {
       onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
       onFocus={(e) => { setActif(true); onFocus?.(e) }}
       onBlur={(e) => { setActif(false); valider(); onBlur?.(e) }}
-      style={style}
+      // Sur tablette, la règle générale des champs (48 px au moins, index.css)
+      // rendait la case plus haute que la ligne de la tâche
+      style={{ minHeight: 0, ...style }}
     />
   )
 }

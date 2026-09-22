@@ -471,6 +471,14 @@ général déjà implémenté.
   Les valeurs figées — décalages d'animation, comptes — doivent devenir des
   formules, car l'app affiche un nombre quelconque d'éléments.
 
+## Supabase gardé éveillé
+
+L'offre gratuite met le projet en pause après 7 jours sans requête. Vercel
+appelle chaque jour `api/garder-eveil.js` (tâche `crons` de `vercel.json`,
+6 h UTC) : une lecture minuscule avec la clé publique. Le `rewrite` de
+`vercel.json` exclut `/api/`, sinon l'appel renverrait `index.html`. Suivi :
+Vercel → projet → Cron Jobs.
+
 ## Livraison
 
 Commiter **et pousser** en fin de tâche. Le site est déployé depuis `main` : un

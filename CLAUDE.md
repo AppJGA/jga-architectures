@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 484 tests node --test (plannings, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF)
+npm test         # 494 tests node --test (plannings, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF)
 npx eslint src   # ~73 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -439,6 +439,15 @@ trois à cinq fois plus rapide dans pdf.js.
   traiter `pointercancel` comme une annulation** (rien d'enregistré, pas de
   roue) — c'est ce qui empêche un pincement de déplacer une barre. Seul le
   temps zoome ; au chantier, la vue (Jours/Semaines/Mois) ne change pas.
+- **Décaler tout le planning** (report du démarrage, bouton « Décaler » de la
+  barre d'outils du chantier, `decalage.js` + `DecalagePlanningModal.jsx`) :
+  on donne la nouvelle date de démarrage, tout ce qui est concerné (option
+  « à partir du ») avance du même nombre de **jours ouvrés** — tâches,
+  segments (ils ont leur propre date) et jalons ; les périodes restent fixes.
+  Un lien à cheval sur la frontière d'un décalage partiel reçoit son nouvel
+  écart, sinon le prochain recalage ramènerait la tâche. Une seule étape
+  d'historique : **l'instantané contient les jalons** (date seulement,
+  `COLONNES_JALON`). Les dates de l'affaire suivent, hors historique.
 - **Une action du planning = une étape d'historique.** L'annulation écrit tout
   l'écart avec l'instantané : une action sans instantané est défaite en même
   temps que la précédente.

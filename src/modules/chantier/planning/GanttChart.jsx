@@ -1,3 +1,4 @@
+import { DecalagePlanningModal } from './DecalagePlanningModal'
 import { usePincementZoom } from '../../../shared/planning/usePincementZoom'
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { segmentParDefautTache } from './segmentParDefaut'
@@ -70,7 +71,7 @@ const DAY_WIDTH_MAX = 100
 const ZOOM_LEVEL_MIN = 0.1
 const ZOOM_LEVEL_MAX = 4
 
-export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', affaire = {} }) {
+export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', affaire = {}, onModifierAffaire }) {
   const [tasks, setTasks] = useState([])
   const [lots, setLots] = useState([])
   const [dayWidth, setDayWidth] = useState(DEFAULT_DAY_WIDTH)
@@ -155,8 +156,10 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
     tasks: tasks.map((t) => ({ ...t })),
     segments: segments.map((sg) => ({ ...sg })),
     dependances: dependances.map((d) => ({ ...d })),
+    // Leur date suit un décalage du planning : l'annuler doit la rétablir
+    jalons: jalons.map((j) => ({ ...j })),
     label,
-  }), [tasks, segments, dependances])
+  }), [tasks, segments, dependances, jalons])
   const {
     periodes, addPeriode, updatePeriode, deletePeriode,
   } = usePeriodesBloquees(affaireId)
@@ -783,6 +786,29 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
     if (!await persistCascade(cascades)) retirerDernier()
   }, [tasks, segments, dependances, applyCascadeLocally, persistCascade, saveSnapshot, takeSnapshot, retirerDernier])
 
+  // ── Décalage de tout le planning (report du démarrage) ──────────────────────
+  // Une seule étape d'historique : tâches, segments, liens et jalons ensemble.
+  // Les dates de l'affaire sont hors historique (autre table, autre écran).
+  const [showDecalage, setShowDecalage] = useState(false)
+  const handleDecalage = async (plan, datesAffaire) => {
+    saveSnapshot(takeSnapshot('Décalage du planning'))
+    const lagsTaches = Object.fromEntries(plan.lagsTaches.map((l) => [l.id, { lag_days: l.lag_days }]))
+    applyCascadeLocally(plan.changements, lagsTaches)
+    const dates = new Map(plan.jalons.map((j) => [j.id, j.date]))
+    setJalons((prev) => prev.map((j) => (dates.has(j.id) ? { ...j, date: dates.get(j.id) } : j)))
+    const ok = await persistCascade(plan.changements, [
+      ...plan.lagsTaches.map((l) => supabase.from('planning').update({ lag_days: l.lag_days }).eq('id', l.id)),
+      ...updateLags(plan.lagsDependances),
+      ...plan.jalons.map((j) => supabase.from('planning_jalons').update({ date: j.date }).eq('id', j.id)),
+    ])
+    if (!ok) { retirerDernier(); return }
+    if (datesAffaire && onModifierAffaire) {
+      const { error } = await onModifierAffaire(datesAffaire)
+      if (error) setErreurEcriture(`Planning décalé, mais les dates de l’affaire n’ont pas pu être modifiées : ${error.message}`)
+    }
+    setShowDecalage(false)
+  }
+
   const handlePeriodeAjout = useCallback(async (data) => {
     const resultat = await addPeriode(data)
     if (!resultat.error && resultat.data) await recalerApresPeriodes([...periodes, resultat.data], 'Nouvelle période')
@@ -872,6 +898,10 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
     setTasks(vers.tasks)
     replaceSegments(vers.segments)
     if (vers.dependances) replaceDependances(vers.dependances)
+    if (diff.jalons.updates.length) {
+      const dates = new Map(diff.jalons.updates.map((u) => [u.id, u.changes.date]))
+      setJalons((prev) => prev.map((j) => (dates.has(j.id) ? { ...j, date: dates.get(j.id) } : j)))
+    }
     ecrituresEnCours.current++
 
     // Les segments partent en premier : une tâche ne peut être supprimée tant
@@ -901,6 +931,8 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
         supabase.from('planning').delete().eq('id', id)),
       ...diff.dependances.updates.map((u) =>
         supabase.from('planning_dependances').update(u.changes).eq('id', u.id)),
+      ...diff.jalons.updates.map((u) =>
+        supabase.from('planning_jalons').update(u.changes).eq('id', u.id)),
     ])
 
     // Les liens en dernier : leurs tâches et segments doivent exister
@@ -1123,6 +1155,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
           onToggleConnections={() => setShowConnections((v) => !v)}
           showConnections={showConnections}
           onOpenJalons={() => setShowJalonsModal(true)}
+          onOpenDecalage={tasks.length > 0 ? () => setShowDecalage(true) : undefined}
           drawMode={drawMode}
           onSetDrawMode={setDrawMode}
           showOptionsPanel={showOptionsPanel}
@@ -1584,6 +1617,15 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
         dependances={dependances}
         periodes={periodes}
       />
+
+      {showDecalage && (
+        <DecalagePlanningModal
+          tasks={tasks} segments={segments} jalons={jalons} dependances={dependances}
+          periodes={periodes} affaire={affaire}
+          onValider={handleDecalage}
+          onAnnuler={() => setShowDecalage(false)}
+        />
+      )}
 
       <JalonModal
         open={showJalonsModal}

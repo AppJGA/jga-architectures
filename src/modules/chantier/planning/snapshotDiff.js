@@ -23,10 +23,19 @@ export const COLONNES_DEPENDANCE = [
   'source_tache_id', 'source_segment_id', 'cible_tache_id', 'cible_segment_id', 'lag_jours',
 ]
 
+// Jalons : seule leur date entre dans l'historique (décalage du planning). Ils
+// se créent, se renomment et se suppriment dans leur modale, hors historique :
+// annuler ne doit ni les recréer ni les effacer, d'où les seules mises à jour.
+export const COLONNES_JALON = ['date']
+
 export function diffSnapshots(depuis, vers) {
+  const jalons = depuis?.jalons && vers?.jalons
+    ? diffCollection(depuis.jalons, vers.jalons, COLONNES_JALON)
+    : { updates: [], deletions: [], insertions: [] }
   return {
     tasks: diffCollection(depuis?.tasks ?? [], vers?.tasks ?? [], COLONNES_TACHE),
     segments: diffCollection(depuis?.segments ?? [], vers?.segments ?? [], COLONNES_SEGMENT),
     dependances: diffCollection(depuis?.dependances ?? [], vers?.dependances ?? [], COLONNES_DEPENDANCE),
+    jalons: { ...jalons, deletions: [], insertions: [] },
   }
 }

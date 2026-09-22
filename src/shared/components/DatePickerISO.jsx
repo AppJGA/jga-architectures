@@ -126,11 +126,13 @@ export function DatePickerISO({
         style={{ cursor: disabled ? 'default' : 'pointer', ...style }}
       />
 
+      {/* Au-dessus de toute fenêtre : le calendrier s'ouvre depuis des modales
+          (400), le mode Visite (300) et ses panneaux (320) */}
       {panelPos && createPortal(
         <>
           <div
             onClick={() => setPanelPos(null)}
-            style={{ position: 'fixed', inset: 0, zIndex: 300 }}
+            style={{ position: 'fixed', inset: 0, zIndex: 1000 }}
           />
           <div style={{
             position: 'fixed',
@@ -141,7 +143,7 @@ export function DatePickerISO({
             background: 'white',
             border: '0.5px solid #E9E2D6',
             boxShadow: '0 4px 16px rgba(0,0,0,0.1)',
-            zIndex: 301,
+            zIndex: 1001,
           }}>
             {/* Navigation mois */}
             <div style={{

@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 494 tests node --test (plannings, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF)
+npm test         # 523 tests node --test (plannings, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire)
 npx eslint src   # ~73 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -330,6 +330,35 @@ navigateur. Ce qui leur est commun vit dans `src/shared/planning/export/`.
 - **Légende** = celle de l'écran (`legende.js` : tous les lots, ou toutes les
   zones puis « Sans zone ») + les conventions de dessin. L'Excel du chantier
   lit la même source.
+
+## Analyseur réglementaire (`src/tools/analyseur/`)
+
+Vérifie des plans DXF (ArchiCAD) contre des règles ERP / PMR / Logement.
+**Aucune clé API** : l'analyse se fait dans Claude Code ou sur claude.ai,
+couverts par l'abonnement de l'agence, en trois temps — l'app prépare la
+demande, l'utilisateur la fait analyser, il recolle la réponse.
+
+- Tout ce qui se calcule sans modèle vit dans `analyseLogique.js`, sans React,
+  et se teste sans navigateur (`tests/analyseur.test.js`) : lecture du DXF
+  (`parseDxfBrut`), relevé (`construireContexte`), demande (`construirePrompt`)
+  et relecture de la réponse (`lireReponse`). Le composant n'est plus que
+  l'écran.
+- **Ce qui part chez Claude est déjà plafonné** — 15 espaces, 20 annotations,
+  8 escaliers — et tient en ~3 800 caractères pour un plan. Le gros du travail
+  (lire le DXF, mesurer, trier) se fait dans le navigateur.
+- `lireReponse` est tolérante par construction : la réponse est collée à la
+  main, donc elle arrive entourée d'une phrase, dans un bloc ```json, ou suivie
+  d'un commentaire qui contient lui aussi des accolades. L'extraction compte
+  les délimiteurs **hors chaînes** plutôt que de chercher le dernier `}`. Un
+  statut inconnu devient « à vérifier », une confiance absente ne s'affiche
+  jamais à 100 %.
+- Piège : un MTEXT porte les codes de mise en forme d'ArchiCAD
+  (`\fArial|b0|i0;Bureau`). Sans nettoyage, la police partait dans l'analyse
+  comme si c'était le nom de la pièce.
+- **Ne jamais réintroduire `VITE_ANTHROPIC_API_KEY`** : une variable `VITE_`
+  est écrite en clair dans le fichier JS livré au navigateur — la clé était
+  lisible par quiconque ouvrait l'app. Un appel payant, s'il devait revenir,
+  passerait par une fonction serveur (`api/`, comme `garder-eveil.js`).
 
 ## Aplatisseur de plan (`src/tools/rasterisation/`)
 

@@ -21,6 +21,10 @@ import { GanttEtudeSidebar } from './GanttEtudeSidebar'
 import { GanttEtudeTimeline } from './GanttEtudeTimeline'
 import { PhaseEtudeModal } from './PhaseEtudeModal'
 import { JalonEtudeModal } from './JalonEtudeModal'
+import { ImportPlanningModal } from '../../../shared/planning/ImportPlanningModal'
+import { listerAffairesSources } from '../../../shared/planning/sourcesImport'
+import { preparerImportEtude, debutEtude, dateDeSemaine, semaineDeDate } from './importPlanningEtude'
+import { chargerPlanningEtudeSource, ecrireImportEtude } from './importEcritureEtude'
 import { ExportEtudeModal } from './ExportEtudeModal'
 import { PeriodesBloqueesModal } from '../../chantier/planning/PeriodesBloqueesModal'
 import { exportPlanningEtudeExcel } from './exportPlanningEtudeExcel'
@@ -151,6 +155,7 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
   const [phaseASupprimer, setPhaseASupprimer] = useState(null)
   const [phaseModalMode, setPhaseModalMode] = useState('edit')
   const [showJalonsModal, setShowJalonsModal] = useState(false)
+
   const [showExportModal, setShowExportModal] = useState(false)
   const [showPeriodesModal, setShowPeriodesModal] = useState(false)
   const [showOptionsPanel, setShowOptionsPanel] = useState(false)
@@ -317,6 +322,56 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
     console.error('Planning étude —', message)
     setErreurBandeau(message)
   }, [])
+
+  // ── Import d'un planning venu d'une autre affaire ───────────────────────────
+  // Comme au chantier, mais l'unité est la semaine ISO : la date choisie est
+  // ramenée à sa semaine avant de calculer l'écart.
+  const [showImport, setShowImport] = useState(false)
+  const [sourcesImport, setSourcesImport] = useState(null)
+
+  const ouvrirImport = async () => {
+    setShowImport(true)
+    if (sourcesImport) return
+    const { data, error } = await listerAffairesSources('planning_etude_phases', affaireId)
+    if (error) { signalerErreur(`Impossible de lister les affaires : ${error.message}`); return }
+    setSourcesImport(data)
+  }
+
+  const moteurImport = useMemo(() => ({
+    libelle: 'planning d’étude',
+    sources: sourcesImport?.sources ?? new Map(),
+    charger: chargerPlanningEtudeSource,
+    debutPropose: (source) => dateDeSemaine(debutEtude(source)),
+    preparer: (source, debutISO) => preparerImportEtude({
+      source,
+      existant: { phases: phases.filter(estPhasePersistee) },
+      nouveauDebut: semaineDeDate(debutISO),
+    }),
+    lignesResume: (plan) => {
+      const { resume } = plan
+      const lignes = [`${resume.phases} phase${resume.phases > 1 ? 's' : ''}`]
+      if (resume.segments) lignes.push(`${resume.segments} segment${resume.segments > 1 ? 's' : ''}`)
+      if (resume.liaisons) lignes.push(`${resume.liaisons} liaison${resume.liaisons > 1 ? 's' : ''}`)
+      if (resume.jalons) lignes.push(`${resume.jalons} jalon${resume.jalons > 1 ? 's' : ''}`)
+      return lignes
+    },
+    avertissements: () => [],
+    ecartTexte: (plan) => {
+      if (!plan.ecart) return null
+      const n = Math.abs(plan.ecart)
+      return `${plan.ecart > 0 ? '+' : '−'} ${n} semaine${n > 1 ? 's' : ''}`
+    },
+  }), [sourcesImport, phases])
+
+  const handleImport = async (plan) => {
+    saveSnapshot(takeSnapshot('Import d’un planning'))
+    const { error } = await ecrireImportEtude(affaireId, plan)
+    if (error) { retirerDernier(); return { error } }
+    await refetch()
+    await refetchSegments()
+    setShowImport(false)
+    return {}
+  }
 
   // ── Enregistrement d'une modification et de ses décalages ────────────────────
   //
@@ -785,6 +840,7 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
           onExportPdf={() => setShowExportModal(true)}
           onExportExcel={handleExportExcel}
           onOpenJalons={() => setShowJalonsModal(true)}
+          onOpenImport={ouvrirImport}
           onToggleConnections={() => setShowConnections(v => !v)}
           showConnections={showConnections}
           showOptionsPanel={showOptionsPanel}
@@ -1076,6 +1132,15 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
         updateSegment={handleUpdateSegment}
         deleteSegment={handleDeleteSegment}
       />
+
+      {showImport && (
+        <ImportPlanningModal
+          moteur={moteurImport}
+          affaires={sourcesImport?.affaires ?? []}
+          onValider={handleImport}
+          onAnnuler={() => setShowImport(false)}
+        />
+      )}
 
       <JalonEtudeModal
         open={showJalonsModal}

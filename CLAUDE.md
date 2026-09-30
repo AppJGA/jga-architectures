@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 523 tests node --test (plannings, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire)
+npm test         # 568 tests node --test (plannings, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning)
 npx eslint src   # ~73 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -477,6 +477,30 @@ trois à cinq fois plus rapide dans pdf.js.
   écart, sinon le prochain recalage ramènerait la tâche. Une seule étape
   d'historique : **l'instantané contient les jalons** (date seulement,
   `COLONNES_JALON`). Les dates de l'affaire suivent, hors historique.
+- **Importer un planning depuis une autre affaire** (bouton « Importer » des
+  deux barres d'outils) : calcul pur dans `chantier/planning/importPlanning.js`
+  et `etude/planning/importPlanningEtude.js`, écriture dans les `importEcriture*`,
+  modale commune `shared/planning/ImportPlanningModal.jsx` pilotée par un objet
+  `moteur` que chaque planning construit chez lui. Quatre règles :
+  **les lignes s'ajoutent à la suite** (rien n'est effacé, `ordre` repris après
+  le dernier) ; **l'avancement repart à zéro** (on importe une trame) ; le
+  décalage se compte en **jours ouvrés** au chantier et en **semaines ISO** à
+  l'étude ; **lots et zones se rapprochent par le NOM**, jamais par le numéro —
+  le lot 3 de deux affaires n'est pas le même métier, et `unique(affaire_id,
+  numero)` refuserait le numéro d'origine (un lot créé prend le premier libre).
+  `cleNom` défait les ligatures avant les accents : `NFD` ne décompose pas
+  « œ », et « Gros œuvre » resterait distinct de « Gros oeuvre ».
+- **L'ordre des insertions d'un import n'est pas négociable** : zones → lots →
+  tâches → liaisons → segments → dépendances → jalons. Les tâches sont écrites
+  **sans `depends_on`**, puis mises à jour : à l'insertion la tâche parente
+  n'est pas forcément créée. Les jalons gardent un `id` `generated ALWAYS`
+  (aucune migration 034/035 pour eux) — ne jamais leur en fournir un.
+- Les **congés et fermetures ne s'importent pas** : `periodes_bloquees` est
+  **commune au planning d'étude et à celui de chantier** d'une même affaire,
+  les recopier polluerait l'autre. Et ⌘Z après un import retire tâches,
+  segments et liaisons, mais **ni les jalons ni les lots ou zones créés** —
+  `diffSnapshots` neutralise volontairement les créations de jalons, et les
+  lots servent à d'autres modules.
 - **Une action du planning = une étape d'historique.** L'annulation écrit tout
   l'écart avec l'instantané : une action sans instantané est défaite en même
   temps que la précédente.

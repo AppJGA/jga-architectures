@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import {
   Plus, Pencil, GitBranch, Flag, Ban, SlidersHorizontal,
   Download, ChevronDown, FileText, TableProperties, Undo2, Redo2, CalendarClock,
+  FolderInput,
 } from 'lucide-react'
 
 const BTN = {
@@ -16,7 +17,7 @@ const SEPARATOR = {
 
 export function GanttToolbar({
   onAddTask, onOpenPeriodesBloquees, onExportPdf, onExportExcel, periodes = [],
-  onToggleConnections, showConnections, onOpenJalons, onOpenDecalage,
+  onToggleConnections, showConnections, onOpenJalons, onOpenDecalage, onOpenImport,
   showOptionsPanel, onToggleOptionsPanel,
   drawMode = false, onSetDrawMode,
   canUndo = false, canRedo = false, onUndo, onRedo, labelUndo, labelRedo,
@@ -172,6 +173,11 @@ export function GanttToolbar({
         {onOpenDecalage && (
           <button style={BTN} onClick={onOpenDecalage} title="Reporter ou avancer tout le planning">
             <CalendarClock size={13} /> Décaler
+          </button>
+        )}
+        {onOpenImport && (
+          <button style={BTN} onClick={onOpenImport} title="Reprendre le planning d’une autre affaire">
+            <FolderInput size={13} /> Importer
           </button>
         )}
       </div>

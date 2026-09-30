@@ -1,4 +1,8 @@
 import { DecalagePlanningModal } from './DecalagePlanningModal'
+import { ImportPlanningModal } from '../../../shared/planning/ImportPlanningModal'
+import { listerAffairesSources } from '../../../shared/planning/sourcesImport'
+import { preparerImport } from './importPlanning'
+import { chargerPlanningSource, ecrireImport } from './importEcriture'
 import { usePincementZoom } from '../../../shared/planning/usePincementZoom'
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { segmentParDefautTache } from './segmentParDefaut'
@@ -129,7 +133,10 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
     localStorage.setItem(`planning-zoom-${affaireId}`, zoomLevel.toString())
   }, [zoomLevel, affaireId])
 
-  const { zones: zonesBrutes, createZone, updateZone, deleteZone, reorderZones } = usePlanningZones(affaireId)
+  const {
+    zones: zonesBrutes, createZone, updateZone, deleteZone, reorderZones,
+    refetch: refetchZones,
+  } = usePlanningZones(affaireId)
 
   // Ordre d'affichage des zones : `ordre` fait foi partout — lignes groupées,
   // couleurs, légende et exports — pour que l'écran et le papier concordent.
@@ -809,6 +816,67 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
     setShowDecalage(false)
   }
 
+  // ── Import d'un planning venu d'une autre affaire ───────────────────────────
+  // Les lignes arrivent à la suite de l'existant. L'instantané est pris avant
+  // l'écriture : annuler les supprimera (le diff voit des lignes en trop).
+  const [showImport, setShowImport] = useState(false)
+  const [sourcesImport, setSourcesImport] = useState(null)
+
+  const ouvrirImport = async () => {
+    setShowImport(true)
+    if (sourcesImport) return
+    const { data, error } = await listerAffairesSources('planning', affaireId)
+    if (error) { setErreurEcriture(`Impossible de lister les affaires : ${error.message}`); return }
+    setSourcesImport(data)
+  }
+
+  const moteurImport = useMemo(() => ({
+    libelle: 'planning de chantier',
+    sources: sourcesImport?.sources ?? new Map(),
+    charger: chargerPlanningSource,
+    debutPropose: (source) => source.taches
+      .map((t) => t.debut).filter(Boolean).sort()[0] ?? '',
+    preparer: (source, debut) => preparerImport({
+      source,
+      existant: { taches: tasks, zones: zonesBrutes, lots },
+      nouveauDebut: debut,
+      periodes,
+    }),
+    lignesResume: (plan) => {
+      const { resume } = plan
+      const lignes = [`${resume.taches} tâche${resume.taches > 1 ? 's' : ''}`]
+      if (resume.segments) lignes.push(`${resume.segments} segment${resume.segments > 1 ? 's' : ''}`)
+      if (resume.liaisons + resume.dependances) lignes.push(`${resume.liaisons + resume.dependances} liaison${resume.liaisons + resume.dependances > 1 ? 's' : ''}`)
+      if (resume.jalons) lignes.push(`${resume.jalons} jalon${resume.jalons > 1 ? 's' : ''}`)
+      return lignes
+    },
+    avertissements: (plan) => {
+      const avis = []
+      if (plan.resume.lotsCrees) {
+        avis.push(`${plan.resume.lotsCrees} lot${plan.resume.lotsCrees > 1 ? 's seront créés' : ' sera créé'} dans l’affaire : ils apparaîtront aussi au suivi financier, aux comptes rendus et aux OPR.`)
+      }
+      if (plan.resume.zonesCreees) {
+        avis.push(`${plan.resume.zonesCreees} zone${plan.resume.zonesCreees > 1 ? 's seront créées' : ' sera créée'}.`)
+      }
+      return avis
+    },
+    ecartTexte: (plan) => {
+      if (!plan.ecart) return null
+      const n = Math.abs(plan.ecart)
+      return `${plan.ecart > 0 ? '+' : '−'} ${n} jour${n > 1 ? 's' : ''} ouvré${n > 1 ? 's' : ''}`
+    },
+  }), [sourcesImport, tasks, zonesBrutes, lots, periodes])
+
+  const handleImport = async (plan) => {
+    saveSnapshot(takeSnapshot('Import d’un planning'))
+    const { error } = await ecrireImport(affaireId, plan)
+    if (error) { retirerDernier(); return { error } }
+    await rechargerTout()
+    await refetchZones()
+    setShowImport(false)
+    return {}
+  }
+
   const handlePeriodeAjout = useCallback(async (data) => {
     const resultat = await addPeriode(data)
     if (!resultat.error && resultat.data) await recalerApresPeriodes([...periodes, resultat.data], 'Nouvelle période')
@@ -1156,6 +1224,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
           showConnections={showConnections}
           onOpenJalons={() => setShowJalonsModal(true)}
           onOpenDecalage={tasks.length > 0 ? () => setShowDecalage(true) : undefined}
+          onOpenImport={ouvrirImport}
           drawMode={drawMode}
           onSetDrawMode={setDrawMode}
           showOptionsPanel={showOptionsPanel}
@@ -1624,6 +1693,15 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
           periodes={periodes} affaire={affaire}
           onValider={handleDecalage}
           onAnnuler={() => setShowDecalage(false)}
+        />
+      )}
+
+      {showImport && (
+        <ImportPlanningModal
+          moteur={moteurImport}
+          affaires={sourcesImport?.affaires ?? []}
+          onValider={handleImport}
+          onAnnuler={() => setShowImport(false)}
         />
       )}
 

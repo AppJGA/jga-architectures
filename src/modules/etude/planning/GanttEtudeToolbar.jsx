@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import {
   Plus, Pencil, GitBranch, Flag, Ban, SlidersHorizontal,
   Download, ChevronDown, FileText, TableProperties, RefreshCw, Undo2, Redo2,
+  FolderInput,
 } from 'lucide-react'
 
 const BTN = {
@@ -25,7 +26,7 @@ export function GanttEtudeToolbar({
   onAddTask, drawMode = false, onSetDrawMode,
   onOpenPeriodes, periodes = [],
   onExportPdf, onExportExcel,
-  onOpenJalons, onToggleConnections, showConnections,
+  onOpenJalons, onOpenImport, onToggleConnections, showConnections,
   showOptionsPanel, onToggleOptionsPanel,
   notionEnabled, notionConnected, onToggleNotion,
 }) {
@@ -130,6 +131,16 @@ export function GanttEtudeToolbar({
         <button style={{ ...BTN, whiteSpace: 'nowrap' }} onClick={onOpenJalons}>
           <Flag size={13} /> Jalons
         </button>
+
+        {onOpenImport && (
+          <button
+            style={{ ...BTN, whiteSpace: 'nowrap' }}
+            onClick={onOpenImport}
+            title="Reprendre le planning d’une autre affaire"
+          >
+            <FolderInput size={13} /> Importer
+          </button>
+        )}
 
         <button
           ref={exportBtnRef}

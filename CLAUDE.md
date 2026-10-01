@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 568 tests node --test (plannings, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning)
+npm test         # 582 tests node --test (plannings, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
 npx eslint src   # ~73 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -359,6 +359,22 @@ demande, l'utilisateur la fait analyser, il recolle la réponse.
   est écrite en clair dans le fichier JS livré au navigateur — la clé était
   lisible par quiconque ouvrait l'app. Un appel payant, s'il devait revenir,
   passerait par une fonction serveur (`api/`, comme `garder-eveil.js`).
+
+## Convertisseur (`src/tools/convertisseur/`)
+
+Photos HEIC de l'iPhone en JPEG, par lot (ZIP au-delà d'une photo), taille
+d'origine ou allégée à 2 000 px. **Tout reste sur l'appareil** : rien ne passe
+par Supabase, dont le stockage est plafonné — c'est une demande de l'agence.
+
+- Pensé pour d'autres conversions : un format de plus, c'est une entrée dans
+  `FORMATS_ENTREE` / `FORMATS_SORTIE` (`conversionLogique.js`, testé), pas un
+  nouvel outil. Le décodage et l'encodage sont dans `conversion.js`.
+- Un HEIC se reconnaît à son contenu (boîte `ftyp`), pas à l'extension.
+- Le décodeur `heic-to` (libheif, 3 Mo) se charge au premier HEIC et est
+  exclu du préchargement de la PWA (`globIgnores` de `vite.config.js`) : sans
+  cela, le build échoue (fichier trop gros pour workbox).
+- Repasser par un canvas retire date, GPS et appareil : voulu, les photos
+  partent chez des tiers. La rotation de l'iPhone est appliquée par libheif.
 
 ## Aplatisseur de plan (`src/tools/rasterisation/`)
 

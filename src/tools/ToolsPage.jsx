@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Layers, Bot, Clock, ShieldCheck } from 'lucide-react'
+import { Layers, Bot, Clock, ShieldCheck, ArrowRightLeft } from 'lucide-react'
 import { tools } from './manifest'
 
-const ICON_MAP = { Layers, Bot, Clock, ShieldCheck }
+const ICON_MAP = { Layers, Bot, Clock, ShieldCheck, ArrowRightLeft }
 
 function ToolCard({ tool, onClick }) {
   const [hovered, setHovered] = useState(false)

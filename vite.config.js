@@ -43,6 +43,9 @@ export default defineConfig({
       workbox: {
         navigateFallback: '/index.html',
         globPatterns: ['**/*.{js,css,html,ico,png,svg,jpg}'],
+        // Le décodeur HEIC du convertisseur (3 Mo) ne sert qu'au bureau : le
+        // précharger alourdirait chaque installation de l'app, iPad compris.
+        globIgnores: ['**/heic-to-*.js'],
         runtimeCaching: [
           {
             urlPattern: ({ url }) => url.hostname.includes('supabase.co'),

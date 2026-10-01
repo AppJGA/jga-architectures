@@ -20,6 +20,15 @@ export const tools = [
     enabled: true,
   },
   {
+    id: 'convertisseur',
+    label: 'Convertisseur',
+    icon: 'ArrowRightLeft',
+    description: 'Photos HEIC de l’iPhone en JPEG, par lot',
+    path: 'convertisseur',
+    component: lazy(() => import('./convertisseur')),
+    enabled: true,
+  },
+  {
     id: 'heures',
     label: 'Déclaration des heures',
     icon: 'Clock',

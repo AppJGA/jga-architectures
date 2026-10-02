@@ -130,18 +130,17 @@ function destinataireIntrouvable(rem, lots, interlocuteurs) {
 // ─── Formulaire de remarque ────────────────────────────────────────────────────
 // Évolution 1: 'general' → aucune attribution, 'interlocuteurs' → sélect combiné
 
-function RemarqueForm({ initial, crDate, suggestions, lots, interlocuteurs, zones = [], sectionType, onSave, onCancel, onDelete }) {
+function RemarqueForm({ initial, crDate, lots, interlocuteurs, zones = [], sectionType, onSave, onCancel, onDelete }) {
   const today = crDate ?? dateDuJour()
   // Une remarque créée maintenant est nouvelle dans cette visite (▶) ; la
   // reprise dans la visite suivante retire le repère.
   const [form, setForm] = useState(() => ({
-    date_note: today, pour: '', description: '',
+    date_note: today, description: '',
     statut: STATUT_PAR_DEFAUT, date_echeance: '',
     est_important: false, est_nouveau: true,
     lot_id: '', interlocuteur_id: '', zone_id: '',
     ...(initial ? {
       date_note:        initial.date_note ?? today,
-      pour:             initial.pour ?? '',
       description:      initial.description ?? '',
       statut:           statutNormalise(initial),
       date_echeance:    initial.date_echeance ?? '',
@@ -180,7 +179,6 @@ function RemarqueForm({ initial, crDate, suggestions, lots, interlocuteurs, zone
     try {
       await onSave({
         date_note:        form.date_note || null,
-        pour:             form.pour || null,
         description:      form.description,
         ...changementStatut(form.statut),
         date_echeance:    form.date_echeance || null,
@@ -245,22 +243,11 @@ function RemarqueForm({ initial, crDate, suggestions, lots, interlocuteurs, zone
           </div>
         )}
 
-        {/* Date + Pour + Échéance */}
+        {/* Date + Échéance */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
           <div>
             <label style={LABEL}>Date</label>
             <input type="date" value={form.date_note ?? ''} onChange={e => set('date_note', e.target.value)} style={INPUT} onFocus={focusOn} onBlur={focusOff} />
-          </div>
-          <div>
-            <label style={LABEL}>Pour (initiales)</label>
-            <input
-              value={form.pour ?? ''} onChange={e => set('pour', e.target.value)}
-              list="pour-suggestions" placeholder="Ex: SAR, JAC…"
-              style={INPUT} onFocus={focusOn} onBlur={focusOff}
-            />
-            <datalist id="pour-suggestions">
-              {(suggestions ?? []).map(s => <option key={s} value={s} />)}
-            </datalist>
           </div>
           <div>
             <label style={LABEL}>Pour le</label>
@@ -364,9 +351,6 @@ function SousRemarqueRow({ sr, onDelete, onStatut }) {
       <span style={{ color: '#9C9591', fontSize: 11, fontFamily: "'JetBrains Mono', monospace", minWidth: 40, flexShrink: 0, marginTop: 1 }}>
         {fmtD(sr.date_note)}
       </span>
-      {sr.pour && (
-        <span style={{ color: '#E8602C', fontSize: 11, fontWeight: 500, minWidth: 28, flexShrink: 0, marginTop: 1 }}>{sr.pour}</span>
-      )}
       <span style={{ flex: 1, fontSize: 12, textDecoration: st.clos ? 'line-through' : 'none', color: st.clos ? '#9CA3AF' : '#374151' }}>
         {sr.description}
         {sr.date_echeance && <span style={{ marginLeft: 6, fontSize: 11, color: '#5E5854' }}>· pour le {fmtD(sr.date_echeance)}</span>}
@@ -392,7 +376,6 @@ function SousRemarqueRow({ sr, onDelete, onStatut }) {
 function SousRemarqueForm({ crDate, onSave, onCancel }) {
   const today = crDate ?? dateDuJour()
   const [date, setDate]               = useState(today)
-  const [pour, setPour]               = useState('')
   const [description, setDescription] = useState('')
   const [saving, setSaving]           = useState(false)
 
@@ -401,8 +384,6 @@ function SousRemarqueForm({ crDate, onSave, onCancel }) {
       <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start', flexWrap: 'wrap' }}>
         <input type="date" value={date} onChange={e => setDate(e.target.value)}
           style={{ ...INPUT, width: 140, height: 30, fontSize: 11 }} onFocus={focusOn} onBlur={focusOff} />
-        <input value={pour} onChange={e => setPour(e.target.value)} placeholder="Pour…"
-          style={{ ...INPUT, width: 70, height: 30, fontSize: 11 }} onFocus={focusOn} onBlur={focusOff} />
         <textarea
           value={description} onChange={e => setDescription(e.target.value)}
           placeholder="Suivi…" autoFocus rows={2}
@@ -420,7 +401,7 @@ function SousRemarqueForm({ crDate, onSave, onCancel }) {
             if (!description.trim()) return
             setSaving(true)
             try {
-              await onSave({ date_note: date || null, pour: pour || null, description: description.trim(), est_nouveau: true, est_clos: false, est_important: false })
+              await onSave({ date_note: date || null, description: description.trim(), est_nouveau: true, est_clos: false, est_important: false })
             } catch (err) { console.error(err) }
             setSaving(false)
           }}
@@ -441,7 +422,7 @@ function SousRemarqueForm({ crDate, onSave, onCancel }) {
  * @param onModifier parties VI / VII : le crayon ouvre le panneau de saisie,
  *   qui sait changer de destinataire et donc de partie
  */
-function RemarqueRow({ rem, idx, total, crDate, suggestions, lots, interlocuteurs, zones, sectionType, onEdit, onDelete, onReorder, onAddSousRemarque, onOuvrirSuite, onModifier, noReorder, hidden }) {
+function RemarqueRow({ rem, idx, total, crDate, lots, interlocuteurs, zones, sectionType, onEdit, onDelete, onReorder, onAddSousRemarque, onOuvrirSuite, onModifier, noReorder, hidden }) {
   const [editOpen, setEditOpen]       = useState(false)
   const [addingSuivi, setAddingSuivi] = useState(false)
   const [historiqueOuvert, setHistoriqueOuvert] = useState(false)
@@ -472,7 +453,6 @@ function RemarqueRow({ rem, idx, total, crDate, suggestions, lots, interlocuteur
       <RemarqueForm
         initial={{ ...rem }}
         crDate={crDate}
-        suggestions={suggestions}
         lots={lots}
         interlocuteurs={interlocuteurs}
         zones={zones}
@@ -516,7 +496,6 @@ function RemarqueRow({ rem, idx, total, crDate, suggestions, lots, interlocuteur
             {rem.est_nouveau && <span style={{ color: '#E8602C', marginRight: 2 }}>▶</span>}
             {fmtD(rem.date_note) ?? '—'}
           </p>
-          {rem.pour && <p style={{ fontSize: 10, color: '#E8602C', fontWeight: 500, marginTop: 2 }}>{rem.pour}</p>}
         </div>
 
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -654,7 +633,7 @@ function RemarqueRow({ rem, idx, total, crDate, suggestions, lots, interlocuteur
 
 // ─── Sous-section ──────────────────────────────────────────────────────────────
 
-function SousSectionBlock({ ss, sectionId, ssIdx, ssTotal, crDate, suggestions, lots, interlocuteurs, zones, sectionType, ops, filterFn }) {
+function SousSectionBlock({ ss, sectionId, ssIdx, ssTotal, crDate, lots, interlocuteurs, zones, sectionType, ops, filterFn }) {
   const [collapsed, setCollapsed]   = useState(false)
   const [addRem, setAddRem]         = useState(false)
   const [editSs, setEditSs]         = useState(false)
@@ -703,7 +682,6 @@ function SousSectionBlock({ ss, sectionId, ssIdx, ssTotal, crDate, suggestions, 
           {addRem && !lectureSeule && (
             <RemarqueForm
               crDate={crDate}
-              suggestions={suggestions}
               lots={lots}
               interlocuteurs={interlocuteurs}
               zones={zones}
@@ -723,7 +701,6 @@ function SousSectionBlock({ ss, sectionId, ssIdx, ssTotal, crDate, suggestions, 
               idx={i}
               total={ss.remarques.length}
               crDate={crDate}
-              suggestions={suggestions}
               lots={lots}
               interlocuteurs={interlocuteurs}
               zones={zones}
@@ -747,7 +724,7 @@ function SousSectionBlock({ ss, sectionId, ssIdx, ssTotal, crDate, suggestions, 
 // ─── Vue groupée par destinataire (sections interlocuteurs) ───────────────────
 // Évolution 3: tri par interlocuteur puis par date
 
-function InterlocuteursGroupedView({ section, crDate, suggestions, lots, interlocuteurs, zones, ops, filterFn }) {
+function InterlocuteursGroupedView({ section, crDate, lots, interlocuteurs, zones, ops, filterFn }) {
   const allRems = [
     ...(section.directRemarques ?? []),
     ...(section.sousSections ?? []).flatMap(ss => ss.remarques ?? []),
@@ -823,7 +800,6 @@ function InterlocuteursGroupedView({ section, crDate, suggestions, lots, interlo
               idx={i}
               total={g.remarques.length}
               crDate={crDate}
-              suggestions={suggestions}
               lots={lots}
               interlocuteurs={interlocuteurs ?? []}
               zones={zones}
@@ -846,7 +822,7 @@ function InterlocuteursGroupedView({ section, crDate, suggestions, lots, interlo
 // Le rangement se calcule (remarquesLogique.js) ; « + » sur un titre écrit
 // directement à ce destinataire.
 
-function PartieRemarquesView({ section, crDate, suggestions, lots, interlocuteurs, zones, ops, filterFn, onNouvelle, onOuvrirSuite, onModifier }) {
+function PartieRemarquesView({ section, crDate, lots, interlocuteurs, zones, ops, filterFn, onNouvelle, onOuvrirSuite, onModifier }) {
   const lectureSeule = !peutOrganiser(useCr())
   const visibles = [
     ...(section.directRemarques ?? []),
@@ -877,7 +853,6 @@ function PartieRemarquesView({ section, crDate, suggestions, lots, interlocuteur
               idx={i}
               total={g.remarques.length}
               crDate={crDate}
-              suggestions={suggestions}
               lots={lots}
               interlocuteurs={interlocuteurs ?? []}
               zones={zones}
@@ -902,7 +877,7 @@ function PartieRemarquesView({ section, crDate, suggestions, lots, interlocuteur
 // Évolution 2: remarques directes + bouton dédié
 // Évolution 3: vue groupée pour sections 'interlocuteurs'
 
-function SectionBlock({ section, sIdx, sTotal, crDate, suggestions, lots, interlocuteurs, zones, ops, filterFn, onDragStart, onDragOver, onDrop, onDragEnd, isDragging, onNouvelle, onOuvrirSuite, onModifier }) {
+function SectionBlock({ section, sIdx, sTotal, crDate, lots, interlocuteurs, zones, ops, filterFn, onDragStart, onDragOver, onDrop, onDragEnd, isDragging, onNouvelle, onOuvrirSuite, onModifier }) {
   const [open, setOpen]               = useState(true)
   const [addSs, setAddSs]             = useState(false)
   const [addDirectRem, setAddDirectRem] = useState(false)
@@ -991,7 +966,6 @@ function SectionBlock({ section, sIdx, sTotal, crDate, suggestions, lots, interl
             <PartieRemarquesView
               section={section}
               crDate={crDate}
-              suggestions={suggestions}
               lots={lots}
               interlocuteurs={interlocuteurs}
               zones={zones}
@@ -1006,7 +980,6 @@ function SectionBlock({ section, sIdx, sTotal, crDate, suggestions, lots, interl
             <InterlocuteursGroupedView
               section={section}
               crDate={crDate}
-              suggestions={suggestions}
               lots={lots}
               interlocuteurs={interlocuteurs}
               zones={zones}
@@ -1024,7 +997,6 @@ function SectionBlock({ section, sIdx, sTotal, crDate, suggestions, lots, interl
                   ssIdx={si}
                   ssTotal={section.sousSections.length}
                   crDate={crDate}
-                  suggestions={suggestions}
                   lots={lots}
                   interlocuteurs={interlocuteurs}
                   zones={zones}
@@ -1049,7 +1021,6 @@ function SectionBlock({ section, sIdx, sTotal, crDate, suggestions, lots, interl
                       idx={i}
                       total={section.directRemarques.length}
                       crDate={crDate}
-                      suggestions={suggestions}
                       lots={lots}
                       interlocuteurs={interlocuteurs}
                       zones={zones}
@@ -1071,7 +1042,6 @@ function SectionBlock({ section, sIdx, sTotal, crDate, suggestions, lots, interl
             <div style={{ marginTop: 8 }}>
               <RemarqueForm
                 crDate={crDate}
-                suggestions={suggestions}
                 lots={lots}
                 interlocuteurs={interlocuteurs}
                 zones={zones}
@@ -1210,7 +1180,7 @@ function FilterBar({ filtre, setFiltre, lots, interlocuteurs, zones = [], nbVisi
 // ─── Modal nouvelle remarque globale ──────────────────────────────────────────
 // Évolution 2: sous-section optionnelle ("Directement dans la section")
 
-function NewRemarqueModal({ sections, crDate, suggestions, lots, interlocuteurs, zones, ops, onClose }) {
+function NewRemarqueModal({ sections, crDate, lots, interlocuteurs, zones, ops, onClose }) {
   const { contributeur } = useCr()
   // Pour un intervenant extérieur, une seule destination possible
   const sectionsOffertes = contributeur
@@ -1268,7 +1238,6 @@ function NewRemarqueModal({ sections, crDate, suggestions, lots, interlocuteurs,
 
         <RemarqueForm
           crDate={crDate}
-          suggestions={suggestions}
           lots={lots}
           interlocuteurs={interlocuteurs}
           zones={zones}
@@ -1338,15 +1307,6 @@ export function CrSectionEditor({ sections, crId, crDate, interlocuteurs, lotEnt
   }
   const toutesPrincipales = sections.flatMap(s => [...(s.directRemarques ?? []), ...(s.sousSections ?? []).flatMap(ss => ss.remarques ?? [])])
 
-  const suggestions = [
-    ...(interlocuteurs ?? []).map(i => {
-      const parts = [i.prenom, i.nom].filter(Boolean)
-      return parts.length > 0 ? parts.map(p => p[0]).join('').toUpperCase() : null
-    }).filter(Boolean),
-    ...(lotEntreprises ?? []).map(le =>
-      le.entreprises?.raison_sociale?.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 3)
-    ).filter(Boolean),
-  ].filter((v, i, a) => v && a.indexOf(v) === i)
 
   const filterFn = (rem) => passeFiltre(rem, filtre, crDate)
 
@@ -1493,7 +1453,6 @@ export function CrSectionEditor({ sections, crId, crDate, interlocuteurs, lotEnt
             sIdx={sections.indexOf(sec)}
             sTotal={sections.length}
             crDate={crDate}
-            suggestions={suggestions}
             lots={lots}
             interlocuteurs={interlocuteurs ?? []}
             zones={zones}
@@ -1588,7 +1547,6 @@ export function CrSectionEditor({ sections, crId, crDate, interlocuteurs, lotEnt
         <NewRemarqueModal
           sections={sections}
           crDate={crDate}
-          suggestions={suggestions}
           lots={lots}
           interlocuteurs={interlocuteurs ?? []}
           zones={zones}

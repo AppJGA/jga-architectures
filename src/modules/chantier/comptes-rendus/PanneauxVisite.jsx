@@ -130,7 +130,6 @@ export function PanneauRemarque({ remarque, cr, lots, interlocuteurs, zones = []
   const cleMemoire = `jga-cr-destinataire-${cr.id}`
   const choix = choixDestinataires({ lots, interlocuteurs })
   const [description, setDescription] = useState(remarque?.description ?? '')
-  const [pour, setPour] = useState(remarque?.pour ?? '')
   const [statut, setStatut] = useState(remarque ? statutNormalise(remarque) : STATUT_PAR_DEFAUT)
   const [echeance, setEcheance] = useState(remarque?.date_echeance ?? '')
   const [zoneId, setZoneId] = useState(remarque?.zone_id ?? '')
@@ -166,7 +165,7 @@ export function PanneauRemarque({ remarque, cr, lots, interlocuteurs, zones = []
     setOccupe(true)
     try {
       const payload = {
-        description: texte, pour: pour.trim() || null, statut, est_clos: PAR_CODE.get(statut).clos,
+        description: texte, statut, est_clos: PAR_CODE.get(statut).clos,
         date_echeance: echeance || null, est_important: important,
         ...(zones.length > 0 && { zone_id: zoneId || null }),
         ...champsDestinataire(destinataire),
@@ -197,16 +196,16 @@ export function PanneauRemarque({ remarque, cr, lots, interlocuteurs, zones = []
         </div>
       }
     >
-      <ChoixDestinataire choix={choix} valeur={destinataire} onChoisir={setDestinataire} facultatif={!destinataireRequis} numeros={numeros} />
-
-      <div>
-        <label style={LABEL} htmlFor="visite-texte">Remarque</label>
+      {/* Le texte d'abord, et en évidence : c'est ce qu'on vient noter ; le reste
+          se règle ensuite */}
+      <div style={{ background: 'white', borderLeft: '4px solid #E8602C', padding: '12px 14px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
+        <label htmlFor="visite-texte" style={{ display: 'block', fontSize: 14, fontWeight: 600, color: '#1F1B17', marginBottom: 8 }}>Remarque</label>
         <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
           <textarea
-            id="visite-texte" autoFocus={!modification} value={description} rows={3}
+            id="visite-texte" autoFocus={!modification} value={description} rows={4}
             onChange={e => setDescription(e.target.value)}
             placeholder="Ce qui a été constaté, ce qu’il faut faire…"
-            style={{ ...CHAMP, padding: '10px 12px', minHeight: 96, resize: 'vertical', lineHeight: 1.4, fontFamily: 'inherit' }}
+            style={{ ...CHAMP, padding: '12px 14px', minHeight: 128, fontSize: 18, lineHeight: 1.45, resize: 'vertical', fontFamily: 'inherit', border: '1.5px solid rgba(232,96,44,0.55)' }}
           />
           <BoutonDictee onTexte={t => setDescription(d => ajouterDictee(d, t))} onErreur={m => signalerErreur(new Error(m))} />
         </div>
@@ -247,6 +246,8 @@ export function PanneauRemarque({ remarque, cr, lots, interlocuteurs, zones = []
         )}
       </div>
 
+      <ChoixDestinataire choix={choix} valeur={destinataire} onChoisir={setDestinataire} facultatif={!destinataireRequis} numeros={numeros} />
+
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
         <MenuStatut id="visite-statut" label="Statut" valeur={statut} onChange={setStatut} />
         {zones.length > 0 && (
@@ -272,14 +273,11 @@ export function PanneauRemarque({ remarque, cr, lots, interlocuteurs, zones = []
           </div>
         </div>
         <div>
-          <label style={LABEL} htmlFor="visite-pour">Pour (initiales)</label>
-          <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-            <input id="visite-pour" value={pour} onChange={e => setPour(e.target.value)} placeholder="SAR, JAC…" style={{ ...CHAMP, width: 120 }} />
-            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 14, cursor: 'pointer', minHeight: 44 }}>
-              <input type="checkbox" checked={important} onChange={e => setImportant(e.target.checked)} style={{ width: 20, height: 20, accentColor: '#E8602C' }} />
-              Important
-            </label>
-          </div>
+          <span style={LABEL}>Mise en avant</span>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 14, cursor: 'pointer', minHeight: 44 }}>
+            <input type="checkbox" checked={important} onChange={e => setImportant(e.target.checked)} style={{ width: 20, height: 20, accentColor: '#E8602C' }} />
+            Important
+          </label>
         </div>
       </div>
 

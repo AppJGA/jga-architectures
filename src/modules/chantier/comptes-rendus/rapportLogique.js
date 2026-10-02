@@ -145,7 +145,6 @@ function lignesRemarque(rem, contexte) {
       stack: [
         ...(rem.numero != null ? [{ text: `n°${rem.numero}`, fontSize: 7, color: COULEUR.grisClair }] : []),
         { text: [rem.est_nouveau ? { text: '» ', color: COULEUR.orange } : '', jour(rem.date_note) || '—'], fontSize: 8, color: COULEUR.gris },
-        ...(rem.pour ? [{ text: rem.pour, fontSize: 8, bold: true, color: COULEUR.orange }] : []),
         ...(destinataire ? [{ text: `(${destinataire})`, fontSize: 7, italics: true, color: COULEUR.gris }] : []),
         ...(rem._section ? [{ text: rem._section, fontSize: 7, color: COULEUR.grisClair }] : []),
         ...(!rem._section && libelleZone(rem, contexte.zones) ? [{ text: libelleZone(rem, contexte.zones), fontSize: 7, color: '#1B3A5C' }] : []),
@@ -197,7 +196,7 @@ function lignesRemarque(rem, contexte) {
     const retardSuite = estEnRetard(sr, dateReference)
     lignes.push([
       { text: [{ text: '» ', color: COULEUR.orange }, jour(sr.date_note) || '—'], fontSize: 7, color: COULEUR.gris, margin: [8, 0, 0, 0], fillColor: '#FAFAFA' },
-      { text: [sr.pour ? { text: `${sr.pour} `, bold: true, color: COULEUR.orange } : '', sr.description], fontSize: 8, color: st.clos ? COULEUR.grisClair : '#374151', decoration: st.clos ? 'lineThrough' : undefined, fillColor: '#FAFAFA' },
+      { text: sr.description, fontSize: 8, color: st.clos ? COULEUR.grisClair : '#374151', decoration: st.clos ? 'lineThrough' : undefined, fillColor: '#FAFAFA' },
       sr.date_echeance
         ? { text: jour(sr.date_echeance), fontSize: 7.5, color: retardSuite ? '#B8412C' : COULEUR.gris, bold: retardSuite, fillColor: '#FAFAFA' }
         : { text: '', fillColor: '#FAFAFA' },

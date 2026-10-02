@@ -153,9 +153,8 @@ function CarteRemarque({ rem, cr, lots, interlocuteurs, zones, ftms, ouvrirFtm, 
         </ul>
       )}
 
-      {(rem.pour || rem.date_echeance || (statut.clos && rem.date_cloture) || suivis.length > 0 || planNom) && (
+      {(rem.date_echeance || (statut.clos && rem.date_cloture) || planNom) && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 6, fontSize: 13, color: '#5E5854' }}>
-          {rem.pour && <span style={{ color: '#E8602C', fontWeight: 500 }}>{rem.pour}</span>}
           {rem.date_echeance && <span style={{ color: enRetard ? '#B8412C' : undefined, fontWeight: enRetard ? 600 : 400 }}>Pour le {fmtJour(rem.date_echeance)}</span>}
           {enRetard && <span style={{ fontSize: 11, fontWeight: 700, color: 'white', background: '#B8412C', borderRadius: 3, padding: '2px 7px' }}>EN RETARD</span>}
           {statut.clos && rem.date_cloture && <span style={{ color: '#2A8A4E' }}>{statut.libelle} le {fmtJour(rem.date_cloture)}</span>}

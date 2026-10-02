@@ -98,7 +98,9 @@ création avec reprise de la visite précédente) et `useCompteRendu` (un CR).
   numéros de VI / VII **se calculent** d'après le nombre de parties des
   généralités (`numeroterParties`, dans `CrDetail`) : une sixième partie les
   décale en VII / VIII. Le `numero_romain` enregistré de ces sections ne sert
-  plus à l'affichage. `ordonnerParties` garde VI avant
+  plus à l'affichage. Le panneau commence par le **texte**, mis en évidence :
+  c'est lui qui compte. Les initiales « Pour » (`cr_remarques.pour`) ne sont
+  plus ni saisies ni affichées, à la demande de l'agence ; la colonne reste. `ordonnerParties` garde VI avant
   VII quel que soit l'ordre de création. Une **suite** (sous-remarque, ▶) a son
   propre statut et son échéance ; toucher une remarque ouvre `PanneauSuite`
   (avec « Clore la remarque d'origine »). Les sections I à V restent des

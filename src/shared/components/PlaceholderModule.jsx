@@ -18,7 +18,7 @@ export function PlaceholderModule({ icon: Icon, label }) {
       <p className="text-sm mb-6">en cours de développement</p>
       <p className="text-xs mb-6">Ce module sera disponible prochainement.</p>
       <Button variant="secondary" onClick={() => navigate('/dashboard')}>
-        Retour au tableau de bord
+        Retour au portail d'affaires
       </Button>
     </div>
   )

@@ -12,7 +12,7 @@ export function Topbar() {
   const [profile, setProfile] = useState(null)
 
   const PAGE_TITLES = {
-    '/dashboard':       'Tableau de bord',
+    '/dashboard':       "Portail d'affaires",
     '/tools':           'Boîte à outils',
     '/carnet-adresses': "Carnet d'adresses",
   }

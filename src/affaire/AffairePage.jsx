@@ -273,7 +273,7 @@ function AffaireHeader({ affaire, onEdit, collaborateurs, canEdit, collabLoading
           onMouseLeave={e => e.currentTarget.style.color = 'var(--jga-beige)'}
         >
           <ArrowLeft size={13} strokeWidth={1.25} />
-          Tableau de bord
+          Portail d'affaires
         </button>
 
         <div style={{ width: 1, height: 16, backgroundColor: 'rgba(0,0,0,0.1)', flexShrink: 0 }} />
@@ -470,22 +470,25 @@ function ModulesSidebar({ affaireId, moduleId }) {
       display: 'flex',
       flexDirection: 'column',
     }}>
-      {/* Tableau de bord */}
+      {/* Tableau de bord : le point de retour de l'affaire, il se distingue des
+          modules par un fond — plein quand on y est, teinté sinon */}
       <button
         onClick={() => navigate(`/affaires/${affaireId}`)}
+        aria-current={!moduleId ? 'page' : undefined}
         style={{
-          display: 'flex', alignItems: 'center', gap: 6,
-          width: '100%', padding: '6px 12px',
-          background: 'none', border: 'none', cursor: 'pointer',
-          fontSize: 11, fontWeight: 500, textAlign: 'left',
+          display: 'flex', alignItems: 'center', gap: 8,
+          width: '100%', padding: '9px 12px', borderRadius: 3,
+          border: 'none', cursor: 'pointer',
+          fontSize: 11, fontWeight: 600, textAlign: 'left',
           textTransform: 'uppercase', letterSpacing: '0.06em',
-          color: !moduleId ? 'var(--jga-orange)' : '#9C9591',
-          transition: 'color 0.15s', marginBottom: 4,
+          backgroundColor: !moduleId ? 'var(--jga-orange)' : 'var(--jga-orange-light)',
+          color: !moduleId ? 'white' : 'var(--jga-orange)',
+          transition: 'background-color 0.15s, color 0.15s', marginBottom: 4,
         }}
-        onMouseEnter={e => { if (moduleId) e.currentTarget.style.color = 'var(--jga-orange)' }}
-        onMouseLeave={e => { if (moduleId) e.currentTarget.style.color = '#9C9591' }}
+        onMouseEnter={e => { if (moduleId) e.currentTarget.style.backgroundColor = 'rgba(232,96,44,0.18)' }}
+        onMouseLeave={e => { if (moduleId) e.currentTarget.style.backgroundColor = 'var(--jga-orange-light)' }}
       >
-        <LayoutDashboard size={12} strokeWidth={1.25} />
+        <LayoutDashboard size={14} strokeWidth={1.5} />
         Tableau de bord
       </button>
 

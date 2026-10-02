@@ -7,7 +7,7 @@ import {
 } from 'lucide-react'
 
 const mainNav = [
-  { icon: Building2, path: '/dashboard', label: 'Tableau de bord' },
+  { icon: Building2, path: '/dashboard', label: "Portail d'affaires" },
   { icon: Calendar, path: '/planning', label: 'Planning' },
   { icon: BarChart2, path: '/financier', label: 'Suivi financier' },
   { icon: CheckSquare, path: '/todo', label: 'To-do list' },

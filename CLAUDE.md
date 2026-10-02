@@ -548,6 +548,22 @@ appelle chaque jour `api/garder-eveil.js` (tâche `crons` de `vercel.json`,
 `vercel.json` exclut `/api/`, sinon l'appel renverrait `index.html`. Suivi :
 Vercel → projet → Cron Jobs.
 
+## Sauvegardes
+
+L'offre gratuite de Supabase ne sauvegarde rien. Le dépôt **privé**
+`AppJGA/jga-sauvegardes` (copie locale `../jga-sauvegardes`) le fait chaque
+nuit à 1 h UTC par GitHub Actions : la base par `supabase db dump` (rôles,
+structure, données, gardés 30 jours en artifacts), les fichiers de tous les
+buckets recopiés dans le dépôt (seuls les nouveaux ; un fichier supprimé reste).
+Résumé de la nuit : `derniere-sauvegarde.md`. Restauration : son `README.md`.
+
+- Secrets du dépôt : `SUPABASE_DB_URL` (Session pooler, avec le mot de passe
+  de la base — **à mettre à jour si ce mot de passe change**) et
+  `SUPABASE_SERVICE_ROLE_KEY`.
+- **Ce dépôt-ci (`jga-architectures`) est public** : jamais de données, de
+  sauvegarde ni de secret dedans.
+- Une nouvelle table ou un nouveau bucket sont pris d'office ; rien à modifier.
+
 ## Livraison
 
 Commiter **et pousser** en fin de tâche. Le site est déployé depuis `main` : un

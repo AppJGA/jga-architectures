@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { X, Search } from 'lucide-react'
 import { supabase } from '../core/supabase/client'
 
@@ -26,6 +26,7 @@ export function CollabModal({
   const [allProfiles, setAllProfiles] = useState([])
   const [confirmRemove, setConfirmRemove] = useState(null)
   const [adding, setAdding] = useState(false)
+  const listeRef = useRef(null)
 
   useEffect(() => {
     supabase.from('profiles').select('id, prenom, nom, email')
@@ -44,6 +45,13 @@ export function CollabModal({
   )
 
   const proprietaire = collaborateurs.find(c => c.role === 'proprietaire')
+
+  // La liste s'ouvre sous le dernier champ de la fenêtre : on la fait venir
+  // dans la vue plutôt que de la laisser sous le bord
+  const listeOuverte = search.length >= 2
+  useEffect(() => {
+    if (listeOuverte) listeRef.current?.scrollIntoView({ block: 'nearest' })
+  }, [listeOuverte])
 
   const handleAdd = async (profileId) => {
     setAdding(true)
@@ -167,12 +175,19 @@ export function CollabModal({
                 }}
               />
 
-              {search.length >= 2 && (
-                <div style={{
-                  position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4,
+            </div>
+
+            {/* Dans le déroulé de la fenêtre, et non posée par-dessus : la
+                fenêtre défile (overflowY), et une liste en position absolue
+                était coupée à son bord, masquant les noms proposés. */}
+            {listeOuverte && (
+                <div ref={listeRef} style={{
+                  marginTop: 4,
                   backgroundColor: 'white', borderRadius: 2,
-                  border: '0.5px solid rgba(0,0,0,0.12)', maxHeight: 180, overflowY: 'auto',
-                  zIndex: 50, boxShadow: '0 4px 16px rgba(0,0,0,0.1)',
+                  border: '0.5px solid rgba(0,0,0,0.12)', maxHeight: 240, overflowY: 'auto',
+                  boxShadow: '0 4px 16px rgba(0,0,0,0.1)',
+                  // La marge basse de la fenêtre reste visible après le défilement
+                  scrollMarginBottom: 28,
                 }}>
                   {suggestions.length === 0 ? (
                     <p style={{ padding: '10px 14px', fontSize: 12, color: '#9C9591', textAlign: 'center' }}>
@@ -211,8 +226,7 @@ export function CollabModal({
                     )
                   })}
                 </div>
-              )}
-            </div>
+            )}
           </div>
         ) : (
           <p style={{ marginTop: 20, paddingTop: 16, borderTop: '0.5px solid rgba(0,0,0,0.08)', fontSize: 12, color: '#9C9591' }}>

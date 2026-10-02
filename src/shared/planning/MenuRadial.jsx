@@ -9,7 +9,7 @@
 // Tout est positionné dans le repère du corps de la timeline (celui des lignes
 // et des flèches) : `left`/`width` de la barre, `haut` de sa ligne.
 
-import { positionsPetales } from './positionsPetales'
+import { positionsPetales, ACTIONS_BARRE } from './positionsPetales'
 
 // Icônes de la maquette, reprises telles quelles (tracés 24×24)
 const ICONES = {
@@ -21,7 +21,13 @@ const ICONES = {
   // Deux barres à la suite, la seconde marquée d'un + : un segment qui s'ajoute
   segment: <><rect x="2" y="9" width="10" height="6" rx="1" /><path d="M18 7v10M13 12h10" /></>,
   del: <path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14" />,
+  // Maillons de chaîne : accrocher un jalon à une barre, ou l'en détacher
+  accrocher: <><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7" /><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7" /></>,
+  detacher: <><path d="M18.8 13.2l1.7-1.7a5 5 0 0 0-7-7l-1.7 1.7" /><path d="M5.2 10.8l-1.7 1.7a5 5 0 0 0 7 7l1.7-1.7" /><path d="M8 2v3M2 8h3M16 22v-3M22 16h-3" /></>,
 }
+
+// « la tâche », « la phase », mais « le segment », « le jalon »
+const article = (objet) => (objet === 'segment' || objet === 'jalon' ? 'le' : 'la')
 
 function Icone({ nom, taille = 20, couleur = '#1F1B17', epaisseur = 1.6 }) {
   return (
@@ -39,6 +45,8 @@ const ACTIONS = [
   { action: 'resize', libelle: 'Allonger' },
   { action: 'segment', libelle: 'Segment' },
   { action: 'dep', libelle: 'Lier' },
+  { action: 'accrocher', libelle: 'Accrocher' },
+  { action: 'detacher', libelle: 'Détacher' },
   { action: 'dup', libelle: 'Dupliquer' },
   { action: 'del', libelle: 'Supprimer', danger: true },
 ]
@@ -52,10 +60,11 @@ const DISQUE = 68
  * @param barre { left, width, haut, hauteurLigne, barPad, fond, fragments? }
  *              `fond` : valeurs CSS de remplissage de la barre ; `fragments` :
  *              [{ left, width }] quand des fermetures coupent la barre
- * @param objet 'tâche' | 'phase', pour les libellés d'accessibilité
+ * @param objet 'tâche' | 'phase' | 'segment' | 'jalon', pour les libellés d'accessibilité
+ * @param actions actions proposées, dans l'ordre d'ACTIONS ; par défaut celles d'une barre
  */
 export function MenuRadial({ barre, numero, duree, objet = 'tâche', actions = null, onAction, onFermer }) {
-  const PETALES = positionsPetales(actions ? ACTIONS.filter((a) => actions.includes(a.action)) : ACTIONS)
+  const PETALES = positionsPetales(ACTIONS.filter((a) => (actions ?? ACTIONS_BARRE).includes(a.action)))
   const centreX = barre.left + barre.width / 2
   const centreY = barre.haut + barre.hauteurLigne / 2
   const morceaux = barre.fragments ?? [{ left: barre.left, width: barre.width }]
@@ -89,7 +98,7 @@ export function MenuRadial({ barre, numero, duree, objet = 'tâche', actions = n
 
       <div
         role="menu"
-        aria-label={`Actions sur ${objet === 'segment' ? 'le' : 'la'} ${objet} ${numero}`}
+        aria-label={`Actions sur ${article(objet)} ${objet} ${numero}`}
         style={{ position: 'absolute', left: centreX, top: centreY, width: 0, height: 0, zIndex: 60 }}
       >
         <div className="jga-disque" style={{
@@ -157,7 +166,7 @@ export function EditionBarre({ barre, mode, ecart, objet = 'tâche', onPoigneeDo
 
       {mode === 'move' ? (
         <div
-          aria-label={`Glisser pour déplacer ${objet === 'segment' ? 'le' : 'la'} ${objet}`}
+          aria-label={`Glisser pour déplacer ${article(objet)} ${objet}`}
           onPointerDown={(e) => onPoigneeDown(e, 'move')}
           style={{ ...poignee, left: barre.left + barre.width / 2 - 34, width: 68, gap: 3 }}
         >
@@ -214,8 +223,9 @@ export function EditionBarre({ barre, mode, ecart, objet = 'tâche', onPoigneeDo
   )
 }
 
-// Bandeau du mode Lier : la barre touchée ensuite devient la suivante
-export function BandeauLien({ objet = 'tâche', onAnnuler }) {
+// Bandeau du mode Lier : la barre touchée ensuite devient la suivante. Le mode
+// Accrocher d'un jalon le reprend avec son propre `texte`.
+export function BandeauLien({ objet = 'tâche', texte = null, onAnnuler }) {
   return (
     <div style={{
       position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', zIndex: 70,
@@ -224,7 +234,7 @@ export function BandeauLien({ objet = 'tâche', onAnnuler }) {
       display: 'flex', alignItems: 'center', gap: 10, whiteSpace: 'nowrap',
     }}>
       <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#FFFFFF' }} />
-      Sélectionnez la {objet} qui doit suivre
+      {texte ?? `Sélectionnez la ${objet} qui doit suivre`}
       <button
         type="button"
         onClick={onAnnuler}

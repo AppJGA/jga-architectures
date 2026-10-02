@@ -42,3 +42,16 @@ describe('répartition des pétales', () => {
     assert.deepEqual(positionsPetales(sept).map(p => p.action), sept.map(a => a.action))
   })
 })
+
+describe('roue d’un jalon', async () => {
+  const { actionsJalon, ACTIONS_BARRE } = await import('../src/shared/planning/positionsPetales.js')
+
+  test('un jalon libre se déplace et s’accroche ; un jalon accroché se détache seulement', () => {
+    assert.deepEqual(actionsJalon(false), ['params', 'move', 'accrocher', 'del'])
+    assert.deepEqual(actionsJalon(true), ['params', 'detacher', 'del'])
+  })
+
+  test('les barres gardent leurs sept actions, sans celles des jalons', () => {
+    assert.deepEqual(ACTIONS_BARRE, ['params', 'move', 'resize', 'segment', 'dep', 'dup', 'del'])
+  })
+})

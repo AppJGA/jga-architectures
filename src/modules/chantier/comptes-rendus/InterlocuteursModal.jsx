@@ -57,7 +57,7 @@ function InterloForm({ initial, onSave, onCancel, onDelete }) {
   }
 
   const handleSubmit = async (e) => {
-    e.preventDefault()
+    e?.preventDefault()
     if (!form.nom?.trim() && !form.organisation?.trim()) return
     setSaving(true)
     try {
@@ -69,7 +69,12 @@ function InterloForm({ initial, onSave, onCancel, onDelete }) {
   const needsLabel = form.categorie === 'autre'
 
   return (
-    <form onSubmit={handleSubmit} style={{ backgroundColor: '#FAFAF9', borderRadius: 2, padding: '14px 16px', border: '0.5px solid rgba(0,0,0,0.08)' }}>
+    // Pas de <form> : cet éditeur vit aussi dans la fiche de l'affaire, qui en
+    // est un. Un formulaire imbriqué enverrait la fiche entière (et la
+    // fermerait) en enregistrant un interlocuteur. Entrée valide quand même.
+    <div
+      onKeyDown={e => { if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); handleSubmit() } }}
+      style={{ backgroundColor: '#FAFAF9', borderRadius: 2, padding: '14px 16px', border: '0.5px solid rgba(0,0,0,0.08)' }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
 
         {/* Catégorie */}
@@ -166,11 +171,11 @@ function InterloForm({ initial, onSave, onCancel, onDelete }) {
         <button type="button" onClick={onCancel}
           style={{ padding: '6px 12px', borderRadius: 2, fontSize: 12, cursor: 'pointer', border: '0.5px solid rgba(0,0,0,0.15)', backgroundColor: 'white', color: '#374151' }}
         >Annuler</button>
-        <button type="submit" disabled={saving}
+        <button type="button" onClick={handleSubmit} disabled={saving}
           style={{ padding: '6px 14px', borderRadius: 2, fontSize: 12, fontWeight: 500, border: 'none', backgroundColor: '#E8602C', color: 'white', cursor: 'pointer', opacity: saving ? 0.6 : 1 }}
         >{saving ? 'Enregistrement…' : 'Enregistrer'}</button>
       </div>
-    </form>
+    </div>
   )
 }
 
@@ -185,7 +190,7 @@ function CategorySection({ cat, items, onAdd, onEdit, onDelete, onReorder }) {
         <span style={{ fontSize: 11, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.06em', color: meta?.color ?? '#9C9591', backgroundColor: meta?.bg ?? '#FAF7F2', borderRadius: 3, padding: '3px 10px' }}>
           {meta?.label ?? cat}
         </span>
-        <button onClick={() => setAddOpen(true)}
+        <button type="button" onClick={() => setAddOpen(true)}
           style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 3, fontSize: 11, border: `0.5px solid ${meta?.color ?? '#9C9591'}`, backgroundColor: meta?.bg ?? '#FAF7F2', color: meta?.color ?? '#9C9591', cursor: 'pointer' }}
         ><Plus size={11} /> Ajouter</button>
       </div>
@@ -224,9 +229,9 @@ function CategorySection({ cat, items, onAdd, onEdit, onDelete, onReorder }) {
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-                <button onClick={() => onReorder(item.id, 'up')} disabled={idx === 0} style={{ padding: 4, background: 'none', border: 'none', cursor: idx === 0 ? 'default' : 'pointer', color: idx === 0 ? '#D1D5DB' : '#9C9591' }}><ChevronUp size={13} /></button>
-                <button onClick={() => onReorder(item.id, 'down')} disabled={idx === items.length - 1} style={{ padding: 4, background: 'none', border: 'none', cursor: idx === items.length - 1 ? 'default' : 'pointer', color: idx === items.length - 1 ? '#D1D5DB' : '#9C9591' }}><ChevronDown size={13} /></button>
-                <button onClick={() => setEditId(item.id)} style={{ padding: 4, background: 'none', border: 'none', cursor: 'pointer', color: '#9C9591' }}><Pencil size={13} /></button>
+                <button type="button" onClick={() => onReorder(item.id, 'up')} disabled={idx === 0} style={{ padding: 4, background: 'none', border: 'none', cursor: idx === 0 ? 'default' : 'pointer', color: idx === 0 ? '#D1D5DB' : '#9C9591' }}><ChevronUp size={13} /></button>
+                <button type="button" onClick={() => onReorder(item.id, 'down')} disabled={idx === items.length - 1} style={{ padding: 4, background: 'none', border: 'none', cursor: idx === items.length - 1 ? 'default' : 'pointer', color: idx === items.length - 1 ? '#D1D5DB' : '#9C9591' }}><ChevronDown size={13} /></button>
+                <button type="button" onClick={() => setEditId(item.id)} style={{ padding: 4, background: 'none', border: 'none', cursor: 'pointer', color: '#9C9591' }}><Pencil size={13} /></button>
               </div>
             </div>
           )}
@@ -240,7 +245,9 @@ function CategorySection({ cat, items, onAdd, onEdit, onDelete, onReorder }) {
   )
 }
 
-export function InterlocuteursModal({ affaireId, onClose }) {
+// Interlocuteurs d'une affaire, par catégorie : la même gestion depuis les
+// visites de chantier (fenêtre ci-dessous) et depuis la fiche de l'affaire
+export function InterlocuteursEditeur({ affaireId }) {
   const { interlocuteurs, addInterlocuteur, updateInterlocuteur, deleteInterlocuteur, reorderInterlocuteur } = useAffaireInterlocuteurs(affaireId)
 
   const byCategory = CATEGORIES.reduce((acc, c) => {
@@ -248,6 +255,20 @@ export function InterlocuteursModal({ affaireId, onClose }) {
     return acc
   }, {})
 
+  return CATEGORIES.map(cat => (
+    <CategorySection
+      key={cat.id}
+      cat={cat.id}
+      items={byCategory[cat.id] ?? []}
+      onAdd={addInterlocuteur}
+      onEdit={updateInterlocuteur}
+      onDelete={deleteInterlocuteur}
+      onReorder={reorderInterlocuteur}
+    />
+  ))
+}
+
+export function InterlocuteursModal({ affaireId, onClose }) {
   return (
     <div
       style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', zIndex: 100, overflowY: 'auto', padding: '40px 20px' }}
@@ -259,20 +280,10 @@ export function InterlocuteursModal({ affaireId, onClose }) {
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
           <h2 style={{ fontSize: 15, fontWeight: 500, color: '#1F1B17', margin: 0 }}>Interlocuteurs du projet</h2>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9C9591', padding: 4 }}><X size={18} /></button>
+          <button type="button" onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9C9591', padding: 4 }}><X size={18} /></button>
         </div>
 
-        {CATEGORIES.map(cat => (
-          <CategorySection
-            key={cat.id}
-            cat={cat.id}
-            items={byCategory[cat.id] ?? []}
-            onAdd={addInterlocuteur}
-            onEdit={updateInterlocuteur}
-            onDelete={deleteInterlocuteur}
-            onReorder={reorderInterlocuteur}
-          />
-        ))}
+        <InterlocuteursEditeur affaireId={affaireId} />
       </div>
     </div>
   )

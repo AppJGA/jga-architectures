@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { X, ImagePlus } from 'lucide-react'
 import { CollaborateursSection } from '../shared/components/CollaborateursSection'
+import { InterlocuteursEditeur } from '../modules/chantier/comptes-rendus/InterlocuteursModal'
 import { supabase } from '../core/supabase/client'
 import { useAuth } from '../core/auth/useAuth'
 import { compressImage, COVER_OPTIONS, TAILLE_MAX_OCTETS } from '../shared/utils/compressImage'
@@ -662,6 +663,25 @@ export function AffaireFormModal({ affaire = null, onSave, onClose, scrollToSect
               <Field label="Adresse">
                 <TextInput value={form.moa_adresse} onChange={set('moa_adresse')} placeholder="1 place de la Mairie" />
               </Field>
+            </div>
+          </div>
+
+          {/* ── Interlocuteurs : les mêmes que dans les visites de chantier ── */}
+          <div data-section="interlocuteurs">
+            <SectionHeader title="Interlocuteurs" />
+            <div style={{ marginBottom: 28 }}>
+              {isEdit ? (
+                <>
+                  <p style={{ fontSize: 11, color: '#9C9591', margin: '0 0 12px' }}>
+                    Enregistrés aussitôt, et repris dans les comptes rendus de chantier.
+                  </p>
+                  <InterlocuteursEditeur affaireId={affaire.id} />
+                </>
+              ) : (
+                <p style={{ fontSize: 12, color: '#9C9591', margin: 0 }}>
+                  Créez d'abord l'affaire : ses interlocuteurs s'ajoutent ensuite, depuis cette fiche.
+                </p>
+              )}
             </div>
           </div>
 

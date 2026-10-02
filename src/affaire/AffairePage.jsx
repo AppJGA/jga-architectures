@@ -14,6 +14,7 @@ import { phasesPour, getAllModules } from '../modules/manifest'
 import { PhaseBadge } from '../shared/components/Badge'
 
 import { AffaireFormModal } from '../dashboard/AffaireFormModal'
+import { ContactsAffaire } from './ContactsAffaire'
 import { supabase } from '../core/supabase/client'
 import { infosStatut } from '../modules/chantier/comptes-rendus/crLogique'
 import { dernierePhaseRenseignee, nomPhase } from '../modules/etude/financier/phases'
@@ -903,7 +904,7 @@ function PhaseSection({ phase, affaire, stats, affaireId, navigate, rangBase }) 
   )
 }
 
-function AffaireOverview({ affaire, stats, affaireId, onEdit, canEdit }) {
+function AffaireOverview({ affaire, stats, affaireId, onEdit, onGererContacts, versionContacts, canEdit }) {
   const navigate = useNavigate()
   const { estAgence } = useAuth()
   const phasesVues = phasesPour(estAgence)
@@ -979,6 +980,17 @@ function AffaireOverview({ affaire, stats, affaireId, onEdit, canEdit }) {
           <InfoField label="Date de livraison" value={fmtDate(affaire.date_livraison)} />
         </div>
       </div>
+
+      {/* Coordonnées : réservées à l'agence, comme le carnet d'adresses */}
+      {estAgence && (
+        <ContactsAffaire
+          key={versionContacts}
+          affaireId={affaireId}
+          canEdit={canEdit}
+          onGerer={onGererContacts}
+          style={{ animationDelay: delaiCarte(rangs[rangs.length - 1] + 1) }}
+        />
+      )}
     </div>
   )
 }
@@ -989,6 +1001,11 @@ export function AffairePage() {
   const { affaire: rawAffaire, loading, updateAffaire } = useAffaire(affaireId)
   const [affaire, setAffaire] = useState(null)
   const [editOpen, setEditOpen] = useState(false)
+  // Section de la fiche à montrer à l'ouverture (« Gérer les interlocuteurs »)
+  const [sectionEdition, setSectionEdition] = useState(null)
+  // Les interlocuteurs s'enregistrent depuis la fiche : la carte des contacts
+  // se recharge à sa fermeture
+  const [versionContacts, setVersionContacts] = useState(0)
   const [showCollabModal, setShowCollabModal] = useState(false)
   const stats = useAffaireStats(affaireId)
 
@@ -1015,9 +1032,15 @@ export function AffairePage() {
 
   const activeModule = getAllModules().find(m => m.path === moduleId) ?? null
 
+  const fermerEdition = () => {
+    setEditOpen(false)
+    setSectionEdition(null)
+    setVersionContacts((v) => v + 1)
+  }
+
   const handleSave = async (data) => {
     await updateAffaire(data)
-    setEditOpen(false)
+    fermerEdition()
   }
 
   if (loading || !affaire) {
@@ -1072,7 +1095,12 @@ export function AffairePage() {
             )}
             {activeModule
               ? <ModuleRenderer mod={activeModule} lectureSeule={!collabLoading && !canEdit} />
-              : <AffaireOverview affaire={affaire} stats={stats} affaireId={affaireId} onEdit={() => setEditOpen(true)} canEdit={canEdit} />
+              : <AffaireOverview
+                  affaire={affaire} stats={stats} affaireId={affaireId} canEdit={canEdit}
+                  onEdit={() => setEditOpen(true)}
+                  onGererContacts={() => { setSectionEdition('interlocuteurs'); setEditOpen(true) }}
+                  versionContacts={versionContacts}
+                />
             }
           </main>
         </div>
@@ -1082,7 +1110,8 @@ export function AffairePage() {
         <AffaireFormModal
           affaire={affaire}
           onSave={handleSave}
-          onClose={() => setEditOpen(false)}
+          onClose={fermerEdition}
+          scrollToSection={sectionEdition}
         />
       )}
 

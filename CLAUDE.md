@@ -47,6 +47,15 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
 - **Accès aux données** : hooks dans `src/shared/hooks/`. `useAffaires()` pour
   la liste, `useAffaire(id)` pour une affaire (les deux font `select('*')`),
   `useAffaireCollaborateurs(id)` pour les droits (`canEdit`, `isProprietaire`).
+- **Contacts de l'affaire** : carte « Contacts » de la vue d'ensemble
+  (`ContactsAffaire.jsx`, agence seule), fiches calculées par
+  `annuaireLogique.js` — interlocuteurs (`affaire_interlocuteurs`, les mêmes
+  que dans les visites) et représentant de l'entreprise de chaque lot attribué,
+  à défaut les coordonnées de l'entreprise. Ils se gèrent dans la fiche de
+  l'affaire par `InterlocuteursEditeur` (exporté d'`InterlocuteursModal.jsx`).
+  Cet éditeur vit dans un `<form>` : **aucun `<form>` dedans et tout bouton en
+  `type="button"`**, sinon enregistrer un interlocuteur envoie et ferme la
+  fiche entière.
 - **Base** : `supabase/migrations/`, numérotées, 56 fichiers, **passées à la
   main** dans le SQL Editor de Supabase : un code qui dépend d'une nouvelle
   colonne doit tolérer son absence tant que la migration n'est pas faite. La photo de

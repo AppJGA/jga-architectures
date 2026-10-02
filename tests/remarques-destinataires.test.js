@@ -6,7 +6,7 @@ import { test, describe } from 'node:test'
 import {
   PARTIES_REMARQUES, sectionsAMettreEnPlace, cleDestinataire, typePourDestinataire,
   champsDestinataire, libelleLot, libelleRole, choixDestinataires, destinataireParDefaut,
-  groupesDestinataires, estPartieRemarques, ordonnerParties,
+  groupesDestinataires, estPartieRemarques, ordonnerParties, romain, numeroterParties, numerosParties,
 } from '../src/modules/chantier/comptes-rendus/remarquesLogique.js'
 
 const LOTS = [
@@ -40,6 +40,22 @@ describe('parties VI et VII', () => {
     ]).map((s) => s.id)
     assert.deepEqual(ordre, ['I', 'VI', 'VII', 'X'])
     assert.deepEqual(ordonnerParties([{ id: 'VI', type_section: 'equipe' }, { id: 'VII', type_section: 'entreprises' }]).map((s) => s.id), ['VI', 'VII'])
+  })
+
+  test('les parties des remarques suivent le nombre de parties des généralités', () => {
+    const sections = [
+      { id: 'vieux', numero_romain: 'II', type_section: 'general' },
+      { id: 'e', numero_romain: 'VI', type_section: 'equipe' },
+      { id: 'n', numero_romain: 'VII', type_section: 'entreprises' },
+      { id: 'x', numero_romain: 'VIII', type_section: 'intervenants' },
+    ]
+    const num = (nb) => numeroterParties(sections, nb).map((s) => s.numero_romain)
+    assert.deepEqual(num(5), ['II', 'VI', 'VII', 'VIII'])
+    assert.deepEqual(num(6), ['II', 'VII', 'VIII', 'IX'], 'une sixième partie décale VI et VII')
+    assert.deepEqual(num(0), ['II', 'VI', 'VII', 'VIII'], 'sans généralités, numérotation habituelle')
+    assert.deepEqual(numerosParties(numeroterParties(sections, 6)), { equipe: 'VII', entreprises: 'VIII' })
+    assert.deepEqual(numerosParties([]), { equipe: 'VI', entreprises: 'VII' })
+    assert.deepEqual([1, 4, 9, 14].map(romain), ['I', 'IV', 'IX', 'XIV'])
   })
 
   test('une partie de remarques se reconnaît à son type', () => {

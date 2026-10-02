@@ -19,7 +19,7 @@ import { archivesDuCr, archiverPdf } from './rapportStockage'
 import { compterPresents, FAMILLES_STATUT, infosStatut, estEnRetard } from './crLogique'
 import { CrContexte, useCr } from './CrContexte'
 import { PhotosContexte } from './usePhotosRemarque'
-import { ordonnerParties } from './remarquesLogique'
+import { ordonnerParties, numeroterParties } from './remarquesLogique'
 import { GeneralitesVue } from './GeneralitesVue'
 import { generalitesAImprimer, normaliserGeneralites } from './generalitesLogique'
 import { useGeneralites } from '../../../shared/hooks/useGeneralites'
@@ -600,8 +600,18 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
     addSousRemarque, changerStatutRemarques,
     setPresence, refetch,
   } = useCompteRendu(crId, affaire?.id)
-  // Partie VI toujours avant la VII, quel que soit l'ordre de création
-  const sections = useMemo(() => ordonnerParties(sectionsBrutes), [sectionsBrutes])
+
+  // Généralités (parties I à V, migration 055) : celles de l'affaire, ou la
+  // copie faite à l'émission pour un CR émis
+  const generalites = useGeneralites(affaire?.id)
+  const generalitesCr = useMemo(() => generalitesAImprimer(cr, generalites.contenu), [cr, generalites.contenu])
+
+  // Partie VI toujours avant la VII, quel que soit l'ordre de création ; leurs
+  // numéros suivent les généralités (une sixième partie les décale)
+  const sections = useMemo(
+    () => numeroterParties(ordonnerParties(sectionsBrutes), generalitesCr.parties.length),
+    [sectionsBrutes, generalitesCr.parties.length],
+  )
 
   // Avancement affiché et exporté : les chiffres gelés pour un CR émis
   const lignesAvancementCr = useMemo(() => {
@@ -725,11 +735,6 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
     () => ({ lectureSeule, contributeur, utilisateurId: user?.id ?? null, profils: profiles, signalerErreur }),
     [lectureSeule, contributeur, user?.id, profiles, signalerErreur],
   )
-
-  // Généralités (parties I à V, migration 055) : celles de l'affaire, ou la
-  // copie faite à l'émission pour un CR émis
-  const generalites = useGeneralites(affaire?.id)
-  const generalitesCr = useMemo(() => generalitesAImprimer(cr, generalites.contenu), [cr, generalites.contenu])
 
   // Tous les lots de l'affaire, qu'une entreprise y soit déjà attribuée ou non :
   // une remarque peut viser un lot encore sans titulaire

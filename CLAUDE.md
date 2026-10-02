@@ -94,7 +94,11 @@ création avec reprise de la visite précédente) et `useCompteRendu` (un CR).
   pas seulement ceux qui ont une entreprise ; le dernier destinataire est
   reproposé (mémoire par CR sur l'appareil). Le choix se fait par **deux menus
   déroulants** (entreprises, équipe), pas par des boutons : un gros chantier
-  en remplissait tout le panneau. `ordonnerParties` garde VI avant
+  en remplissait tout le panneau ; statut et zone aussi sont des menus. Les
+  numéros de VI / VII **se calculent** d'après le nombre de parties des
+  généralités (`numeroterParties`, dans `CrDetail`) : une sixième partie les
+  décale en VII / VIII. Le `numero_romain` enregistré de ces sections ne sert
+  plus à l'affichage. `ordonnerParties` garde VI avant
   VII quel que soit l'ordre de création. Une **suite** (sous-remarque, ▶) a son
   propre statut et son échéance ; toucher une remarque ouvre `PanneauSuite`
   (avec « Clore la remarque d'origine »). Les sections I à V restent des

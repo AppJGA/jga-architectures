@@ -38,6 +38,43 @@ export function ordonnerParties(sections = []) {
   return liste
 }
 
+// ─── Numéros des parties ─────────────────────────────────────────────────────
+
+const VALEURS_ROMAINES = [[10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I']]
+
+export function romain(n) {
+  let reste = Math.max(1, Math.floor(n))
+  let texte = ''
+  for (const [valeur, lettres] of VALEURS_ROMAINES) {
+    while (reste >= valeur) { texte += lettres; reste -= valeur }
+  }
+  return texte
+}
+
+// Ordre fixe des parties qui suivent les généralités
+const APRES_GENERALITES = ['equipe', 'entreprises', 'intervenants']
+
+/**
+ * Les parties des remarques suivent les généralités : avec cinq parties de
+ * généralités, l'équipe est VI et les entreprises VII ; une sixième partie les
+ * décale en VII et VIII. Sans généralités saisies, on garde la numérotation
+ * habituelle (cinq parties). Le numéro est calculé à l'affichage, jamais
+ * enregistré : il suit les généralités sans écriture en base.
+ */
+export function numeroterParties(sections = [], nbGeneralites = 0) {
+  const base = nbGeneralites > 0 ? nbGeneralites : 5
+  return sections.map((s) => {
+    const rang = APRES_GENERALITES.indexOf(s.type_section)
+    return rang < 0 ? s : { ...s, numero_romain: romain(base + 1 + rang) }
+  })
+}
+
+/** Numéros affichés des parties VI / VII (libellés des menus du destinataire). */
+export function numerosParties(sections = []) {
+  const de = (type, defaut) => sections.find((s) => s.type_section === type)?.numero_romain ?? defaut
+  return { equipe: de('equipe', 'VI'), entreprises: de('entreprises', 'VII') }
+}
+
 // ─── Destinataire ────────────────────────────────────────────────────────────
 
 /** 'lot:<id>', 'interlo:<id>' ou '' : la forme du filtre et des choix */

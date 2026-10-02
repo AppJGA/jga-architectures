@@ -61,13 +61,32 @@ function ecrireMemoire(cle, valeur) {
   try { localStorage.setItem(cle, valeur) } catch { /* navigation privée */ }
 }
 
+// Statut en menu déroulant, rangé par famille de couleur : huit boutons
+// prenaient deux lignes du panneau
+function MenuStatut({ id, label, valeur, onChange }) {
+  const st = PAR_CODE.get(valeur)
+  return (
+    <div style={{ flex: '1 1 220px', minWidth: 0 }}>
+      <label style={LABEL} htmlFor={id}>{label}</label>
+      <select id={id} value={valeur} onChange={e => onChange(e.target.value)}
+        style={{ ...CHAMP, cursor: 'pointer', color: st?.couleur, fontWeight: 600, borderColor: st?.couleur ?? 'rgba(0,0,0,0.15)' }}>
+        {FAMILLES_STATUT.map(f => (
+          <optgroup key={f.id} label={f.libelle}>
+            {STATUTS.filter(x => x.famille === f.id).map(x => <option key={x.code} value={x.code}>{x.libelle}</option>)}
+          </optgroup>
+        ))}
+      </select>
+    </div>
+  )
+}
+
 // ─── Nouvelle remarque / modifier ────────────────────────────────────────────
 
 // Choix du destinataire : deux menus déroulants, les entreprises (partie VII)
 // et l'équipe (partie VI). Sur un gros chantier, des boutons pour chaque lot et
 // chaque interlocuteur remplissaient tout le panneau. Choisir dans un menu vide
 // l'autre : une remarque n'a qu'un destinataire.
-function ChoixDestinataire({ choix, valeur, onChoisir, facultatif }) {
+function ChoixDestinataire({ choix, valeur, onChoisir, facultatif, numeros }) {
   const menu = (id, titre, liste, prefixe, vide) => (
     <div style={{ flex: '1 1 240px', minWidth: 0 }}>
       <label htmlFor={id} style={{ display: 'block', fontSize: 12, color: '#9C9591', marginBottom: 6 }}>{titre}</label>
@@ -87,8 +106,8 @@ function ChoixDestinataire({ choix, valeur, onChoisir, facultatif }) {
     <div>
       <span style={LABEL}>Pour qui ?{facultatif ? ' (facultatif)' : ' *'}</span>
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-        {menu('visite-dest-lot', 'Entreprise (VII)', choix.entreprises, 'lot:', '— Choisir un lot —')}
-        {menu('visite-dest-equipe', 'Équipe MOE / MOA (VI)', choix.equipe.map(c => ({ ...c, role: c.detail })), 'interlo:', '— Choisir une personne —')}
+        {menu('visite-dest-lot', `Entreprise (${numeros.entreprises})`, choix.entreprises, 'lot:', '— Choisir un lot —')}
+        {menu('visite-dest-equipe', `Équipe MOE / MOA (${numeros.equipe})`, choix.equipe.map(c => ({ ...c, role: c.detail })), 'interlo:', '— Choisir une personne —')}
       </div>
       {choix.entreprises.length === 0 && choix.equipe.length === 0 && (
         <p style={{ fontSize: 13, color: '#5E5854', margin: '8px 0 0' }}>
@@ -104,7 +123,7 @@ function ChoixDestinataire({ choix, valeur, onChoisir, facultatif }) {
  * @param contributeur intervenant extérieur : destinataire facultatif, ses
  *   observations vont dans leur section à part
  */
-export function PanneauRemarque({ remarque, cr, lots, interlocuteurs, zones = [], typesAgence, destinataireInitial = null, contributeur = false, onEnregistrer, onFermer, signalerErreur }) {
+export function PanneauRemarque({ remarque, cr, lots, interlocuteurs, zones = [], typesAgence, destinataireInitial = null, contributeur = false, numeros = { equipe: 'VI', entreprises: 'VII' }, onEnregistrer, onFermer, signalerErreur }) {
   const modification = !!remarque
   // Le destinataire de la remarque précédente est reproposé : sur le chantier,
   // on enchaîne souvent plusieurs remarques pour le même lot
@@ -178,19 +197,7 @@ export function PanneauRemarque({ remarque, cr, lots, interlocuteurs, zones = []
         </div>
       }
     >
-      <ChoixDestinataire choix={choix} valeur={destinataire} onChoisir={setDestinataire} facultatif={!destinataireRequis} />
-
-      {zones.length > 0 && (
-        <div>
-          <span style={LABEL}>Zone</span>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            <button type="button" onClick={() => setZoneId('')} style={puce(!zoneId)}>Sans zone</button>
-            {zones.map(z => (
-              <button key={z.id} type="button" onClick={() => setZoneId(z.id)} style={puce(zoneId === z.id, '#1B3A5C')}>{z.nom}</button>
-            ))}
-          </div>
-        </div>
-      )}
+      <ChoixDestinataire choix={choix} valeur={destinataire} onChoisir={setDestinataire} facultatif={!destinataireRequis} numeros={numeros} />
 
       <div>
         <label style={LABEL} htmlFor="visite-texte">Remarque</label>
@@ -240,15 +247,18 @@ export function PanneauRemarque({ remarque, cr, lots, interlocuteurs, zones = []
         )}
       </div>
 
-      <div>
-        <span style={LABEL}>Statut</span>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-          {STATUTS.map(st => (
-            <button key={st.code} type="button" aria-pressed={statut === st.code} onClick={() => setStatut(st.code)} style={puce(statut === st.code, st.couleur)}>
-              {st.libelle}
-            </button>
-          ))}
-        </div>
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+        <MenuStatut id="visite-statut" label="Statut" valeur={statut} onChange={setStatut} />
+        {zones.length > 0 && (
+          <div style={{ flex: '1 1 220px', minWidth: 0 }}>
+            <label style={LABEL} htmlFor="visite-zone">Zone</label>
+            <select id="visite-zone" value={zoneId} onChange={e => setZoneId(e.target.value)}
+              style={{ ...CHAMP, cursor: 'pointer', borderColor: zoneId ? '#1B3A5C' : 'rgba(0,0,0,0.15)', fontWeight: zoneId ? 600 : 400 }}>
+              <option value="">Sans zone</option>
+              {zones.map(z => <option key={z.id} value={z.id}>{z.nom}</option>)}
+            </select>
+          </div>
+        )}
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 18 }}>
@@ -412,15 +422,8 @@ export function PanneauSuite({ remarque, cr, lectureSeule, acces, ops, onModifie
               <BoutonDictee onTexte={t => setTexte(x => ajouterDictee(x, t))} onErreur={m => signalerErreur(new Error(m))} />
             </div>
           </div>
-          <div>
-            <span style={LABEL}>Statut de la suite</span>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              {STATUTS.map(st => (
-                <button key={st.code} type="button" aria-pressed={statut === st.code} onClick={() => setStatut(st.code)} style={puce(statut === st.code, st.couleur)}>
-                  {st.libelle}
-                </button>
-              ))}
-            </div>
+          <div style={{ display: 'flex' }}>
+            <MenuStatut id="visite-statut-suite" label="Statut de la suite" valeur={statut} onChange={setStatut} />
           </div>
           <div>
             <span style={LABEL}>Pour le</span>

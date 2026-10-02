@@ -1,5 +1,5 @@
 import { useState, useMemo, createContext, useContext } from 'react'
-import { estPartieRemarques, groupesDestinataires } from './remarquesLogique'
+import { estPartieRemarques, groupesDestinataires, numerosParties } from './remarquesLogique'
 import { creerRemarqueAdressee, champsModification } from './rangerRemarque'
 import { PanneauRemarque, PanneauSuite } from './PanneauxVisite'
 import { useRemarquesTypes } from './useRemarquesTypes'
@@ -1568,6 +1568,7 @@ export function CrSectionEditor({ sections, crId, crDate, interlocuteurs, lotEnt
           cr={crPanneau} lots={lots} interlocuteurs={interlocuteurs ?? []} zones={zones}
           typesAgence={typesAgence}
           destinataireInitial={panneau.destinataire ?? null}
+          numeros={numerosParties(sections)}
           onEnregistrer={enregistrerAdressee}
           onFermer={() => setPanneau(null)}
           signalerErreur={acces.signalerErreur}

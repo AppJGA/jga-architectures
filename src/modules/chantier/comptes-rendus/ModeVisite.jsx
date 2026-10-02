@@ -4,7 +4,7 @@ import { FILTRES_VISITE, filtreVisite, groupesVisite, compteursVisite } from './
 import { STATUTS, infosStatut, estEnRetard, libelleZone, peutModifierRemarque, auteurExterieur } from './crLogique'
 import { useCr } from './CrContexte'
 import { PanneauRemarque, PanneauSuite, PanneauPresences, PanneauStatuts, PanneauAvancement } from './PanneauxVisite'
-import { libelleLot, nomInterlocuteur } from './remarquesLogique'
+import { libelleLot, nomInterlocuteur, numerosParties } from './remarquesLogique'
 import { creerRemarqueAdressee, champsModification } from './rangerRemarque'
 import { usePhotosRemarque, PhotosContexte } from './usePhotosRemarque'
 import { PhotosDeRemarque } from './PhotosRemarque'
@@ -497,6 +497,7 @@ export function ModeVisite({ cr, sections, presences, setPresence, lots: lotsAff
           typesAgence={typesAgence}
           destinataireInitial={panneau.destinataire ?? null}
           contributeur={contributeur}
+          numeros={numerosParties(sections)}
           onEnregistrer={enregistrerRemarque}
           onFermer={() => setPanneau(null)}
           signalerErreur={signalerErreur}

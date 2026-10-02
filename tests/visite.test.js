@@ -35,6 +35,19 @@ describe('groupesVisite', () => {
   })
 })
 
+test('les parties VI et VII se découpent par destinataire', () => {
+  const parties = [
+    { id: 'S7', type_section: 'entreprises', sousSections: [], directRemarques: [
+      { id: 'x', statut: 'a_faire', description: 'Joints', lot_id: 'L2' },
+      { id: 'y', statut: 'a_faire', description: 'Enduit', lot_id: 'L1' },
+    ] },
+  ]
+  const contexte = { lots: [{ id: 'L1', numero: 1, nom: 'Désamiantage' }, { id: 'L2', numero: 2, nom: 'Gros œuvre' }], interlocuteurs: [] }
+  const [g] = groupesVisite(parties, filtreVisite('ouvertes'), '2026-09-15', contexte)
+  assert.deepEqual(g.sousGroupes.map((sg) => [sg.titre, sg.remarques.map((r) => r.id)]), [['01 - Désamiantage', ['y']], ['02 - Gros œuvre', ['x']]])
+  assert.equal(groupesVisite(sections, filtreVisite('ouvertes'), '2026-09-15', contexte)[0].sousGroupes, null)
+})
+
 test('compteursVisite', () => {
   assert.deepEqual(compteursVisite(sections, '2026-09-15'), { total: 4, ouvertes: 2, aTraiter: 1, enRetard: 1 })
 })

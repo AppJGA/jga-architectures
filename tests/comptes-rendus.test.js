@@ -55,7 +55,7 @@ describe('preparerReprise', () => {
       { id: 'R2', sous_section_id: null, section_id: 'S1', description: 'Directe', est_clos: false, est_nouveau: false, ordre: 1 },
       { id: 'R3', sous_section_id: 'SS1', section_id: 'S1', description: 'Close', est_clos: true, ordre: 2 },
       { id: 'SR1', parent_id: 'R1', description: 'Suivi clos', est_clos: true, est_nouveau: true },
-      { id: 'SR2', parent_id: 'R1', description: 'Suivi ouvert', est_clos: false },
+      { id: 'SR2', parent_id: 'R1', description: 'Suivi ouvert', est_clos: false, statut: 'a_prevoir', date_echeance: '2026-12-04' },
       { id: 'SR3', parent_id: 'R3', description: 'Suivi d’une close', est_clos: false },
     ],
   }
@@ -88,6 +88,12 @@ describe('preparerReprise', () => {
       [['Suivi clos', true], ['Suivi ouvert', false]],
     )
     assert.ok(reprise.sousRemarques.every((r) => r.parent_id === reprise.remarques[0].id))
+  })
+
+  test('une suite garde son statut et son échéance', () => {
+    const [close, ouverte] = reprise.sousRemarques
+    assert.equal(close.statut, 'fait')
+    assert.deepEqual([ouverte.statut, ouverte.date_echeance], ['a_prevoir', '2026-12-04'])
   })
 })
 

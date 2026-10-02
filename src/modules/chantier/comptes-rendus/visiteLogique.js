@@ -3,6 +3,7 @@
 // Sans navigateur ni base, pour être testée (tests/visite.test.js).
 
 import { sansAccents, infosStatut, estEnRetard, passeFiltre, FILTRE_VIDE } from './crLogique'
+import { estPartieRemarques, groupesDestinataires } from './remarquesLogique'
 
 // Filtres du mode Visite, en gros boutons. « Ouvertes » par défaut : sur le
 // chantier, on passe en revue ce qui reste à lever.
@@ -24,15 +25,21 @@ export function filtreVisite(id, destinataire = '', recherche = '', zone = '') {
 /**
  * Cartes du mode Visite, groupées par section dans l'ordre de l'éditeur.
  * Chaque remarque garde le code de sa sous-section pour l'afficher.
- * @returns [{ section, remarques: [{ ...remarque, sousSection }] }] sans groupe vide
+ *
+ * Les parties VI et VII (migration 054) sont découpées par destinataire —
+ * lot ou rôle — dans `sousGroupes`, quand `contexte` ({ lots,
+ * interlocuteurs }) est fourni ; null pour les autres sections.
+ *
+ * @returns [{ section, remarques: [{ ...remarque, sousSection }], sousGroupes }] sans groupe vide
  */
-export function groupesVisite(sections, filtre, dateReference) {
+export function groupesVisite(sections, filtre, dateReference, contexte = null) {
   return (sections ?? []).map((section) => {
     const remarques = [
       ...(section.sousSections ?? []).flatMap((ss) => (ss.remarques ?? []).map((r) => ({ ...r, sousSection: ss }))),
       ...(section.directRemarques ?? []).map((r) => ({ ...r, sousSection: null })),
     ].filter((r) => passeFiltre(r, filtre, dateReference))
-    return { section, remarques }
+    const sousGroupes = contexte && estPartieRemarques(section) ? groupesDestinataires(remarques, contexte) : null
+    return { section, remarques, sousGroupes }
   }).filter((g) => g.remarques.length > 0)
 }
 

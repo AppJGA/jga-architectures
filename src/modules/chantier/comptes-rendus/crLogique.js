@@ -78,9 +78,10 @@ export function estClos(r) {
 }
 
 // Ouverte, avec une échéance antérieure à la date de référence (celle de la
-// visite : un compte rendu dit ce qui était en retard ce jour-là).
+// visite : un compte rendu dit ce qui était en retard ce jour-là). Vaut aussi
+// pour une suite, qui a son échéance depuis la migration 054.
 export function estEnRetard(r, dateReference) {
-  if (!r?.date_echeance || !dateReference || r.parent_id) return false
+  if (!r?.date_echeance || !dateReference) return false
   return !estClos(r) && r.date_echeance < dateReference
 }
 
@@ -185,15 +186,23 @@ export function preparerReprise({ sections = [], sousSections = [], remarques = 
       })
     })
 
+  // Une suite garde son statut et son échéance (migration 054), comme sa
+  // remarque : « À faire » sous une remarque « Fait » reste à faire.
   const lignesSousRemarques = remarques
     .filter((r) => r.parent_id && idRemarque.has(r.parent_id))
-    .map((r) => ({
-      id: nouvelId(), cr_id: crId, affaire_id: affaireId,
-      parent_id: idRemarque.get(r.parent_id),
-      date_note: r.date_note ?? null, pour: r.pour ?? null, description: r.description,
-      est_clos: !!r.est_clos, est_nouveau: false, est_important: !!r.est_important,
-      ...(r.created_by !== undefined && { created_by: r.created_by ?? null }),
-    }))
+    .map((r) => {
+      const statut = statutNormalise(r)
+      const clos = PAR_CODE.get(statut).clos
+      return {
+        id: nouvelId(), cr_id: crId, affaire_id: affaireId,
+        parent_id: idRemarque.get(r.parent_id),
+        date_note: r.date_note ?? null, pour: r.pour ?? null, description: r.description,
+        statut, date_echeance: r.date_echeance ?? null,
+        est_clos: clos, est_nouveau: false, est_important: !!r.est_important,
+        ...(r.date_cloture !== undefined && { date_cloture: clos ? r.date_cloture ?? null : null }),
+        ...(r.created_by !== undefined && { created_by: r.created_by ?? null }),
+      }
+    })
 
   const lignesPhotos = photos
     .filter((ph) => idRemarque.has(ph.remarque_id))

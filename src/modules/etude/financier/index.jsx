@@ -1,10 +1,13 @@
 import { useState, useEffect } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import { Plus, Pencil, Trash2, X, GripVertical } from 'lucide-react'
 import { useAffaire } from '../../../shared/hooks/useAffaires'
 import { useSuiviFinancierEtude } from '../../../shared/hooks/useSuiviFinancierEtude'
 import { reordonner } from '../../../shared/hooks/ordreZones'
-import { construirePhases, estRenseignee, prochainCodePhase, nomParDefaut } from './phases'
+import {
+  construirePhases, estRenseignee, prochainCodePhase, prochainOrdre, phaseDuMemeNom,
+  dernierePhaseRenseignee, nomPhase, SUGGESTIONS_PHASES,
+} from './phases'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -107,18 +110,19 @@ function focusOff(e) {
 function PhaseFormModal({ open, onClose, existing, affaire, phases, onSave, onDelete }) {
   const tva = affaire?.taux_tva ?? 1.20
   const tvaPct = Math.round((tva - 1) * 100)
-  const defaultPhase = phases.some(p => p.id === affaire?.phase) ? affaire.phase : (phases[0]?.id ?? 'esq')
 
   const [form, setForm] = useState(null)
   const [saving, setSaving] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [erreur, setErreur] = useState(null)
 
   useEffect(() => {
     if (!open) return
     setConfirmDelete(false)
+    setErreur(null)
     if (existing) {
       setForm({
-        phase:           existing.phase,
+        nom:             nomPhase(existing),
         enveloppe_ttc:   existing.enveloppe_ttc  ?? '',
         enveloppe_ht:    existing.enveloppe_ht   ?? '',
         honoraires_ttc:  existing.honoraires_ttc ?? '',
@@ -128,13 +132,13 @@ function PhaseFormModal({ open, onClose, existing, affaire, phases, onSave, onDe
       })
     } else {
       setForm({
-        phase: defaultPhase,
+        nom: '',
         enveloppe_ttc: '', enveloppe_ht: '',
         honoraires_ttc: '', honoraires_ht: '',
         motif_evolution: '', notes: '',
       })
     }
-  }, [open, existing]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [open, existing])
 
   if (!open || !form) return null
 
@@ -152,10 +156,19 @@ function PhaseFormModal({ open, onClose, existing, affaire, phases, onSave, onDe
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+    const nom = form.nom.trim()
+    if (!nom) { setErreur('Indiquez le nom de la phase.'); return }
+    // Deux phases du même nom se confondraient dans la liste et les estimations
+    const doublon = phaseDuMemeNom(phases, nom, existing?.phase ?? null)
+    if (doublon) { setErreur(`La phase « ${doublon.label} » existe déjà : modifiez-la depuis la liste.`); return }
     setSaving(true)
     try {
       await onSave({
-        phase:          form.phase,
+        // Une nouvelle phase reçoit un code libre et se range en fin de liste
+        ...(existing
+          ? { phase: existing.phase }
+          : { phase: prochainCodePhase(phases), ordre: prochainOrdre(phases) }),
+        nom_custom:     nom,
         enveloppe_ttc:  form.enveloppe_ttc  !== '' ? Number(form.enveloppe_ttc)  : null,
         enveloppe_ht:   form.enveloppe_ht   !== '' ? Number(form.enveloppe_ht)   : null,
         honoraires_ttc: form.honoraires_ttc !== '' ? Number(form.honoraires_ttc) : null,
@@ -166,6 +179,7 @@ function PhaseFormModal({ open, onClose, existing, affaire, phases, onSave, onDe
       onClose()
     } catch (err) {
       console.error(err)
+      setErreur(`Enregistrement impossible : ${err.message}`)
     }
     setSaving(false)
   }
@@ -199,21 +213,21 @@ function PhaseFormModal({ open, onClose, existing, affaire, phases, onSave, onDe
         <form onSubmit={handleSubmit}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-            {/* Phase */}
+            {/* Phase : nom libre, avec les phases usuelles en suggestion */}
             <div>
               <label style={LABEL}>Phase</label>
-              <select
-                value={form.phase}
-                onChange={e => set('phase', e.target.value)}
-                style={{ ...INPUT, cursor: 'pointer' }}
+              <input
+                value={form.nom}
+                onChange={e => { set('nom', e.target.value); setErreur(null) }}
+                list="phases-financier-suggerees"
+                placeholder="Ex : APD, PRO, PC modificatif…"
+                autoFocus={!existing}
+                style={INPUT}
                 onFocus={focusOn} onBlur={focusOff}
-              >
-                {phases.map(p => (
-                  <option key={p.id} value={p.id}>
-                    {p.label}{p.full && p.full !== p.label ? ` — ${p.full}` : ''}
-                  </option>
-                ))}
-              </select>
+              />
+              <datalist id="phases-financier-suggerees">
+                {SUGGESTIONS_PHASES.map(nom => <option key={nom} value={nom} />)}
+              </datalist>
             </div>
 
             {/* Enveloppe TTC */}
@@ -284,6 +298,8 @@ function PhaseFormModal({ open, onClose, existing, affaire, phases, onSave, onDe
               />
             </div>
           </div>
+
+          {erreur && <p style={{ fontSize: 12, color: '#B8412C', margin: '16px 0 0' }}>{erreur}</p>}
 
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 24, alignItems: 'center' }}>
             {existing && (
@@ -566,12 +582,10 @@ function EstimationFormModal({ open, onClose, existing, affaire, phases, lotsExi
 
 // ─── Bandeau enveloppe ────────────────────────────────────────────────────────
 
-function EnveloppeBandeau({ affaire, suiviParPhase, phases }) {
-  const navigate = useNavigate()
-  const { affaireId } = useParams()
-
+function EnveloppeBandeau({ affaire, suiviParPhase, onModifierEnveloppe }) {
   const enveloppeInitiale = affaire?.enveloppe_ttc ?? null
-  const derniere = suiviParPhase.length > 0 ? suiviParPhase[suiviParPhase.length - 1] : null
+  // Une phase seulement nommée (sans montant) ne fait pas l'enveloppe actuelle
+  const derniere = dernierePhaseRenseignee(suiviParPhase)
   const enveloppeActuelle = derniere?.enveloppe_ttc ?? enveloppeInitiale
   const evolution = enveloppeInitiale != null && enveloppeActuelle != null
     ? enveloppeActuelle - enveloppeInitiale
@@ -582,15 +596,9 @@ function EnveloppeBandeau({ affaire, suiviParPhase, phases }) {
 
   const cells = [
     {
-      label: 'Enveloppe initiale',
-      value: enveloppeInitiale ? euro(enveloppeInitiale) : null,
-      sub: enveloppeInitiale ? 'TTC' : null,
-      empty: !enveloppeInitiale,
-    },
-    {
       label: 'Enveloppe actuelle',
       value: enveloppeActuelle ? euro(enveloppeActuelle) : null,
-      sub: derniere ? `Phase ${fmtPhase(phases, derniere.phase).label}` : (enveloppeInitiale ? 'Pas de suivi renseigné' : null),
+      sub: derniere ? `Phase ${nomPhase(derniere)}` : (enveloppeInitiale ? 'Pas de suivi renseigné' : null),
     },
     {
       label: 'Évolution',
@@ -608,6 +616,7 @@ function EnveloppeBandeau({ affaire, suiviParPhase, phases }) {
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 20 }}>
+      <EnveloppeGlobale affaire={affaire} onModifier={onModifierEnveloppe} />
       {cells.map((cell, i) => (
         <div key={i} style={{
           backgroundColor: 'white', borderRadius: 0,
@@ -623,18 +632,108 @@ function EnveloppeBandeau({ affaire, suiviParPhase, phases }) {
               </p>
               {cell.sub && <p style={{ fontSize: 11, color: '#9C9591' }}>{cell.sub}</p>}
             </>
-          ) : cell.empty ? (
-            <button
-              onClick={() => navigate(`/affaires/${affaireId}`)}
-              style={{ fontSize: 12, color: '#E8602C', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
-            >
-              Renseigner →
-            </button>
           ) : (
             <p style={{ fontSize: 13, color: '#9C9591' }}>—</p>
           )}
         </div>
       ))}
+    </div>
+  )
+}
+
+// ─── Enveloppe globale initiale ───────────────────────────────────────────────
+//
+// C'est `affaires.enveloppe_ttc`, le montant « Enveloppe globale initiale TTC »
+// des informations de l'affaire : le modifier ici le modifie là-bas, et
+// inversement, puisqu'il n'y a qu'une seule valeur.
+function EnveloppeGlobale({ affaire, onModifier }) {
+  const tva = affaire?.taux_tva ?? 1.20
+  const valeur = affaire?.enveloppe_ttc ?? null
+  const [brouillon, setBrouillon] = useState(null)
+  const [enCours, setEnCours] = useState(false)
+  const [erreur, setErreur] = useState(null)
+
+  const valider = async () => {
+    const texte = String(brouillon ?? '').trim()
+    const montant = texte === '' ? null : Number(texte)
+    if (montant != null && (!Number.isFinite(montant) || montant < 0)) { setErreur('Montant invalide'); return }
+    setEnCours(true)
+    const { error } = await onModifier(montant)
+    setEnCours(false)
+    if (error) { setErreur(`Non enregistré : ${error.message}`); return }
+    setErreur(null)
+    setBrouillon(null)
+  }
+
+  const annuler = () => { setBrouillon(null); setErreur(null) }
+
+  return (
+    <div style={{
+      backgroundColor: 'white', borderRadius: 0,
+      border: '0.5px solid rgba(0,0,0,0.08)', padding: '16px 20px',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+        <p style={{ fontSize: 11, fontWeight: 500, color: '#9C9591', textTransform: 'uppercase', letterSpacing: '0.05em', margin: 0 }}>
+          Enveloppe globale initiale
+        </p>
+        {brouillon == null && valeur != null && (
+          <button
+            type="button"
+            onClick={() => { setBrouillon(valeur); setErreur(null) }}
+            title="Modifier l’enveloppe globale initiale"
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9C9591', padding: 2, display: 'flex' }}
+          >
+            <Pencil size={12} />
+          </button>
+        )}
+      </div>
+      {brouillon != null ? (
+        <form onSubmit={(e) => { e.preventDefault(); valider() }}>
+          <div style={{ position: 'relative' }}>
+            <input
+              type="number" min={0} step="100" autoFocus
+              value={brouillon}
+              onChange={(e) => setBrouillon(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Escape') annuler() }}
+              placeholder="0"
+              style={{ ...INPUT, paddingRight: 32 }}
+              onFocus={focusOn} onBlur={focusOff}
+            />
+            <span style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', fontSize: 11, color: '#9C9591', pointerEvents: 'none' }}>€</span>
+          </div>
+          <p style={{ fontSize: 11, color: '#9C9591', margin: '4px 0 8px' }}>
+            TTC{String(brouillon).trim() !== '' && Number.isFinite(Number(brouillon)) ? ` · ≈ ${euro(Number(brouillon) / tva)} HT` : ''}
+          </p>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button type="submit" disabled={enCours} style={{
+              padding: '5px 12px', borderRadius: 2, fontSize: 12, fontWeight: 500, border: 'none',
+              backgroundColor: '#E8602C', color: 'white', cursor: 'pointer', opacity: enCours ? 0.6 : 1,
+            }}>
+              {enCours ? 'Enregistrement…' : 'Enregistrer'}
+            </button>
+            <button type="button" onClick={annuler} style={{
+              padding: '5px 12px', borderRadius: 2, fontSize: 12, cursor: 'pointer',
+              border: '0.5px solid rgba(0,0,0,0.15)', backgroundColor: 'white', color: '#374151',
+            }}>
+              Annuler
+            </button>
+          </div>
+        </form>
+      ) : valeur != null ? (
+        <>
+          <p style={{ fontSize: 19, fontWeight: 500, color: '#1F1B17', marginBottom: 4 }}>{euro(valeur)}</p>
+          <p style={{ fontSize: 11, color: '#9C9591' }}>TTC · aussi dans les informations de l’affaire</p>
+        </>
+      ) : (
+        <button
+          type="button"
+          onClick={() => { setBrouillon(''); setErreur(null) }}
+          style={{ fontSize: 12, color: '#E8602C', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+        >
+          Renseigner →
+        </button>
+      )}
+      {erreur && <p style={{ fontSize: 11, color: '#B8412C', marginTop: 6 }}>{erreur}</p>}
     </div>
   )
 }
@@ -767,7 +866,7 @@ function EmptyPhaseRow({ phase, onAdd, onRenommer, onSupprimer, dragProps }) {
         <span style={{ fontSize: 12, color: '#9C9591' }}>— Non renseignée</span>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
-        {p.personnalisee && (
+        {onSupprimer && (
           <button
             onClick={onSupprimer}
             title="Supprimer cette phase"
@@ -876,7 +975,7 @@ function PhaseTimeline({
             ) : (
               <EmptyPhaseRow
                 phase={phase}
-                onAdd={() => onAdd(phase.id)}
+                onAdd={() => onAdd(phase.entry)}
                 onRenommer={renommer}
                 onSupprimer={() => onSupprimer(phase)}
                 dragProps={dragProps}
@@ -1078,7 +1177,7 @@ function Spinner() {
 
 export default function FinancierEtudeModule() {
   const { affaireId } = useParams()
-  const { affaire, loading: affaireLoading } = useAffaire(affaireId)
+  const { affaire, loading: affaireLoading, updateAffaire } = useAffaire(affaireId)
 
   const {
     enveloppeInitiale,
@@ -1092,42 +1191,27 @@ export default function FinancierEtudeModule() {
     upsertEstimation,
     deleteEstimation,
     renommerPhase,
-    ajouterPhase,
     reordonnerPhases,
   } = useSuiviFinancierEtude(affaireId, affaire)
 
-  // Liste affichée : les cinq phases de référence, leurs noms libres, et les
-  // phases ajoutées à la main — dans l'ordre choisi.
+  // Liste affichée : les phases saisies, dans l'ordre choisi
   const phases = construirePhases(suiviParPhase)
 
-  const [phaseModal, setPhaseModal] = useState({ open: false, existing: null, defaultPhase: null })
+  const [phaseModal, setPhaseModal] = useState({ open: false, existing: null })
   const [estModal, setEstModal] = useState({ open: false, existing: null })
 
-  const openAddPhase = (defaultPhaseId) => {
-    setPhaseModal({ open: true, existing: null, defaultPhase: defaultPhaseId })
-  }
+  const openAddPhase = () => setPhaseModal({ open: true, existing: null })
+  const openEditPhase = (entry) => setPhaseModal({ open: true, existing: entry })
 
-  const openEditPhase = (entry) => {
-    setPhaseModal({ open: true, existing: entry, defaultPhase: null })
-  }
-
+  // Un nom déjà porté par une autre phase est refusé : elles se confondraient
   const handleRenommer = async (phase, nom) => {
+    if (!nom.trim() || phaseDuMemeNom(phases, nom, phase.id)) return
     try {
-      await renommerPhase(phase.id, nom, phase.entry?.ordre ?? phase.ordre)
+      await renommerPhase(phase.id, nom.trim(), phase.entry?.ordre ?? phase.ordre)
     } catch (err) { console.error('Renommage de la phase :', err) }
   }
 
-  const handleAjouterPhase = async () => {
-    try {
-      await ajouterPhase(prochainCodePhase(phases), nomParDefaut(phases), phases.length)
-    } catch (err) { console.error('Ajout d’une phase :', err) }
-  }
-
-  // Seules les phases ajoutées à la main peuvent disparaître : les cinq phases
-  // de référence appartiennent au vocabulaire de l'affaire (`affaires.phase`)
-  // et aux estimations de lots. Les vider se fait depuis leur modale.
   const handleSupprimerPhase = async (phase) => {
-    if (!phase.personnalisee) return
     if (estRenseignee(phase.entry)
       && !window.confirm(`Supprimer « ${phase.label} » et les montants qu'elle contient ?`)) return
     try {
@@ -1155,11 +1239,6 @@ export default function FinancierEtudeModule() {
     )
   }
 
-  // Affaire with optional defaultPhase override for modal
-  const affaireForModal = phaseModal.defaultPhase
-    ? { ...affaire, phase: phaseModal.defaultPhase }
-    : affaire
-
   return (
     <>
       <style>{`@keyframes jga-spin { to { transform: rotate(360deg); } }`}</style>
@@ -1168,8 +1247,7 @@ export default function FinancierEtudeModule() {
       <EnveloppeBandeau
         affaire={affaire}
         suiviParPhase={suiviParPhase}
-        enveloppeInitiale={enveloppeInitiale}
-        phases={phases}
+        onModifierEnveloppe={(montant) => updateAffaire({ enveloppe_ttc: montant })}
       />
 
       {/* ── Timeline des phases ── */}
@@ -1178,7 +1256,7 @@ export default function FinancierEtudeModule() {
           title="Historique des phases"
           action={
             <button
-              onClick={() => openAddPhase(null)}
+              onClick={openAddPhase}
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 6,
                 padding: '6px 12px', borderRadius: 2, fontSize: 12,
@@ -1191,6 +1269,14 @@ export default function FinancierEtudeModule() {
             </button>
           }
         />
+        {phases.length === 0 && (
+          <p style={{
+            fontSize: 12, color: '#9C9591', padding: '14px 16px', margin: 0,
+            border: '0.5px dashed rgba(0,0,0,0.15)', borderRadius: 2,
+          }}>
+            Aucune phase renseignée — « Renseigner une phase » pour saisir celle en cours et ses montants.
+          </p>
+        )}
         <PhaseTimeline
           phases={phases}
           enveloppeInitiale={enveloppeInitiale}
@@ -1201,18 +1287,6 @@ export default function FinancierEtudeModule() {
           onReordonner={handleReordonner}
         />
 
-        <button
-          onClick={handleAjouterPhase}
-          style={{
-            display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 8,
-            padding: '6px 12px', borderRadius: 2, fontSize: 12,
-            border: '0.5px dashed rgba(0,0,0,0.20)', backgroundColor: 'transparent',
-            color: '#5E5854', cursor: 'pointer',
-          }}
-        >
-          <Plus size={12} />
-          Ajouter une phase
-        </button>
       </div>
 
       {/* ── Estimations par lot ── */}
@@ -1255,7 +1329,7 @@ export default function FinancierEtudeModule() {
         open={phaseModal.open}
         onClose={() => setPhaseModal(s => ({ ...s, open: false }))}
         existing={phaseModal.existing}
-        affaire={affaireForModal}
+        affaire={affaire}
         phases={phases}
         onSave={upsertPhase}
         onDelete={deletePhase}

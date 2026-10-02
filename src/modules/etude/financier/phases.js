@@ -1,12 +1,14 @@
 // ─── Phases du suivi financier d'étude ───────────────────────────────────────
 //
-// Le code d'une phase (`suivi_financier_etude.phase`) reste sa clé : c'est lui
-// qui porte la contrainte d'unicité, qui relie les estimations de lots, et qui
-// correspond au vocabulaire de `affaires.phase`. Seul le NOM est libre, stocké
-// dans `nom_custom` ; à défaut, le libellé d'origine est affiché.
+// Les phases ne sont plus pré-enregistrées : on tape le nom de celle où l'on se
+// trouve en renseignant ses montants. Seules les lignes enregistrées
+// apparaissent.
 //
-// Les cinq phases historiques existent toujours, même sans ligne en base — d'où
-// la fusion faite ici entre la liste de référence et les lignes enregistrées.
+// Le code d'une phase (`suivi_financier_etude.phase`) reste sa clé : il porte
+// la contrainte d'unicité et relie les estimations de lots. Une nouvelle phase
+// reçoit un code `perso_N` et son nom dans `nom_custom`. Les lignes plus
+// anciennes gardent leur code d'origine (`esq`, `avp`…), dont le libellé sert
+// de nom tant qu'aucun nom libre n'a été saisi.
 
 export const PHASES_BASE = [
   { id: 'esq',      label: 'ESQ',      full: 'Esquisse',                color: '#E8602C', bg: 'rgba(232,96,44,0.10)' },
@@ -16,7 +18,17 @@ export const PHASES_BASE = [
   { id: 'chantier', label: 'Chantier', full: 'Chantier',                color: '#2A8A4E', bg: 'rgba(42,138,78,0.12)' },
 ]
 
-const COULEUR_PERSO = { color: '#5E5854', bg: 'rgba(94,88,84,0.10)' }
+// Proposées pendant la saisie du nom ; on peut écrire n'importe quoi d'autre
+export const SUGGESTIONS_PHASES = [
+  'ESQ', 'APS', 'APD', 'AVP', 'PRO', 'DCE', 'ACT', 'VISA', 'DET', 'AOR', 'Chantier',
+]
+
+const COULEUR_PHASE = { color: '#E8602C', bg: 'rgba(232,96,44,0.10)' }
+
+// Rang d'une ligne : celui choisi par glisser-déposer, sinon (ligne créée avant
+// la migration 036) l'ordre chronologique de son code d'origine
+const RANG_BASE = Object.fromEntries(PHASES_BASE.map((p, i) => [p.id, i]))
+const rangDe = (e) => e.ordre ?? RANG_BASE[e.phase] ?? 99
 
 // Colonnes qui font qu'une phase est « renseignée ». Ni `nom_custom` ni `ordre`
 // n'en font partie : renommer ou déplacer une phase vide crée bien une ligne en
@@ -33,44 +45,46 @@ export function estRenseignee(entry) {
 
 export const estPhaseBase = (code) => PHASES_BASE.some((p) => p.id === code)
 
-// Liste affichée : les cinq phases de référence, plus celles ajoutées à la main,
-// dans l'ordre choisi par l'utilisateur (`ordre`) ou, à défaut, l'ordre
-// chronologique d'origine.
-export function construirePhases(suiviParPhase = []) {
-  const parCode = new Map(suiviParPhase.map((e) => [e.phase, e]))
-
-  const base = PHASES_BASE.map((p, i) => ({
-    ...p,
-    personnalisee: false,
-    rangDefaut: i,
-    entry: parCode.get(p.id) ?? null,
-  }))
-
-  const perso = suiviParPhase
-    .filter((e) => !estPhaseBase(e.phase))
-    .map((e, i) => ({
-      id: e.phase,
-      label: e.nom_custom || 'Phase',
-      full: e.nom_custom || 'Phase personnalisée',
-      ...COULEUR_PERSO,
-      personnalisee: true,
-      rangDefaut: PHASES_BASE.length + i,
-      entry: e,
-    }))
-
-  return [...base, ...perso]
-    .map((p) => ({
-      ...p,
-      // Le nom libre l'emporte sur le libellé d'origine, partout où la phase
-      // est affichée : badge, carte, ligne vide, listes déroulantes.
-      label: p.entry?.nom_custom || p.label,
-      full: p.entry?.nom_custom || p.full,
-      ordre: p.entry?.ordre ?? p.rangDefaut,
-    }))
-    .sort((a, b) => (a.ordre - b.ordre) || (a.rangDefaut - b.rangDefaut))
+/** Nom affiché d'une ligne : nom libre, sinon libellé d'origine, sinon le code. */
+export function nomPhase(entry) {
+  if (entry?.nom_custom) return entry.nom_custom
+  return PHASES_BASE.find((p) => p.id === entry?.phase)?.label ?? entry?.phase ?? ''
 }
 
-// Code d'une nouvelle phase : jamais l'un des cinq codes de référence, et jamais
+// Liste affichée : les phases enregistrées, dans l'ordre choisi
+export function construirePhases(suiviParPhase = []) {
+  return [...suiviParPhase]
+    .sort((a, b) => rangDe(a) - rangDe(b))
+    .map((e, i) => {
+      const base = PHASES_BASE.find((p) => p.id === e.phase)
+      return {
+        id: e.phase,
+        label: nomPhase(e),
+        full: e.nom_custom || base?.full || nomPhase(e),
+        color: base?.color ?? COULEUR_PHASE.color,
+        bg: base?.bg ?? COULEUR_PHASE.bg,
+        ordre: e.ordre ?? i,
+        entry: e,
+      }
+    })
+}
+
+const normaliser = (nom) => String(nom ?? '').trim().toLocaleLowerCase('fr')
+
+/** Phase qui porte déjà ce nom (hors `saufCode`, la phase qu'on renomme), ou null. */
+export function phaseDuMemeNom(phases, nom, saufCode = null) {
+  const cherche = normaliser(nom)
+  if (!cherche) return null
+  return phases.find((p) => p.id !== saufCode && normaliser(p.label) === cherche) ?? null
+}
+
+/** La dernière phase de la liste qui porte un montant ou un commentaire. */
+export function dernierePhaseRenseignee(suiviParPhase = []) {
+  const remplies = [...suiviParPhase].filter(estRenseignee).sort((a, b) => rangDe(a) - rangDe(b))
+  return remplies[remplies.length - 1] ?? null
+}
+
+// Code d'une nouvelle phase : jamais l'un des cinq codes d'origine, et jamais
 // un code déjà pris — c'est la clé d'unicité (affaire_id, phase).
 export function prochainCodePhase(phases = []) {
   const pris = new Set(phases.map((p) => p.id ?? p.phase))
@@ -79,7 +93,7 @@ export function prochainCodePhase(phases = []) {
   return `perso_${n}`
 }
 
-// Nom par défaut d'une nouvelle phase : « Phase 6 » si cinq existent déjà.
-export function nomParDefaut(phases = []) {
-  return `Phase ${phases.length + 1}`
+/** Rang d'une nouvelle phase : à la suite de la dernière. */
+export function prochainOrdre(phases = []) {
+  return phases.reduce((max, p) => Math.max(max, p.ordre ?? -1), -1) + 1
 }

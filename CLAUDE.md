@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 606 tests node --test (plannings, jalons accrochés, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
+npm test         # 615 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
 npx eslint src   # ~73 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -170,6 +170,19 @@ création avec reprise de la visite précédente) et `useCompteRendu` (un CR).
   « refusée par la base », Réessayer / Abandonner) mais **reste appliquée à
   l'écran**. Hors ligne : ni création de CR, ni émission, ni PDF, et pas de
   ré-annotation d'une photo déjà envoyée.
+
+## Suivi financier d'étude
+
+`src/modules/etude/financier/`, données par `useSuiviFinancierEtude`. Les
+phases ne sont **plus pré-enregistrées** : on tape le nom de la phase en cours
+(suggestions `SUGGESTIONS_PHASES`) ; seules les lignes de
+`suivi_financier_etude` s'affichent. Le code `phase` reste la clé (une nouvelle
+phase reçoit `perso_N`, son nom dans `nom_custom`) ; les anciennes lignes
+gardent `esq`, `avp`… dont le libellé sert de nom. Toujours afficher une phase
+par `nomPhase`, et prendre « la dernière phase » par `dernierePhaseRenseignee`
+(`phases.js`, testé) — la page de l'affaire aussi. L'**enveloppe globale
+initiale** se modifie en haut de la page : c'est `affaires.enveloppe_ttc`, le
+même champ que la fiche de l'affaire, donc toujours identique des deux côtés.
 
 ## Fiches de travaux modificatifs (FTM)
 

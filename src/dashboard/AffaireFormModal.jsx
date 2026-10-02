@@ -745,7 +745,7 @@ export function AffaireFormModal({ affaire = null, onSave, onClose, scrollToSect
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginBottom: 28 }}>
             <div style={grid2}>
-              <Field label="Enveloppe globale TTC (€)">
+              <Field label="Enveloppe globale initiale TTC (€)">
                 <TextInput type="number" value={form.enveloppe_ttc} onChange={setNum('enveloppe_ttc')} placeholder="1 200 000" />
               </Field>
               <Field label="dont Travaux TTC (€)">

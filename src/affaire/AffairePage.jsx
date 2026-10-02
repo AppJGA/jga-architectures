@@ -16,6 +16,7 @@ import { PhaseBadge } from '../shared/components/Badge'
 import { AffaireFormModal } from '../dashboard/AffaireFormModal'
 import { supabase } from '../core/supabase/client'
 import { infosStatut } from '../modules/chantier/comptes-rendus/crLogique'
+import { dernierePhaseRenseignee, nomPhase } from '../modules/etude/financier/phases'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -67,7 +68,7 @@ function useAffaireStats(affaireId) {
       supabase.from('ftm').select('id, decision, montant_travaux_ht').eq('affaire_id', affaireId),
       supabase.from('planning_etude_phases').select('id').eq('affaire_id', affaireId),
       supabase.from('planning_etude_jalons').select('id, label, semaine, annee, couleur').eq('affaire_id', affaireId).order('annee').order('semaine'),
-      supabase.from('suivi_financier_etude').select('phase, enveloppe_ttc').eq('affaire_id', affaireId),
+      supabase.from('suivi_financier_etude').select('*').eq('affaire_id', affaireId),
     ]).then(([crData, remAFaire, t, lots, le, lf, pl, ja, fa, ea, ej, sfe]) => {
       const lotsTotalHt = le.data?.reduce((sum, x) => sum + (x.montant_marche_ht ?? 0), 0) ?? 0
       const activeLignes = lf.data?.filter(l => l.statut !== 'refuse') ?? []
@@ -103,9 +104,9 @@ function useAffaireStats(affaireId) {
         .filter(f => f.decision === 'accepte')
         .reduce((sum, f) => sum + (Number(f.montant_travaux_ht) || 0), 0)
 
-      const SFE_ORD = { esq: 1, avp: 2, pro: 3, dce: 4, chantier: 5 }
-      const sortedSfe = (sfe.data ?? []).sort((a, b) => (SFE_ORD[a.phase] ?? 9) - (SFE_ORD[b.phase] ?? 9))
-      const derniereSfe = sortedSfe[sortedSfe.length - 1] ?? null
+      // Même règle que le suivi financier : la dernière phase de la liste qui
+      // porte un montant, sous le nom saisi (les phases sont nommées librement)
+      const derniereSfe = dernierePhaseRenseignee(sfe.data ?? [])
 
       const etudeTotal = (ea.data ?? []).length
       const { semaine: curSem, annee: curAnn } = (() => {
@@ -154,7 +155,7 @@ function useAffaireStats(affaireId) {
         ftmMontantAccepte,
         etudeTotal,
         prochainJalonEtude,
-        financierEtudeDernierePhase: derniereSfe?.phase ?? null,
+        financierEtudeDernierePhase: derniereSfe ? nomPhase(derniereSfe) : null,
         financierEtudeEnvActuelle: derniereSfe?.enveloppe_ttc ?? null,
       })
     })
@@ -790,11 +791,11 @@ function PhaseSection({ phase, affaire, stats, affaireId, navigate, rangBase }) 
                         <span style={{ fontSize: 11, color: '#9C9591' }}>Dernière phase :</span>
                         <span style={{
                           fontSize: 11, fontWeight: 500,
-                          color: ['esq','avp','pro','dce'].includes(stats.financierEtudeDernierePhase) ? '#E8602C' : '#2A8A4E',
-                          backgroundColor: ['esq','avp','pro','dce'].includes(stats.financierEtudeDernierePhase) ? 'rgba(232,96,44,0.10)' : 'rgba(42,138,78,0.12)',
+                          color: '#E8602C',
+                          backgroundColor: 'rgba(232,96,44,0.10)',
                           borderRadius: 3, padding: '2px 8px',
                         }}>
-                          {stats.financierEtudeDernierePhase.toUpperCase()}
+                          {stats.financierEtudeDernierePhase}
                         </span>
                         {stats.financierEtudeEnvActuelle && stats.financierEtudeEnvActuelle !== affaire.enveloppe_ttc && (
                           <span style={{
@@ -973,7 +974,7 @@ function AffaireOverview({ affaire, stats, affaireId, onEdit, canEdit }) {
           <InfoField label="Section cadastrale" value={affaire.cadastre_section} />
           <InfoField label="Parcelle" value={affaire.cadastre_parcelle} />
           <InfoField label="Superficie terrain" value={affaire.surface_terrain ? `${affaire.surface_terrain} m²` : null} />
-          <InfoField label="Enveloppe TTC" value={formatEuro(affaire.enveloppe_ttc)} />
+          <InfoField label="Enveloppe globale initiale TTC" value={formatEuro(affaire.enveloppe_ttc)} />
           <InfoField label="Surface plancher" value={affaire.surface_plancher ? `${affaire.surface_plancher} m²` : null} />
           <InfoField label="Date de livraison" value={fmtDate(affaire.date_livraison)} />
         </div>

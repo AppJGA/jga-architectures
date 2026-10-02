@@ -1,7 +1,9 @@
 import { useMemo, useRef, useCallback, useState, useEffect, useLayoutEffect } from 'react'
 import { GitBranch } from 'lucide-react'
 import { MenuRadial, EditionBarre, BandeauLien } from '../../../shared/planning/MenuRadial'
-import { ACTIONS_SEGMENT } from '../../../shared/planning/positionsPetales'
+import { ACTIONS_SEGMENT, actionsJalon } from '../../../shared/planning/positionsPetales'
+import { estAncre, bordTouche } from '../../../shared/planning/ancrage'
+import { semaineAncre } from './jalonsAncresEtude'
 import { recadrerSurBarre, arreterRecadrageAuPincement } from '../../../shared/planning/recadrage'
 import {
   getWeekStart, addWeeks, weeksBetween, getCurrentWeek, computeLagSemaines,
@@ -49,9 +51,21 @@ function isFirstWeekOfMonth(semaine, annee) {
   return prevWeek.getMonth() !== date.getMonth()
 }
 
+// Signe d'un jalon accroché, dans son étiquette (blanc sur la couleur du jalon)
+function IconeLien() {
+  return (
+    <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor"
+      strokeWidth="2.6" strokeLinecap="round" aria-label="accroché">
+      <path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7" />
+      <path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7" />
+    </svg>
+  )
+}
+
 export function GanttEtudeTimeline({
   phases, semWidth, showConnections,
-  jalons = [], onJalonClick,
+  jalons = [], peutAccrocher = false, onJalonModif, onJalonAccroche, onJalonDetache,
+  onJalonSupprime, onJalonReglages, onAccrochageIndisponible,
   onPhaseClick, onPhaseUpdate,
   onDependencyCreate, onDependencyDelete,
   criticalIds,
@@ -136,11 +150,6 @@ export function GanttEtudeTimeline({
     return labels
   }, [weeks])
 
-  // ── Jalon positions ───────────────────────────────────────────────────────────
-  const jalonPositions = useMemo(() =>
-    jalons.map(j => ({ ...j, left: weekIndex(j.semaine, j.annee) * semWidth })),
-    [jalons, weekIndex, semWidth]
-  )
 
   // ── Drag ──────────────────────────────────────────────────────────────────────
   //
@@ -162,6 +171,16 @@ export function GanttEtudeTimeline({
 
   useEffect(() => { onSelectionChange?.(selectionPhase?.id ?? null) }, [selectionPhase?.id, onSelectionChange])
 
+  // ── Jalons : roue, déplacement, accroche ─────────────────────────────────────
+  // { jalonId, mode: 'menu' | 'move' | 'accroche', haut, origine } — exclusive
+  // des sélections de phase et de segment. `haut` : hauteur de la roue, figée
+  // au toucher (la ligne d'un jalon traverse tout le planning).
+  const [selectionJalon, setSelectionJalon] = useState(null)
+  const [apercuJalon, setApercuJalon] = useState(null)
+  const [draggingJalon, setDraggingJalon] = useState(false)
+  const jalonDragRef = useRef(null)
+  const enAccroche = selectionJalon?.mode === 'accroche'
+
   // À la souris, une barre se glisse directement. Au doigt, seulement en mode
   // Déplacer ou Allonger de cette phase : ailleurs le geste reste un toucher,
   // qui ouvre le menu radial.
@@ -181,7 +200,8 @@ export function GanttEtudeTimeline({
       origAnnee: phase.annee_debut,
       origDuree: phase.duree_semaines,
       // Phase venue de Notion, absente de la base : il n'y a rien à enregistrer
-      glissable: phase.id != null && (e.pointerType === 'mouse' || enEdition),
+      // En mode Accrocher, toucher une phase la désigne : elle ne doit pas bouger
+      glissable: phase.id != null && ((e.pointerType === 'mouse' && !enAccroche) || enEdition),
       pointerType: e.pointerType,
       moved: false,
       lastDelta: 0,
@@ -189,7 +209,7 @@ export function GanttEtudeTimeline({
     setDraggingBar(clePhase(phase))
     setDragPreview(null)
     if (e.pointerType === 'mouse') document.body.style.cursor = type === 'move' ? 'grabbing' : 'ew-resize'
-  }, [drawMode, selection])
+  }, [drawMode, selection, enAccroche])
 
   // Nouvelle géométrie d'une phase après un déplacement de `delta` semaines —
   // partagée par l'aperçu et l'enregistrement, pour qu'ils ne divergent jamais.
@@ -221,6 +241,27 @@ export function GanttEtudeTimeline({
   // mode d'édition pour qu'ils suivent le doigt
   const [apercuSeg, setApercuSeg] = useState(null)
 
+  // Un jalon accroché se dessine depuis la barre affichée, aperçu compris : il
+  // suit le doigt pendant qu'on déplace ou étire sa phase ou son segment. Un
+  // jalon de fin de barre se place au bord droit de sa semaine.
+  const jalonsAffiches = useMemo(() => {
+    const phasesAffichees = dragPreview
+      ? phases.map((p) => (p.id === dragPreview.id ? { ...p, ...dragPreview, id: p.id } : p))
+      : phases
+    const segmentsAffiches = apercuSeg
+      ? segments.map((sg) => (sg.id === apercuSeg.segId ? { ...sg, ...apercuSeg } : sg))
+      : segments
+    return jalons.map((j) => {
+      const ancree = estAncre(j) ? semaineAncre(j, { phases: phasesAffichees, segments: segmentsAffiches, periodes }) : null
+      const position = apercuJalon?.jalonId === j.id ? apercuJalon : (ancree ?? { semaine: j.semaine, annee: j.annee })
+      const left = (weekIndex(position.semaine, position.annee) + (j.ancre_bord === 'fin' ? 1 : 0)) * semWidth
+      return { ...j, ...position, ancre: ancree != null, left }
+    })
+  }, [jalons, phases, segments, periodes, dragPreview, apercuSeg, apercuJalon, weekIndex, semWidth])
+  const jalonSelectionne = selectionJalon
+    ? jalonsAffiches.find((j) => j.id === selectionJalon.jalonId) ?? null
+    : null
+
   // À la souris, un segment se glisse directement. Au doigt, seulement dans le
   // mode Déplacer ou Allonger de ce segment : ailleurs le geste est un toucher
   // (roue), et le planning doit pouvoir défiler.
@@ -234,6 +275,7 @@ export function GanttEtudeTimeline({
       const modeAttendu = type === 'move' ? 'move' : 'resize'
       if (selectionSeg?.segmentId !== seg.id || selectionSeg.mode !== modeAttendu) return
     }
+    if (enAccroche) return
     e.preventDefault(); e.stopPropagation()
     dragState.moved = false
     const origLeft = weeksBetween(refWeek.semaine, refWeek.annee, seg.semaine_debut, seg.annee_debut) * semWidth
@@ -251,7 +293,7 @@ export function GanttEtudeTimeline({
       ? 'Déplacement d’un segment'
       : 'Redimensionnement d’un segment')
     if (e.pointerType === 'mouse') document.body.style.cursor = type === 'move' ? 'grabbing' : 'ew-resize'
-  }, [refWeek, semWidth, drawMode, onSegmentDragBegin, selectionSeg])
+  }, [refWeek, semWidth, drawMode, onSegmentDragBegin, selectionSeg, enAccroche])
 
   // Géométrie d'un segment après un déplacement de `delta` semaines
   const segChangesFor = useCallback((drag, delta) => {
@@ -438,8 +480,33 @@ export function GanttEtudeTimeline({
   useEffect(() => () => { if (camera.current) cancelAnimationFrame(camera.current) }, [])
   useEffect(() => arreterRecadrageAuPincement(scrollRef, camera), [scrollRef])
 
+  // Mode Accrocher : la barre touchée reçoit le jalon, au début ou à la fin
+  // selon la moitié touchée. Une phase coupée par des congés compte d'un bord à
+  // l'autre, fragments compris.
+  const accrocherA = useCallback((cible, rect, clientX) => {
+    const bord = rect && clientX != null ? bordTouche(clientX, rect) : 'fin'
+    onJalonAccroche?.(selectionJalon.jalonId, cible, bord)
+    setSelectionJalon(null)
+  }, [selectionJalon, onJalonAccroche])
+
+  const rectPhase = useCallback((phase) => {
+    const origine = containerRef.current?.getBoundingClientRect()
+    if (!origine) return null
+    const fragments = computePhaseFragments(phase, periodes)
+    const premier = fragments[0]
+    const dernier = fragments[fragments.length - 1]
+    const left = weeksBetween(refWeek.semaine, refWeek.annee, premier.semaine_debut, premier.annee_debut) * semWidth
+    const fin = (weeksBetween(refWeek.semaine, refWeek.annee, dernier.semaine_debut, dernier.annee_debut) + dernier.duree_semaines) * semWidth
+    return { left: origine.left + left, width: fin - left }
+  }, [periodes, refWeek, semWidth])
+
   // Toucher (ou clic sans glisser) une barre de phase
-  const toucherPhase = useCallback((phase) => {
+  const toucherPhase = useCallback((phase, clientX) => {
+    if (selectionJalon?.mode === 'accroche') {
+      if (phase.id != null) accrocherA({ type: 'phase', id: phase.id }, rectPhase(phase), clientX)
+      return
+    }
+    setSelectionJalon(null)
     if (selection?.mode === 'lien') {
       creerLien(selection.phaseId, phase.id)
       setSelection(null)
@@ -450,7 +517,7 @@ export function GanttEtudeTimeline({
     setSelectionSeg(null)
     setSelection({ phaseId: phase.id, mode: 'menu' })
     recadrerSurBarre(scrollRef, `[data-phaseid="${phase.id}"]`, camera)
-  }, [selection, creerLien, scrollRef, onPhaseClick])
+  }, [selection, selectionJalon, accrocherA, rectPhase, creerLien, scrollRef, onPhaseClick])
 
   // Grandes poignées du mode Déplacer / Allonger
   const poigneeDown = useCallback((e, type) => {
@@ -459,7 +526,12 @@ export function GanttEtudeTimeline({
 
   // En mode Lier, toucher un segment lie sa phase. Sinon, il ouvre sa roue et
   // recadre la vue sur lui, comme une barre de phase.
-  const toucherSegment = useCallback((phase, seg) => {
+  const toucherSegment = useCallback((phase, seg, e) => {
+    if (selectionJalon?.mode === 'accroche') {
+      if (seg) accrocherA({ type: 'segment', id: seg.id }, e?.currentTarget?.getBoundingClientRect(), e?.clientX)
+      return true
+    }
+    setSelectionJalon(null)
     if (selection?.mode === 'lien') {
       creerLien(selection.phaseId, phase.id)
       setSelection(null)
@@ -470,7 +542,89 @@ export function GanttEtudeTimeline({
     setSelectionSeg({ segmentId: seg.id, phaseId: phase.id, mode: 'menu' })
     recadrerSurBarre(scrollRef, `[data-segid="${seg.id}"]`, camera)
     return true
-  }, [selection, creerLien, scrollRef])
+  }, [selection, selectionJalon, accrocherA, creerLien, scrollRef])
+
+  // Toucher un jalon (sa ligne ou son étiquette) ouvre sa roue, à mi-hauteur
+  // de ce qui est visible plutôt qu'en haut d'un planning qu'on a fait défiler
+  // `visible` : défilement vertical du planning au moment du toucher
+  const toucherJalon = useCallback((jalon, visible) => {
+    if (drawMode) return
+    setSelection(null)
+    setSelectionSeg(null)
+    setSelectionJalon({ jalonId: jalon.id, mode: 'menu', haut: Math.max(74, visible + 110) })
+  }, [drawMode])
+
+  const actionMenuJalon = useCallback((action) => {
+    const jalon = jalonSelectionne
+    if (!jalon) { setSelectionJalon(null); return }
+    if (action === 'move') {
+      setSelectionJalon((sel) => ({ ...sel, mode: 'move', origine: { semaine: jalon.semaine, annee: jalon.annee } }))
+      return
+    }
+    if (action === 'accrocher') {
+      if (!peutAccrocher) { setSelectionJalon(null); onAccrochageIndisponible?.(); return }
+      setSelectionJalon((sel) => ({ ...sel, mode: 'accroche' }))
+      return
+    }
+    setSelectionJalon(null)
+    if (action === 'params') onJalonReglages?.(jalon)
+    else if (action === 'detacher') onJalonDetache?.(jalon)
+    else if (action === 'del') onJalonSupprime?.(jalon)
+  }, [jalonSelectionne, peutAccrocher, onAccrochageIndisponible, onJalonReglages, onJalonDetache, onJalonSupprime])
+
+  useEffect(() => {
+    const volet = scrollRef?.current
+    if (selectionJalon?.mode !== 'menu' || !volet) return
+    const fermer = (e) => {
+      if (e.target.closest?.('[role="menu"], [data-jalonid]')) return
+      setSelectionJalon(null)
+    }
+    volet.addEventListener('click', fermer)
+    return () => volet.removeEventListener('click', fermer)
+  }, [selectionJalon?.mode, scrollRef])
+
+  // Glisser un jalon par la poignée du mode Déplacer, à la semaine. Un geste
+  // interrompu par le système n'écrit rien.
+  const startJalonDrag = useCallback((e) => {
+    if (!jalonSelectionne) return
+    e.preventDefault(); e.stopPropagation()
+    jalonDragRef.current = {
+      jalonId: jalonSelectionne.id, startX: e.clientX,
+      semaine: jalonSelectionne.semaine, annee: jalonSelectionne.annee,
+    }
+    setDraggingJalon(true)
+  }, [jalonSelectionne])
+
+  useLayoutEffect(() => {
+    if (!draggingJalon) return
+    const semaineSous = (drag, clientX) => addWeeks(drag.semaine, drag.annee, Math.round((clientX - drag.startX) / semWidth))
+    const handleMove = (e) => {
+      const drag = jalonDragRef.current
+      if (!drag) return
+      const { semaine, annee } = semaineSous(drag, e.clientX)
+      setApercuJalon((prev) => (prev?.semaine === semaine && prev?.annee === annee ? prev : { jalonId: drag.jalonId, semaine, annee }))
+    }
+    const handleUp = (e) => {
+      const drag = jalonDragRef.current
+      jalonDragRef.current = null
+      setDraggingJalon(false)
+      setApercuJalon(null)
+      if (!drag || e.type === 'pointercancel') return
+      const { semaine, annee } = semaineSous(drag, e.clientX)
+      const jalon = jalons.find((j) => j.id === drag.jalonId)
+      if (jalon && (semaine !== jalon.semaine || annee !== jalon.annee)) {
+        onJalonModif?.(drag.jalonId, { semaine, annee }, `Déplacement du jalon « ${jalon.label} »`)
+      }
+    }
+    window.addEventListener('pointermove', handleMove)
+    window.addEventListener('pointerup', handleUp)
+    window.addEventListener('pointercancel', handleUp)
+    return () => {
+      window.removeEventListener('pointermove', handleMove)
+      window.removeEventListener('pointerup', handleUp)
+      window.removeEventListener('pointercancel', handleUp)
+    }
+  }, [draggingJalon, semWidth, jalons, onJalonModif])
 
   const segmentSelectionne = selectionSeg ? segments.find((sg) => sg.id === selectionSeg.segmentId) ?? null : null
 
@@ -552,7 +706,7 @@ export function GanttEtudeTimeline({
       document.body.style.cursor = ''
       if (!drag) return
       if (!drag.moved) {
-        if (e.type !== 'pointercancel') toucherPhase(drag.phase)
+        if (e.type !== 'pointercancel') toucherPhase(drag.phase, drag.startX)
         return
       }
       if (!drag.glissable || e.type === 'pointercancel') return
@@ -628,7 +782,7 @@ export function GanttEtudeTimeline({
   }, [semWidth, segChangesFor, updateSegmentLocal, onSegmentCommit])
 
   useEffect(() => {
-    const h = (e) => { if (e.key === 'Escape') { setSelection(null); setSelectionSeg(null) } }
+    const h = (e) => { if (e.key === 'Escape') { setSelection(null); setSelectionSeg(null); setSelectionJalon(null) } }
     window.addEventListener('keydown', h)
     return () => window.removeEventListener('keydown', h)
   }, [])
@@ -668,8 +822,8 @@ export function GanttEtudeTimeline({
               </span>
             </div>
           ))}
-          {jalonPositions.map(j => (
-            j.left >= 0 && j.left < totalWidth ? (
+          {jalonsAffiches.map(j => (
+            j.left >= 0 && j.left <= totalWidth ? (
               <div key={j.id} style={{
                 position: 'absolute', left: j.left, top: 0, bottom: 0,
                 width: 2, backgroundColor: j.couleur, opacity: 0.35, pointerEvents: 'none',
@@ -767,30 +921,37 @@ export function GanttEtudeTimeline({
           }} />
         )}
 
-        {/* Jalons */}
-        {jalonPositions.map(j => (
-          j.left >= 0 && j.left < totalWidth ? (
+        {/* Jalons — la zone de toucher déborde la ligne de 2,5 px : au doigt,
+            une ligne aussi fine ne se touche pas. */}
+        {jalonsAffiches.map(j => (
+          j.left >= 0 && j.left <= totalWidth ? (
             <div
               key={j.id}
+              data-jalonid={j.id}
               style={{
-                position: 'absolute', left: j.left, top: 0, bottom: 0,
-                width: 2.5, backgroundColor: j.couleur, opacity: 0.85,
-                zIndex: 15, pointerEvents: 'auto', cursor: 'pointer',
+                position: 'absolute', left: j.left - 10, width: 22, top: 0, bottom: 0,
+                zIndex: 15, pointerEvents: drawMode ? 'none' : 'auto', cursor: 'pointer',
               }}
-              title={`${j.label} — S${j.semaine} ${j.annee}`}
-              onClick={(e) => { e.stopPropagation(); onJalonClick?.(j) }}
+              title={`${j.label} — S${j.semaine} ${j.annee}${j.ancre ? ' · accroché à une barre' : ''}`}
+              onClick={(e) => { e.stopPropagation(); toucherJalon(j, scrollRef?.current?.scrollTop ?? 0) }}
             >
               <div style={{
-                position: 'absolute', top: 4, left: 5,
+                position: 'absolute', left: 10, top: 0, bottom: 0,
+                width: 2.5, backgroundColor: j.couleur, opacity: 0.85,
+              }} />
+              <div style={{
+                position: 'absolute', top: 4, left: 15,
+                display: 'flex', alignItems: 'center', gap: 4,
                 backgroundColor: j.couleur, color: 'white',
                 fontSize: 10, fontWeight: 600, padding: '2px 6px', borderRadius: 3,
                 whiteSpace: 'nowrap', boxShadow: '0 1px 4px rgba(0,0,0,0.15)',
                 userSelect: 'none',
               }}>
+                {j.ancre && <IconeLien />}
                 {j.label}
               </div>
               <div style={{
-                position: 'absolute', bottom: 4, left: '50%', transform: 'translateX(-50%)',
+                position: 'absolute', bottom: 4, left: 11.25, transform: 'translateX(-50%)',
                 width: 0, height: 0,
                 borderLeft: '5px solid transparent', borderRight: '5px solid transparent',
                 borderTop: `7px solid ${j.couleur}`, opacity: 0.85,
@@ -991,9 +1152,48 @@ export function GanttEtudeTimeline({
             />
           )
         })()}
+
+        {/* ── Roue et déplacement d'un jalon ───────────────────────────── */}
+        {jalonSelectionne && selectionJalon.mode !== 'accroche' && (() => {
+          const barre = {
+            left: jalonSelectionne.left - 10, width: 20, haut: selectionJalon.haut, hauteurLigne: 24, barPad: 2,
+            fond: { background: jalonSelectionne.couleur },
+          }
+          if (selectionJalon.mode === 'menu') {
+            return (
+              <MenuRadial
+                barre={barre}
+                objet="jalon"
+                actions={actionsJalon(jalonSelectionne.ancre)}
+                numero={`S${jalonSelectionne.semaine}`}
+                duree={jalonSelectionne.ancre ? 'accroché' : 'jalon'}
+                onAction={actionMenuJalon}
+                onFermer={() => setSelectionJalon(null)}
+              />
+            )
+          }
+          const o = selectionJalon.origine
+          const ecart = weeksBetween(o.semaine, o.annee, jalonSelectionne.semaine, jalonSelectionne.annee)
+          return (
+            <EditionBarre
+              barre={barre}
+              mode="move"
+              objet="jalon"
+              ecart={ecart === 0 ? '±0 sem.' : `${ecart > 0 ? '+' : ''}${ecart} sem.`}
+              onPoigneeDown={startJalonDrag}
+              onTerminer={() => setSelectionJalon(null)}
+            />
+          )
+        })()}
       </div>
 
       {selectionPhase && selection?.mode === 'lien' && <BandeauLien objet="phase" onAnnuler={() => setSelection(null)} />}
+      {enAccroche && (
+        <BandeauLien
+          texte="Touchez une barre près de son début ou de sa fin"
+          onAnnuler={() => setSelectionJalon(null)}
+        />
+      )}
 
       {/* Modal suppression dépendance */}
       {deletingArrow && (
@@ -1239,7 +1439,7 @@ function PhaseBarRow({
               onClick={(e) => {
                 e.stopPropagation()
                 if (dragState.moved) return
-                if (onSegmentTap?.(phase, seg)) return
+                if (onSegmentTap?.(phase, seg, e)) return
                 onBarClick(phase)
               }}
             >

@@ -14,6 +14,8 @@ import { usePlanningEtudeSegments } from '../../../shared/hooks/usePlanningEtude
 import { useUndoRedo } from '../../../shared/hooks/useUndoRedo'
 import { diffSnapshotsEtude, diffEstVide, estPhasePersistee, clePhase, COLONNES_PHASE } from './snapshotDiffEtude'
 import { rapprocherPhasesNotion } from './rapprochementNotion'
+import { jalonsARecalerEtude, semaineAncre, champsAccrocheEtude, CHAMPS_DETACHE_ETUDE } from './jalonsAncresEtude'
+import { ancrageDisponible } from '../../../shared/planning/ancrage'
 import { usePeriodesBloquees } from '../../../shared/hooks/usePeriodesBloquees'
 import { useNotionSync } from '../../../shared/hooks/useNotionSync'
 import { GanttEtudeToolbar } from './GanttEtudeToolbar'
@@ -44,16 +46,16 @@ const SEM_WIDTH_MAX = 120
 const SEM_WIDTH_DEFAUT = 40
 
 export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', affaire = {} }) {
-  const { phases: hookPhases, jalons, loading, error, addPhase, deletePhase, refetch } = usePlanningEtude(affaireId)
+  const { phases: hookPhases, jalons, setJalons, loading, error, addPhase, deletePhase, refetch } = usePlanningEtude(affaireId)
 
   // ── Segments (une phase peut réapparaître à d'autres périodes) ────────────────
   const {
     segments, addSegment, updateSegment, updateSegmentLocal, deleteSegment, getSegmentsForPhase,
-    replaceSegments, refetch: refetchSegments,
+    replaceSegments, refetch: refetchSegments, loading: segmentsEnChargement,
   } = usePlanningEtudeSegments(affaireId)
 
   // ── Périodes (congés, fermetures…) — mêmes hook et modale que le chantier ─────
-  const { periodes, addPeriode, updatePeriode, deletePeriode } = usePeriodesBloquees(affaireId)
+  const { periodes, addPeriode, updatePeriode, deletePeriode, loading: periodesEnChargement } = usePeriodesBloquees(affaireId)
 
   // ── Notion sync ───────────────────────────────────────────────────────────────
   const notionSync     = useNotionSync(affaireId)
@@ -74,11 +76,14 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
 
   // Les phases venues de Notion n'ont pas d'identifiant en base : elles sont
   // écartées de l'instantané, sinon l'annulation tenterait de les insérer.
+  // Les jalons y entrent pour leur semaine et leur ancre : déplacer, accrocher
+  // ou détacher un jalon s'annule comme le reste.
   const takeSnapshot = useCallback((label = '') => ({
     phases: phases.filter(estPhasePersistee).map((p) => ({ ...p })),
     segments: segments.map((sg) => ({ ...sg })),
+    jalons: jalons.map((j) => ({ ...j })),
     label,
-  }), [phases, segments])
+  }), [phases, segments, jalons])
 
   useEffect(() => {
     if (notionSync.notionEnabled && notionSync.notionPhases.length > 0) {
@@ -626,6 +631,10 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
     // Affichage immédiat, écriture ensuite.
     setPhases(vers.phases)
     replaceSegments(vers.segments)
+    if (diff.jalons.updates.length) {
+      const changements = new Map(diff.jalons.updates.map((u) => [u.id, u.changes]))
+      setJalons((prev) => prev.map((j) => (changements.has(j.id) ? { ...j, ...changements.get(j.id) } : j)))
+    }
 
     // Les segments partent en premier : une phase ne peut être supprimée tant
     // qu'un segment la référence, et un segment ne peut être recréé avant sa
@@ -650,6 +659,8 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
         : []),
       ...diff.phases.deletions.map((id) =>
         supabase.from('planning_etude_phases').delete().eq('id', id)),
+      ...diff.jalons.updates.map((u) =>
+        supabase.from('planning_etude_jalons').update(u.changes).eq('id', u.id)),
     ])
 
     const echec = [...vague1, ...vague2].find((r) => r?.error)
@@ -659,7 +670,62 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
     // d'avant l'annulation et la réappliquerait.
     await Promise.all([refetch(), refetchSegments()])
     return !echec?.error
-  }, [affaireId, replaceSegments, refetch, refetchSegments, signalerErreur])
+  }, [affaireId, replaceSegments, setJalons, refetch, refetchSegments, signalerErreur])
+
+  // ── Jalons : roue, accroche, recalage ───────────────────────────────────────
+  //
+  // Déplacer, accrocher et détacher : une étape d'historique chacun. Créer,
+  // renommer, supprimer restent hors historique, comme dans leur fenêtre.
+  const [jalonReglages, setJalonReglages] = useState(null)
+  const peutAccrocher = ancrageDisponible(jalons)
+
+  const handleJalonModif = useCallback(async (id, changes, label) => {
+    saveSnapshot(takeSnapshot(label))
+    setJalons((prev) => prev.map((j) => (j.id === id ? { ...j, ...changes } : j)))
+    const { error: err } = await supabase.from('planning_etude_jalons').update(changes).eq('id', id)
+    if (err) {
+      retirerDernier()
+      signalerErreur(`Jalon non enregistré — ${err.message}`)
+      await refetch()
+    }
+  }, [saveSnapshot, takeSnapshot, setJalons, retirerDernier, signalerErreur, refetch])
+
+  const handleJalonAccroche = useCallback((id, cible, bord) => {
+    const jalon = jalons.find((j) => j.id === id)
+    if (!jalon) return
+    const champs = champsAccrocheEtude(cible, bord)
+    const position = semaineAncre({ ...jalon, ...champs }, { phases, segments, periodes })
+    handleJalonModif(id, { ...champs, ...(position ?? {}) }, `Accroche du jalon « ${jalon.label} »`)
+  }, [jalons, phases, segments, periodes, handleJalonModif])
+
+  const handleJalonSupprime = useCallback(async (jalon) => {
+    if (!window.confirm(`Supprimer le jalon « ${jalon.label} » ?`)) return
+    setJalons((prev) => prev.filter((j) => j.id !== jalon.id))
+    const { error: err } = await supabase.from('planning_etude_jalons').delete().eq('id', jalon.id)
+    if (err) { signalerErreur(`Suppression du jalon impossible — ${err.message}`); await refetch() }
+  }, [setJalons, signalerErreur, refetch])
+
+  // Un jalon accroché suit sa barre, quel que soit le chemin (glissement,
+  // fiche, liens, congés, annulation, rechargement) : on compare après coup.
+  // Attend que segments et congés soient chargés, sinon une fin calculée sans
+  // congés partirait en base.
+  useEffect(() => {
+    if (loading || segmentsEnChargement || periodesEnChargement) return
+    const aRecaler = jalonsARecalerEtude(jalons, { phases, segments, periodes })
+    if (aRecaler.length === 0) return
+    const minuteur = setTimeout(async () => {
+      const positions = new Map(aRecaler.map((r) => [r.id, r]))
+      setJalons((prev) => prev.map((j) => {
+        const r = positions.get(j.id)
+        return r ? { ...j, semaine: r.semaine, annee: r.annee } : j
+      }))
+      const resultats = await Promise.all(aRecaler.map((r) =>
+        supabase.from('planning_etude_jalons').update({ semaine: r.semaine, annee: r.annee }).eq('id', r.id)))
+      const echec = resultats.find((r) => r.error)
+      if (echec) signalerErreur(`Jalon accroché non recalé — ${echec.error.message}`)
+    }, 300)
+    return () => clearTimeout(minuteur)
+  }, [jalons, phases, segments, periodes, loading, segmentsEnChargement, periodesEnChargement, setJalons, signalerErreur])
 
   const handleUndo = useCallback(async () => {
     const courant = takeSnapshot()
@@ -891,7 +957,14 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
             semWidth={semWidth}
             showConnections={showConnections}
             jalons={jalons}
-            onJalonClick={() => setShowJalonsModal(true)}
+            peutAccrocher={peutAccrocher}
+            onJalonModif={handleJalonModif}
+            onJalonAccroche={handleJalonAccroche}
+            onJalonDetache={(j) => handleJalonModif(j.id, CHAMPS_DETACHE_ETUDE, `Détachement du jalon « ${j.label} »`)}
+            onJalonSupprime={handleJalonSupprime}
+            onJalonReglages={(j) => { setJalonReglages(j.id); setShowJalonsModal(true) }}
+            onAccrochageIndisponible={() => signalerErreur(
+              'Accrocher un jalon demande la mise à jour 053 de la base (Supabase → SQL Editor).')}
             onPhaseClick={p => { setEditingPhase(p); setPhaseModalMode('edit'); setShowPhaseModal(true) }}
             onPhaseUpdate={handlePhaseUpdate}
             onDependencyCreate={handleDependencyCreate}
@@ -1144,10 +1217,11 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
 
       <JalonEtudeModal
         open={showJalonsModal}
-        onClose={() => setShowJalonsModal(false)}
+        onClose={() => { setShowJalonsModal(false); setJalonReglages(null) }}
         jalons={jalons}
         affaireId={affaireId}
         onRefetch={refetch}
+        jalonInitialId={jalonReglages}
       />
 
       <ExportEtudeModal

@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 582 tests node --test (plannings, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
+npm test         # 606 tests node --test (plannings, jalons accrochés, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
 npx eslint src   # ~73 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -47,7 +47,7 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
 - **Accès aux données** : hooks dans `src/shared/hooks/`. `useAffaires()` pour
   la liste, `useAffaire(id)` pour une affaire (les deux font `select('*')`),
   `useAffaireCollaborateurs(id)` pour les droits (`canEdit`, `isProprietaire`).
-- **Base** : `supabase/migrations/`, numérotées, 52 fichiers, **passées à la
+- **Base** : `supabase/migrations/`, numérotées, 53 fichiers, **passées à la
   main** dans le SQL Editor de Supabase : un code qui dépend d'une nouvelle
   colonne doit tolérer son absence tant que la migration n'est pas faite. La photo de
   couverture d'une affaire est `affaires.photo_url` (migration 014, bucket
@@ -484,6 +484,21 @@ trois à cinq fois plus rapide dans pdf.js.
   traiter `pointercancel` comme une annulation** (rien d'enregistré, pas de
   roue) — c'est ce qui empêche un pincement de déplacer une barre. Seul le
   temps zoome ; au chantier, la vue (Jours/Semaines/Mois) ne change pas.
+- **Jalons accrochés** (migration 053, les deux plannings) : toucher un jalon
+  ouvre sa roue (`actionsJalon` : Réglages, Déplacer, Accrocher, Supprimer ;
+  Détacher s'il est accroché — un jalon accroché ne se déplace pas à la main).
+  Accrocher : on touche ensuite une barre ou un segment, moitié gauche = début,
+  moitié droite = fin (`bordTouche`). La **date reste stockée** (exports, page
+  de l'affaire, import la lisent telle quelle) et se **recale par comparaison
+  après coup** : `jalonsARecaler` (chantier, `jalonsAncres.js`) /
+  `jalonsARecalerEtude` (étude), appliqués par un effet différé de chaque
+  planning — pas besoin de compléter chaque chemin qui bouge une barre. Fin =
+  `dernierJourTache` au chantier, dernière semaine travaillée à l'étude ;
+  `ancre_bord = 'fin'` dessine le jalon au **bord droit** de son jour / sa
+  semaine, et reste après un détachement pour qu'il ne saute pas. Barre
+  supprimée → la base remet l'ancre à `null`. Décaler ignore les jalons
+  accrochés ; l'import remappe leur ancre. Les jalons de l'étude sont désormais
+  dans l'instantané d'historique (semaine, ancres).
 - **Décaler tout le planning** (report du démarrage, bouton « Décaler » de la
   barre d'outils du chantier, `decalage.js` + `DecalagePlanningModal.jsx`) :
   on donne la nouvelle date de démarrage, tout ce qui est concerné (option

@@ -1056,13 +1056,13 @@ export function GanttTimeline({
 
   // Toucher un jalon (sa ligne ou son étiquette) ouvre sa roue, à mi-hauteur
   // de ce qui est visible plutôt qu'en haut d'un planning qu'on a fait défiler
-  const toucherJalon = useCallback((jalon, labelTop) => {
+  // `visible` : défilement vertical du planning au moment du toucher
+  const toucherJalon = useCallback((jalon, labelTop, visible) => {
     if (drawMode) return
     setSelection(null)
     setSelectionSeg(null)
-    const visible = scrollRef?.current?.scrollTop ?? 0
     setSelectionJalon({ jalonId: jalon.id, mode: 'menu', haut: Math.max(labelTop + 70, visible + 110) })
-  }, [drawMode, scrollRef])
+  }, [drawMode])
 
   const actionMenuJalon = useCallback((action) => {
     const jalon = jalonSelectionne
@@ -1644,7 +1644,7 @@ export function GanttTimeline({
                 zIndex: 15, pointerEvents: drawMode ? 'none' : 'auto', cursor: 'pointer',
               }}
               title={`${jalon.label} — ${new Date(jalon.date + 'T00:00:00').toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })}${jalon.ancre ? ' · accroché à une barre' : ''}`}
-              onClick={(e) => { e.stopPropagation(); toucherJalon(jalon, labelTop) }}
+              onClick={(e) => { e.stopPropagation(); toucherJalon(jalon, labelTop, scrollRef?.current?.scrollTop ?? 0) }}
             >
               <div style={{
                 position: 'absolute', left: 10, top: 0, bottom: 0,

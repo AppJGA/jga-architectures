@@ -100,7 +100,9 @@ export function usePlanningEtude(affaireId) {
   }, [refetch])
 
   return {
-    phases, jalons, loading, error,
+    // `setJalons` : recalage des jalons accrochés et historique, appliqués
+    // localement avant l'écriture
+    phases, jalons, setJalons, loading, error,
     addPhase, updatePhase, deletePhase,
     addJalon, updateJalon, deleteJalon,
     refetch,

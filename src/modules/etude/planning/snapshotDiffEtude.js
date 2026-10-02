@@ -15,6 +15,10 @@ export const COLONNES_SEGMENT_ETUDE = [
   'phase_id', 'nom', 'semaine_debut', 'annee_debut', 'duree_semaines', 'ordre',
 ]
 
+// Jalons : semaine et ancre seulement, en mises à jour — comme au chantier,
+// ils se créent et se suppriment hors historique (fenêtre des jalons).
+export const COLONNES_JALON_ETUDE = ['semaine', 'annee', 'ancre_phase_id', 'ancre_segment_id', 'ancre_bord']
+
 // Les phases venues de Notion n'existent pas en base : elles n'ont pas d'`id`
 // et ne doivent jamais entrer dans un instantané, sous peine de provoquer une
 // insertion sans identifiant.
@@ -29,5 +33,9 @@ export function diffSnapshotsEtude(depuis, vers) {
   return {
     phases: diffCollection(phases(depuis), phases(vers), COLONNES_PHASE),
     segments: diffCollection(depuis?.segments ?? [], vers?.segments ?? [], COLONNES_SEGMENT_ETUDE),
+    jalons: {
+      ...diffCollection(depuis?.jalons ?? [], vers?.jalons ?? [], COLONNES_JALON_ETUDE),
+      deletions: [], insertions: [],
+    },
   }
 }

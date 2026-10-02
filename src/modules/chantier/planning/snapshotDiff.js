@@ -23,10 +23,12 @@ export const COLONNES_DEPENDANCE = [
   'source_tache_id', 'source_segment_id', 'cible_tache_id', 'cible_segment_id', 'lag_jours',
 ]
 
-// Jalons : seule leur date entre dans l'historique (décalage du planning). Ils
-// se créent, se renomment et se suppriment dans leur modale, hors historique :
-// annuler ne doit ni les recréer ni les effacer, d'où les seules mises à jour.
-export const COLONNES_JALON = ['date']
+// Jalons : leur date (décalage du planning, déplacement à la main) et leur
+// ancre (accrocher, détacher) entrent dans l'historique. Ils se créent, se
+// renomment et se suppriment dans leur modale, hors historique : annuler ne
+// doit ni les recréer ni les effacer, d'où les seules mises à jour. Une ligne
+// sans colonnes d'ancre (migration 053 absente) n'en écrit aucune.
+export const COLONNES_JALON = ['date', 'ancre_tache_id', 'ancre_segment_id', 'ancre_bord']
 
 export function diffSnapshots(depuis, vers) {
   const jalons = depuis?.jalons && vers?.jalons

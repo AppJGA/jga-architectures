@@ -169,9 +169,16 @@ export function preparerImport({ source, existant = {}, nouveauDebut = null, per
       lag_jours: d.lag_jours ?? 0,
     }))
 
-  // 7. Jalons : aucune référence à remapper, seulement la date à décaler
+  // 7. Jalons : la date se décale ; un jalon accroché le reste à la copie de sa
+  // barre (identifiant remappé à l'écriture). Le côté n'est repris que si la
+  // source a la colonne (migration 053), sinon l'insertion échouerait.
   const jalonsPrets = jalons.map((j) => ({
-    ligne: { label: j.label, date: bouger(j.date), couleur: j.couleur, ordre: j.ordre ?? 0 },
+    ancreTacheOrigine: j.ancre_tache_id ?? null,
+    ancreSegmentOrigine: j.ancre_segment_id ?? null,
+    ligne: {
+      label: j.label, date: bouger(j.date), couleur: j.couleur, ordre: j.ordre ?? 0,
+      ...('ancre_bord' in j ? { ancre_bord: j.ancre_bord } : {}),
+    },
   }))
 
   return {
@@ -202,4 +209,13 @@ export function resumerSource(source) {
     jalons: source?.jalons?.length ?? 0,
     zones: source?.zones?.length ?? 0,
   }
+}
+
+// Colonnes d'ancre d'un jalon importé. Rien n'est ajouté pour un jalon qui
+// n'était pas accroché : la base peut ne pas avoir les colonnes (migration 053).
+export function ancresImportees(jalon, tacheParOrigine, segmentParOrigine) {
+  if (jalon.ancreTacheOrigine == null && jalon.ancreSegmentOrigine == null) return {}
+  const segment = jalon.ancreSegmentOrigine != null ? segmentParOrigine.get(jalon.ancreSegmentOrigine) ?? null : null
+  const tache = segment == null && jalon.ancreTacheOrigine != null ? tacheParOrigine.get(jalon.ancreTacheOrigine) ?? null : null
+  return { ancre_tache_id: tache, ancre_segment_id: segment }
 }

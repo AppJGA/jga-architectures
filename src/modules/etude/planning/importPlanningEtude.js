@@ -111,9 +111,18 @@ export function preparerImportEtude({ source, existant = {}, nouveauDebut = null
       }
     })
 
+  // Un jalon accroché le reste à la copie de sa barre (remappée à l'écriture) ;
+  // le côté n'est repris que si la source a la colonne (migration 053).
   const jalonsPrets = jalons.map((j) => {
     const { semaine, annee } = bouger(j.semaine, j.annee)
-    return { ligne: { label: j.label, semaine, annee, couleur: j.couleur, ordre: j.ordre ?? 0 } }
+    return {
+      ancrePhaseOrigine: j.ancre_phase_id ?? null,
+      ancreSegmentOrigine: j.ancre_segment_id ?? null,
+      ligne: {
+        label: j.label, semaine, annee, couleur: j.couleur, ordre: j.ordre ?? 0,
+        ...('ancre_bord' in j ? { ancre_bord: j.ancre_bord } : {}),
+      },
+    }
   })
 
   return {
@@ -137,4 +146,13 @@ export function resumerSourceEtude(source) {
     phases: source?.phases?.length ?? 0,
     jalons: source?.jalons?.length ?? 0,
   }
+}
+
+// Colonnes d'ancre d'un jalon importé. Rien n'est ajouté pour un jalon qui
+// n'était pas accroché : la base peut ne pas avoir les colonnes (migration 053).
+export function ancresImporteesEtude(jalon, phaseParOrigine, segmentParOrigine) {
+  if (jalon.ancrePhaseOrigine == null && jalon.ancreSegmentOrigine == null) return {}
+  const segment = jalon.ancreSegmentOrigine != null ? segmentParOrigine.get(jalon.ancreSegmentOrigine) ?? null : null
+  const phase = segment == null && jalon.ancrePhaseOrigine != null ? phaseParOrigine.get(jalon.ancrePhaseOrigine) ?? null : null
+  return { ancre_phase_id: phase, ancre_segment_id: segment }
 }

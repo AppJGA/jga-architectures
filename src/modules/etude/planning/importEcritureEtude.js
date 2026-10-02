@@ -7,6 +7,7 @@
 // Ordre imposé : phases → liaisons internes → segments → jalons.
 
 import { supabase } from '../../../core/supabase/client'
+import { ancresImporteesEtude } from './importPlanningEtude'
 
 export async function chargerPlanningEtudeSource(affaireId) {
   const [phases, segments, jalons] = await Promise.all([
@@ -65,12 +66,18 @@ export async function ecrireImportEtude(affaireId, plan) {
     if (error) return { error }
     segments = data
   }
+  const segmentParOrigine = new Map(plan.segments.map((s, i) => [s.origine, segments[i]?.id]))
 
-  // 4. Jalons — `id` `generated ALWAYS` : ne jamais en fournir un.
+  // 4. Jalons — `id` `generated ALWAYS` : ne jamais en fournir un. Ancre
+  // reportée sur la copie de sa barre ; barre non importée → jalon libre.
   let jalons = []
   if (plan.jalons.length) {
     const { data, error } = await supabase.from('planning_etude_jalons')
-      .insert(plan.jalons.map((j) => ({ ...j.ligne, affaire_id: affaireId })))
+      .insert(plan.jalons.map((j) => ({
+        ...j.ligne,
+        ...ancresImporteesEtude(j, phaseParOrigine, segmentParOrigine),
+        affaire_id: affaireId,
+      })))
       .select()
     if (error) return { error }
     jalons = data

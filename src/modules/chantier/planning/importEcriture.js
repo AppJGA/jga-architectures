@@ -14,6 +14,7 @@
 // lignes ne garantit rien.
 
 import { supabase } from '../../../core/supabase/client'
+import { ancresImportees } from './importPlanning'
 
 /** Tout le planning d'une affaire, tel que l'import en a besoin. */
 export async function chargerPlanningSource(affaireId) {
@@ -133,12 +134,16 @@ export async function ecrireImport(affaireId, plan) {
     dependances = data
   }
 
-  // 7. Jalons — aucun identifiant à remapper. Leur `id` est `generated ALWAYS`
-  // en base : ne jamais en fournir un.
+  // 7. Jalons — leur `id` est `generated ALWAYS` en base : ne jamais en fournir
+  // un. Ancre reportée sur la copie de sa barre ; barre non importée → libre.
   let jalons = []
   if (plan.jalons.length) {
     const { data, error } = await supabase.from('planning_jalons')
-      .insert(plan.jalons.map((j) => ({ ...j.ligne, affaire_id: affaireId })))
+      .insert(plan.jalons.map((j) => ({
+        ...j.ligne,
+        ...ancresImportees(j, tacheParOrigine, segmentParOrigine),
+        affaire_id: affaireId,
+      })))
       .select()
     if (error) return { error }
     jalons = data
@@ -146,3 +151,4 @@ export async function ecrireImport(affaireId, plan) {
 
   return { data: { taches: tachesFinales, segments, dependances, jalons, zones: zonesACreer.length, lots: lotsACreer.length } }
 }
+

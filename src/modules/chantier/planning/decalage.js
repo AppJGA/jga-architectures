@@ -21,6 +21,7 @@ import {
   dernierJourTache, computeLag,
 } from './types'
 import { skipBlockedPeriods, propagerDepuisRacines, entityKey } from './propagation'
+import { estAncre } from '../../../shared/planning/ancrage'
 
 const iso = (d) => (typeof d === 'string' ? d.split('T')[0] : formatDateISO(d))
 const ouvre = (d, periodes) => isWorkingDay(d) && !estBloque(d, periodes)
@@ -146,8 +147,9 @@ export function planDecalage({
     if (bougees.has(cle) && debutFinal.get(cle) !== iso(s.date_debut)) changements.set(cle, { type: 'segment', id: s.id, debut: debutFinal.get(cle) })
   })
 
+  // Un jalon accroché suit sa barre : il est recalé sur elle après coup
   const jalonsDecales = jalons
-    .filter((j) => concerne(j.date))
+    .filter((j) => concerne(j.date) && !estAncre(j))
     .map((j) => ({ id: j.id, avant: iso(j.date), date: decalerDate(j.date, ecart, periodes) }))
     .filter((j) => j.date !== j.avant)
     .map(({ id, date }) => ({ id, date }))

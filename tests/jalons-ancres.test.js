@@ -164,3 +164,60 @@ describe('étude : semaine d’un jalon accroché', () => {
     assert.deepEqual(CHAMPS_DETACHE_ETUDE, { ancre_phase_id: null, ancre_segment_id: null })
   })
 })
+
+describe('autour : historique, décalage, import', async () => {
+  const { diffSnapshots } = await import('../src/modules/chantier/planning/snapshotDiff.js')
+  const { diffSnapshotsEtude } = await import('../src/modules/etude/planning/snapshotDiffEtude.js')
+  const { planDecalage } = await import('../src/modules/chantier/planning/decalage.js')
+  const { ancresImportees } = await import('../src/modules/chantier/planning/importPlanning.js')
+  const { ancresImporteesEtude } = await import('../src/modules/etude/planning/importPlanningEtude.js')
+
+  test('annuler un accrochage rétablit l’ancre (chantier), sans créer ni effacer de jalon', () => {
+    const libre = { id: 'j1', date: '2026-03-04', ancre_tache_id: null, ancre_segment_id: null, ancre_bord: null }
+    const accroche = { ...libre, date: '2026-03-06', ancre_tache_id: 1, ancre_bord: 'fin' }
+    const d = diffSnapshots({ tasks: [], jalons: [accroche] }, { tasks: [], jalons: [libre] })
+    assert.deepEqual(d.jalons.updates, [{ id: 'j1', changes: { date: '2026-03-04', ancre_tache_id: null, ancre_segment_id: null, ancre_bord: null } }])
+    assert.deepEqual(d.jalons.insertions, [])
+  })
+
+  test('sans la migration 053, l’historique n’écrit que la date', () => {
+    const d = diffSnapshots({ tasks: [], jalons: [{ id: 'j1', date: '2026-03-06' }] }, { tasks: [], jalons: [{ id: 'j1', date: '2026-03-04' }] })
+    assert.deepEqual(d.jalons.updates, [{ id: 'j1', changes: { date: '2026-03-04' } }])
+  })
+
+  test('étude : les jalons entrent dans l’historique, en mises à jour seulement', () => {
+    const avant = { phases: [], segments: [], jalons: [{ id: 5, semaine: 10, annee: 2026, ancre_phase_id: 1, ancre_segment_id: null, ancre_bord: 'debut' }] }
+    const apres = { phases: [], segments: [], jalons: [{ id: 5, semaine: 12, annee: 2026, ancre_phase_id: null, ancre_segment_id: null, ancre_bord: 'debut' }, { id: 6, semaine: 1, annee: 2027 }] }
+    const d = diffSnapshotsEtude(apres, avant)
+    assert.deepEqual(d.jalons.updates, [{ id: 5, changes: { semaine: 10, annee: 2026, ancre_phase_id: 1, ancre_segment_id: null, ancre_bord: 'debut' } }])
+    assert.deepEqual(d.jalons.deletions, [])
+    assert.deepEqual(d.jalons.insertions, [])
+  })
+
+  test('Décaler n’emporte pas un jalon accroché : il suivra sa barre', () => {
+    const plan = planDecalage({
+      tasks: [{ id: 1, debut: '2026-03-02', duree: 5 }],
+      jalons: [
+        { id: 'libre', date: '2026-03-04' },
+        { id: 'accroche', date: '2026-03-06', ancre_tache_id: 1, ancre_bord: 'fin' },
+      ],
+      nouveauDebut: '2026-03-09',
+    })
+    assert.deepEqual(plan.jalons.map((j) => j.id), ['libre'])
+  })
+
+  test('import : l’ancre suit la copie de sa barre, ou se lâche si la barre n’est pas importée', () => {
+    const taches = new Map([[1, 101]])
+    const segments = new Map([['s1', 's101']])
+    assert.deepEqual(ancresImportees({ ancreTacheOrigine: 1, ancreSegmentOrigine: null }, taches, segments),
+      { ancre_tache_id: 101, ancre_segment_id: null })
+    assert.deepEqual(ancresImportees({ ancreTacheOrigine: 1, ancreSegmentOrigine: 's1' }, taches, segments),
+      { ancre_tache_id: null, ancre_segment_id: 's101' })
+    assert.deepEqual(ancresImportees({ ancreTacheOrigine: 7, ancreSegmentOrigine: null }, taches, segments),
+      { ancre_tache_id: null, ancre_segment_id: null })
+    assert.deepEqual(ancresImportees({ ancreTacheOrigine: null, ancreSegmentOrigine: null }, taches, segments), {},
+      'un jalon libre n’ajoute aucune colonne')
+    assert.deepEqual(ancresImporteesEtude({ ancrePhaseOrigine: 3, ancreSegmentOrigine: null }, new Map([[3, 30]]), new Map()),
+      { ancre_phase_id: 30, ancre_segment_id: null })
+  })
+})

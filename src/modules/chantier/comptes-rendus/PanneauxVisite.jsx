@@ -63,38 +63,38 @@ function ecrireMemoire(cle, valeur) {
 
 // ─── Nouvelle remarque / modifier ────────────────────────────────────────────
 
-// Choix du destinataire : les lots (partie VII) puis l'équipe (partie VI), en
-// grands boutons. C'est lui qui range la remarque.
+// Choix du destinataire : deux menus déroulants, les entreprises (partie VII)
+// et l'équipe (partie VI). Sur un gros chantier, des boutons pour chaque lot et
+// chaque interlocuteur remplissaient tout le panneau. Choisir dans un menu vide
+// l'autre : une remarque n'a qu'un destinataire.
 function ChoixDestinataire({ choix, valeur, onChoisir, facultatif }) {
-  const rangee = (titre, liste, couleur) => liste.length > 0 && (
-    <div>
-      <p style={{ fontSize: 12, color: '#9C9591', margin: '0 0 6px' }}>{titre}</p>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-        {liste.map(c => (
-          <button key={c.cle} type="button" aria-pressed={valeur === c.cle} onClick={() => onChoisir(c.cle)}
-            title={c.libelle} style={{ ...puce(valeur === c.cle, couleur), borderRadius: 3, flexDirection: 'column', alignItems: 'flex-start', gap: 0, padding: '4px 12px', maxWidth: 220 }}>
-            <span style={{ fontWeight: 600 }}>{c.court}</span>
-            <span style={{ fontSize: 11, opacity: 0.75, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 196 }}>{c.detail}</span>
-          </button>
-        ))}
-      </div>
+  const menu = (id, titre, liste, prefixe, vide) => (
+    <div style={{ flex: '1 1 240px', minWidth: 0 }}>
+      <label htmlFor={id} style={{ display: 'block', fontSize: 12, color: '#9C9591', marginBottom: 6 }}>{titre}</label>
+      <select id={id} value={valeur.startsWith(prefixe) ? valeur : ''} disabled={liste.length === 0}
+        onChange={e => onChoisir(e.target.value || (valeur.startsWith(prefixe) ? '' : valeur))}
+        style={{
+          ...CHAMP, cursor: liste.length === 0 ? 'default' : 'pointer',
+          borderColor: valeur.startsWith(prefixe) ? '#2A8A4E' : 'rgba(0,0,0,0.15)',
+          fontWeight: valeur.startsWith(prefixe) ? 600 : 400,
+        }}>
+        <option value="">{liste.length === 0 ? 'Aucun' : vide}</option>
+        {liste.map(c => <option key={c.cle} value={c.cle}>{c.libelle}{c.role ? ` — ${c.role}` : ''}</option>)}
+      </select>
     </div>
   )
   return (
     <div>
-      <span style={LABEL}>Pour qui ?{facultatif ? '' : ' *'}</span>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {facultatif && (
-          <div><button type="button" onClick={() => onChoisir('')} style={puce(!valeur)}>Personne en particulier</button></div>
-        )}
-        {rangee('Entreprises (VII)', choix.entreprises, '#2A8A4E')}
-        {rangee('Équipe de maîtrise d’œuvre et d’ouvrage (VI)', choix.equipe, '#993C1D')}
-        {choix.entreprises.length === 0 && choix.equipe.length === 0 && (
-          <p style={{ fontSize: 13, color: '#5E5854', margin: 0 }}>
-            Aucun lot ni interlocuteur dans cette affaire : ajoutez-les (lots, Interlocuteurs) pour adresser les remarques.
-          </p>
-        )}
+      <span style={LABEL}>Pour qui ?{facultatif ? ' (facultatif)' : ' *'}</span>
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+        {menu('visite-dest-lot', 'Entreprise (VII)', choix.entreprises, 'lot:', '— Choisir un lot —')}
+        {menu('visite-dest-equipe', 'Équipe MOE / MOA (VI)', choix.equipe.map(c => ({ ...c, role: c.detail })), 'interlo:', '— Choisir une personne —')}
       </div>
+      {choix.entreprises.length === 0 && choix.equipe.length === 0 && (
+        <p style={{ fontSize: 13, color: '#5E5854', margin: '8px 0 0' }}>
+          Aucun lot ni interlocuteur dans cette affaire : ajoutez-les (lots, Interlocuteurs) pour adresser les remarques.
+        </p>
+      )}
     </div>
   )
 }

@@ -92,14 +92,17 @@ création avec reprise de la visite précédente) et `useCompteRendu` (un CR).
   ou par rôle se calcule (`groupesDestinataires`, `remarquesLogique.js`) —
   écran comme PDF. Tous les lots de l'affaire sont proposés (`planning.lots`),
   pas seulement ceux qui ont une entreprise ; le dernier destinataire est
-  reproposé (mémoire par CR sur l'appareil). `ordonnerParties` garde VI avant
+  reproposé (mémoire par CR sur l'appareil). Le choix se fait par **deux menus
+  déroulants** (entreprises, équipe), pas par des boutons : un gros chantier
+  en remplissait tout le panneau. `ordonnerParties` garde VI avant
   VII quel que soit l'ordre de création. Une **suite** (sous-remarque, ▶) a son
   propre statut et son échéance ; toucher une remarque ouvre `PanneauSuite`
   (avec « Clore la remarque d'origine »). Les sections I à V restent des
   sections classiques ; elles sont remplacées par les généralités.
 - **Généralités** (chantier 2, migration 055) : parties I à V, **une version
   par affaire** (`affaire_generalites.contenu`, jsonb parties → rubriques →
-  paragraphes datés, repère de suite) ; vue « Généralités » du CR
+  paragraphes, repère de suite ; **pas de date**, à la demande de l'agence :
+  elles valent pour tous les CR) ; vue « Généralités » du CR
   (`GeneralitesVue.jsx`, enregistrement automatique), départ des titres
   habituels (`modeleSections.js`) ou import d'une autre affaire. Toute la
   manipulation est pure (`generalitesLogique.js`). À l'émission, copie dans

@@ -917,7 +917,6 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
           cr={cr}
           generalites={generalites}
           peutModifier={!lectureSeule && !contributeur}
-          dateDefaut={cr.date_reunion}
           signalerErreur={signalerErreur}
         />
       )}

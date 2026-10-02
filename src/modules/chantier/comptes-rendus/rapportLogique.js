@@ -353,16 +353,17 @@ export function definitionPdf({ cr, affaire, sections, presences, generalites = 
 
 export function blocGeneralites(brut) {
   const { parties } = normaliserGeneralites(brut)
+  // Pas de date : des généralités valent pour tous les comptes rendus. Une
+  // suite est décalée et marquée « » » (Roboto n'a pas ▶).
   const lignes = (paragraphes) => paragraphes.filter((p) => p.texte.trim()).map((p) => [
-    { text: [p.suite ? { text: '» ', color: COULEUR.orange } : '', jour(p.date) || ''], fontSize: 8, color: COULEUR.gris, margin: [p.suite ? 8 : 0, 0, 0, 0] },
-    { text: p.texte, fontSize: 8.5, color: '#1B3A5C' },
+    { text: [p.suite ? { text: '» ', color: COULEUR.orange } : '', p.texte], fontSize: 8.5, color: '#1B3A5C', margin: [p.suite ? 14 : 0, 0, 0, 0] },
   ])
   const tableau = (paragraphes) => {
     const corps = lignes(paragraphes)
     if (corps.length === 0) return []
     return [{
       margin: [0, 0, 0, 6], layout: tableauFin,
-      table: { widths: ['16%', '*'], dontBreakRows: true, body: corps },
+      table: { widths: ['*'], dontBreakRows: true, body: corps },
     }]
   }
   return parties

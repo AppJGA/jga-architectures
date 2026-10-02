@@ -8,7 +8,8 @@
 //   [{ id, code, titre, paragraphes: [{ id, date, texte, suite }] }] }] }
 // Les paragraphes vivent dans une rubrique, ou directement dans une partie
 // (« IV - RESPECT » n'a pas de rubrique). `suite` : ligne ▶ rattachée à la
-// précédente.
+// précédente. `date` n'est plus saisie ni imprimée (des généralités valent pour
+// tous les comptes rendus) ; elle reste lue pour ne rien perdre.
 //
 // Tout est pur et immuable, pour être testé (tests/generalites.test.js) :
 // l'écran ne fait qu'appeler ces fonctions sur son brouillon.

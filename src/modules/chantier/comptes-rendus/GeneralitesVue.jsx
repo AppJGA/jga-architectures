@@ -23,10 +23,6 @@ const BOUTON_DISCRET = {
   border: '0.5px dashed rgba(0,0,0,0.2)', backgroundColor: 'transparent', color: '#5E5854', cursor: 'pointer',
 }
 
-function fmtJour(d) {
-  return d ? new Date(`${d}T00:00:00`).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—'
-}
-
 function Fleches({ id, onDeplacer, onSupprimer, libelle }) {
   const petit = { padding: 3, background: 'none', border: 'none', cursor: 'pointer', color: '#9C9591', display: 'flex' }
   return (
@@ -38,21 +34,19 @@ function Fleches({ id, onDeplacer, onSupprimer, libelle }) {
   )
 }
 
-// Un paragraphe : date « Note du », texte, et repère de suite (▶)
+// Un paragraphe : son texte, et le repère de suite (▶). Pas de date : les
+// généralités valent pour tous les comptes rendus de l'affaire.
 function Paragraphe({ p, edition, actions }) {
   if (!edition) {
     return (
-      <div style={{ display: 'flex', gap: 12, padding: '6px 0', borderBottom: '0.5px solid rgba(0,0,0,0.05)', paddingLeft: p.suite ? 16 : 0 }}>
-        <span style={{ fontSize: 11, color: '#9C9591', minWidth: 78, flexShrink: 0 }}>{p.suite && '▶ '}{fmtJour(p.date)}</span>
+      <div style={{ display: 'flex', gap: 8, padding: '6px 0', borderBottom: '0.5px solid rgba(0,0,0,0.05)', paddingLeft: p.suite ? 16 : 0 }}>
+        {p.suite && <span style={{ fontSize: 11, color: '#9C9591', flexShrink: 0 }}>▶</span>}
         <span style={{ fontSize: 13, color: '#1F1B17', whiteSpace: 'pre-wrap', flex: 1 }}>{p.texte}</span>
       </div>
     )
   }
   return (
     <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', padding: '6px 0', paddingLeft: p.suite ? 20 : 0 }}>
-      <input type="date" value={p.date ?? ''} aria-label="Note du"
-        onChange={e => actions.modifier(p.id, { date: e.target.value || null })}
-        style={{ ...CHAMP, width: 140, flexShrink: 0, minHeight: 0 }} />
       <textarea value={p.texte} placeholder="Texte du paragraphe…"
         rows={Math.min(8, Math.max(2, Math.ceil(p.texte.length / 90) + (p.texte.match(/\n/g)?.length ?? 0)))}
         onChange={e => actions.modifier(p.id, { texte: e.target.value })}
@@ -66,7 +60,7 @@ function Paragraphe({ p, edition, actions }) {
   )
 }
 
-export function GeneralitesVue({ cr, generalites, peutModifier, dateDefaut, signalerErreur }) {
+export function GeneralitesVue({ cr, generalites, peutModifier, signalerErreur }) {
   const { contenu, chargement, disponible, majLe, enregistrer, sourcesImport } = generalites
   const emis = cr?.statut === 'emis'
   const edition = peutModifier && !emis
@@ -112,7 +106,7 @@ export function GeneralitesVue({ cr, generalites, peutModifier, dateDefaut, sign
       if (!window.confirm('Supprimer cet élément et tout ce qu’il contient ?')) return
       changer(g => supprimer(g, id))
     },
-    ajouter: (parentId, type) => changer(g => ajouter(g, parentId, type, nouvelId, type === 'paragraphe' ? { date: dateDefaut ?? null } : {})),
+    ajouter: (parentId, type) => changer(g => ajouter(g, parentId, type, nouvelId)),
   }
 
   const ouvrirImport = async () => {

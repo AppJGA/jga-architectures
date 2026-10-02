@@ -170,8 +170,10 @@ création avec reprise de la visite précédente) et `useCompteRendu` (un CR).
   du planning chantier qui la concerne (`zone_id`, + `copie_zone` pour
   l'historique). Affichage et filtre passent par `libelleZone` /
   `grouperParZone` (`crLogique.js`).
-- **Lien vers une FTM** (migration 048) : une remarque ou une réserve donne
-  une fiche de travaux modificatifs en un bouton (`ftm/creerDepuis.js`). La
+- **Lien vers une FTM** (migration 048) : une réserve d'OPR donne une fiche de
+  travaux modificatifs en un bouton (`ftm/creerDepuis.js`). Le bouton « FTM »
+  des remarques de CR a été retiré à la demande de l'agence ; une remarque
+  déjà liée garde son étiquette, qui ouvre la fiche. La
   fiche garde son origine (`source_type`, `source_suivi_id`,
   `source_reserve_id`, `source_libelle`) ; le lien se relit des deux côtés par
   `ftm/lienFtm.js` et s'ouvre par `/affaires/:id/ftm?ftm=<id>`. Supprimer la

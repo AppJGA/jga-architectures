@@ -27,7 +27,7 @@ import { usePlansCr } from './PlansContexte'
 const EditeurContexte = createContext({
   modeSelection: false, selection: new Set(), basculerSelection: () => {},
   historiqueDe: () => [], dateReference: null,
-  ftms: [], creerFtm: null, ouvrirFtm: () => {},
+  ftms: [], ouvrirFtm: () => {},
 })
 
 // ─── Utilitaires ──────────────────────────────────────────────────────────────
@@ -449,7 +449,7 @@ function RemarqueRow({ rem, idx, total, crDate, suggestions, lots, interlocuteur
   // Un intervenant extérieur ne touche qu'à ses propres remarques
   const lectureSeule = !peutModifierRemarque(rem, acces)
   const signature = auteurExterieur(rem, acces.profils)
-  const { modeSelection, selection, basculerSelection, historiqueDe, dateReference, ftms, creerFtm, ouvrirFtm } = useContext(EditeurContexte)
+  const { modeSelection, selection, basculerSelection, historiqueDe, dateReference, ftms, ouvrirFtm } = useContext(EditeurContexte)
   const fmtD = (d) => fmtJour(d)
   const statut = infosStatut(rem)
   const enRetard = estEnRetard(rem, dateReference)
@@ -605,14 +605,6 @@ function RemarqueRow({ rem, idx, total, crDate, suggestions, lots, interlocuteur
           )}
           <button onClick={() => (onModifier ? onModifier(rem) : setEditOpen(true))} data-compact style={{ padding: 3, background: 'none', border: 'none', cursor: 'pointer', color: '#9C9591' }}><Pencil size={12} /></button>
           <BoutonPhoto ctl={photos} />
-          {creerFtm && !ftm && (
-            <button
-              type="button" data-compact onClick={() => creerFtm(rem)} title="Créer une fiche de travaux modificatifs"
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 5px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 10, color: '#9C9591' }}
-            >
-              <FilePen size={12} /> FTM
-            </button>
-          )}
           {plansCr.disponible && (
             <button
               type="button" data-compact onClick={() => plansCr.ouvrirPlacement(rem)}
@@ -1298,7 +1290,7 @@ function NewRemarqueModal({ sections, crDate, suggestions, lots, interlocuteurs,
 
 // ─── Export principal ─────────────────────────────────────────────────────────
 
-export function CrSectionEditor({ sections, crId, crDate, interlocuteurs, lotEntreprises, lots: lotsAffaire = null, zones = [], ftms = [], creerFtm, ouvrirFtm, ops, historique }) {
+export function CrSectionEditor({ sections, crId, crDate, interlocuteurs, lotEntreprises, lots: lotsAffaire = null, zones = [], ftms = [], ouvrirFtm, ops, historique }) {
   const [addSec, setAddSec]             = useState(false)
   const [newSec, setNewSec]             = useState({ numero_romain: '', titre: '' })
   const [filtre, setFiltre]             = useState(FILTRE_VIDE)
@@ -1384,9 +1376,9 @@ export function CrSectionEditor({ sections, crId, crDate, interlocuteurs, lotEnt
       }),
       historiqueDe: (rem) => historiqueRemarque(rem, versions, historique?.crs),
       dateReference: crDate,
-      ftms, creerFtm, ouvrirFtm,
+      ftms, ouvrirFtm,
     }
-  }, [modeSelection, selection, historique, crId, toutes, crDate, ftms, creerFtm, ouvrirFtm])
+  }, [modeSelection, selection, historique, crId, toutes, crDate, ftms, ouvrirFtm])
 
   const quitterSelection = () => { setModeSelection(false); setSelection(new Set()) }
 

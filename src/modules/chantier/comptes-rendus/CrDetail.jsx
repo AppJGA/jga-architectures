@@ -590,7 +590,7 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
 
   const {
     photos, liens, ajouterPhotos, remplacerPhoto, modifierLegendePhoto, supprimerPhoto, liensPhotos,
-    pastilles, placerPastille, enleverPastille, zones, ftms, creerFtmPourRemarque,
+    pastilles, placerPastille, enleverPastille, zones, ftms,
     planning, modifierAvancementTache, horsLigne, sectionDesIntervenants, assurerPartiesRemarques,
     cr, sections: sectionsBrutes, presences, profiles, loading, erreurChargement, historique,
     syncPresences, updateCr, emettre, rouvrir, updatePresence,
@@ -690,12 +690,6 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
   const naviguer = useNavigate()
   const affaireId = affaire?.id
   const ouvrirFtm = useCallback((ftm) => naviguer(`/affaires/${affaireId}/ftm?ftm=${ftm.id}`), [naviguer, affaireId])
-  const creerFtm = useCallback(async (remarque) => {
-    try {
-      const fiche = await creerFtmPourRemarque(remarque)
-      ouvrirFtm(fiche)
-    } catch (err) { signalerErreur(err) }
-  }, [creerFtmPourRemarque, ouvrirFtm, signalerErreur])
 
   const plansCr = usePlans(affaire?.id)
 
@@ -951,7 +945,6 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
           lots={lotsAffaire}
           zones={zones}
           ftms={ftms}
-          creerFtm={lectureSeule ? null : creerFtm}
           ouvrirFtm={ouvrirFtm}
           ops={ops}
         />
@@ -981,7 +974,6 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
           interlocuteurs={interlocuteurs}
           zones={zones}
           ftms={ftms}
-          creerFtm={lectureSeule ? null : creerFtm}
           ouvrirFtm={ouvrirFtm}
           planning={planning}
           modifierAvancementTache={modifierAvancementTache}

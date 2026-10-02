@@ -7,7 +7,6 @@ import {
   photosDuCr, envoyerPhoto, nettoyerFichiers, BUCKET_PHOTOS,
 } from '../../modules/chantier/comptes-rendus/photosStockage'
 import { pastillesDuCr, retirerPastille } from '../../modules/chantier/comptes-rendus/plansStockage'
-import { creerFtmDepuis } from '../../modules/chantier/ftm/creerDepuis'
 import { useLiensSignes } from '../../modules/chantier/comptes-rendus/useLiensSignes'
 import { useHorsLigne } from '../../modules/chantier/comptes-rendus/horsLigne/useHorsLigne'
 import { TYPES, creerOperation, appliquerOperation, etatAvecFile } from '../../modules/chantier/comptes-rendus/horsLigne/fileLogique'
@@ -674,19 +673,12 @@ export function useCompteRendu(crId, affaireId) {
     await fetchAll()
   }, [fetchAll])
 
-  // Fiche de travaux modificatifs créée depuis une remarque
-  const creerFtmPourRemarque = useCallback(async (remarque) => {
-    const fiche = await creerFtmDepuis({ affaireId, type: 'remarque', element: remarque, contexte: cr })
-    await fetchAll()
-    return fiche
-  }, [affaireId, cr, fetchAll])
-
   // Lien de la photo entière (visionneuse, PDF)
   const liensPhotos = useCallback((chemins) => obtenirLiens(chemins), [obtenirLiens])
 
   return {
     photos, liens, ajouterPhotos, remplacerPhoto, modifierLegendePhoto, supprimerPhoto, liensPhotos,
-    pastilles, placerPastille, enleverPastille, zones, ftms, creerFtmPourRemarque,
+    pastilles, placerPastille, enleverPastille, zones, ftms,
     planning, modifierAvancementTache, horsLigne, sectionDesIntervenants, assurerPartiesRemarques,
     cr, sections, presences, profiles, loading, erreurChargement, historique,
     syncPresences, updateCr, emettre, rouvrir, updatePresence,

@@ -74,7 +74,7 @@ function libelleDestinataire(rem, lots, interlocuteurs) {
   return rem.copie_destinataire ?? null
 }
 
-function CarteRemarque({ rem, cr, lots, interlocuteurs, zones, ftms, creerFtm, ouvrirFtm, lectureSeule: lectureSeuleCr, surbrillance, masquerDestinataire, ops, onPanneau }) {
+function CarteRemarque({ rem, cr, lots, interlocuteurs, zones, ftms, ouvrirFtm, lectureSeule: lectureSeuleCr, surbrillance, masquerDestinataire, ops, onPanneau }) {
   // Un intervenant extérieur ne touche qu'à ses propres observations
   const acces = useCr()
   const lectureSeule = lectureSeuleCr || !peutModifierRemarque(rem, acces)
@@ -202,11 +202,6 @@ function CarteRemarque({ rem, cr, lots, interlocuteurs, zones, ftms, creerFtm, o
             <MessageSquare size={17} /> Suite{suivis.length > 0 ? ` (${suivis.length})` : ''}
           </button>
         )}
-        {!lectureSeule && creerFtm && !ftm && (
-          <button type="button" onClick={() => creerFtm(rem)} title="Créer une fiche de travaux modificatifs" style={bouton()}>
-            <FilePen size={17} /> FTM
-          </button>
-        )}
         {!lectureSeule && (
           <button type="button" onClick={() => onPanneau({ type: 'modifier', remarque: rem })} aria-label="Modifier" style={{ ...bouton(), padding: '0 12px' }}>
             <Pencil size={17} />
@@ -285,7 +280,7 @@ const LIBELLE_OPERATION = {
   'pastille.poser': 'Pastille sur un plan',
 }
 
-export function ModeVisite({ cr, sections, presences, setPresence, lots: lotsAffaire, interlocuteurs, zones = [], ftms = [], creerFtm, ouvrirFtm, planning, modifierAvancementTache, horsLigne, ops, lectureSeule, erreur, onFermerErreur, signalerErreur, onTerminer }) {
+export function ModeVisite({ cr, sections, presences, setPresence, lots: lotsAffaire, interlocuteurs, zones = [], ftms = [], ouvrirFtm, planning, modifierAvancementTache, horsLigne, ops, lectureSeule, erreur, onFermerErreur, signalerErreur, onTerminer }) {
   const [filtre, setFiltre] = useState('ouvertes')
   const [destinataire, setDestinataire] = useState('')
   const [zone, setZone] = useState('')
@@ -473,7 +468,7 @@ export function ModeVisite({ cr, sections, presences, setPresence, lots: lotsAff
                   {sg.remarques.map(rem => (
                     <CarteRemarque
                       key={rem.id} rem={rem} cr={cr} lots={lots} interlocuteurs={interlocuteurs ?? []} zones={zones}
-                      ftms={ftms} creerFtm={creerFtm} ouvrirFtm={ouvrirFtm}
+                      ftms={ftms} ouvrirFtm={ouvrirFtm}
                       lectureSeule={lectureSeule} surbrillance={surbrillance === rem.id} ops={ops}
                       masquerDestinataire={sg.cle.startsWith('lot:')}
                       onPanneau={setPanneau}

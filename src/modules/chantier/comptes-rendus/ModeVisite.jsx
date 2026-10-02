@@ -4,7 +4,8 @@ import { FILTRES_VISITE, filtreVisite, groupesVisite, compteursVisite } from './
 import { STATUTS, infosStatut, estEnRetard, libelleZone, peutModifierRemarque, auteurExterieur } from './crLogique'
 import { useCr } from './CrContexte'
 import { PanneauRemarque, PanneauSuite, PanneauPresences, PanneauStatuts, PanneauAvancement } from './PanneauxVisite'
-import { PARTIES_REMARQUES, typePourDestinataire, libelleLot, nomInterlocuteur } from './remarquesLogique'
+import { libelleLot, nomInterlocuteur } from './remarquesLogique'
+import { creerRemarqueAdressee, champsModification } from './rangerRemarque'
 import { usePhotosRemarque, PhotosContexte } from './usePhotosRemarque'
 import { PhotosDeRemarque } from './PhotosRemarque'
 import { usePlansCr } from './PlansContexte'
@@ -339,25 +340,10 @@ export function ModeVisite({ cr, sections, presences, setPresence, lots: lotsAff
   }
 
   // Le destinataire range la remarque : un lot dans la partie VII, un
-  // interlocuteur dans la partie VI — créée au besoin (migration 054)
-  const sectionDeLaPartie = async (cle) => {
-    const type = typePourDestinataire(cle)
-    const existante = sections.find(s => s.type_section === type)
-    if (existante) return existante.id
-    const partie = PARTIES_REMARQUES.find(p => p.type === type)
-    return ops.addSection({ numero_romain: partie.numero_romain, titre: partie.titre, type_section: type })
-  }
-
+  // interlocuteur dans la partie VI (rangerRemarque.js)
   const enregistrerRemarque = async (payload, { destinataire: cle, compressions, commeType }) => {
     if (panneau.type === 'modifier') {
-      let champs = payload
-      // Nouveau destinataire d'une autre partie : la remarque change de partie.
-      // Une observation d'intervenant reste dans sa section.
-      const actuelle = sections.find(s => s.id === panneau.remarque.section_id)
-      const type = typePourDestinataire(cle)
-      if (!contributeur && type && actuelle?.type_section !== type && actuelle?.type_section !== 'intervenants') {
-        champs = { ...payload, section_id: await sectionDeLaPartie(cle), sous_section_id: null }
-      }
+      const champs = contributeur ? payload : await champsModification(ops, sections, panneau.remarque, cle, payload)
       await ops.updateRemarque(panneau.remarque.id, champs)
       montrer(panneau.remarque.id)
       return
@@ -368,7 +354,7 @@ export function ModeVisite({ cr, sections, presences, setPresence, lots: lotsAff
       const sectionId = await ops.sectionDesIntervenants()
       id = await ops.addSectionRemarque(sectionId, payload)
     } else {
-      id = await ops.addSectionRemarque(await sectionDeLaPartie(cle), payload)
+      id = await creerRemarqueAdressee(ops, sections, cle, payload)
     }
     if (compressions.length > 0) await ajouterPhotos(id, compressions).catch(() => {})
     if (commeType) await typesAgence.ajouter(payload.description).catch(signalerErreur)

@@ -1,8 +1,13 @@
 import { useState, useMemo, createContext, useContext } from 'react'
+import { estPartieRemarques, groupesDestinataires } from './remarquesLogique'
+import { creerRemarqueAdressee, champsModification } from './rangerRemarque'
+import { PanneauRemarque, PanneauSuite } from './PanneauxVisite'
+import { useRemarquesTypes } from './useRemarquesTypes'
+import { PhotosContexte } from './usePhotosRemarque'
 import {
   Plus, Pencil, ChevronDown, ChevronUp, ChevronRight, X,
   GripVertical, MessageSquarePlus, ToggleLeft, ToggleRight, MessageSquare,
-  Check, RotateCcw, Search, History, CheckSquare, MapPin, FilePen, UserPen,
+  Search, History, CheckSquare, MapPin, FilePen, UserPen,
 } from 'lucide-react'
 import { CATEGORIE_META } from '../../../shared/hooks/useAffaireInterlocuteurs'
 import {
@@ -346,8 +351,10 @@ function AttrBadge({ rem, lots, interlocuteurs, sectionType }) {
 // ─── Sous-remarque (fil de suivi) ─────────────────────────────────────────────
 // Évolution 4
 
-function SousRemarqueRow({ sr, onDelete, onToggleClos }) {
-  const { lectureSeule } = useCr()
+function SousRemarqueRow({ sr, onDelete, onStatut }) {
+  const acces = useCr()
+  const lectureSeule = !peutModifierRemarque(sr, acces)
+  const st = infosStatut(sr)
   const fmtD = (d) => d ? new Date(d + 'T00:00:00').toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' }) : '—'
   return (
     <div className="sous-remarque-row" style={{ display: 'flex', gap: 8, padding: '4px 0', borderBottom: '0.5px solid rgba(0,0,0,0.05)', alignItems: 'flex-start' }}>
@@ -358,15 +365,21 @@ function SousRemarqueRow({ sr, onDelete, onToggleClos }) {
       {sr.pour && (
         <span style={{ color: '#E8602C', fontSize: 11, fontWeight: 500, minWidth: 28, flexShrink: 0, marginTop: 1 }}>{sr.pour}</span>
       )}
-      <span style={{ flex: 1, fontSize: 12, textDecoration: sr.est_clos ? 'line-through' : 'none', color: sr.est_clos ? '#9CA3AF' : '#374151' }}>
+      <span style={{ flex: 1, fontSize: 12, textDecoration: st.clos ? 'line-through' : 'none', color: st.clos ? '#9CA3AF' : '#374151' }}>
         {sr.description}
+        {sr.date_echeance && <span style={{ marginLeft: 6, fontSize: 11, color: '#5E5854' }}>· pour le {fmtD(sr.date_echeance)}</span>}
       </span>
+      {/* Une suite a son propre statut (migration 054) */}
+      {lectureSeule ? (
+        <span style={{ fontSize: 11, fontWeight: 500, color: st.couleur, flexShrink: 0 }}>{st.libelle}</span>
+      ) : (
+        <select value={st.code} onChange={e => onStatut(sr.id, e.target.value)} aria-label="Statut de la suite" data-compact
+          style={{ fontSize: 11, fontWeight: 500, color: st.couleur, background: st.fond, border: 'none', borderRadius: 3, padding: '1px 4px', cursor: 'pointer', flexShrink: 0, minHeight: 0 }}>
+          {STATUTS.map(x => <option key={x.code} value={x.code}>{x.libelle}</option>)}
+        </select>
+      )}
       {!lectureSeule && (
         <div className="sous-remarque-actions" style={{ display: 'flex', gap: 3, opacity: 0, transition: 'opacity 0.15s', flexShrink: 0 }}>
-          <button onClick={() => onToggleClos(sr.id, !sr.est_clos)} title={sr.est_clos ? 'Rouvrir' : 'Clôturer'} data-compact
-            style={{ padding: 2, background: 'none', border: 'none', cursor: 'pointer', color: sr.est_clos ? '#2A8A4E' : '#9C9591' }}>
-            {sr.est_clos ? <RotateCcw size={11} /> : <Check size={11} />}
-          </button>
           <BoutonSupprimer taille={11} onConfirm={() => onDelete(sr.id)} style={{ padding: 2 }} />
         </div>
       )}
@@ -420,7 +433,13 @@ function SousRemarqueForm({ crDate, onSave, onCancel }) {
 // ─── Affichage d'une remarque ──────────────────────────────────────────────────
 // Évolution 4: sous_remarques + bouton "+ Suivi"
 
-function RemarqueRow({ rem, idx, total, crDate, suggestions, lots, interlocuteurs, zones, sectionType, onEdit, onDelete, onReorder, onAddSousRemarque, noReorder, hidden }) {
+/**
+ * @param onOuvrirSuite parties VI / VII : toucher le texte ou « + Suite » ouvre
+ *   le panneau des suites (le même qu'en visite)
+ * @param onModifier parties VI / VII : le crayon ouvre le panneau de saisie,
+ *   qui sait changer de destinataire et donc de partie
+ */
+function RemarqueRow({ rem, idx, total, crDate, suggestions, lots, interlocuteurs, zones, sectionType, onEdit, onDelete, onReorder, onAddSousRemarque, onOuvrirSuite, onModifier, noReorder, hidden }) {
   const [editOpen, setEditOpen]       = useState(false)
   const [addingSuivi, setAddingSuivi] = useState(false)
   const [historiqueOuvert, setHistoriqueOuvert] = useState(false)
@@ -465,7 +484,7 @@ function RemarqueRow({ rem, idx, total, crDate, suggestions, lots, interlocuteur
           {sousSousRems.map(sr => (
             <SousRemarqueRow key={sr.id} sr={sr}
               onDelete={onDelete}
-              onToggleClos={async (id, clos) => await onEdit(id, { est_clos: clos })}
+              onStatut={(id, code) => onEdit(id, changementStatut(code)).catch(() => {})}
             />
           ))}
         </div>
@@ -500,7 +519,12 @@ function RemarqueRow({ rem, idx, total, crDate, suggestions, lots, interlocuteur
 
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', flexWrap: 'wrap', gap: 4 }}>
-            <p style={{ ...descStyle, margin: 0 }}>{rem.description}</p>
+            <p
+              onClick={onOuvrirSuite ? () => onOuvrirSuite(rem) : undefined}
+              title={onOuvrirSuite ? 'Ajouter une suite' : undefined}
+              style={{ ...descStyle, margin: 0, cursor: onOuvrirSuite ? 'pointer' : 'text' }}>
+              {rem.description}
+            </p>
             <AttrBadge rem={rem} lots={lots} interlocuteurs={interlocuteurs} sectionType={sectionType} />
           </div>
           {(rem.date_echeance || (statut.clos && rem.date_cloture)) && (
@@ -577,7 +601,7 @@ function RemarqueRow({ rem, idx, total, crDate, suggestions, lots, interlocuteur
               <button onClick={() => onReorder(rem.id, 'down')} disabled={idx === total - 1} data-compact style={{ padding: 3, background: 'none', border: 'none', cursor: idx === total - 1 ? 'default' : 'pointer', color: idx === total - 1 ? '#D1D5DB' : '#9C9591' }}><ChevronDown size={12} /></button>
             </>
           )}
-          <button onClick={() => setEditOpen(true)} data-compact style={{ padding: 3, background: 'none', border: 'none', cursor: 'pointer', color: '#9C9591' }}><Pencil size={12} /></button>
+          <button onClick={() => (onModifier ? onModifier(rem) : setEditOpen(true))} data-compact style={{ padding: 3, background: 'none', border: 'none', cursor: 'pointer', color: '#9C9591' }}><Pencil size={12} /></button>
           <BoutonPhoto ctl={photos} />
           {creerFtm && !ftm && (
             <button
@@ -597,7 +621,7 @@ function RemarqueRow({ rem, idx, total, crDate, suggestions, lots, interlocuteur
             </button>
           )}
           {onAddSousRemarque && (
-            <button onClick={() => setAddingSuivi(a => !a)} data-compact
+            <button onClick={() => (onOuvrirSuite ? onOuvrirSuite(rem) : setAddingSuivi(a => !a))} data-compact
               style={{ display: 'inline-flex', alignItems: 'center', gap: 2, padding: '2px 5px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 10, color: addingSuivi ? '#E8602C' : '#9C9591' }}
               title="Ajouter un suivi"
             >
@@ -613,7 +637,7 @@ function RemarqueRow({ rem, idx, total, crDate, suggestions, lots, interlocuteur
           {sousSousRems.map(sr => (
             <SousRemarqueRow key={sr.id} sr={sr}
               onDelete={onDelete}
-              onToggleClos={async (id, clos) => await onEdit(id, { est_clos: clos })}
+              onStatut={(id, code) => onEdit(id, changementStatut(code)).catch(() => {})}
             />
           ))}
         </div>
@@ -824,11 +848,67 @@ function InterlocuteursGroupedView({ section, crDate, suggestions, lots, interlo
   )
 }
 
+// ─── Parties VI et VII : une remarque par destinataire ───────────────────────
+// Le rangement se calcule (remarquesLogique.js) ; « + » sur un titre écrit
+// directement à ce destinataire.
+
+function PartieRemarquesView({ section, crDate, suggestions, lots, interlocuteurs, zones, ops, filterFn, onNouvelle, onOuvrirSuite, onModifier }) {
+  const lectureSeule = !peutOrganiser(useCr())
+  const visibles = [
+    ...(section.directRemarques ?? []),
+    ...(section.sousSections ?? []).flatMap(ss => ss.remarques ?? []),
+  ].filter(filterFn)
+  const groupes = groupesDestinataires(visibles, { lots, interlocuteurs })
+
+  if (groupes.length === 0) {
+    return <p style={{ fontSize: 11, color: '#9C9591', fontStyle: 'italic', padding: '4px 0 4px 4px' }}>Aucune remarque</p>
+  }
+  return (
+    <div>
+      {groupes.map(g => (
+        <div key={g.cle} style={{ marginBottom: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, backgroundColor: '#E9E2D6', padding: '4px 12px', fontSize: 11, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.04em', color: '#5E5854', marginBottom: 6 }}>
+            <span style={{ flex: 1 }}>{g.titre}</span>
+            {!lectureSeule && g.destinataire && (
+              <button type="button" onClick={() => onNouvelle(g.destinataire)} data-compact title={`Nouvelle remarque pour ${g.titre}`}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 6px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: '#2A8A4E', textTransform: 'none', letterSpacing: 0 }}>
+                <Plus size={12} /> Remarque
+              </button>
+            )}
+          </div>
+          {g.remarques.map((rem, i) => (
+            <RemarqueRow
+              key={rem.id}
+              rem={rem}
+              idx={i}
+              total={g.remarques.length}
+              crDate={crDate}
+              suggestions={suggestions}
+              lots={lots}
+              interlocuteurs={interlocuteurs ?? []}
+              zones={zones}
+              sectionType={section.type_section}
+              onEdit={ops.updateRemarque}
+              onDelete={ops.deleteRemarque}
+              onReorder={() => {}}
+              noReorder
+              onAddSousRemarque={ops.addSousRemarque}
+              onOuvrirSuite={onOuvrirSuite}
+              onModifier={onModifier}
+              hidden={false}
+            />
+          ))}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // ─── Section ──────────────────────────────────────────────────────────────────
 // Évolution 2: remarques directes + bouton dédié
 // Évolution 3: vue groupée pour sections 'interlocuteurs'
 
-function SectionBlock({ section, sIdx, sTotal, crDate, suggestions, lots, interlocuteurs, zones, ops, filterFn, onDragStart, onDragOver, onDrop, onDragEnd, isDragging }) {
+function SectionBlock({ section, sIdx, sTotal, crDate, suggestions, lots, interlocuteurs, zones, ops, filterFn, onDragStart, onDragOver, onDrop, onDragEnd, isDragging, onNouvelle, onOuvrirSuite, onModifier }) {
   const [open, setOpen]               = useState(true)
   const [addSs, setAddSs]             = useState(false)
   const [addDirectRem, setAddDirectRem] = useState(false)
@@ -840,6 +920,8 @@ function SectionBlock({ section, sIdx, sTotal, crDate, suggestions, lots, interl
   const lectureSeule = !peutOrganiser(useCr())
 
   const sectionType = section.type_section ?? 'general'
+  // VI et VII : rangées par destinataire, ni sous-section ni changement de type
+  const partie = estPartieRemarques(section)
 
   const toggleType = async () => {
     const next = sectionType === 'interlocuteurs' ? 'general' : 'interlocuteurs'
@@ -885,7 +967,7 @@ function SectionBlock({ section, sIdx, sTotal, crDate, suggestions, lots, interl
         )}
 
         {/* Toggle type de section */}
-        <button
+        {!partie && <button
           onClick={toggleType}
           disabled={lectureSeule}
           title={sectionType === 'interlocuteurs' ? 'Section interlocuteurs — cliquer pour passer en général' : 'Section générale — cliquer pour passer en interlocuteurs'}
@@ -901,17 +983,31 @@ function SectionBlock({ section, sIdx, sTotal, crDate, suggestions, lots, interl
             ? <><ToggleRight size={13} /> Interlocuteurs</>
             : <><ToggleLeft size={13} /> Général</>
           }
-        </button>
+        </button>}
 
         {!lectureSeule && <div style={{ display: 'flex', gap: 3, flexShrink: 0 }}>
           <button onClick={() => { setEditRomain(section.numero_romain); setEditTitre(section.titre); setEditTitle(!editTitle) }} data-compact style={{ padding: 3, background: 'none', border: 'none', cursor: 'pointer', color: '#9C9591' }}><Pencil size={13} /></button>
-          <BoutonSupprimer taille={13} onConfirm={() => ops.deleteSection(section.id)} />
+          {!partie && <BoutonSupprimer taille={13} onConfirm={() => ops.deleteSection(section.id)} />}
         </div>}
       </div>
 
       {open && (
         <div style={{ padding: '12px 16px' }}>
-          {sectionType === 'interlocuteurs' ? (
+          {partie ? (
+            <PartieRemarquesView
+              section={section}
+              crDate={crDate}
+              suggestions={suggestions}
+              lots={lots}
+              interlocuteurs={interlocuteurs}
+              zones={zones}
+              ops={ops}
+              filterFn={filterFn}
+              onNouvelle={onNouvelle}
+              onOuvrirSuite={onOuvrirSuite}
+              onModifier={onModifier}
+            />
+          ) : sectionType === 'interlocuteurs' ? (
             // Évolution 3: vue groupée par destinataire
             <InterlocuteursGroupedView
               section={section}
@@ -992,8 +1088,9 @@ function SectionBlock({ section, sIdx, sTotal, crDate, suggestions, lots, interl
             </div>
           )}
 
-          {/* Ajout sous-section + remarque directe */}
-          {lectureSeule ? null : addSs ? (
+          {/* Ajout sous-section + remarque directe — pas dans VI / VII, où
+              l'on écrit par « Nouvelle remarque » ou le « + » d'un destinataire */}
+          {lectureSeule || partie ? null : addSs ? (
             <div style={{ marginTop: 8 }}>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '8px 12px', backgroundColor: '#FAFAF9', borderRadius: 2, border: '0.5px solid rgba(0,0,0,0.08)' }}>
                 <input value={newSsCode} onChange={e => setNewSsCode(e.target.value)} placeholder="1-1" style={{ ...INPUT, width: 70, height: 30, fontSize: 12 }} onFocus={focusOn} onBlur={focusOff} />
@@ -1199,7 +1296,7 @@ function NewRemarqueModal({ sections, crDate, suggestions, lots, interlocuteurs,
 
 // ─── Export principal ─────────────────────────────────────────────────────────
 
-export function CrSectionEditor({ sections, crId, crDate, interlocuteurs, lotEntreprises, zones = [], ftms = [], creerFtm, ouvrirFtm, ops, historique }) {
+export function CrSectionEditor({ sections, crId, crDate, interlocuteurs, lotEntreprises, lots: lotsAffaire = null, zones = [], ftms = [], creerFtm, ouvrirFtm, ops, historique }) {
   const [addSec, setAddSec]             = useState(false)
   const [newSec, setNewSec]             = useState({ numero_romain: '', titre: '' })
   const [filtre, setFiltre]             = useState(FILTRE_VIDE)
@@ -1213,6 +1310,11 @@ export function CrSectionEditor({ sections, crId, crDate, interlocuteurs, lotEnt
   // Sections et actions de masse : l'agence seule
   const organiser = peutOrganiser(acces)
   const [depotEnCours, setDepotEnCours] = useState(false)
+  // Panneaux partagés avec le mode Visite : saisie adressée, suites
+  const [panneau, setPanneau] = useState(null)
+  const typesAgence = useRemarquesTypes()
+  const { ajouterPhotos } = useContext(PhotosContexte)
+  const crPanneau = { id: crId, date_reunion: crDate }
 
   // Un intervenant extérieur ne choisit pas la section : ses observations vont
   // dans « Observations des intervenants », créée à la demande (migration 052).
@@ -1228,7 +1330,19 @@ export function CrSectionEditor({ sections, crId, crDate, interlocuteurs, lotEnt
     }
   }
 
-  const lots = (lotEntreprises ?? []).map(le => le.lots).filter(Boolean)
+  // Tous les lots de l'affaire : une remarque peut viser un lot encore sans titulaire
+  const lots = lotsAffaire ?? (lotEntreprises ?? []).map(le => le.lots).filter(Boolean)
+
+  const enregistrerAdressee = async (payload, { destinataire: cle, compressions, commeType }) => {
+    if (panneau.type === 'modifier') {
+      await ops.updateRemarque(panneau.remarque.id, await champsModification(ops, sections, panneau.remarque, cle, payload))
+      return
+    }
+    const id = await creerRemarqueAdressee(ops, sections, cle, payload)
+    if (compressions.length > 0) await ajouterPhotos(id, compressions).catch(() => {})
+    if (commeType) await typesAgence.ajouter(payload.description).catch(acces.signalerErreur)
+  }
+  const toutesPrincipales = sections.flatMap(s => [...(s.directRemarques ?? []), ...(s.sousSections ?? []).flatMap(ss => ss.remarques ?? [])])
 
   const suggestions = [
     ...(interlocuteurs ?? []).map(i => {
@@ -1323,7 +1437,7 @@ export function CrSectionEditor({ sections, crId, crDate, interlocuteurs, lotEnt
             </button>
           )}
           {!lectureSeule && <button
-            onClick={contributeur ? deposerObservation : () => setGlobalAddOpen(true)}
+            onClick={contributeur ? deposerObservation : () => setPanneau({ type: 'nouvelle' })}
             disabled={depotEnCours}
             style={{
               display: 'inline-flex', alignItems: 'center', gap: 6,
@@ -1396,6 +1510,9 @@ export function CrSectionEditor({ sections, crId, crDate, interlocuteurs, lotEnt
             onDragOver={() => { if (dragId && dragId !== sec.id) setDropBeforeId(sec.id) }}
             onDrop={() => handleDrop(sec.id)}
             onDragEnd={() => { setDragId(null); setDropBeforeId(null) }}
+            onNouvelle={(destinataire) => setPanneau({ type: 'nouvelle', destinataire })}
+            onOuvrirSuite={(rem) => setPanneau({ type: 'suite', remarque: rem })}
+            onModifier={(rem) => setPanneau({ type: 'modifier', remarque: rem })}
           />
         </div>
       ))}
@@ -1451,7 +1568,27 @@ export function CrSectionEditor({ sections, crId, crDate, interlocuteurs, lotEnt
         </button>
       )}
 
-      {/* Modal nouvelle remarque */}
+      {(panneau?.type === 'nouvelle' || panneau?.type === 'modifier') && (
+        <PanneauRemarque
+          remarque={panneau.type === 'modifier' ? panneau.remarque : null}
+          cr={crPanneau} lots={lots} interlocuteurs={interlocuteurs ?? []} zones={zones}
+          typesAgence={typesAgence}
+          destinataireInitial={panneau.destinataire ?? null}
+          onEnregistrer={enregistrerAdressee}
+          onFermer={() => setPanneau(null)}
+          signalerErreur={acces.signalerErreur}
+        />
+      )}
+      {panneau?.type === 'suite' && (
+        <PanneauSuite
+          remarque={toutesPrincipales.find(r => r.id === panneau.remarque.id) ?? panneau.remarque}
+          cr={crPanneau} lectureSeule={lectureSeule} acces={acces} ops={ops}
+          onModifier={rem => setPanneau({ type: 'modifier', remarque: rem })}
+          onFermer={() => setPanneau(null)} signalerErreur={acces.signalerErreur}
+        />
+      )}
+
+      {/* Observation d'un intervenant extérieur : dans sa section dédiée */}
       {globalAddOpen && !lectureSeule && (
         <NewRemarqueModal
           sections={sections}

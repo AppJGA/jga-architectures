@@ -1,7 +1,8 @@
 import { useState, useEffect, useContext } from 'react'
-import { X, Camera, Images, Star, Check, RotateCcw } from 'lucide-react'
+import { X, Camera, Images, Star } from 'lucide-react'
 import { CATEGORIE_META } from '../../../shared/hooks/useAffaireInterlocuteurs'
-import { STATUTS, FAMILLES_STATUT, STATUT_PAR_DEFAUT, statutNormalise, affichagePresence } from './crLogique'
+import { STATUTS, FAMILLES_STATUT, STATUT_PAR_DEFAUT, statutNormalise, affichagePresence, infosStatut, peutModifierRemarque } from './crLogique'
+import { choixDestinataires, destinataireParDefaut, cleDestinataire, champsDestinataire } from './remarquesLogique'
 import { suggestionsTypes, echeanceRapide, ajouterDictee, normaliserTexte } from './visiteLogique'
 import { BoutonDictee } from './BoutonDictee'
 import { BoutonSupprimer } from './BoutonSupprimer'
@@ -53,14 +54,6 @@ export function Panneau({ titre, onFermer, occupe = false, children, pied }) {
   )
 }
 
-// Emplacements où créer une remarque : section (remarque directe) ou sous-section
-function emplacements(sections) {
-  return sections.flatMap(s => [
-    { valeur: `sec:${s.id}`, libelle: `${s.numero_romain} — ${s.titre}`, type: s.type_section ?? 'general', sectionId: s.id },
-    ...(s.sousSections ?? []).map(ss => ({ valeur: `ss:${ss.id}`, libelle: `${s.numero_romain}.${ss.code} — ${ss.titre}`, type: s.type_section ?? 'general', sectionId: s.id, sousSectionId: ss.id })),
-  ])
-}
-
 function lireMemoire(cle) {
   try { return localStorage.getItem(cle) } catch { return null }
 }
@@ -70,20 +63,61 @@ function ecrireMemoire(cle, valeur) {
 
 // ─── Nouvelle remarque / modifier ────────────────────────────────────────────
 
-export function PanneauRemarque({ remarque, cr, sections, lots, interlocuteurs, zones = [], typesAgence, onEnregistrer, onFermer, signalerErreur }) {
+// Choix du destinataire : les lots (partie VII) puis l'équipe (partie VI), en
+// grands boutons. C'est lui qui range la remarque.
+function ChoixDestinataire({ choix, valeur, onChoisir, facultatif }) {
+  const rangee = (titre, liste, couleur) => liste.length > 0 && (
+    <div>
+      <p style={{ fontSize: 12, color: '#9C9591', margin: '0 0 6px' }}>{titre}</p>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+        {liste.map(c => (
+          <button key={c.cle} type="button" aria-pressed={valeur === c.cle} onClick={() => onChoisir(c.cle)}
+            title={c.libelle} style={{ ...puce(valeur === c.cle, couleur), borderRadius: 3, flexDirection: 'column', alignItems: 'flex-start', gap: 0, padding: '4px 12px', maxWidth: 220 }}>
+            <span style={{ fontWeight: 600 }}>{c.court}</span>
+            <span style={{ fontSize: 11, opacity: 0.75, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 196 }}>{c.detail}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+  return (
+    <div>
+      <span style={LABEL}>Pour qui ?{facultatif ? '' : ' *'}</span>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {facultatif && (
+          <div><button type="button" onClick={() => onChoisir('')} style={puce(!valeur)}>Personne en particulier</button></div>
+        )}
+        {rangee('Entreprises (VII)', choix.entreprises, '#2A8A4E')}
+        {rangee('Équipe de maîtrise d’œuvre et d’ouvrage (VI)', choix.equipe, '#993C1D')}
+        {choix.entreprises.length === 0 && choix.equipe.length === 0 && (
+          <p style={{ fontSize: 13, color: '#5E5854', margin: 0 }}>
+            Aucun lot ni interlocuteur dans cette affaire : ajoutez-les (lots, Interlocuteurs) pour adresser les remarques.
+          </p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * @param destinataireInitial clé proposée par le « + » d'un groupe
+ * @param contributeur intervenant extérieur : destinataire facultatif, ses
+ *   observations vont dans leur section à part
+ */
+export function PanneauRemarque({ remarque, cr, lots, interlocuteurs, zones = [], typesAgence, destinataireInitial = null, contributeur = false, onEnregistrer, onFermer, signalerErreur }) {
   const modification = !!remarque
-  const cleMemoire = `jga-visite-emplacement-${cr.id}`
-  const liste = emplacements(sections)
-  const [emplacement, setEmplacement] = useState(() => {
-    const memo = lireMemoire(cleMemoire)
-    return liste.some(e => e.valeur === memo) ? memo : (liste[0]?.valeur ?? 'nouvelle')
-  })
+  // Le destinataire de la remarque précédente est reproposé : sur le chantier,
+  // on enchaîne souvent plusieurs remarques pour le même lot
+  const cleMemoire = `jga-cr-destinataire-${cr.id}`
+  const choix = choixDestinataires({ lots, interlocuteurs })
   const [description, setDescription] = useState(remarque?.description ?? '')
   const [pour, setPour] = useState(remarque?.pour ?? '')
   const [statut, setStatut] = useState(remarque ? statutNormalise(remarque) : STATUT_PAR_DEFAUT)
   const [echeance, setEcheance] = useState(remarque?.date_echeance ?? '')
   const [zoneId, setZoneId] = useState(remarque?.zone_id ?? '')
-  const [destinataire, setDestinataire] = useState(remarque?.lot_id ? `lot:${remarque.lot_id}` : remarque?.interlocuteur_id ? `interlo:${remarque.interlocuteur_id}` : '')
+  const [destinataire, setDestinataire] = useState(() => (modification
+    ? cleDestinataire(remarque)
+    : destinataireInitial ?? destinataireParDefaut(lireMemoire(cleMemoire), choix)))
   const [important, setImportant] = useState(!!remarque?.est_important)
   const [commeType, setCommeType] = useState(false)
   const [gererTypes, setGererTypes] = useState(false)
@@ -94,10 +128,8 @@ export function PanneauRemarque({ remarque, cr, sections, lots, interlocuteurs, 
 
   useEffect(() => () => photos.forEach(p => URL.revokeObjectURL(p.url)), []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const place = liste.find(e => e.valeur === emplacement)
-  const typeSection = modification
-    ? (sections.find(s => s.id === remarque.section_id)?.type_section ?? 'general')
-    : (place?.type ?? 'general')
+  const destinataireRequis = !contributeur
+  const pret = !!normaliserTexte(description) && (!destinataireRequis || !!destinataire)
   const suggestions = typesAgence.disponible ? suggestionsTypes(typesAgence.types, description) : []
 
   const ajouterCompression = (compression) => setPhotos(ps => [...ps, { compression, url: URL.createObjectURL(compression.miniature.blob) }])
@@ -111,22 +143,21 @@ export function PanneauRemarque({ remarque, cr, sections, lots, interlocuteurs, 
 
   const enregistrer = async () => {
     const texte = normaliserTexte(description)
-    if (!texte) return
+    if (!texte || !pret) return
     setOccupe(true)
     try {
       const payload = {
         description: texte, pour: pour.trim() || null, statut, est_clos: PAR_CODE.get(statut).clos,
         date_echeance: echeance || null, est_important: important,
         ...(zones.length > 0 && { zone_id: zoneId || null }),
-        lot_id: typeSection === 'interlocuteurs' && destinataire.startsWith('lot:') ? destinataire.slice(4) : null,
-        interlocuteur_id: typeSection === 'interlocuteurs' && destinataire.startsWith('interlo:') ? destinataire.slice(8) : null,
+        ...champsDestinataire(destinataire),
       }
       if (!modification) {
         payload.date_note = cr.date_reunion
         payload.est_nouveau = true
-        ecrireMemoire(cleMemoire, emplacement)
+        if (destinataire) ecrireMemoire(cleMemoire, destinataire)
       }
-      await onEnregistrer(payload, { emplacement: place ?? null, compressions: photos.map(p => p.compression), commeType })
+      await onEnregistrer(payload, { destinataire, compressions: photos.map(p => p.compression), commeType })
       onFermer()
     } catch { /* signalé dans le bandeau */ }
     setOccupe(false)
@@ -139,22 +170,15 @@ export function PanneauRemarque({ remarque, cr, sections, lots, interlocuteurs, 
       pied={
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
           <button type="button" onClick={onFermer} disabled={occupe} style={{ ...puce(false), borderRadius: 3 }}>Annuler</button>
-          <button type="button" onClick={enregistrer} disabled={occupe || !normaliserTexte(description)}
-            style={{ ...puce(true, '#2A8A4E'), borderRadius: 3, padding: '0 22px', opacity: occupe || !normaliserTexte(description) ? 0.6 : 1 }}>
+          <button type="button" onClick={enregistrer} disabled={occupe || !pret}
+            title={!destinataire && destinataireRequis ? 'Choisissez à qui s’adresse la remarque' : undefined}
+            style={{ ...puce(true, '#2A8A4E'), borderRadius: 3, padding: '0 22px', opacity: occupe || !pret ? 0.6 : 1 }}>
             {occupe ? 'Enregistrement…' : 'Enregistrer'}
           </button>
         </div>
       }
     >
-      {!modification && (
-        <div>
-          <label style={LABEL} htmlFor="visite-emplacement">Section</label>
-          <select id="visite-emplacement" value={emplacement} onChange={e => setEmplacement(e.target.value)} style={CHAMP}>
-            {liste.length === 0 && <option value="nouvelle">Observations générales (nouvelle section)</option>}
-            {liste.map(e => <option key={e.valeur} value={e.valeur}>{e.libelle}</option>)}
-          </select>
-        </div>
-      )}
+      <ChoixDestinataire choix={choix} valeur={destinataire} onChoisir={setDestinataire} facultatif={!destinataireRequis} />
 
       {zones.length > 0 && (
         <div>
@@ -163,26 +187,6 @@ export function PanneauRemarque({ remarque, cr, sections, lots, interlocuteurs, 
             <button type="button" onClick={() => setZoneId('')} style={puce(!zoneId)}>Sans zone</button>
             {zones.map(z => (
               <button key={z.id} type="button" onClick={() => setZoneId(z.id)} style={puce(zoneId === z.id, '#1B3A5C')}>{z.nom}</button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {typeSection === 'interlocuteurs' && (lots.length > 0 || interlocuteurs.length > 0) && (
-        <div>
-          <span style={LABEL}>Destinataire</span>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            <button type="button" onClick={() => setDestinataire('')} style={puce(!destinataire)}>Aucun</button>
-            {lots.map(l => (
-              <button key={l.id} type="button" onClick={() => setDestinataire(`lot:${l.id}`)} style={puce(destinataire === `lot:${l.id}`, '#2A8A4E')}>
-                {l.numero ? `Lot ${l.numero}` : l.nom}
-              </button>
-            ))}
-            {interlocuteurs.map(i => (
-              <button key={i.id} type="button" onClick={() => setDestinataire(`interlo:${i.id}`)} style={puce(destinataire === `interlo:${i.id}`, '#993C1D')}>
-                {[i.prenom, i.nom].filter(Boolean).join(' ') || i.organisation}
-                <span style={{ fontSize: 11, opacity: 0.7 }}>{CATEGORIE_META[i.categorie]?.label ?? ''}</span>
-              </button>
             ))}
           </div>
         </div>
@@ -310,64 +314,138 @@ export function PanneauRemarque({ remarque, cr, sections, lots, interlocuteurs, 
   )
 }
 
-// ─── Suivis d'une remarque ───────────────────────────────────────────────────
+// ─── Suites d'une remarque (▶) ──────────────────────────────────────────────
+//
+// Toucher une remarque ouvre ce panneau : la suite s'écrit en un geste, avec
+// son propre statut et sa propre échéance (migration 054). La remarque
+// d'origine garde le sien, sauf si l'on coche « Clore la remarque d'origine ».
 
-export function PanneauSuivi({ remarque, cr, lectureSeule, ops, onFermer, signalerErreur }) {
+export function PanneauSuite({ remarque, cr, lectureSeule, acces, ops, onModifier, onFermer, signalerErreur }) {
   const [texte, setTexte] = useState('')
+  const [statut, setStatut] = useState(STATUT_PAR_DEFAUT)
+  const [echeance, setEcheance] = useState('')
+  const [clore, setClore] = useState(false)
   const [occupe, setOccupe] = useState(false)
-  const suivis = remarque.sous_remarques ?? []
+  const suites = remarque.sous_remarques ?? []
+  const statutOrigine = infosStatut(remarque)
+  const peutModifier = !lectureSeule && peutModifierRemarque(remarque, acces)
 
   const ajouter = async () => {
     const propre = normaliserTexte(texte)
     if (!propre) return
     setOccupe(true)
     try {
-      await ops.addSousRemarque(remarque.id, { date_note: cr.date_reunion, description: propre, est_nouveau: true, est_clos: false, est_important: false })
-      setTexte('')
+      await ops.addSousRemarque(remarque.id, {
+        date_note: cr.date_reunion, description: propre,
+        statut, est_clos: PAR_CODE.get(statut).clos, date_echeance: echeance || null,
+        est_nouveau: true, est_important: false,
+      })
+      if (clore && peutModifier) await ops.updateRemarque(remarque.id, { statut: 'fait', est_clos: true })
+      onFermer()
     } catch { /* signalé dans le bandeau */ }
     setOccupe(false)
   }
 
+  const changerStatutSuite = (sr, code) =>
+    ops.updateRemarque(sr.id, { statut: code, est_clos: PAR_CODE.get(code).clos }).catch(() => {})
+
   return (
-    <Panneau titre={`Suivi${remarque.numero != null ? ` · n°${remarque.numero}` : ''}`} onFermer={onFermer} occupe={occupe}>
-      <p style={{ fontSize: 15, color: '#1F1B17' }}>{remarque.description}</p>
-      {suivis.length > 0 && (
+    <Panneau
+      titre={`Suite de la remarque${remarque.numero != null ? ` n°${remarque.numero}` : ''}`}
+      onFermer={onFermer} occupe={occupe}
+      pied={!lectureSeule && (
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+          <button type="button" onClick={onFermer} disabled={occupe} style={{ ...puce(false), borderRadius: 3 }}>Annuler</button>
+          <button type="button" onClick={ajouter} disabled={occupe || !normaliserTexte(texte)}
+            style={{ ...puce(true, '#E8602C'), borderRadius: 3, padding: '0 22px', opacity: occupe || !normaliserTexte(texte) ? 0.6 : 1 }}>
+            {occupe ? 'Enregistrement…' : 'Ajouter la suite'}
+          </button>
+        </div>
+      )}
+    >
+      <div style={{ background: 'white', border: '0.5px solid rgba(0,0,0,0.08)', borderLeft: `4px solid ${statutOrigine.couleur}`, padding: '10px 12px' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+          <p style={{ flex: 1, margin: 0, fontSize: 15, color: statutOrigine.clos ? '#9CA3AF' : '#1F1B17', textDecoration: statutOrigine.clos ? 'line-through' : 'none' }}>
+            {remarque.description}
+          </p>
+          <span style={{ fontSize: 12, fontWeight: 600, color: statutOrigine.couleur, background: statutOrigine.fond, borderRadius: 3, padding: '3px 8px', whiteSpace: 'nowrap' }}>{statutOrigine.libelle}</span>
+        </div>
+        {peutModifier && onModifier && (
+          <button type="button" onClick={() => onModifier(remarque)}
+            style={{ marginTop: 8, background: 'none', border: 'none', padding: 0, minHeight: 32, fontSize: 13, color: '#1B3A5C', textDecoration: 'underline', cursor: 'pointer' }}>
+            Modifier la remarque elle-même
+          </button>
+        )}
+      </div>
+
+      {suites.length > 0 && (
         <ul style={{ listStyle: 'none', margin: 0, padding: 0, background: 'white', border: '0.5px solid rgba(0,0,0,0.08)' }}>
-          {suivis.map(sr => (
-            <li key={sr.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderBottom: '0.5px solid rgba(0,0,0,0.05)' }}>
-              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: '#9C9591', minWidth: 44 }}>
-                {sr.date_note ? new Date(sr.date_note + 'T00:00:00').toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' }) : '—'}
-              </span>
-              <span style={{ flex: 1, fontSize: 14, textDecoration: sr.est_clos ? 'line-through' : 'none', color: sr.est_clos ? '#9CA3AF' : '#1F1B17' }}>{sr.description}</span>
-              {!lectureSeule && (
-                <button type="button" onClick={() => ops.updateRemarque(sr.id, { est_clos: !sr.est_clos }).catch(() => {})}
-                  aria-label={sr.est_clos ? 'Rouvrir le suivi' : 'Clore le suivi'}
-                  style={{ ...puce(sr.est_clos, '#2A8A4E'), padding: '0 12px' }}>
-                  {sr.est_clos ? <RotateCcw size={16} /> : <Check size={16} />}
-                </button>
-              )}
-            </li>
-          ))}
+          {suites.map(sr => {
+            const st = infosStatut(sr)
+            return (
+              <li key={sr.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderBottom: '0.5px solid rgba(0,0,0,0.05)' }}>
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: '#9C9591', minWidth: 52 }}>
+                  ▶ {sr.date_note ? new Date(sr.date_note + 'T00:00:00').toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' }) : '—'}
+                </span>
+                <span style={{ flex: 1, fontSize: 14, textDecoration: st.clos ? 'line-through' : 'none', color: st.clos ? '#9CA3AF' : '#1F1B17' }}>{sr.description}</span>
+                {lectureSeule || !peutRepondreSuite(sr, acces) ? (
+                  <span style={{ fontSize: 12, fontWeight: 600, color: st.couleur }}>{st.libelle}</span>
+                ) : (
+                  <select value={st.code} onChange={e => changerStatutSuite(sr, e.target.value)} aria-label="Statut de la suite"
+                    style={{ ...CHAMP, width: 140, color: st.couleur, fontWeight: 600 }}>
+                    {STATUTS.map(x => <option key={x.code} value={x.code}>{x.libelle}</option>)}
+                  </select>
+                )}
+              </li>
+            )
+          })}
         </ul>
       )}
+
       {!lectureSeule && (
-        <div>
-          <label style={LABEL} htmlFor="visite-suivi">Nouveau suivi</label>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-            <textarea id="visite-suivi" autoFocus value={texte} onChange={e => setTexte(e.target.value)} rows={2}
-              placeholder="Constat du jour…" style={{ ...CHAMP, padding: '10px 12px', minHeight: 72, resize: 'vertical', fontFamily: 'inherit' }} />
-            <BoutonDictee onTexte={t => setTexte(x => ajouterDictee(x, t))} onErreur={m => signalerErreur(new Error(m))} />
+        <>
+          <div>
+            <label style={LABEL} htmlFor="visite-suite">Nouvelle suite</label>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+              <textarea id="visite-suite" autoFocus value={texte} onChange={e => setTexte(e.target.value)} rows={2}
+                placeholder="Constat du jour, ce qu’il reste à faire…" style={{ ...CHAMP, padding: '10px 12px', minHeight: 72, resize: 'vertical', fontFamily: 'inherit' }} />
+              <BoutonDictee onTexte={t => setTexte(x => ajouterDictee(x, t))} onErreur={m => signalerErreur(new Error(m))} />
+            </div>
           </div>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
-            <button type="button" onClick={ajouter} disabled={occupe || !normaliserTexte(texte)}
-              style={{ ...puce(true, '#E8602C'), borderRadius: 3, opacity: occupe || !normaliserTexte(texte) ? 0.6 : 1 }}>
-              {occupe ? 'Enregistrement…' : 'Ajouter le suivi'}
-            </button>
+          <div>
+            <span style={LABEL}>Statut de la suite</span>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {STATUTS.map(st => (
+                <button key={st.code} type="button" aria-pressed={statut === st.code} onClick={() => setStatut(st.code)} style={puce(statut === st.code, st.couleur)}>
+                  {st.libelle}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+          <div>
+            <span style={LABEL}>Pour le</span>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+              <button type="button" onClick={() => setEcheance('')} style={puce(!echeance)}>Aucune</button>
+              <button type="button" onClick={() => setEcheance(echeanceRapide(cr.date_reunion, 1))} style={puce(echeance === echeanceRapide(cr.date_reunion, 1))}>+1 sem.</button>
+              <button type="button" onClick={() => setEcheance(echeanceRapide(cr.date_reunion, 2))} style={puce(echeance === echeanceRapide(cr.date_reunion, 2))}>+2 sem.</button>
+              <input type="date" value={echeance} onChange={e => setEcheance(e.target.value)} aria-label="Échéance de la suite" style={{ ...CHAMP, width: 170 }} />
+            </div>
+          </div>
+          {peutModifier && !statutOrigine.clos && (
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 14, cursor: 'pointer', minHeight: 44 }}>
+              <input type="checkbox" checked={clore} onChange={e => setClore(e.target.checked)} style={{ width: 20, height: 20, accentColor: '#2A8A4E' }} />
+              Clore la remarque d’origine (Fait)
+            </label>
+          )}
+        </>
       )}
     </Panneau>
   )
+}
+
+// Un intervenant extérieur ne règle le statut que de ses propres suites
+function peutRepondreSuite(sr, acces) {
+  return peutModifierRemarque(sr, acces)
 }
 
 // ─── Présences ───────────────────────────────────────────────────────────────

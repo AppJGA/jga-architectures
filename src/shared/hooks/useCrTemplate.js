@@ -92,6 +92,10 @@ export function useCrTemplate(affaireId) {
 
     for (const tmpl of source) {
       if (existingRomans.has(tmpl.numero_romain)) continue
+      // VI et VII sont les parties des remarques, créées d'office et typées
+      // (migration 054) : leurs remarques se rangent par destinataire, sans
+      // sous-section à tenir à la main.
+      if (tmpl.numero_romain === 'VI' || tmpl.numero_romain === 'VII') continue
 
       // Build sous-sections list
       let sousSections = tmpl.sous_sections ?? []

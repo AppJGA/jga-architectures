@@ -60,7 +60,7 @@ function fmtHorodatage(iso) {
 }
 
 export function ExportRapport({
-  cr, affaire, sections, presences, lotEntreprises, interlocuteurs, zones = [], avancement = [], profils = [], photos, liensPhotos, pastilles, plansCr,
+  cr, affaire, sections, presences, lotEntreprises, lots: lotsAffaire = null, interlocuteurs, zones = [], avancement = [], profils = [], photos, liensPhotos, pastilles, plansCr,
   espace, peutGerer, onEspaceChange, archives: toutesArchives, onArchiverMaintenant, onPreparerVersion, signataire,
 }) {
   // Archives d'émission ; les versions par entreprise servent à la diffusion
@@ -71,7 +71,9 @@ export function ExportRapport({
   const [avertissements, setAvertissements] = useState([])
   const num = String(cr.numero).padStart(2, '0')
 
-  const lots = (lotEntreprises ?? []).map(le => le.lots).filter(Boolean).filter((l, i, a) => a.findIndex(x => x.id === l.id) === i)
+  // Tous les lots de l'affaire (une remarque peut viser un lot sans titulaire),
+  // à défaut ceux qui ont une entreprise
+  const lots = lotsAffaire ?? (lotEntreprises ?? []).map(le => le.lots).filter(Boolean).filter((l, i, a) => a.findIndex(x => x.id === l.id) === i)
   const setReglages = (changement) => {
     const suivants = { ...reglages, ...changement }
     setReglagesBruts(suivants)

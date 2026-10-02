@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../../core/supabase/client'
 import { copiePresence, copieAJour } from '../../modules/chantier/comptes-rendus/crLogique'
+import { sectionsAMettreEnPlace } from '../../modules/chantier/comptes-rendus/remarquesLogique'
 import { avancementParLot, instantaneAvancement } from '../../modules/chantier/comptes-rendus/avancementLogique'
 import {
   photosDuCr, envoyerPhoto, nettoyerFichiers, BUCKET_PHOTOS,
@@ -400,6 +401,15 @@ export function useCompteRendu(crId, affaireId) {
     return section.id
   }, [sections, executerOperation])
 
+  // Parties VI (équipe) et VII (entreprises) d'un brouillon : c'est là que se
+  // rangent les remarques, selon leur destinataire. Créées une fois, à
+  // l'ouverture du CR. Sans la migration 054, la base refuse ces types (23514)
+  // et l'appelant prévient.
+  const assurerPartiesRemarques = useCallback(async () => {
+    if (!cr || cr.statut === 'emis') return
+    for (const section of sectionsAMettreEnPlace(sections)) await addSection(section)
+  }, [cr, sections, addSection])
+
   const updateSection = useCallback(async (id, payload) => {
     const { error } = await supabase.from('cr_sections').update(payload).eq('id', id)
     if (error) throw error
@@ -671,7 +681,7 @@ export function useCompteRendu(crId, affaireId) {
   return {
     photos, liens, ajouterPhotos, remplacerPhoto, modifierLegendePhoto, supprimerPhoto, liensPhotos,
     pastilles, placerPastille, enleverPastille, zones, ftms, creerFtmPourRemarque,
-    planning, modifierAvancementTache, horsLigne, sectionDesIntervenants,
+    planning, modifierAvancementTache, horsLigne, sectionDesIntervenants, assurerPartiesRemarques,
     cr, sections, presences, profiles, loading, erreurChargement, historique,
     syncPresences, updateCr, emettre, rouvrir, updatePresence,
     addSection, updateSection, deleteSection, reorderSection, reorderSectionsByIds,

@@ -572,7 +572,7 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
   const {
     photos, liens, ajouterPhotos, remplacerPhoto, modifierLegendePhoto, supprimerPhoto, liensPhotos,
     pastilles, placerPastille, enleverPastille, zones, ftms, creerFtmPourRemarque,
-    planning, modifierAvancementTache, horsLigne, sectionDesIntervenants,
+    planning, modifierAvancementTache, horsLigne, sectionDesIntervenants, assurerPartiesRemarques,
     cr, sections, presences, profiles, loading, erreurChargement, historique,
     syncPresences, updateCr, emettre, rouvrir, updatePresence,
     addSection, updateSection, deleteSection, reorderSection, reorderSectionsByIds,
@@ -711,6 +711,22 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
     [lectureSeule, contributeur, user?.id, profiles, signalerErreur],
   )
 
+  // Tous les lots de l'affaire, qu'une entreprise y soit déjà attribuée ou non :
+  // une remarque peut viser un lot encore sans titulaire
+  const lotsAffaire = planning.lots
+
+  // Parties VI et VII mises en place à l'ouverture d'un brouillon (agence)
+  const partiesPretes = useRef(null)
+  useEffect(() => {
+    if (!cr || lectureSeule || contributeur || lectureSeuleAffaire || partiesPretes.current === cr.id) return
+    partiesPretes.current = cr.id
+    assurerPartiesRemarques().catch((err) => {
+      signalerErreur(err?.code === '23514'
+        ? new Error('Ranger les remarques par destinataire demande la mise à jour 054 de la base (Supabase → SQL Editor).')
+        : err)
+    })
+  }, [cr, lectureSeule, contributeur, lectureSeuleAffaire, assurerPartiesRemarques, signalerErreur])
+
   // Archive PDF de chaque émission (migration 043 ; null tant qu'elle manque)
   const [archives, setArchives] = useState(null)
   const [versionArchives, setVersionArchives] = useState(0)
@@ -722,7 +738,7 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
 
   const fabriquerPdf = (reglages, crPdf) => genererPdfCr({
     cr: crPdf, affaire, sections, presences,
-    lots: lotEntreprises.map(le => le.lots).filter(Boolean), interlocuteurs: interlocuteurs ?? [], zones,
+    lots: lotsAffaire, interlocuteurs: interlocuteurs ?? [], zones,
     avancement: lignesAvancementCr, profils: profiles,
     photos, liensPhotos, pastilles, plansCr, reglages,
   })
@@ -743,7 +759,7 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
       && (a.reglages?.inclureGenerales ?? true) === inclureGenerales)
     if (existante) return existante
     const reglages = { ...lireReglagesRapport(affaire?.id), destinataire, inclureGenerales }
-    const lots = lotEntreprises.map(le => le.lots).filter(Boolean)
+    const lots = lotsAffaire
     const { blob } = await fabriquerPdf(reglages, cr)
     const ligne = await archiverPdf({
       affaireId: affaire.id, crId, blob, reglages, emisLe: cr.date_emission ?? new Date().toISOString(),
@@ -895,6 +911,7 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
           crDate={cr.date_reunion}
           interlocuteurs={interlocuteurs}
           lotEntreprises={lotEntreprises}
+          lots={lotsAffaire}
           zones={zones}
           ftms={ftms}
           creerFtm={lectureSeule ? null : creerFtm}
@@ -923,7 +940,7 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
           sections={sections}
           presences={presences}
           setPresence={setPresence}
-          lotEntreprises={lotEntreprises}
+          lots={lotsAffaire}
           interlocuteurs={interlocuteurs}
           zones={zones}
           ftms={ftms}
@@ -962,6 +979,7 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
           presences={presences}
           affaire={affaire}
           lotEntreprises={lotEntreprises}
+          lots={lotsAffaire}
           interlocuteurs={interlocuteurs}
           photos={photos}
           liensPhotos={liensPhotos}

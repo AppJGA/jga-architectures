@@ -3,7 +3,8 @@ import { Users, Search, Plus, Camera, MapPin, MessageSquare, Pencil, MoreHorizon
 import { FILTRES_VISITE, filtreVisite, groupesVisite, compteursVisite } from './visiteLogique'
 import { STATUTS, infosStatut, estEnRetard, libelleZone, peutModifierRemarque, auteurExterieur } from './crLogique'
 import { useCr } from './CrContexte'
-import { PanneauRemarque, PanneauSuivi, PanneauPresences, PanneauStatuts, PanneauAvancement } from './PanneauxVisite'
+import { PanneauRemarque, PanneauSuite, PanneauPresences, PanneauStatuts, PanneauAvancement } from './PanneauxVisite'
+import { PARTIES_REMARQUES, typePourDestinataire, libelleLot, nomInterlocuteur } from './remarquesLogique'
 import { usePhotosRemarque, PhotosContexte } from './usePhotosRemarque'
 import { PhotosDeRemarque } from './PhotosRemarque'
 import { usePlansCr } from './PlansContexte'
@@ -63,16 +64,16 @@ function useEnLigne() {
 function libelleDestinataire(rem, lots, interlocuteurs) {
   if (rem.lot_id) {
     const l = lots.find(x => x.id === rem.lot_id)
-    if (l) return l.numero ? `Lot ${l.numero} — ${l.nom}` : l.nom
+    if (l) return libelleLot(l)
   }
   if (rem.interlocuteur_id) {
     const i = interlocuteurs.find(x => x.id === rem.interlocuteur_id)
-    if (i) return [i.prenom, i.nom].filter(Boolean).join(' ') || i.organisation
+    if (i) return nomInterlocuteur(i)
   }
   return rem.copie_destinataire ?? null
 }
 
-function CarteRemarque({ rem, cr, lots, interlocuteurs, zones, ftms, creerFtm, ouvrirFtm, lectureSeule: lectureSeuleCr, surbrillance, ops, onPanneau }) {
+function CarteRemarque({ rem, cr, lots, interlocuteurs, zones, ftms, creerFtm, ouvrirFtm, lectureSeule: lectureSeuleCr, surbrillance, masquerDestinataire, ops, onPanneau }) {
   // Un intervenant extérieur ne touche qu'à ses propres observations
   const acces = useCr()
   const lectureSeule = lectureSeuleCr || !peutModifierRemarque(rem, acces)
@@ -108,7 +109,7 @@ function CarteRemarque({ rem, cr, lots, interlocuteurs, zones, ftms, creerFtm, o
           ? <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, fontWeight: 600, color: '#E8602C' }}>n°{rem.numero}</span>
           : <span title="Le numéro est attribué à l’envoi" style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: '#9C9591' }}>n° en attente</span>}
         {rem.sousSection && <span style={{ fontSize: 12, color: '#9C9591' }}>{rem.sousSection.code} {rem.sousSection.titre}</span>}
-        {destinataire && <span style={{ fontSize: 12, fontWeight: 500, color: '#2A8A4E', background: 'rgba(42,138,78,0.10)', borderRadius: 3, padding: '2px 8px' }}>{destinataire}</span>}
+        {destinataire && !masquerDestinataire && <span style={{ fontSize: 12, fontWeight: 500, color: '#2A8A4E', background: 'rgba(42,138,78,0.10)', borderRadius: 3, padding: '2px 8px' }}>{destinataire}</span>}
         {zoneLibelle && <span style={{ fontSize: 12, fontWeight: 500, color: '#1B3A5C', background: 'rgba(27,58,92,0.10)', borderRadius: 3, padding: '2px 8px' }}>{zoneLibelle}</span>}
         {signature && <span style={{ fontSize: 12, fontWeight: 500, color: '#6B4E9B', background: 'rgba(107,78,155,0.10)', borderRadius: 3, padding: '2px 8px' }}>{signature}</span>}
         {ftm && (
@@ -121,12 +122,35 @@ function CarteRemarque({ rem, cr, lots, interlocuteurs, zones, ftms, creerFtm, o
         <span style={{ fontSize: 12, fontWeight: 600, color: statut.couleur, background: statut.fond, borderRadius: 3, padding: '3px 10px' }}>{statut.libelle}</span>
       </div>
 
-      <p style={{
-        fontSize: 16, lineHeight: 1.45, color: statut.clos ? '#9CA3AF' : '#1F1B17',
-        textDecoration: statut.clos ? 'line-through' : 'none', fontWeight: rem.est_important ? 600 : 400,
-      }}>
+      {/* Toucher le texte ouvre « Ajouter une suite » : la sous-remarque
+          s'écrit en un geste, sans chercher de bouton */}
+      <p
+        role={lectureSeuleCr && suivis.length === 0 ? undefined : 'button'}
+        tabIndex={lectureSeuleCr && suivis.length === 0 ? undefined : 0}
+        onClick={() => { if (!lectureSeuleCr || suivis.length > 0) onPanneau({ type: 'suivi', remarque: rem }) }}
+        onKeyDown={e => { if (e.key === 'Enter' && (!lectureSeuleCr || suivis.length > 0)) onPanneau({ type: 'suivi', remarque: rem }) }}
+        style={{
+          fontSize: 16, lineHeight: 1.45, color: statut.clos ? '#9CA3AF' : '#1F1B17', margin: 0,
+          textDecoration: statut.clos ? 'line-through' : 'none', fontWeight: rem.est_important ? 600 : 400,
+          cursor: lectureSeuleCr && suivis.length === 0 ? 'default' : 'pointer',
+        }}>
         {rem.description}
       </p>
+      {suivis.length > 0 && (
+        <ul style={{ listStyle: 'none', margin: '6px 0 0', padding: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {suivis.map(sr => {
+            const st = infosStatut(sr)
+            return (
+              <li key={sr.id} onClick={() => onPanneau({ type: 'suivi', remarque: rem })}
+                style={{ display: 'flex', gap: 8, alignItems: 'baseline', fontSize: 14, paddingLeft: 10, cursor: 'pointer' }}>
+                <span style={{ color: '#9C9591', fontSize: 12, whiteSpace: 'nowrap' }}>▶ {fmtJour(sr.date_note)}</span>
+                <span style={{ flex: 1, color: st.clos ? '#9CA3AF' : '#1F1B17', textDecoration: st.clos ? 'line-through' : 'none' }}>{sr.description}</span>
+                <span style={{ fontSize: 12, fontWeight: 600, color: st.couleur, whiteSpace: 'nowrap' }}>{st.libelle}</span>
+              </li>
+            )
+          })}
+        </ul>
+      )}
 
       {(rem.pour || rem.date_echeance || (statut.clos && rem.date_cloture) || suivis.length > 0 || planNom) && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 6, fontSize: 13, color: '#5E5854' }}>
@@ -135,7 +159,6 @@ function CarteRemarque({ rem, cr, lots, interlocuteurs, zones, ftms, creerFtm, o
           {enRetard && <span style={{ fontSize: 11, fontWeight: 700, color: 'white', background: '#B8412C', borderRadius: 3, padding: '2px 7px' }}>EN RETARD</span>}
           {statut.clos && rem.date_cloture && <span style={{ color: '#2A8A4E' }}>{statut.libelle} le {fmtJour(rem.date_cloture)}</span>}
           {planNom && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, color: '#6B4E9B' }}><MapPin size={13} /> {planNom}</span>}
-          {suivis.length > 0 && <span>{suivis.length} suivi{suivis.length > 1 ? 's' : ''}</span>}
         </div>
       )}
 
@@ -173,9 +196,9 @@ function CarteRemarque({ rem, cr, lots, interlocuteurs, zones, ftms, creerFtm, o
             <MapPin size={17} /> Plan
           </button>
         )}
-        {(!lectureSeule || suivis.length > 0) && (
+        {(!lectureSeuleCr || suivis.length > 0) && (
           <button type="button" onClick={() => onPanneau({ type: 'suivi', remarque: rem })} style={bouton()}>
-            <MessageSquare size={17} /> Suivi{suivis.length > 0 ? ` (${suivis.length})` : ''}
+            <MessageSquare size={17} /> Suite{suivis.length > 0 ? ` (${suivis.length})` : ''}
           </button>
         )}
         {!lectureSeule && creerFtm && !ftm && (
@@ -255,13 +278,13 @@ const LIBELLE_OPERATION = {
   'section.creer': 'Nouvelle section',
   'remarque.creer': 'Nouvelle remarque',
   'remarque.modifier': 'Modification d’une remarque',
-  'suivi.creer': 'Suivi ajouté',
+  'suivi.creer': 'Suite ajoutée',
   'presence.definir': 'Présence',
   'photo.ajouter': 'Photo',
   'pastille.poser': 'Pastille sur un plan',
 }
 
-export function ModeVisite({ cr, sections, presences, setPresence, lotEntreprises, interlocuteurs, zones = [], ftms = [], creerFtm, ouvrirFtm, planning, modifierAvancementTache, horsLigne, ops, lectureSeule, erreur, onFermerErreur, signalerErreur, onTerminer }) {
+export function ModeVisite({ cr, sections, presences, setPresence, lots: lotsAffaire, interlocuteurs, zones = [], ftms = [], creerFtm, ouvrirFtm, planning, modifierAvancementTache, horsLigne, ops, lectureSeule, erreur, onFermerErreur, signalerErreur, onTerminer }) {
   const [filtre, setFiltre] = useState('ouvertes')
   const [destinataire, setDestinataire] = useState('')
   const [zone, setZone] = useState('')
@@ -270,14 +293,15 @@ export function ModeVisite({ cr, sections, presences, setPresence, lotEntreprise
   const [surbrillance, setSurbrillance] = useState(null)
   const champRecherche = useRef(null)
   const enLigne = useEnLigne()
-  const { contributeur } = useCr()
+  const acces = useCr()
+  const { contributeur } = acces
   const typesAgence = useRemarquesTypes()
   const { ajouterPhotos } = useContext(PhotosContexte)
   useEcranAllume()
 
-  const lots = (lotEntreprises ?? []).map(le => le.lots).filter(Boolean)
-    .filter((l, i, a) => a.findIndex(x => x.id === l.id) === i)
-  const groupes = groupesVisite(sections, filtreVisite(filtre, destinataire, recherche, zone), cr.date_reunion)
+  const lots = lotsAffaire ?? []
+  const contexteDestinataires = { lots, interlocuteurs: interlocuteurs ?? [] }
+  const groupes = groupesVisite(sections, filtreVisite(filtre, destinataire, recherche, zone), cr.date_reunion, contexteDestinataires)
   const compteurs = compteursVisite(sections, cr.date_reunion)
 
   // La page derrière ne défile plus tant que la visite est ouverte
@@ -314,9 +338,27 @@ export function ModeVisite({ cr, sections, presences, setPresence, lotEntreprise
     }))
   }
 
-  const enregistrerRemarque = async (payload, { emplacement, compressions, commeType }) => {
+  // Le destinataire range la remarque : un lot dans la partie VII, un
+  // interlocuteur dans la partie VI — créée au besoin (migration 054)
+  const sectionDeLaPartie = async (cle) => {
+    const type = typePourDestinataire(cle)
+    const existante = sections.find(s => s.type_section === type)
+    if (existante) return existante.id
+    const partie = PARTIES_REMARQUES.find(p => p.type === type)
+    return ops.addSection({ numero_romain: partie.numero_romain, titre: partie.titre, type_section: type })
+  }
+
+  const enregistrerRemarque = async (payload, { destinataire: cle, compressions, commeType }) => {
     if (panneau.type === 'modifier') {
-      await ops.updateRemarque(panneau.remarque.id, payload)
+      let champs = payload
+      // Nouveau destinataire d'une autre partie : la remarque change de partie.
+      // Une observation d'intervenant reste dans sa section.
+      const actuelle = sections.find(s => s.id === panneau.remarque.section_id)
+      const type = typePourDestinataire(cle)
+      if (!contributeur && type && actuelle?.type_section !== type && actuelle?.type_section !== 'intervenants') {
+        champs = { ...payload, section_id: await sectionDeLaPartie(cle), sous_section_id: null }
+      }
+      await ops.updateRemarque(panneau.remarque.id, champs)
       montrer(panneau.remarque.id)
       return
     }
@@ -325,13 +367,8 @@ export function ModeVisite({ cr, sections, presences, setPresence, lotEntreprise
       // Ses observations vont dans la section dédiée (migration 052)
       const sectionId = await ops.sectionDesIntervenants()
       id = await ops.addSectionRemarque(sectionId, payload)
-    } else if (!emplacement) {
-      const sectionId = await ops.addSection({ numero_romain: 'I', titre: 'Observations générales', type_section: 'general' })
-      id = await ops.addSectionRemarque(sectionId, payload)
-    } else if (emplacement.sousSectionId) {
-      id = await ops.addRemarque(emplacement.sousSectionId, { ...payload, section_id: emplacement.sectionId })
     } else {
-      id = await ops.addSectionRemarque(emplacement.sectionId, payload)
+      id = await ops.addSectionRemarque(await sectionDeLaPartie(cle), payload)
     }
     if (compressions.length > 0) await ajouterPhotos(id, compressions).catch(() => {})
     if (commeType) await typesAgence.ajouter(payload.description).catch(signalerErreur)
@@ -433,16 +470,31 @@ export function ModeVisite({ cr, sections, presences, setPresence, lotEntreprise
                 <span style={{ color: '#E8602C' }}>{g.section.numero_romain}</span> — {g.section.titre}
                 <span style={{ fontWeight: 400, color: '#9C9591' }}> · {g.remarques.length}</span>
               </h2>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {g.remarques.map(rem => (
-                  <CarteRemarque
-                    key={rem.id} rem={rem} cr={cr} lots={lots} interlocuteurs={interlocuteurs ?? []} zones={zones}
-                    ftms={ftms} creerFtm={creerFtm} ouvrirFtm={ouvrirFtm}
-                    lectureSeule={lectureSeule} surbrillance={surbrillance === rem.id} ops={ops}
-                    onPanneau={setPanneau}
-                  />
-                ))}
-              </div>
+              {(g.sousGroupes ?? [{ cle: 'tout', titre: null, destinataire: null, remarques: g.remarques }]).map(sg => (
+                <div key={sg.cle} style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: sg.titre ? 14 : 0 }}>
+                  {sg.titre && (
+                    <h3 style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '4px 0 0', fontSize: 15, fontWeight: 600, color: '#1F1B17' }}>
+                      <span style={{ flex: 1 }}>{sg.titre} <span style={{ fontWeight: 400, color: '#9C9591' }}>· {sg.remarques.length}</span></span>
+                      {!lectureSeule && !contributeur && sg.destinataire && (
+                        <button type="button" onClick={() => setPanneau({ type: 'nouvelle', destinataire: sg.destinataire })}
+                          aria-label={`Nouvelle remarque pour ${sg.titre}`} title={`Nouvelle remarque pour ${sg.titre}`}
+                          style={{ ...bouton('white', '#2A8A4E', 'rgba(42,138,78,0.4)'), minWidth: 44, padding: '0 10px' }}>
+                          <Plus size={18} />
+                        </button>
+                      )}
+                    </h3>
+                  )}
+                  {sg.remarques.map(rem => (
+                    <CarteRemarque
+                      key={rem.id} rem={rem} cr={cr} lots={lots} interlocuteurs={interlocuteurs ?? []} zones={zones}
+                      ftms={ftms} creerFtm={creerFtm} ouvrirFtm={ouvrirFtm}
+                      lectureSeule={lectureSeule} surbrillance={surbrillance === rem.id} ops={ops}
+                      masquerDestinataire={sg.cle.startsWith('lot:')}
+                      onPanneau={setPanneau}
+                    />
+                  ))}
+                </div>
+              ))}
             </section>
           ))}
         </div>
@@ -460,17 +512,21 @@ export function ModeVisite({ cr, sections, presences, setPresence, lotEntreprise
       {(panneau?.type === 'nouvelle' || panneau?.type === 'modifier') && (
         <PanneauRemarque
           remarque={panneau.type === 'modifier' ? panneau.remarque : null}
-          cr={cr} sections={sections} lots={lots} interlocuteurs={interlocuteurs ?? []} zones={zones}
+          cr={cr} lots={lots} interlocuteurs={interlocuteurs ?? []} zones={zones}
           typesAgence={typesAgence}
+          destinataireInitial={panneau.destinataire ?? null}
+          contributeur={contributeur}
           onEnregistrer={enregistrerRemarque}
           onFermer={() => setPanneau(null)}
           signalerErreur={signalerErreur}
         />
       )}
       {panneau?.type === 'suivi' && (
-        <PanneauSuivi
+        <PanneauSuite
           remarque={groupesVisite(sections, filtreVisite('toutes'), cr.date_reunion).flatMap(g => g.remarques).find(r => r.id === panneau.remarque.id) ?? panneau.remarque}
-          cr={cr} lectureSeule={lectureSeule} ops={ops} onFermer={() => setPanneau(null)} signalerErreur={signalerErreur}
+          cr={cr} lectureSeule={lectureSeule} acces={acces} ops={ops}
+          onModifier={rem => setPanneau({ type: 'modifier', remarque: rem })}
+          onFermer={() => setPanneau(null)} signalerErreur={signalerErreur}
         />
       )}
       {panneau?.type === 'avancement' && (

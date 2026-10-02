@@ -145,3 +145,34 @@ test('PDF regroupé par zone : un bloc par zone, section rappelée, sans zone à
   assert.ok(t.includes('I · 1'), 'la sous-section est rappelée')
   assert.ok(t.join(' | ').includes('Trémie'))
 })
+
+describe('généralités dans le PDF', async () => {
+  const { definitionPdf: def } = await import('../src/modules/chantier/comptes-rendus/rapportLogique.js')
+  const base = {
+    cr: { numero: 30, date_reunion: '2025-11-27', statut: 'brouillon' },
+    affaire: { nom: 'Boulangerie' }, lots: [], interlocuteurs: [], presences: [],
+  }
+  const generalites = { parties: [
+    { id: 'p', numero_romain: 'I', titre: 'Mise au point administrative', paragraphes: [], rubriques: [
+      { id: 'r', code: '1-1', titre: 'Réunion de chantier', paragraphes: [
+        { id: 'a', date: '2025-03-27', texte: 'Réunion fixée tous les jeudis à 9h00' },
+        { id: 'b', date: '2025-03-27', texte: 'Code de la boîte à clés : 2405', suite: true },
+      ] },
+      { id: 'vide', code: '1-2', titre: 'Rubrique vide', paragraphes: [] },
+    ] },
+  ] }
+
+  test('les généralités s’impriment avant les remarques, les rubriques vides non', () => {
+    const sections = [
+      { id: 'S1', numero_romain: 'I', titre: 'Ancien modèle', type_section: 'general', sousSections: [{ id: 'x', code: '1-1', titre: 'Vide', remarques: [] }], directRemarques: [] },
+      { id: 'S7', numero_romain: 'VII', titre: 'ENTREPRISES', type_section: 'entreprises', sousSections: [], directRemarques: [{ id: 'r1', description: 'Joints à reprendre', statut: 'a_faire', sous_remarques: [] }] },
+    ]
+    const t = textes(def({ ...base, sections, generalites, reglages: {} }).content).join(' | ')
+    for (const attendu of ['MISE AU POINT ADMINISTRATIVE', '1-1-Réunion de chantier', 'Réunion fixée tous les jeudis à 9h00', 'Code de la boîte à clés : 2405', 'ENTREPRISES', 'Joints à reprendre']) {
+      assert.ok(t.includes(attendu), `manque « ${attendu} »`)
+    }
+    assert.ok(!t.includes('Rubrique vide'))
+    assert.ok(!t.includes('ANCIEN MODÈLE'), 'une ancienne section générale vide n’est plus imprimée')
+    assert.ok(t.indexOf('Réunion fixée') < t.indexOf('Joints à reprendre'))
+  })
+})

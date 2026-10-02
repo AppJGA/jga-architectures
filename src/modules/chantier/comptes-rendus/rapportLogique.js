@@ -6,6 +6,7 @@
 
 import { infosStatut, estEnRetard, affichagePresence, grouperParZone, libelleZone, auteurExterieur } from './crLogique'
 import { estPartieRemarques, groupesDestinataires, libelleLot } from './remarquesLogique'
+import { normaliserGeneralites } from './generalitesLogique'
 
 export const REGLAGES_DEFAUT = {
   modele: 'complet',        // complet | synthese
@@ -255,7 +256,7 @@ const celluleContact = ({ v }) => ({ stack: [v.email, v.telephone].filter(Boolea
  * @param donnees { cr, affaire, sections (déjà sélectionnées), presences, lots,
  *   interlocuteurs, reglages, versionPour, images: { logo, photos: Map, extraits: Map, planches: [] } }
  */
-export function definitionPdf({ cr, affaire, sections, presences, lots, interlocuteurs, zones = [], avancement = [], profils = [], reglages: brut, versionPour, images = {} }) {
+export function definitionPdf({ cr, affaire, sections, presences, generalites = null, lots, interlocuteurs, zones = [], avancement = [], profils = [], reglages: brut, versionPour, images = {} }) {
   const reglages = reglagesEffectifs(brut)
   const complet = reglages.modele === 'complet'
   const num = String(cr.numero).padStart(2, '0')
@@ -294,7 +295,12 @@ export function definitionPdf({ cr, affaire, sections, presences, lots, interloc
     ])
   }
 
-  const contenuSections = (sections ?? []).map((s) => ({
+  // Sections « générales » sans aucune remarque (anciens modèles I à V) : rien à
+  // imprimer, les généralités les remplacent
+  const sansRemarque = (s) => (s.directRemarques ?? []).length === 0 && (s.sousSections ?? []).every((ss) => (ss.remarques ?? []).length === 0)
+  const sectionsImprimees = (sections ?? []).filter((s) => estPartieRemarques(s) || s.type_section === 'intervenants' || !sansRemarque(s))
+
+  const contenuSections = sectionsImprimees.map((s) => ({
     stack: [
       {
         margin: [0, 10, 0, 6],
@@ -336,10 +342,47 @@ export function definitionPdf({ cr, affaire, sections, presences, lots, interloc
       },
       ...blocsPresences(presences, complet),
       ...(reglages.avancement === 'oui' ? blocAvancement(avancement) : []),
+      ...blocGeneralites(generalites),
       ...(reglages.zones === 'grouper' ? contenuZones() : contenuSections),
       ...blocPlanches(planches),
     ],
   }
+}
+
+// ─── Généralités (parties I à V, migration 055) ──────────────────────────────
+
+export function blocGeneralites(brut) {
+  const { parties } = normaliserGeneralites(brut)
+  const lignes = (paragraphes) => paragraphes.filter((p) => p.texte.trim()).map((p) => [
+    { text: [p.suite ? { text: '» ', color: COULEUR.orange } : '', jour(p.date) || ''], fontSize: 8, color: COULEUR.gris, margin: [p.suite ? 8 : 0, 0, 0, 0] },
+    { text: p.texte, fontSize: 8.5, color: '#1B3A5C' },
+  ])
+  const tableau = (paragraphes) => {
+    const corps = lignes(paragraphes)
+    if (corps.length === 0) return []
+    return [{
+      margin: [0, 0, 0, 6], layout: tableauFin,
+      table: { widths: ['16%', '*'], dontBreakRows: true, body: corps },
+    }]
+  }
+  return parties
+    .filter((p) => p.titre.trim() || p.paragraphes.length > 0 || p.rubriques.length > 0)
+    .map((p) => ({
+      stack: [
+        {
+          margin: [0, 10, 0, 6],
+          table: { widths: ['*'], body: [[{ text: [{ text: `${p.numero_romain}  `, color: COULEUR.orange }, p.titre.toUpperCase()], bold: true, fontSize: 10.5, fillColor: '#FFF8F5' }]] },
+          layout: { hLineWidth: (i) => (i === 1 ? 1.2 : 0), vLineWidth: () => 0, hLineColor: () => COULEUR.orange, paddingLeft: () => 6, paddingTop: () => 5, paddingBottom: () => 5 },
+        },
+        ...tableau(p.paragraphes),
+        ...p.rubriques
+          .filter((r) => r.paragraphes.some((x) => x.texte.trim()))
+          .flatMap((r) => [
+            { text: [r.code, r.titre].filter(Boolean).join('-'), bold: true, fontSize: 9.5, margin: [2, 2, 0, 4] },
+            ...tableau(r.paragraphes),
+          ]),
+      ],
+    }))
 }
 
 // ─── Blocs communs aux documents (compte rendu, OPR) ─────────────────────────

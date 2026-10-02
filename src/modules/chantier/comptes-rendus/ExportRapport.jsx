@@ -60,7 +60,7 @@ function fmtHorodatage(iso) {
 }
 
 export function ExportRapport({
-  cr, affaire, sections, presences, lotEntreprises, lots: lotsAffaire = null, interlocuteurs, zones = [], avancement = [], profils = [], photos, liensPhotos, pastilles, plansCr,
+  cr, affaire, sections, presences, lotEntreprises, lots: lotsAffaire = null, generalites = null, interlocuteurs, zones = [], avancement = [], profils = [], photos, liensPhotos, pastilles, plansCr,
   espace, peutGerer, onEspaceChange, archives: toutesArchives, onArchiverMaintenant, onPreparerVersion, signataire,
 }) {
   // Archives d'émission ; les versions par entreprise servent à la diffusion
@@ -81,7 +81,7 @@ export function ExportRapport({
   }
 
   const fabriquer = () => genererPdfCr({
-    cr, affaire, sections, presences, lots, interlocuteurs: interlocuteurs ?? [], zones, avancement, profils,
+    cr, affaire, sections, presences, generalites, lots, interlocuteurs: interlocuteurs ?? [], zones, avancement, profils,
     photos, liensPhotos, pastilles, plansCr, reglages,
   })
 

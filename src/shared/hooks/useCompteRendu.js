@@ -323,14 +323,20 @@ export function useCompteRendu(crId, affaireId) {
   // L'avancement des lots est recopié dans le CR au moment de l'émission : le
   // planning continuera d'avancer, le compte rendu doit garder les chiffres du
   // jour de la visite (migration 049).
-  const emettre = useCallback(async (dateEmission = new Date().toISOString()) => {
+  // Les généralités de l'affaire (migration 055) sont recopiées de même : un CR
+  // diffusé garde le texte de son jour. Sans la colonne, l'émission se fait sans.
+  const emettre = useCallback(async (dateEmission = new Date().toISOString(), { generalites = null } = {}) => {
     await syncPresences()
     const lignes = avancementParLot(planning.taches, planning.lots, {
       date: cr?.date_reunion, periodes: planning.periodes,
     })
     const avancement = lignes.length > 0 ? instantaneAvancement(lignes) : null
     let { error } = await supabase.from('comptes_rendus')
-      .update({ statut: 'emis', date_emission: dateEmission, avancement_lots: avancement }).eq('id', crId)
+      .update({ statut: 'emis', date_emission: dateEmission, avancement_lots: avancement, generalites }).eq('id', crId)
+    if (colonneAbsente(error)) {
+      ({ error } = await supabase.from('comptes_rendus')
+        .update({ statut: 'emis', date_emission: dateEmission, avancement_lots: avancement }).eq('id', crId))
+    }
     if (colonneAbsente(error)) {
       ({ error } = await supabase.from('comptes_rendus').update({ statut: 'emis', date_emission: dateEmission }).eq('id', crId))
     }

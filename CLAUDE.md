@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 629 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
+npm test         # 640 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
 npx eslint src   # ~73 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -47,7 +47,7 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
 - **Accès aux données** : hooks dans `src/shared/hooks/`. `useAffaires()` pour
   la liste, `useAffaire(id)` pour une affaire (les deux font `select('*')`),
   `useAffaireCollaborateurs(id)` pour les droits (`canEdit`, `isProprietaire`).
-- **Base** : `supabase/migrations/`, numérotées, 54 fichiers, **passées à la
+- **Base** : `supabase/migrations/`, numérotées, 55 fichiers, **passées à la
   main** dans le SQL Editor de Supabase : un code qui dépend d'une nouvelle
   colonne doit tolérer son absence tant que la migration n'est pas faite. La photo de
   couverture d'une affaire est `affaires.photo_url` (migration 014, bucket
@@ -96,7 +96,16 @@ création avec reprise de la visite précédente) et `useCompteRendu` (un CR).
   VII quel que soit l'ordre de création. Une **suite** (sous-remarque, ▶) a son
   propre statut et son échéance ; toucher une remarque ouvre `PanneauSuite`
   (avec « Clore la remarque d'origine »). Les sections I à V restent des
-  sections classiques jusqu'au chantier 2 (généralités).
+  sections classiques ; elles sont remplacées par les généralités.
+- **Généralités** (chantier 2, migration 055) : parties I à V, **une version
+  par affaire** (`affaire_generalites.contenu`, jsonb parties → rubriques →
+  paragraphes datés, repère de suite) ; vue « Généralités » du CR
+  (`GeneralitesVue.jsx`, enregistrement automatique), départ des titres
+  habituels (`modeleSections.js`) ou import d'une autre affaire. Toute la
+  manipulation est pure (`generalitesLogique.js`). À l'émission, copie dans
+  `comptes_rendus.generalites` : un CR émis imprime la version de son jour
+  (`generalitesAImprimer`). Le PDF les place après présences et avancement,
+  avant les remarques, et n'imprime plus les sections générales sans remarque.
 - **Statuts fixes** (migration 038, `STATUTS` de `crLogique.js`) : le statut
   décide seul de la clôture ; `est_clos` en est déduit par le déclencheur
   `cr_remarques_suivi`. Toujours lire un statut via `statutNormalise` /

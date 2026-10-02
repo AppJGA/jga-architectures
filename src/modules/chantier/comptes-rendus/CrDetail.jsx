@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import {
   ArrowLeft, ArrowRight, Send, FileDown, ChevronRight,
   Users, ClipboardList, MessageSquare, Zap, LayoutDashboard,
-  Lock, RotateCcw, AlertTriangle, X, Map as IconePlan, Smartphone, TrendingUp,
+  Lock, RotateCcw, AlertTriangle, X, Map as IconePlan, Smartphone, TrendingUp, ScrollText,
 } from 'lucide-react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { useCompteRendu } from '../../../shared/hooks/useCompteRendu'
@@ -20,6 +20,9 @@ import { compterPresents, FAMILLES_STATUT, infosStatut, estEnRetard } from './cr
 import { CrContexte, useCr } from './CrContexte'
 import { PhotosContexte } from './usePhotosRemarque'
 import { ordonnerParties } from './remarquesLogique'
+import { GeneralitesVue } from './GeneralitesVue'
+import { generalitesAImprimer, normaliserGeneralites } from './generalitesLogique'
+import { useGeneralites } from '../../../shared/hooks/useGeneralites'
 import { espaceUtilise } from './photosStockage'
 import { niveauEspace } from './photosLogique'
 import { PlansContexte } from './PlansContexte'
@@ -64,6 +67,14 @@ const VUES = [
     icon: Users,
     couleur: '#1B3A5C',
     fondClair: 'rgba(27,58,92,0.10)',
+  },
+  {
+    id: 'generalites',
+    label: 'Généralités',
+    description: 'Parties I à V, communes\nà tous les CR de l’affaire',
+    icon: ScrollText,
+    couleur: '#5E5854',
+    fondClair: 'rgba(94,88,84,0.10)',
   },
   {
     id: 'remarques',
@@ -251,7 +262,7 @@ function TuileVue({ vue, titre, sousTitre, onClick }) {
   )
 }
 
-function CrAccueil({ cr, affaire, presences, sections, onNavigate, onOuvrirSection, onEmettre, onVisite, peutModifier, nbPlans, nbPastilles, avancement }) {
+function CrAccueil({ cr, affaire, presences, sections, onNavigate, onOuvrirSection, onEmettre, onVisite, peutModifier, nbPlans, nbPastilles, avancement, nbPartiesGeneralites }) {
   const [survolEditeur, setSurvolEditeur] = useState(false)
   const dateLabel = cr.date_reunion
     ? new Date(cr.date_reunion + 'T00:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })
@@ -272,6 +283,7 @@ function CrAccueil({ cr, affaire, presences, sections, onNavigate, onOuvrirSecti
   const vueExport = VUES.find(v => v.id === 'export')
   const vuePlans = VUES.find(v => v.id === 'plans')
   const vueAvancement = VUES.find(v => v.id === 'avancement')
+  const vueGeneralites = VUES.find(v => v.id === 'generalites')
 
   return (
     <div>
@@ -446,6 +458,12 @@ function CrAccueil({ cr, affaire, presences, sections, onNavigate, onOuvrirSecti
           titre="Organisation"
           sousTitre="Dates, rédacteur, template"
           onClick={() => onNavigate('organisation')}
+        />
+        <TuileVue
+          vue={vueGeneralites}
+          titre="Généralités"
+          sousTitre={nbPartiesGeneralites > 0 ? `Parties I à ${nbPartiesGeneralites > 5 ? 'V+' : ['I', 'II', 'III', 'IV', 'V'][nbPartiesGeneralites - 1]} · communes à l’affaire` : 'À remplir ou importer'}
+          onClick={() => onNavigate('generalites')}
         />
         <TuileVue
           vue={vuePresences}
@@ -714,6 +732,11 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
     [lectureSeule, contributeur, user?.id, profiles, signalerErreur],
   )
 
+  // Généralités (parties I à V, migration 055) : celles de l'affaire, ou la
+  // copie faite à l'émission pour un CR émis
+  const generalites = useGeneralites(affaire?.id)
+  const generalitesCr = useMemo(() => generalitesAImprimer(cr, generalites.contenu), [cr, generalites.contenu])
+
   // Tous les lots de l'affaire, qu'une entreprise y soit déjà attribuée ou non :
   // une remarque peut viser un lot encore sans titulaire
   const lotsAffaire = planning.lots
@@ -740,7 +763,7 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
   }, [crId, versionArchives])
 
   const fabriquerPdf = (reglages, crPdf) => genererPdfCr({
-    cr: crPdf, affaire, sections, presences,
+    cr: crPdf, affaire, sections, presences, generalites: generalitesAImprimer(crPdf, generalites.contenu),
     lots: lotsAffaire, interlocuteurs: interlocuteurs ?? [], zones,
     avancement: lignesAvancementCr, profils: profiles,
     photos, liensPhotos, pastilles, plansCr, reglages,
@@ -790,7 +813,8 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
       try { pdf = await fabriquerPdf(reglages, { ...cr, statut: 'emis', date_emission: emisLe }) } catch (err) { echecArchive = err }
     }
     try {
-      await emettre(emisLe)
+      // Les généralités du jour sont recopiées dans le CR émis
+      await emettre(emisLe, { generalites: generalites.disponible ? normaliserGeneralites(generalites.contenu) : null })
     } catch (err) {
       signalerErreur(err)
       setConfirmation(null)
@@ -884,6 +908,17 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
           nbPlans={plansCr.plans.length}
           nbPastilles={pastilles.length}
           avancement={resumeAvancement}
+          nbPartiesGeneralites={generalitesCr.parties.length}
+        />
+      )}
+
+      {activeView === 'generalites' && (
+        <GeneralitesVue
+          cr={cr}
+          generalites={generalites}
+          peutModifier={!lectureSeule && !contributeur}
+          dateDefaut={cr.date_reunion}
+          signalerErreur={signalerErreur}
         />
       )}
 
@@ -983,6 +1018,7 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
           affaire={affaire}
           lotEntreprises={lotEntreprises}
           lots={lotsAffaire}
+          generalites={generalitesCr}
           interlocuteurs={interlocuteurs}
           photos={photos}
           liensPhotos={liensPhotos}

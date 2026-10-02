@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { X, Flag, Pencil, Check, Trash2, Plus } from 'lucide-react'
+import { X, Flag, Pencil, Check, Trash2, Plus, Link2 } from 'lucide-react'
 import { supabase } from '../../../core/supabase/client'
 import { getWeekStart, normaliserSemaine } from './types'
+import { estAncre } from '../../../shared/planning/ancrage'
 
 const JALONS_SUGGERES = [
   "Validation ESQ",
@@ -58,8 +59,9 @@ function ColorPicker({ value, onChange }) {
   )
 }
 
-function JalonRow({ jalon, onUpdate, onDelete }) {
-  const [editing, setEditing] = useState(false)
+function JalonRow({ jalon, onUpdate, onDelete, editionInitiale = false }) {
+  const [editing, setEditing] = useState(editionInitiale)
+  const ancre = estAncre(jalon)
   const [draft, setDraft] = useState({ label: jalon.label, semaine: jalon.semaine, annee: jalon.annee, couleur: jalon.couleur })
   const [confirming, setConfirming] = useState(false)
 
@@ -77,7 +79,9 @@ function JalonRow({ jalon, onUpdate, onDelete }) {
 
   if (editing) {
     return (
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 70px 80px auto auto', gap: 8, alignItems: 'end', padding: '10px 0', borderBottom: '0.5px solid rgba(0,0,0,0.06)' }}>
+      // Le titre a sa propre ligne : à côté de la semaine et des couleurs, il
+      // ne lui restait presque rien.
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '10px 0', borderBottom: '0.5px solid rgba(0,0,0,0.06)' }}>
         <div>
           <input value={draft.label} onChange={e => setDraft(d => ({ ...d, label: e.target.value }))}
             list="jalon-etude-suggeres" style={INPUT} autoFocus
@@ -85,22 +89,26 @@ function JalonRow({ jalon, onUpdate, onDelete }) {
             onBlur={e => { e.target.style.borderColor = 'rgba(0,0,0,0.12)'; e.target.style.boxShadow = 'none' }}
           />
         </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
         <input type="number" min={1} max={53} placeholder="Sem." value={draft.semaine}
           onChange={e => setDraft(d => ({ ...d, semaine: e.target.value }))}
-          style={{ ...INPUT }}
+          disabled={ancre} title={ancre ? 'Accroché à une barre : la semaine suit la barre' : undefined}
+          style={{ ...INPUT, width: 70, opacity: ancre ? 0.6 : 1 }}
         />
         <input type="number" min={2020} max={2040} placeholder="Année" value={draft.annee}
           onChange={e => setDraft(d => ({ ...d, annee: e.target.value }))}
-          style={{ ...INPUT }}
+          disabled={ancre}
+          style={{ ...INPUT, width: 90, opacity: ancre ? 0.6 : 1 }}
         />
         <ColorPicker value={draft.couleur} onChange={c => setDraft(d => ({ ...d, couleur: c }))} />
-        <div style={{ display: 'flex', gap: 4 }}>
+        <div style={{ display: 'flex', gap: 4, marginLeft: 'auto' }}>
           <button type="button" onClick={handleSave} style={{ width: 28, height: 28, borderRadius: 3, border: 'none', cursor: 'pointer', backgroundColor: '#2A8A4E', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <Check size={13} />
           </button>
           <button type="button" onClick={() => setEditing(false)} style={{ width: 28, height: 28, borderRadius: 3, cursor: 'pointer', border: '0.5px solid rgba(0,0,0,0.15)', backgroundColor: 'white', color: '#5E5854', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <X size={13} />
           </button>
+        </div>
         </div>
       </div>
     )
@@ -112,6 +120,11 @@ function JalonRow({ jalon, onUpdate, onDelete }) {
       <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: '#1F1B17', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         {jalon.label}
       </span>
+      {ancre && (
+        <span title="Accroché à une barre : il la suit" style={{ display: 'flex', color: '#9C9591', flexShrink: 0 }}>
+          <Link2 size={13} />
+        </span>
+      )}
       <span style={{ fontSize: 11, color: '#9C9591', flexShrink: 0 }}>
         S{jalon.semaine} {jalon.annee} · {fmtSemaine(jalon.semaine, jalon.annee)}
       </span>
@@ -140,7 +153,7 @@ function JalonRow({ jalon, onUpdate, onDelete }) {
   )
 }
 
-export function JalonEtudeModal({ open, onClose, jalons, affaireId, onRefetch }) {
+export function JalonEtudeModal({ open, onClose, jalons, affaireId, onRefetch, jalonInitialId = null }) {
   const [newLabel, setNewLabel] = useState('')
   const [newSemaine, setNewSemaine] = useState('')
   const [newAnnee, setNewAnnee] = useState(new Date().getFullYear())
@@ -180,7 +193,7 @@ export function JalonEtudeModal({ open, onClose, jalons, affaireId, onRefetch })
 
   return (
     <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={onClose}>
-      <div style={{ backgroundColor: 'white', borderRadius: 0, padding: 28, width: '100%', maxWidth: 560, maxHeight: '80vh', display: 'flex', flexDirection: 'column', boxShadow: '0 8px 40px rgba(0,0,0,0.12)' }} onClick={e => e.stopPropagation()}>
+      <div style={{ backgroundColor: 'white', borderRadius: 0, padding: 28, width: '100%', maxWidth: 580, maxHeight: '80vh', display: 'flex', flexDirection: 'column', boxShadow: '0 8px 40px rgba(0,0,0,0.12)' }} onClick={e => e.stopPropagation()}>
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, flexShrink: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -204,7 +217,7 @@ export function JalonEtudeModal({ open, onClose, jalons, affaireId, onRefetch })
             </p>
           ) : (
             jalons.map(j => (
-              <JalonRow key={j.id} jalon={j} onUpdate={handleUpdate} onDelete={handleDelete} />
+              <JalonRow key={j.id} jalon={j} onUpdate={handleUpdate} onDelete={handleDelete} editionInitiale={j.id === jalonInitialId} />
             ))
           )}
         </div>
@@ -215,20 +228,20 @@ export function JalonEtudeModal({ open, onClose, jalons, affaireId, onRefetch })
             <datalist id="jalon-etude-suggeres">
               {JALONS_SUGGERES.map(s => <option key={s} value={s} />)}
             </datalist>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 70px 90px auto auto', gap: 8, alignItems: 'flex-end' }}>
-              <div>
-                <label style={LABEL_STYLE}>Label</label>
+            <div style={{ marginBottom: 10 }}>
+                <label style={LABEL_STYLE}>Titre</label>
                 <input value={newLabel} onChange={e => setNewLabel(e.target.value)}
                   list="jalon-etude-suggeres" placeholder="Ex: Dépôt PC" required style={INPUT}
                   onFocus={e => { e.target.style.borderColor = '#8B5CF6'; e.target.style.boxShadow = '0 0 0 3px rgba(139,92,246,0.08)' }}
                   onBlur={e => { e.target.style.borderColor = 'rgba(0,0,0,0.12)'; e.target.style.boxShadow = 'none' }}
                 />
-              </div>
-              <div>
+            </div>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+              <div style={{ width: 70 }}>
                 <label style={LABEL_STYLE}>Semaine</label>
                 <input type="number" min={1} max={53} value={newSemaine} onChange={e => setNewSemaine(e.target.value)} required style={INPUT} placeholder="23" />
               </div>
-              <div>
+              <div style={{ width: 90 }}>
                 <label style={LABEL_STYLE}>Année</label>
                 <input type="number" min={2020} max={2040} value={newAnnee} onChange={e => setNewAnnee(e.target.value)} required style={INPUT} />
               </div>
@@ -237,7 +250,7 @@ export function JalonEtudeModal({ open, onClose, jalons, affaireId, onRefetch })
                 <ColorPicker value={newCouleur} onChange={setNewCouleur} />
               </div>
               <button type="submit" disabled={saving}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '0 14px', height: 34, borderRadius: 2, fontSize: 12, cursor: saving ? 'default' : 'pointer', border: 'none', backgroundColor: '#2A8A4E', color: 'white', fontWeight: 500, opacity: saving ? 0.7 : 1, flexShrink: 0 }}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '0 14px', height: 34, borderRadius: 2, fontSize: 12, cursor: saving ? 'default' : 'pointer', border: 'none', backgroundColor: '#2A8A4E', color: 'white', fontWeight: 500, opacity: saving ? 0.7 : 1, flexShrink: 0, marginLeft: 'auto' }}
               >
                 <Plus size={13} /> Ajouter
               </button>

@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { X, Flag, Pencil, Check, Trash2, Plus } from 'lucide-react'
+import { X, Flag, Pencil, Check, Trash2, Plus, Link2 } from 'lucide-react'
 import { supabase } from '../../../core/supabase/client'
+import { estAncre } from '../../../shared/planning/ancrage'
 
 const JALONS_SUGGERES = [
   "Mise hors d'eau / hors d'air",
@@ -62,8 +63,9 @@ function ColorPicker({ value, onChange }) {
   )
 }
 
-function JalonRow({ jalon, onUpdate, onDelete }) {
-  const [editing, setEditing] = useState(false)
+function JalonRow({ jalon, onUpdate, onDelete, editionInitiale = false }) {
+  const [editing, setEditing] = useState(editionInitiale)
+  const ancre = estAncre(jalon)
   const [draft, setDraft] = useState({ label: jalon.label, date: jalon.date, couleur: jalon.couleur })
   const [confirming, setConfirming] = useState(false)
   const [erreur, setErreur] = useState(null)
@@ -92,9 +94,11 @@ function JalonRow({ jalon, onUpdate, onDelete }) {
 
   if (editing) {
     return (
+      // Le titre a sa propre ligne : à côté de la date et des couleurs, il ne
+      // lui restait que quelques dizaines de pixels.
       <div style={{
-        display: 'grid', gridTemplateColumns: '1fr auto auto auto', gap: 8,
-        alignItems: 'end', padding: '10px 0', borderBottom: '0.5px solid rgba(0,0,0,0.06)',
+        display: 'flex', flexDirection: 'column', gap: 8,
+        padding: '10px 0', borderBottom: '0.5px solid rgba(0,0,0,0.06)',
       }}>
         <div>
           <input
@@ -106,17 +110,18 @@ function JalonRow({ jalon, onUpdate, onDelete }) {
             onBlur={e => { e.target.style.borderColor = 'rgba(0,0,0,0.12)'; e.target.style.boxShadow = 'none' }}
           />
         </div>
-        <div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <input
             type="date" value={draft.date}
             onChange={(e) => setDraft(d => ({ ...d, date: e.target.value }))}
-            style={{ ...INPUT, width: 130 }}
+            disabled={ancre}
+            title={ancre ? 'Accroché à une barre : la date suit la barre' : undefined}
+            style={{ ...INPUT, width: 150, opacity: ancre ? 0.6 : 1 }}
             onFocus={e => { e.target.style.borderColor = '#8B5CF6'; e.target.style.boxShadow = '0 0 0 3px rgba(139,92,246,0.08)' }}
             onBlur={e => { e.target.style.borderColor = 'rgba(0,0,0,0.12)'; e.target.style.boxShadow = 'none' }}
           />
-        </div>
         <ColorPicker value={draft.couleur} onChange={(c) => setDraft(d => ({ ...d, couleur: c }))} />
-        <div style={{ display: 'flex', gap: 4 }}>
+        <div style={{ display: 'flex', gap: 4, marginLeft: 'auto' }}>
           <button type="button" onClick={handleSave} style={{
             width: 28, height: 28, borderRadius: 3, border: 'none', cursor: 'pointer',
             backgroundColor: '#2A8A4E', color: 'white',
@@ -132,7 +137,8 @@ function JalonRow({ jalon, onUpdate, onDelete }) {
             <X size={13} />
           </button>
         </div>
-        {erreur && <p style={{ fontSize: 11, color: '#B8412C', margin: '4px 0 0', gridColumn: '1 / -1' }}>{erreur}</p>}
+        </div>
+        {erreur && <p style={{ fontSize: 11, color: '#B8412C', margin: '4px 0 0' }}>{erreur}</p>}
       </div>
     )
   }
@@ -147,6 +153,11 @@ function JalonRow({ jalon, onUpdate, onDelete }) {
       <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: '#1F1B17', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         {jalon.label}
       </span>
+      {ancre && (
+        <span title="Accroché à une barre : il la suit" style={{ display: 'flex', color: '#9C9591', flexShrink: 0 }}>
+          <Link2 size={13} />
+        </span>
+      )}
       <span style={{ fontSize: 12, color: '#9C9591', flexShrink: 0 }}>{formatDate(jalon.date)}</span>
       <button type="button" onClick={ouvrirEdition}
         style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9C9591', padding: 4, borderRadius: 3, display: 'flex' }}
@@ -177,7 +188,7 @@ function JalonRow({ jalon, onUpdate, onDelete }) {
   )
 }
 
-export function JalonModal({ open, onClose, jalons, affaireId, onRefetch }) {
+export function JalonModal({ open, onClose, jalons, affaireId, onRefetch, jalonInitialId = null }) {
   const [newLabel, setNewLabel] = useState('')
   const [newDate, setNewDate] = useState('')
   const [newCouleur, setNewCouleur] = useState('#8B5CF6')
@@ -226,7 +237,7 @@ export function JalonModal({ open, onClose, jalons, affaireId, onRefetch }) {
       <div
         style={{
           backgroundColor: 'white', borderRadius: 0, padding: 28,
-          width: '100%', maxWidth: 540, maxHeight: '80vh',
+          width: '100%', maxWidth: 580, maxHeight: '80vh',
           display: 'flex', flexDirection: 'column',
           boxShadow: '0 8px 40px rgba(0,0,0,0.12)',
         }}
@@ -258,7 +269,7 @@ export function JalonModal({ open, onClose, jalons, affaireId, onRefetch }) {
             </p>
           ) : (
             jalons.map(j => (
-              <JalonRow key={j.id} jalon={j} onUpdate={handleUpdate} onDelete={handleDelete} />
+              <JalonRow key={j.id} jalon={j} onUpdate={handleUpdate} onDelete={handleDelete} editionInitiale={j.id === jalonInitialId} />
             ))
           )}
         </div>
@@ -270,9 +281,8 @@ export function JalonModal({ open, onClose, jalons, affaireId, onRefetch }) {
             <datalist id="jalons-suggeres">
               {JALONS_SUGGERES.map(s => <option key={s} value={s} />)}
             </datalist>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-              <div style={{ flex: 2, minWidth: 160 }}>
-                <label style={LABEL_STYLE}>Label</label>
+            <div style={{ marginBottom: 10 }}>
+                <label style={LABEL_STYLE}>Titre</label>
                 <input
                   value={newLabel} onChange={e => setNewLabel(e.target.value)}
                   list="jalons-suggeres"
@@ -281,8 +291,9 @@ export function JalonModal({ open, onClose, jalons, affaireId, onRefetch }) {
                   onFocus={e => { e.target.style.borderColor = '#8B5CF6'; e.target.style.boxShadow = '0 0 0 3px rgba(139,92,246,0.08)' }}
                   onBlur={e => { e.target.style.borderColor = 'rgba(0,0,0,0.12)'; e.target.style.boxShadow = 'none' }}
                 />
-              </div>
-              <div style={{ flex: 1, minWidth: 130 }}>
+            </div>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+              <div style={{ width: 150 }}>
                 <label style={LABEL_STYLE}>Date</label>
                 <input
                   type="date" value={newDate} onChange={e => setNewDate(e.target.value)}
@@ -302,7 +313,7 @@ export function JalonModal({ open, onClose, jalons, affaireId, onRefetch }) {
                   padding: '0 14px', height: 34, borderRadius: 2, fontSize: 12,
                   cursor: saving ? 'default' : 'pointer', border: 'none',
                   backgroundColor: '#2A8A4E', color: 'white', fontWeight: 500,
-                  opacity: saving ? 0.7 : 1, flexShrink: 0,
+                  opacity: saving ? 0.7 : 1, flexShrink: 0, marginLeft: 'auto',
                 }}
               >
                 <Plus size={13} /> Ajouter

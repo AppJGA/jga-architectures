@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
-import { Plus, Trash2, Users, LayoutList, LayoutGrid, CalendarPlus, ArrowRight, AlertTriangle, X, Lock, Smartphone } from 'lucide-react'
+import { Plus, Trash2, Users, LayoutList, LayoutGrid, CalendarPlus, ArrowRight, AlertTriangle, X, Lock, Smartphone, ScrollText } from 'lucide-react'
 import { useAffaire } from '../../../shared/hooks/useAffaires'
 import { useComptesRendus } from '../../../shared/hooks/useComptesRendus'
 import { InterlocuteursModal } from './InterlocuteursModal'
+import { GeneralitesModal } from './GeneralitesModal'
 import { CrDetail } from './CrDetail'
 
 function fmtDate(d) {
@@ -389,6 +390,7 @@ export default function ComptesRendusModule({ lectureSeule = false }) {
     return suivant
   })
   const [interloOpen, setInterloOpen] = useState(false)
+  const [generalitesOpen, setGeneralitesOpen] = useState(false)
   const [creating, setCreating] = useState(false)
   const [deletingCr, setDeletingCr] = useState(null)
   const [erreur, setErreur] = useState(null)
@@ -416,7 +418,7 @@ export default function ComptesRendusModule({ lectureSeule = false }) {
   // Raccourci N, annoncé par le badge du bouton. Ignoré dès qu'on saisit du
   // texte, qu'un modificateur est enfoncé, ou qu'on n'est plus sur la liste.
   useEffect(() => {
-    if (selectedCrId || interloOpen || deletingCr || lectureSeule) return
+    if (selectedCrId || interloOpen || generalitesOpen || deletingCr || lectureSeule) return
     const onKeyDown = (e) => {
       if (e.key !== 'n' && e.key !== 'N') return
       if (e.metaKey || e.ctrlKey || e.altKey) return
@@ -508,6 +510,13 @@ export default function ComptesRendusModule({ lectureSeule = false }) {
           >
             <Users size={13} /> Interlocuteurs
           </button>}
+          {!lectureSeule && <button
+            onClick={() => setGeneralitesOpen(true)}
+            title="Parties I à V, communes à tous les comptes rendus de l’affaire"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 2, fontSize: 12, border: '0.5px solid rgba(0,0,0,0.15)', backgroundColor: 'white', color: '#374151', cursor: 'pointer' }}
+          >
+            <ScrollText size={13} /> Généralités
+          </button>}
           {!lectureSeule && <BoutonNouvelleVisite onClick={handleCreate} disabled={creating} />}
         </div>
       </div>
@@ -574,6 +583,9 @@ export default function ComptesRendusModule({ lectureSeule = false }) {
 
       {interloOpen && (
         <InterlocuteursModal affaireId={affaireId} onClose={() => setInterloOpen(false)} />
+      )}
+      {generalitesOpen && (
+        <GeneralitesModal affaireId={affaireId} peutModifier={!lectureSeule} onClose={() => setGeneralitesOpen(false)} />
       )}
 
       {deletingCr && (

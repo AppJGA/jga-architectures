@@ -421,8 +421,8 @@ export function ModeVisite({ cr, sections, presences, setPresence, lots: lotsAff
             <select value={destinataire} onChange={e => setDestinataire(e.target.value)} aria-label="Destinataire"
               style={{ minHeight: 44, padding: '0 10px', fontSize: 15, borderRadius: 3, border: `1px solid ${destinataire ? '#E8602C' : 'rgba(0,0,0,0.15)'}`, background: 'white', flexShrink: 0, maxWidth: 220 }}>
               <option value="">Tous destinataires</option>
-              {lots.map(l => <option key={l.id} value={`lot:${l.id}`}>{l.numero ? `Lot ${l.numero} — ${l.nom}` : l.nom}</option>)}
-              {(interlocuteurs ?? []).map(i => <option key={i.id} value={`interlo:${i.id}`}>{[i.prenom, i.nom].filter(Boolean).join(' ') || i.organisation}</option>)}
+              {lots.map(l => <option key={l.id} value={`lot:${l.id}`}>{libelleLot(l)}</option>)}
+              {(interlocuteurs ?? []).map(i => <option key={i.id} value={`interlo:${i.id}`}>{nomInterlocuteur(i)}</option>)}
             </select>
           )}
           <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>

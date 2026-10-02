@@ -318,6 +318,8 @@ function RemarqueForm({ initial, crDate, suggestions, lots, interlocuteurs, zone
 
 function AttrBadge({ rem, lots, interlocuteurs, sectionType }) {
   if (sectionType === 'general') return null
+  // Partie VII : la remarque est déjà sous le titre de son lot
+  if (sectionType === 'entreprises' && rem.lot_id && !destinataireIntrouvable(rem, lots, interlocuteurs)) return null
   if (destinataireIntrouvable(rem, lots, interlocuteurs)) {
     if (!rem.copie_destinataire) return null
     return (
@@ -623,9 +625,9 @@ function RemarqueRow({ rem, idx, total, crDate, suggestions, lots, interlocuteur
           {onAddSousRemarque && (
             <button onClick={() => (onOuvrirSuite ? onOuvrirSuite(rem) : setAddingSuivi(a => !a))} data-compact
               style={{ display: 'inline-flex', alignItems: 'center', gap: 2, padding: '2px 5px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 10, color: addingSuivi ? '#E8602C' : '#9C9591' }}
-              title="Ajouter un suivi"
+              title="Ajouter une suite"
             >
-              <MessageSquare size={11} />+ Suivi
+              <MessageSquare size={11} />+ Suite
             </button>
           )}
         </div>}

@@ -19,6 +19,7 @@ import { archivesDuCr, archiverPdf } from './rapportStockage'
 import { compterPresents, FAMILLES_STATUT, infosStatut, estEnRetard } from './crLogique'
 import { CrContexte, useCr } from './CrContexte'
 import { PhotosContexte } from './usePhotosRemarque'
+import { ordonnerParties } from './remarquesLogique'
 import { espaceUtilise } from './photosStockage'
 import { niveauEspace } from './photosLogique'
 import { PlansContexte } from './PlansContexte'
@@ -573,7 +574,7 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
     photos, liens, ajouterPhotos, remplacerPhoto, modifierLegendePhoto, supprimerPhoto, liensPhotos,
     pastilles, placerPastille, enleverPastille, zones, ftms, creerFtmPourRemarque,
     planning, modifierAvancementTache, horsLigne, sectionDesIntervenants, assurerPartiesRemarques,
-    cr, sections, presences, profiles, loading, erreurChargement, historique,
+    cr, sections: sectionsBrutes, presences, profiles, loading, erreurChargement, historique,
     syncPresences, updateCr, emettre, rouvrir, updatePresence,
     addSection, updateSection, deleteSection, reorderSection, reorderSectionsByIds,
     addSousSection, updateSousSection, deleteSousSection, reorderSousSection,
@@ -581,6 +582,8 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
     addSousRemarque, changerStatutRemarques,
     setPresence, refetch,
   } = useCompteRendu(crId, affaire?.id)
+  // Partie VI toujours avant la VII, quel que soit l'ordre de création
+  const sections = useMemo(() => ordonnerParties(sectionsBrutes), [sectionsBrutes])
 
   // Avancement affiché et exporté : les chiffres gelés pour un CR émis
   const lignesAvancementCr = useMemo(() => {

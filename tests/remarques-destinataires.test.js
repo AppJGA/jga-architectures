@@ -6,7 +6,7 @@ import { test, describe } from 'node:test'
 import {
   PARTIES_REMARQUES, sectionsAMettreEnPlace, cleDestinataire, typePourDestinataire,
   champsDestinataire, libelleLot, libelleRole, choixDestinataires, destinataireParDefaut,
-  groupesDestinataires, estPartieRemarques,
+  groupesDestinataires, estPartieRemarques, ordonnerParties,
 } from '../src/modules/chantier/comptes-rendus/remarquesLogique.js'
 
 const LOTS = [
@@ -32,6 +32,14 @@ describe('parties VI et VII', () => {
 
   test('rien à créer quand elles existent déjà', () => {
     assert.deepEqual(sectionsAMettreEnPlace([{ type_section: 'equipe', ordre: 0 }, { type_section: 'entreprises', ordre: 1 }]), [])
+  })
+
+  test('la partie VI passe toujours avant la VII, même créée après', () => {
+    const ordre = ordonnerParties([
+      { id: 'I', type_section: 'general' }, { id: 'VII', type_section: 'entreprises' }, { id: 'X', type_section: 'intervenants' }, { id: 'VI', type_section: 'equipe' },
+    ]).map((s) => s.id)
+    assert.deepEqual(ordre, ['I', 'VI', 'VII', 'X'])
+    assert.deepEqual(ordonnerParties([{ id: 'VI', type_section: 'equipe' }, { id: 'VII', type_section: 'entreprises' }]).map((s) => s.id), ['VI', 'VII'])
   })
 
   test('une partie de remarques se reconnaît à son type', () => {

@@ -5,6 +5,7 @@
 // déjà prêtes (data URL JPEG) ; testée par tests/rapport.test.js.
 
 import { infosStatut, estEnRetard, affichagePresence, grouperParZone, libelleZone, auteurExterieur } from './crLogique'
+import { estPartieRemarques, groupesDestinataires, libelleLot } from './remarquesLogique'
 
 export const REGLAGES_DEFAUT = {
   modele: 'complet',        // complet | synthese
@@ -93,7 +94,7 @@ export function jour(d, options = { day: '2-digit', month: '2-digit', year: 'num
 function destinataireDe(rem, lots, interlocuteurs) {
   if (rem.lot_id) {
     const l = (lots ?? []).find((x) => x.id === rem.lot_id)
-    if (l) return l.numero ? `Lot ${l.numero} — ${l.nom}` : l.nom
+    if (l) return libelleLot(l)
   }
   if (rem.interlocuteur_id) {
     const i = (interlocuteurs ?? []).find((x) => x.id === rem.interlocuteur_id)
@@ -136,7 +137,8 @@ function lignesRemarque(rem, contexte) {
   const { lots, interlocuteurs, dateReference, images, reglages, profils } = contexte
   const statut = infosStatut(rem)
   const retard = estEnRetard(rem, dateReference)
-  const destinataire = destinataireDe(rem, lots, interlocuteurs)
+  // Sous l'intertitre de son lot (parties VI / VII), le destinataire n'est pas répété
+  const destinataire = rem._sousSonLot ? null : destinataireDe(rem, lots, interlocuteurs)
   const lignes = [[
     {
       stack: [
@@ -187,12 +189,18 @@ function lignesRemarque(rem, contexte) {
       ],
     }, '', ''])
   }
+  // Suites (▶) : leur propre statut et leur propre échéance (migration 054).
+  // Roboto n'a pas ▶ : « » » le remplace, comme pour une remarque nouvelle.
   for (const sr of rem.sous_remarques ?? []) {
+    const st = infosStatut(sr)
+    const retardSuite = estEnRetard(sr, dateReference)
     lignes.push([
-      { text: jour(sr.date_note, { day: '2-digit', month: '2-digit' }) || '—', fontSize: 7, color: COULEUR.gris, margin: [10, 0, 0, 0], fillColor: '#FAFAFA' },
-      { text: [sr.pour ? { text: `${sr.pour} `, bold: true, color: COULEUR.orange } : '', sr.description], fontSize: 8, color: sr.est_clos ? COULEUR.grisClair : '#374151', decoration: sr.est_clos ? 'lineThrough' : undefined, fillColor: '#FAFAFA' },
-      { text: '', fillColor: '#FAFAFA' },
-      { text: '', fillColor: '#FAFAFA' },
+      { text: [{ text: '» ', color: COULEUR.orange }, jour(sr.date_note) || '—'], fontSize: 7, color: COULEUR.gris, margin: [8, 0, 0, 0], fillColor: '#FAFAFA' },
+      { text: [sr.pour ? { text: `${sr.pour} `, bold: true, color: COULEUR.orange } : '', sr.description], fontSize: 8, color: st.clos ? COULEUR.grisClair : '#374151', decoration: st.clos ? 'lineThrough' : undefined, fillColor: '#FAFAFA' },
+      sr.date_echeance
+        ? { text: jour(sr.date_echeance), fontSize: 7.5, color: retardSuite ? '#B8412C' : COULEUR.gris, bold: retardSuite, fillColor: '#FAFAFA' }
+        : { text: '', fillColor: '#FAFAFA' },
+      { text: st.libelle, fontSize: 7.5, bold: true, color: st.clos ? COULEUR.grisClair : st.couleur, fillColor: '#FAFAFA' },
     ])
   }
   return lignes
@@ -275,6 +283,17 @@ export function definitionPdf({ cr, affaire, sections, presences, lots, interloc
     }))
   }
 
+  // Parties VI et VII : un intertitre par destinataire (lot, rôle), comme les
+  // sous-sections des autres parties
+  const contenuPartie = (s) => {
+    const remarques = [...(s.directRemarques ?? []), ...(s.sousSections ?? []).flatMap((ss) => ss.remarques ?? [])]
+    if (remarques.length === 0) return [tableauRemarques([], contexte)]
+    return groupesDestinataires(remarques, { lots, interlocuteurs }).flatMap((g) => [
+      { text: g.titre, bold: true, fontSize: 9.5, margin: [2, 2, 0, 4] },
+      tableauRemarques(g.cle.startsWith('lot:') ? g.remarques.map((r) => ({ ...r, _sousSonLot: true })) : g.remarques, contexte),
+    ])
+  }
+
   const contenuSections = (sections ?? []).map((s) => ({
     stack: [
       {
@@ -282,6 +301,7 @@ export function definitionPdf({ cr, affaire, sections, presences, lots, interloc
         table: { widths: ['*'], body: [[{ text: [{ text: `${s.numero_romain}  `, color: COULEUR.orange }, (s.titre ?? '').toUpperCase()], bold: true, fontSize: 10.5, fillColor: '#FFF8F5' }]] },
         layout: { hLineWidth: (i) => (i === 1 ? 1.2 : 0), vLineWidth: () => 0, hLineColor: () => COULEUR.orange, paddingLeft: () => 6, paddingTop: () => 5, paddingBottom: () => 5 },
       },
+      ...(estPartieRemarques(s) ? contenuPartie(s) : [
       ...(s.sousSections ?? []).flatMap((ss) => [
         { text: `${ss.code} — ${ss.titre}`, bold: true, fontSize: 9.5, margin: [2, 2, 0, 4] },
         tableauRemarques(ss.remarques ?? [], contexte),
@@ -289,6 +309,7 @@ export function definitionPdf({ cr, affaire, sections, presences, lots, interloc
       ...((s.directRemarques ?? []).length > 0 || (s.sousSections ?? []).length === 0
         ? [tableauRemarques(s.directRemarques ?? [], contexte)]
         : []),
+      ]),
     ],
   }))
 

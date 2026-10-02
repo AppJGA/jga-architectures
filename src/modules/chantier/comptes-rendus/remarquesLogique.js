@@ -22,6 +22,22 @@ export function sectionsAMettreEnPlace(sections = []) {
     .map((p) => ({ numero_romain: p.numero_romain, titre: p.titre, type_section: p.type, ordre: ++ordre }))
 }
 
+/**
+ * Sections dans l'ordre d'affichage, la partie VI toujours avant la VII. Une
+ * partie créée plus tard (la première remarque à l'équipe, par exemple) prend
+ * le dernier rang : sans ce rangement, VI s'afficherait après VII.
+ */
+export function ordonnerParties(sections = []) {
+  const liste = [...sections]
+  const iVI = liste.findIndex((s) => s.type_section === 'equipe')
+  const iVII = liste.findIndex((s) => s.type_section === 'entreprises')
+  if (iVI > iVII && iVII >= 0) {
+    const [vi] = liste.splice(iVI, 1)
+    liste.splice(iVII, 0, vi)
+  }
+  return liste
+}
+
 // ─── Destinataire ────────────────────────────────────────────────────────────
 
 /** 'lot:<id>', 'interlo:<id>' ou '' : la forme du filtre et des choix */
@@ -137,5 +153,5 @@ export function groupesDestinataires(remarques = [], { lots = [], interlocuteurs
 
   return [...groupes.values()]
     .sort((a, b) => a.rang[0] - b.rang[0] || a.rang[1] - b.rang[1] || a.titre.localeCompare(b.titre))
-    .map(({ rang: _rang, ...g }) => g)
+    .map((g) => ({ cle: g.cle, titre: g.titre, destinataire: g.destinataire, remarques: g.remarques }))
 }

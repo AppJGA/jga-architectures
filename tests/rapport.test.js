@@ -80,11 +80,26 @@ describe('definitionPdf', () => {
   test('contenu : en-tête, remarques, destinataire, retard, statut, pied de page', () => {
     const def = definitionPdf({ ...base, sections: selectionnerSections(sections, {}), reglages: {} })
     const t = textes(def.content).join(' | ')
-    for (const attendu of ['Réunion n°05', 'Émis', 'Groupe scolaire', 'Enduit à reprendre', '(Lot 2 — Gros œuvre)', 'EN RETARD', 'Urgent', 'le 08/09/2026', '(Lot 9 — Peinture)', 'Échafaudage monté', 'a@lyon.fr', 'Oui 09:00']) {
+    for (const attendu of ['Réunion n°05', 'Émis', 'Groupe scolaire', 'Enduit à reprendre', '(02 - Gros œuvre)', 'EN RETARD', 'Urgent', 'le 08/09/2026', '(Lot 9 — Peinture)', 'Échafaudage monté', 'a@lyon.fr', 'Oui 09:00']) {
       assert.ok(t.includes(attendu), `manque « ${attendu} »`)
     }
     const pied = def.footer(2, 7)
     assert.equal(pied.columns[1].text, 'Page 2 / 7')
+  })
+
+  test('parties VI et VII : un intertitre par destinataire, suites avec leur statut', () => {
+    const parties = [
+      { id: 'S7', numero_romain: 'VII', titre: 'ENTREPRISES', type_section: 'entreprises', sousSections: [], directRemarques: [
+        { id: 'p1', numero: 8, description: 'Raccorder la descente EP', statut: 'a_faire', lot_id: 'L2', sous_remarques: [
+          { id: 'ps1', description: 'Regard posé', statut: 'a_prevoir', date_note: '2026-09-15', date_echeance: '2026-09-22' },
+        ] },
+      ] },
+    ]
+    const t = textes(definitionPdf({ ...base, sections: selectionnerSections(parties, {}), reglages: {} }).content).join(' | ')
+    for (const attendu of ['02 - Gros œuvre', 'Raccorder la descente EP', 'Regard posé', 'À prévoir', '22/09/2026']) {
+      assert.ok(t.includes(attendu), `manque « ${attendu} »`)
+    }
+    assert.ok(!t.includes('(02 - Gros œuvre)'), 'sous l’intertitre du lot, le destinataire n’est pas répété')
   })
 
   test('synthèse : ni coordonnées ni suivis', () => {

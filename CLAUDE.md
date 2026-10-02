@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 615 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
+npm test         # 629 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
 npx eslint src   # ~73 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -47,7 +47,7 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
 - **Accès aux données** : hooks dans `src/shared/hooks/`. `useAffaires()` pour
   la liste, `useAffaire(id)` pour une affaire (les deux font `select('*')`),
   `useAffaireCollaborateurs(id)` pour les droits (`canEdit`, `isProprietaire`).
-- **Base** : `supabase/migrations/`, numérotées, 53 fichiers, **passées à la
+- **Base** : `supabase/migrations/`, numérotées, 54 fichiers, **passées à la
   main** dans le SQL Editor de Supabase : un code qui dépend d'une nouvelle
   colonne doit tolérer son absence tant que la migration n'est pas faite. La photo de
   couverture d'une affaire est `affaires.photo_url` (migration 014, bucket
@@ -82,6 +82,21 @@ création avec reprise de la visite précédente) et `useCompteRendu` (un CR).
   remarque celle de son destinataire (`copie_destinataire`, tenue par un
   déclencheur). Afficher une présence passe par `affichagePresence`, jamais par
   les jointures seules : la fiche liée peut avoir été supprimée.
+- **Remarques rangées par destinataire** (refonte, chantier 1, migration 054 ;
+  conception dans `docs/superpowers/specs/2026-10-02-comptes-rendus-refonte-design.md`) :
+  chaque CR a deux sections typées, `equipe` (VI) et `entreprises` (VII),
+  mises en place à l'ouverture d'un brouillon (`assurerPartiesRemarques`).
+  Une remarque de l'agence a **toujours** un destinataire : un lot la range en
+  VII, un interlocuteur en VI (`rangerRemarque.js`, commun à la tablette et au
+  bureau) ; changer de destinataire change de partie. Le regroupement par lot
+  ou par rôle se calcule (`groupesDestinataires`, `remarquesLogique.js`) —
+  écran comme PDF. Tous les lots de l'affaire sont proposés (`planning.lots`),
+  pas seulement ceux qui ont une entreprise ; le dernier destinataire est
+  reproposé (mémoire par CR sur l'appareil). `ordonnerParties` garde VI avant
+  VII quel que soit l'ordre de création. Une **suite** (sous-remarque, ▶) a son
+  propre statut et son échéance ; toucher une remarque ouvre `PanneauSuite`
+  (avec « Clore la remarque d'origine »). Les sections I à V restent des
+  sections classiques jusqu'au chantier 2 (généralités).
 - **Statuts fixes** (migration 038, `STATUTS` de `crLogique.js`) : le statut
   décide seul de la clôture ; `est_clos` en est déduit par le déclencheur
   `cr_remarques_suivi`. Toujours lire un statut via `statutNormalise` /

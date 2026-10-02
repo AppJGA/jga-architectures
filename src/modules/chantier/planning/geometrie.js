@@ -18,7 +18,7 @@ export function joursEntre(debut, fin) {
   return Math.round((fin.getTime() - debut.getTime()) / JOUR_MS)
 }
 
-function lendemain(date) {
+export function lendemain(date) {
   const d = new Date(date)
   d.setDate(d.getDate() + 1)
   return d
@@ -192,6 +192,26 @@ export function deplacerBarre({ debut, dx, geo, periodes = [] }) {
     nouveau = dateForX(xAtDate(debutInitial, geo.dateRef, geo.dayPositions) + dx, geo)
   }
   return skipBlockedPeriods(nouveau, periodes)
+}
+
+/**
+ * Nouvelle date d'un jalon glissé de `dx` pixels. Contrairement à une barre,
+ * il n'a pas de durée et peut tomber n'importe quel jour (une réunion, une
+ * livraison un samedi) : le jour retenu est celui dont le bord gauche — là où
+ * le jalon est dessiné — est le plus proche du doigt. Vue semaine : au jour
+ * près, à l'échelle d'une semaine.
+ */
+export function deplacerJalon({ date, dx, geo }) {
+  const initial = parseDate(date)
+  if (geo.viewMode === 'week') return decaler(initial, Math.round(dx / (geo.weekWidth / 7)))
+  if (geo.viewMode === 'month') {
+    return jourSousXMois(xAtDateMonth(initial, geo.months, geo.monthWidth) + dx, geo.months, geo.monthWidth, Math.round)
+  }
+  const cible = xAtDate(initial, geo.dateRef, geo.dayPositions) + dx
+  const sous = dateForX(cible, geo)
+  const apres = lendemain(sous)
+  const ecart = (d) => Math.abs(xAtDate(d, geo.dateRef, geo.dayPositions) - cible)
+  return ecart(apres) < ecart(sous) ? apres : sous
 }
 
 // ── Périodes ─────────────────────────────────────────────────────────────────

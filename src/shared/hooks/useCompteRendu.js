@@ -108,6 +108,11 @@ export function useCompteRendu(crId, affaireId) {
   // parallèle. Le module planning peut ne pas être renseigné : liste vide.
   const [planning, setPlanning] = useState({ taches: [], lots: [], periodes: [] })
   const { liens, obtenirLiens } = useLiensSignes(BUCKET_PHOTOS)
+  // Colonnes de mise en forme (migration 056) présentes ? Le dernier constat
+  // est gardé sur l'appareil : hors ligne, on ne peut pas interroger la base.
+  const [miseEnFormeDisponible, setMiseEnFormeDisponible] = useState(() => {
+    try { return localStorage.getItem('jga-cr-mise-en-forme') === '1' } catch { return false }
+  })
   // Seul le premier chargement affiche l'indicateur : il remplace l'éditeur,
   // qui perdait sinon à chaque ajout ses filtres, ses sections repliées et la
   // position de défilement.
@@ -170,7 +175,7 @@ export function useCompteRendu(crId, affaireId) {
     // L'affaire peut n'être pas encore chargée : interroger avec un identifiant
     // vide ne rendait que des erreurs 400 dans la console.
     const surAffaire = (requete) => (affaireId ? requete() : Promise.resolve([]))
-    const [photosCr, pastillesCr, zonesAffaire, ftmsAffaire, taches, lotsAffaire, periodes] = await Promise.all([
+    const [photosCr, pastillesCr, zonesAffaire, ftmsAffaire, taches, lotsAffaire, periodes, sondeMiseEnForme] = await Promise.all([
       photosDuCr(crId), pastillesDuCr(crId),
       // Zones du planning (migration 047) : absentes, le choix ne s'affiche pas
       surAffaire(() => supabase.from('planning_zones').select('id, nom, couleur, ordre').eq('affaire_id', affaireId).order('ordre').then(vide)),
@@ -179,7 +184,13 @@ export function useCompteRendu(crId, affaireId) {
       surAffaire(() => supabase.from('planning').select('id, lot_id, num_tache, nom, debut, duree, avancement, ordre').eq('affaire_id', affaireId).order('ordre').then(vide)),
       surAffaire(() => supabase.from('lots').select('id, numero, nom, couleur').eq('affaire_id', affaireId).order('numero').then(vide)),
       surAffaire(() => supabase.from('periodes_bloquees').select('date_debut, date_fin, est_bloquante').eq('affaire_id', affaireId).then(vide)),
+      supabase.from('cr_remarques').select('gras').limit(1),
     ])
+    if (!sondeMiseEnForme.error || colonneAbsente(sondeMiseEnForme.error)) {
+      const present = !sondeMiseEnForme.error
+      setMiseEnFormeDisponible(present)
+      try { localStorage.setItem('jga-cr-mise-en-forme', present ? '1' : '0') } catch { /* navigation privée */ }
+    }
     await obtenirLiens(photosCr.map(p => p.chemin_miniature)).catch(() => {})
 
     setErreurChargement(null)
@@ -680,7 +691,7 @@ export function useCompteRendu(crId, affaireId) {
     photos, liens, ajouterPhotos, remplacerPhoto, modifierLegendePhoto, supprimerPhoto, liensPhotos,
     pastilles, placerPastille, enleverPastille, zones, ftms,
     planning, modifierAvancementTache, horsLigne, sectionDesIntervenants, assurerPartiesRemarques,
-    cr, sections, presences, profiles, loading, erreurChargement, historique,
+    cr, sections, presences, profiles, loading, erreurChargement, historique, miseEnFormeDisponible,
     syncPresences, updateCr, emettre, rouvrir, updatePresence,
     addSection, updateSection, deleteSection, reorderSection, reorderSectionsByIds,
     addSousSection, updateSousSection, deleteSousSection, reorderSousSection,

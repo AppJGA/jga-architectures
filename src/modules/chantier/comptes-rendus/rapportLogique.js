@@ -4,7 +4,7 @@
 // description du document pour pdfmake. Sans navigateur : les images arrivent
 // déjà prêtes (data URL JPEG) ; testée par tests/rapport.test.js.
 
-import { infosStatut, estEnRetard, affichagePresence, grouperParZone, libelleZone, auteurExterieur } from './crLogique'
+import { infosStatut, estEnRetard, affichagePresence, grouperParZone, libelleZone, auteurExterieur, miseEnForme, COULEUR_SURLIGNE } from './crLogique'
 import { estPartieRemarques, groupesDestinataires, libelleLot } from './remarquesLogique'
 import { normaliserGeneralites } from './generalitesLogique'
 
@@ -153,11 +153,15 @@ function lignesRemarque(rem, contexte) {
         ...(auteurExterieur(rem, profils) ? [{ text: auteurExterieur(rem, profils), fontSize: 7, italics: true, color: '#6B4E9B' }] : []),
       ],
     },
+    // Mise en forme choisie pour toute la remarque (migration 056) ; une
+    // remarque close reste grise et barrée, sans surlignage
     {
       text: rem.description,
       decoration: statut.clos ? 'lineThrough' : undefined,
-      color: statut.clos ? COULEUR.grisClair : rem.est_important ? COULEUR.orange : COULEUR.texte,
-      bold: !!rem.est_important,
+      color: statut.clos ? COULEUR.grisClair : COULEUR.texte,
+      bold: miseEnForme(rem).gras,
+      italics: miseEnForme(rem).italique,
+      ...(miseEnForme(rem).surligne && !statut.clos && { background: COULEUR_SURLIGNE }),
     },
     {
       stack: rem.date_echeance

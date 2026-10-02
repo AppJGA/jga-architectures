@@ -97,6 +97,30 @@ describe('preparerReprise', () => {
   })
 })
 
+describe('mise en forme d’une remarque', async () => {
+  const { miseEnForme, champsMiseEnForme, preparerReprise: reprendre } = await import('../src/modules/chantier/comptes-rendus/crLogique.js')
+
+  test('une ancienne remarque « Important » s’affiche en gras', () => {
+    assert.deepEqual(miseEnForme({ est_important: true }), { gras: true, italique: false, surligne: false })
+    assert.deepEqual(miseEnForme({ gras: false, italique: true, surligne: true }), { gras: false, italique: true, surligne: true })
+  })
+
+  test('avec la migration 056, les trois colonnes ; sans, le gras passe par « Important »', () => {
+    assert.deepEqual(champsMiseEnForme({ gras: true, italique: true, surligne: false }, true), { gras: true, italique: true, surligne: false, est_important: false })
+    assert.deepEqual(champsMiseEnForme({ gras: true, italique: true, surligne: true }, false), { est_important: true })
+  })
+
+  test('la reprise garde la mise en forme', () => {
+    let k = 0
+    const r = reprendre({
+      sections: [{ id: 'S', numero_romain: 'VII', titre: 'ENTREPRISES', type_section: 'entreprises' }],
+      remarques: [{ id: 'R', section_id: 'S', description: 'x', statut: 'a_faire', gras: true, italique: false, surligne: true }],
+      crId: 'C', affaireId: 'A', nouvelId: () => `n${++k}`,
+    })
+    assert.deepEqual([r.remarques[0].gras, r.remarques[0].italique, r.remarques[0].surligne], [true, false, true])
+  })
+})
+
 describe('historique des participants', () => {
   const interlocuteur = {
     interlocuteur_id: 'I1', presence: 'p',

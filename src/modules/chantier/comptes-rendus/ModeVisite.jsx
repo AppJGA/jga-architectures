@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useContext } from 'react'
 import { Users, Search, Plus, Camera, MapPin, MessageSquare, Pencil, MoreHorizontal, WifiOff, AlertTriangle, X, LogOut, Lock, FilePen, TrendingUp, RefreshCw } from 'lucide-react'
 import { FILTRES_VISITE, filtreVisite, groupesVisite, compteursVisite } from './visiteLogique'
-import { STATUTS, infosStatut, estEnRetard, libelleZone, peutModifierRemarque, auteurExterieur } from './crLogique'
+import { STATUTS, infosStatut, estEnRetard, libelleZone, peutModifierRemarque, auteurExterieur, miseEnForme, COULEUR_SURLIGNE } from './crLogique'
 import { useCr } from './CrContexte'
 import { PanneauRemarque, PanneauSuite, PanneauPresences, PanneauStatuts, PanneauAvancement } from './PanneauxVisite'
 import { libelleLot, nomInterlocuteur, numerosParties } from './remarquesLogique'
@@ -10,7 +10,6 @@ import { usePhotosRemarque, PhotosContexte } from './usePhotosRemarque'
 import { PhotosDeRemarque } from './PhotosRemarque'
 import { usePlansCr } from './PlansContexte'
 import { ftmDeRemarque, resumeFtm } from '../ftm/lienFtm'
-import { useRemarquesTypes } from './useRemarquesTypes'
 
 // ─── Mode Visite ─────────────────────────────────────────────────────────────
 //
@@ -132,7 +131,9 @@ function CarteRemarque({ rem, cr, lots, interlocuteurs, zones, ftms, ouvrirFtm, 
         onKeyDown={e => { if (e.key === 'Enter' && (!lectureSeuleCr || suivis.length > 0)) onPanneau({ type: 'suivi', remarque: rem }) }}
         style={{
           fontSize: 16, lineHeight: 1.45, color: statut.clos ? '#9CA3AF' : '#1F1B17', margin: 0,
-          textDecoration: statut.clos ? 'line-through' : 'none', fontWeight: rem.est_important ? 600 : 400,
+          textDecoration: statut.clos ? 'line-through' : 'none',
+          fontWeight: miseEnForme(rem).gras ? 700 : 400, fontStyle: miseEnForme(rem).italique ? 'italic' : 'normal',
+          background: miseEnForme(rem).surligne && !statut.clos ? COULEUR_SURLIGNE : 'transparent',
           cursor: lectureSeuleCr && suivis.length === 0 ? 'default' : 'pointer',
         }}>
         {rem.description}
@@ -290,7 +291,6 @@ export function ModeVisite({ cr, sections, presences, setPresence, lots: lotsAff
   const enLigne = useEnLigne()
   const acces = useCr()
   const { contributeur } = acces
-  const typesAgence = useRemarquesTypes()
   const { ajouterPhotos } = useContext(PhotosContexte)
   useEcranAllume()
 
@@ -335,7 +335,7 @@ export function ModeVisite({ cr, sections, presences, setPresence, lots: lotsAff
 
   // Le destinataire range la remarque : un lot dans la partie VII, un
   // interlocuteur dans la partie VI (rangerRemarque.js)
-  const enregistrerRemarque = async (payload, { destinataire: cle, compressions, commeType }) => {
+  const enregistrerRemarque = async (payload, { destinataire: cle, compressions }) => {
     if (panneau.type === 'modifier') {
       const champs = contributeur ? payload : await champsModification(ops, sections, panneau.remarque, cle, payload)
       await ops.updateRemarque(panneau.remarque.id, champs)
@@ -351,7 +351,6 @@ export function ModeVisite({ cr, sections, presences, setPresence, lots: lotsAff
       id = await creerRemarqueAdressee(ops, sections, cle, payload)
     }
     if (compressions.length > 0) await ajouterPhotos(id, compressions).catch(() => {})
-    if (commeType) await typesAgence.ajouter(payload.description).catch(signalerErreur)
     if (filtre !== 'toutes' && filtre !== 'ouvertes') setFiltre('toutes')
     setDestinataire('')
     setZone('')
@@ -493,7 +492,6 @@ export function ModeVisite({ cr, sections, presences, setPresence, lots: lotsAff
         <PanneauRemarque
           remarque={panneau.type === 'modifier' ? panneau.remarque : null}
           cr={cr} lots={lots} interlocuteurs={interlocuteurs ?? []} zones={zones}
-          typesAgence={typesAgence}
           destinataireInitial={panneau.destinataire ?? null}
           contributeur={contributeur}
           numeros={numerosParties(sections)}

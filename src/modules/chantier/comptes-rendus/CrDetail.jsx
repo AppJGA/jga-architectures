@@ -592,7 +592,7 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
     photos, liens, ajouterPhotos, remplacerPhoto, modifierLegendePhoto, supprimerPhoto, liensPhotos,
     pastilles, placerPastille, enleverPastille, zones, ftms,
     planning, modifierAvancementTache, horsLigne, sectionDesIntervenants, assurerPartiesRemarques,
-    cr, sections: sectionsBrutes, presences, profiles, loading, erreurChargement, historique,
+    cr, sections: sectionsBrutes, presences, profiles, loading, erreurChargement, historique, miseEnFormeDisponible,
     syncPresences, updateCr, emettre, rouvrir, updatePresence,
     addSection, updateSection, deleteSection, reorderSection, reorderSectionsByIds,
     addSousSection, updateSousSection, deleteSousSection, reorderSousSection,
@@ -732,8 +732,8 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
   const contributeur = !estAgence && cr?.statut !== 'emis'
   const lectureSeule = (lectureSeuleAffaire && !contributeur) || cr?.statut === 'emis'
   const contexte = useMemo(
-    () => ({ lectureSeule, contributeur, utilisateurId: user?.id ?? null, profils: profiles, signalerErreur }),
-    [lectureSeule, contributeur, user?.id, profiles, signalerErreur],
+    () => ({ lectureSeule, contributeur, utilisateurId: user?.id ?? null, profils: profiles, signalerErreur, miseEnForme: miseEnFormeDisponible }),
+    [lectureSeule, contributeur, user?.id, profiles, signalerErreur, miseEnFormeDisponible],
   )
 
   // Tous les lots de l'affaire, qu'une entreprise y soit déjà attribuée ou non :

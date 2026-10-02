@@ -2,7 +2,7 @@
 //
 // Sans navigateur ni base, pour être testée (tests/visite.test.js).
 
-import { sansAccents, infosStatut, estEnRetard, passeFiltre, FILTRE_VIDE } from './crLogique'
+import { infosStatut, estEnRetard, passeFiltre, FILTRE_VIDE } from './crLogique'
 import { estPartieRemarques, groupesDestinataires } from './remarquesLogique'
 
 // Filtres du mode Visite, en gros boutons. « Ouvertes » par défaut : sur le
@@ -65,25 +65,6 @@ export function echeanceRapide(dateBase, semaines) {
 
 export function normaliserTexte(texte) {
   return String(texte ?? '').trim().replace(/\s+/g, ' ')
-}
-
-/**
- * Remarques types proposées pendant la saisie. Sans saisie : les plus
- * utilisées. Avec saisie : celles qui contiennent tous les mots tapés (sans
- * accents ni casse), en tête celles qui commencent par la saisie, puis par
- * utilisation. Le texte déjà saisi en entier n'est pas reproposé.
- */
-export function suggestionsTypes(types, saisie, max = 6) {
-  const q = sansAccents(normaliserTexte(saisie))
-  const mots = q.split(' ').filter(Boolean)
-  return (types ?? [])
-    .map((t) => ({ t, n: sansAccents(normaliserTexte(t.texte)) }))
-    .filter(({ n }) => n !== q && mots.every((mot) => n.includes(mot)))
-    .sort((a, b) => (Number(b.n.startsWith(q)) - Number(a.n.startsWith(q)))
-      || (b.t.utilisations ?? 0) - (a.t.utilisations ?? 0)
-      || String(b.t.derniere_utilisation ?? '').localeCompare(String(a.t.derniere_utilisation ?? '')))
-    .slice(0, max)
-    .map(({ t }) => t)
 }
 
 // Texte dicté ajouté à la saisie : espace entre les deux, majuscule en début

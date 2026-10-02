@@ -1,11 +1,11 @@
 import { useState, useEffect, useContext } from 'react'
-import { X, Camera, Images, Star } from 'lucide-react'
+import { X, Camera, Images } from 'lucide-react'
 import { CATEGORIE_META } from '../../../shared/hooks/useAffaireInterlocuteurs'
-import { STATUTS, FAMILLES_STATUT, STATUT_PAR_DEFAUT, statutNormalise, affichagePresence, infosStatut, peutModifierRemarque } from './crLogique'
+import { STATUTS, FAMILLES_STATUT, STATUT_PAR_DEFAUT, statutNormalise, affichagePresence, infosStatut, peutModifierRemarque, miseEnForme, champsMiseEnForme, COULEUR_SURLIGNE } from './crLogique'
+import { useCr } from './CrContexte'
 import { choixDestinataires, destinataireParDefaut, cleDestinataire, champsDestinataire } from './remarquesLogique'
-import { suggestionsTypes, echeanceRapide, ajouterDictee, normaliserTexte } from './visiteLogique'
+import { echeanceRapide, ajouterDictee, normaliserTexte } from './visiteLogique'
 import { BoutonDictee } from './BoutonDictee'
-import { BoutonSupprimer } from './BoutonSupprimer'
 import { AnnotationPhoto } from './AnnotationPhoto'
 import { compresserPhoto } from './compressionPhoto'
 import { PhotosContexte } from './usePhotosRemarque'
@@ -123,7 +123,7 @@ function ChoixDestinataire({ choix, valeur, onChoisir, facultatif, numeros }) {
  * @param contributeur intervenant extérieur : destinataire facultatif, ses
  *   observations vont dans leur section à part
  */
-export function PanneauRemarque({ remarque, cr, lots, interlocuteurs, zones = [], typesAgence, destinataireInitial = null, contributeur = false, numeros = { equipe: 'VI', entreprises: 'VII' }, onEnregistrer, onFermer, signalerErreur }) {
+export function PanneauRemarque({ remarque, cr, lots, interlocuteurs, zones = [], destinataireInitial = null, contributeur = false, numeros = { equipe: 'VI', entreprises: 'VII' }, onEnregistrer, onFermer, signalerErreur }) {
   const modification = !!remarque
   // Le destinataire de la remarque précédente est reproposé : sur le chantier,
   // on enchaîne souvent plusieurs remarques pour le même lot
@@ -136,9 +136,9 @@ export function PanneauRemarque({ remarque, cr, lots, interlocuteurs, zones = []
   const [destinataire, setDestinataire] = useState(() => (modification
     ? cleDestinataire(remarque)
     : destinataireInitial ?? destinataireParDefaut(lireMemoire(cleMemoire), choix)))
-  const [important, setImportant] = useState(!!remarque?.est_important)
-  const [commeType, setCommeType] = useState(false)
-  const [gererTypes, setGererTypes] = useState(false)
+  // Mise en forme de toute la remarque (migration 056 ; sans elle, gras seul)
+  const { miseEnForme: formeDisponible } = useCr()
+  const [forme, setForme] = useState(() => miseEnForme(remarque))
   const [photos, setPhotos] = useState([]) // { compression, url }
   const [annotation, setAnnotation] = useState(null)
   const [occupe, setOccupe] = useState(false)
@@ -148,7 +148,6 @@ export function PanneauRemarque({ remarque, cr, lots, interlocuteurs, zones = []
 
   const destinataireRequis = !contributeur
   const pret = !!normaliserTexte(description) && (!destinataireRequis || !!destinataire)
-  const suggestions = typesAgence.disponible ? suggestionsTypes(typesAgence.types, description) : []
 
   const ajouterCompression = (compression) => setPhotos(ps => [...ps, { compression, url: URL.createObjectURL(compression.miniature.blob) }])
 
@@ -166,7 +165,7 @@ export function PanneauRemarque({ remarque, cr, lots, interlocuteurs, zones = []
     try {
       const payload = {
         description: texte, statut, est_clos: PAR_CODE.get(statut).clos,
-        date_echeance: echeance || null, est_important: important,
+        date_echeance: echeance || null, ...champsMiseEnForme(forme, formeDisponible),
         ...(zones.length > 0 && { zone_id: zoneId || null }),
         ...champsDestinataire(destinataire),
       }
@@ -175,7 +174,7 @@ export function PanneauRemarque({ remarque, cr, lots, interlocuteurs, zones = []
         payload.est_nouveau = true
         if (destinataire) ecrireMemoire(cleMemoire, destinataire)
       }
-      await onEnregistrer(payload, { destinataire, compressions: photos.map(p => p.compression), commeType })
+      await onEnregistrer(payload, { destinataire, compressions: photos.map(p => p.compression) })
       onFermer()
     } catch { /* signalé dans le bandeau */ }
     setOccupe(false)
@@ -205,45 +204,34 @@ export function PanneauRemarque({ remarque, cr, lots, interlocuteurs, zones = []
             id="visite-texte" autoFocus={!modification} value={description} rows={4}
             onChange={e => setDescription(e.target.value)}
             placeholder="Ce qui a été constaté, ce qu’il faut faire…"
-            style={{ ...CHAMP, padding: '12px 14px', minHeight: 128, fontSize: 18, lineHeight: 1.45, resize: 'vertical', fontFamily: 'inherit', border: '1.5px solid rgba(232,96,44,0.55)' }}
+            style={{
+              ...CHAMP, padding: '12px 14px', minHeight: 128, fontSize: 18, lineHeight: 1.45, resize: 'vertical', fontFamily: 'inherit',
+              border: '1.5px solid rgba(232,96,44,0.55)',
+              fontWeight: forme.gras ? 700 : 400, fontStyle: forme.italique ? 'italic' : 'normal',
+              background: forme.surligne ? COULEUR_SURLIGNE : 'white',
+            }}
           />
           <BoutonDictee onTexte={t => setDescription(d => ajouterDictee(d, t))} onErreur={m => signalerErreur(new Error(m))} />
         </div>
-        {suggestions.length > 0 && (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
-            {suggestions.map(t => (
-              <button key={t.id} type="button"
-                onClick={() => { setDescription(t.texte); typesAgence.utiliser(t.id) }}
-                style={{ minHeight: 40, padding: '6px 12px', borderRadius: 3, fontSize: 13, cursor: 'pointer', border: '0.5px dashed rgba(232,96,44,0.6)', background: 'rgba(232,96,44,0.06)', color: '#1F1B17', textAlign: 'left', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                <Star size={12} color="#E8602C" /> {t.texte}
-              </button>
-            ))}
-          </div>
-        )}
-        {typesAgence.disponible && (
-          <div style={{ display: 'flex', gap: 14, alignItems: 'center', marginTop: 10, flexWrap: 'wrap' }}>
-            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 14, cursor: 'pointer', minHeight: 44 }}>
-              <input type="checkbox" checked={commeType} onChange={e => setCommeType(e.target.checked)} style={{ width: 20, height: 20, accentColor: '#E8602C' }} />
-              Enregistrer comme remarque type
-            </label>
-            {typesAgence.types.length > 0 && (
-              <button type="button" onClick={() => setGererTypes(g => !g)} style={{ background: 'none', border: 'none', padding: 0, fontSize: 13, color: '#1B3A5C', textDecoration: 'underline', cursor: 'pointer' }}>
-                {gererTypes ? 'Masquer les remarques types' : `Gérer les remarques types (${typesAgence.types.length})`}
-              </button>
-            )}
-          </div>
-        )}
-        {gererTypes && (
-          <ul style={{ listStyle: 'none', margin: '8px 0 0', padding: 0, background: 'white', border: '0.5px solid rgba(0,0,0,0.08)' }}>
-            {typesAgence.types.map(t => (
-              <li key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderBottom: '0.5px solid rgba(0,0,0,0.05)', fontSize: 13 }}>
-                <span style={{ flex: 1 }}>{t.texte}</span>
-                <span style={{ fontSize: 11, color: '#9C9591' }}>{t.utilisations}×</span>
-                <BoutonSupprimer taille={14} onConfirm={() => typesAgence.supprimer(t.id).catch(signalerErreur)} />
-              </li>
-            ))}
-          </ul>
-        )}
+        <div role="group" aria-label="Mise en forme de la remarque" style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+          {[
+            { cle: 'gras', libelle: 'G', titre: 'Gras', style: { fontWeight: 800 } },
+            ...(formeDisponible ? [
+              { cle: 'italique', libelle: 'I', titre: 'Italique', style: { fontStyle: 'italic', fontFamily: 'Georgia, serif' } },
+              { cle: 'surligne', libelle: 'Surligné', titre: 'Surligné', style: { background: COULEUR_SURLIGNE, padding: '0 4px' } },
+            ] : []),
+          ].map(b => (
+            <button key={b.cle} type="button" aria-pressed={forme[b.cle]} title={b.titre}
+              onClick={() => setForme(f => ({ ...f, [b.cle]: !f[b.cle] }))}
+              style={{
+                minWidth: 44, minHeight: 44, padding: '0 12px', borderRadius: 3, cursor: 'pointer', fontSize: 15,
+                border: `1px solid ${forme[b.cle] ? '#1F1B17' : 'rgba(0,0,0,0.15)'}`,
+                background: forme[b.cle] ? '#1F1B17' : 'white', color: forme[b.cle] ? 'white' : '#1F1B17',
+              }}>
+              <span style={forme[b.cle] && b.cle === 'surligne' ? { ...b.style, color: '#1F1B17' } : b.style}>{b.libelle}</span>
+            </button>
+          ))}
+        </div>
       </div>
 
       <ChoixDestinataire choix={choix} valeur={destinataire} onChoisir={setDestinataire} facultatif={!destinataireRequis} numeros={numeros} />
@@ -271,13 +259,6 @@ export function PanneauRemarque({ remarque, cr, lots, interlocuteurs, zones = []
             <button type="button" onClick={() => setEcheance(echeanceRapide(cr.date_reunion, 2))} style={puce(echeance === echeanceRapide(cr.date_reunion, 2))}>+2 sem.</button>
             <input type="date" value={echeance} onChange={e => setEcheance(e.target.value)} aria-label="Date d’échéance" style={{ ...CHAMP, width: 170 }} />
           </div>
-        </div>
-        <div>
-          <span style={LABEL}>Mise en avant</span>
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 14, cursor: 'pointer', minHeight: 44 }}>
-            <input type="checkbox" checked={important} onChange={e => setImportant(e.target.checked)} style={{ width: 20, height: 20, accentColor: '#E8602C' }} />
-            Important
-          </label>
         </div>
       </div>
 

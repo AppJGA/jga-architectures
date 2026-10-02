@@ -2,7 +2,6 @@ import { useState, useMemo, createContext, useContext } from 'react'
 import { estPartieRemarques, groupesDestinataires, numerosParties } from './remarquesLogique'
 import { creerRemarqueAdressee, champsModification } from './rangerRemarque'
 import { PanneauRemarque, PanneauSuite } from './PanneauxVisite'
-import { useRemarquesTypes } from './useRemarquesTypes'
 import { PhotosContexte } from './usePhotosRemarque'
 import {
   Plus, Pencil, ChevronDown, ChevronUp, ChevronRight, X,
@@ -14,6 +13,7 @@ import {
   dateDuJour, STATUTS, FAMILLES_STATUT, STATUT_PAR_DEFAUT, statutNormalise, infosStatut,
   estEnRetard, historiqueRemarque, passeFiltre, FILTRE_VIDE, filtreActif, libelleZone,
   peutModifierRemarque, peutOrganiser, auteurExterieur,
+  miseEnForme, champsMiseEnForme, COULEUR_SURLIGNE,
 } from './crLogique'
 import { useCr } from './CrContexte'
 import { ftmDeRemarque, resumeFtm } from '../ftm/lienFtm'
@@ -132,19 +132,20 @@ function destinataireIntrouvable(rem, lots, interlocuteurs) {
 
 function RemarqueForm({ initial, crDate, lots, interlocuteurs, zones = [], sectionType, onSave, onCancel, onDelete }) {
   const today = crDate ?? dateDuJour()
+  const { miseEnForme: formeDisponible } = useCr()
   // Une remarque créée maintenant est nouvelle dans cette visite (▶) ; la
   // reprise dans la visite suivante retire le repère.
   const [form, setForm] = useState(() => ({
     date_note: today, description: '',
     statut: STATUT_PAR_DEFAUT, date_echeance: '',
-    est_important: false, est_nouveau: true,
+    gras: false, italique: false, surligne: false, est_nouveau: true,
     lot_id: '', interlocuteur_id: '', zone_id: '',
     ...(initial ? {
       date_note:        initial.date_note ?? today,
       description:      initial.description ?? '',
       statut:           statutNormalise(initial),
       date_echeance:    initial.date_echeance ?? '',
-      est_important:    !!initial.est_important,
+      ...miseEnForme(initial),
       est_nouveau:      !!initial.est_nouveau,
       lot_id:           initial.lot_id ?? '',
       interlocuteur_id: initial.interlocuteur_id ?? '',
@@ -182,7 +183,7 @@ function RemarqueForm({ initial, crDate, lots, interlocuteurs, zones = [], secti
         description:      form.description,
         ...changementStatut(form.statut),
         date_echeance:    form.date_echeance || null,
-        est_important:    !!form.est_important,
+        ...champsMiseEnForme(form, formeDisponible),
         est_nouveau:      !!form.est_nouveau,
         lot_id:           sectionType === 'general' ? null : (form.lot_id || null),
         interlocuteur_id: sectionType === 'general' ? null : (form.interlocuteur_id || null),
@@ -276,8 +277,9 @@ function RemarqueForm({ initial, crDate, lots, interlocuteurs, zones = [], secti
         {/* Options */}
         <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
           {[
-            { key: 'est_nouveau',   label: '▶ Nouveau' },
-            { key: 'est_important', label: 'Important (gras)' },
+            { key: 'est_nouveau', label: '▶ Nouveau' },
+            { key: 'gras', label: 'Gras' },
+            ...(formeDisponible ? [{ key: 'italique', label: 'Italique' }, { key: 'surligne', label: 'Surligné' }] : []),
           ].map(opt => (
             <label key={opt.key} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer', userSelect: 'none' }}>
               <input type="checkbox" checked={!!form[opt.key]} onChange={e => set(opt.key, e.target.checked)} style={{ cursor: 'pointer', accentColor: '#E8602C' }} />
@@ -444,7 +446,10 @@ function RemarqueRow({ rem, idx, total, crDate, lots, interlocuteurs, zones, sec
 
   let descStyle = { fontSize: 13, color: '#1F1B17', lineHeight: 1.5 }
   if (statut.clos) descStyle = { ...descStyle, textDecoration: 'line-through', color: '#9CA3AF' }
-  if (rem.est_important) descStyle = { ...descStyle, fontWeight: 500, color: '#E8602C' }
+  const forme = miseEnForme(rem)
+  if (forme.gras) descStyle = { ...descStyle, fontWeight: 700 }
+  if (forme.italique) descStyle = { ...descStyle, fontStyle: 'italic' }
+  if (forme.surligne && !statut.clos) descStyle = { ...descStyle, background: COULEUR_SURLIGNE, padding: '0 3px' }
 
   const sousSousRems = rem.sous_remarques ?? []
 
@@ -1275,7 +1280,6 @@ export function CrSectionEditor({ sections, crId, crDate, interlocuteurs, lotEnt
   const [depotEnCours, setDepotEnCours] = useState(false)
   // Panneaux partagés avec le mode Visite : saisie adressée, suites
   const [panneau, setPanneau] = useState(null)
-  const typesAgence = useRemarquesTypes()
   const { ajouterPhotos } = useContext(PhotosContexte)
   const crPanneau = { id: crId, date_reunion: crDate }
 
@@ -1296,14 +1300,13 @@ export function CrSectionEditor({ sections, crId, crDate, interlocuteurs, lotEnt
   // Tous les lots de l'affaire : une remarque peut viser un lot encore sans titulaire
   const lots = lotsAffaire ?? (lotEntreprises ?? []).map(le => le.lots).filter(Boolean)
 
-  const enregistrerAdressee = async (payload, { destinataire: cle, compressions, commeType }) => {
+  const enregistrerAdressee = async (payload, { destinataire: cle, compressions }) => {
     if (panneau.type === 'modifier') {
       await ops.updateRemarque(panneau.remarque.id, await champsModification(ops, sections, panneau.remarque, cle, payload))
       return
     }
     const id = await creerRemarqueAdressee(ops, sections, cle, payload)
     if (compressions.length > 0) await ajouterPhotos(id, compressions).catch(() => {})
-    if (commeType) await typesAgence.ajouter(payload.description).catch(acces.signalerErreur)
   }
   const toutesPrincipales = sections.flatMap(s => [...(s.directRemarques ?? []), ...(s.sousSections ?? []).flatMap(ss => ss.remarques ?? [])])
 
@@ -1525,7 +1528,6 @@ export function CrSectionEditor({ sections, crId, crDate, interlocuteurs, lotEnt
         <PanneauRemarque
           remarque={panneau.type === 'modifier' ? panneau.remarque : null}
           cr={crPanneau} lots={lots} interlocuteurs={interlocuteurs ?? []} zones={zones}
-          typesAgence={typesAgence}
           destinataireInitial={panneau.destinataire ?? null}
           numeros={numerosParties(sections)}
           onEnregistrer={enregistrerAdressee}

@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 640 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
+npm test         # 642 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
 npx eslint src   # ~73 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -47,7 +47,7 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
 - **Accès aux données** : hooks dans `src/shared/hooks/`. `useAffaires()` pour
   la liste, `useAffaire(id)` pour une affaire (les deux font `select('*')`),
   `useAffaireCollaborateurs(id)` pour les droits (`canEdit`, `isProprietaire`).
-- **Base** : `supabase/migrations/`, numérotées, 55 fichiers, **passées à la
+- **Base** : `supabase/migrations/`, numérotées, 56 fichiers, **passées à la
   main** dans le SQL Editor de Supabase : un code qui dépend d'une nouvelle
   colonne doit tolérer son absence tant que la migration n'est pas faite. La photo de
   couverture d'une affaire est `affaires.photo_url` (migration 014, bucket
@@ -154,9 +154,15 @@ création avec reprise de la visite précédente) et `useCompteRendu` (un CR).
   la tablette (iPad) ouvert par `?visite=1` ; le CR ouvert est aussi dans
   l'adresse (`?cr=`), pour survivre à un rechargement. Boutons de 44 px au
   moins. Ses panneaux s'ancrent en haut de l'écran (le clavier de l'iPad
-  recouvre le bas). Remarques types de l'agence : table `remarques_types`
-  (migration 042). Dictée : reconnaissance vocale du navigateur, bouton masqué
-  si absente.
+  recouvre le bas). Les « remarques types » (table `remarques_types`,
+  migration 042) ont été **retirées** de l'écran à la demande de l'agence (elles
+  embrouillaient) ; la table reste, inutilisée. Dictée : reconnaissance vocale
+  du navigateur, bouton masqué si absente.
+- **Mise en forme** (migration 056) : gras, italique, surligné, pour toute la
+  remarque (`miseEnForme`, `champsMiseEnForme` de `crLogique.js`). Remplace
+  « Important » (`est_important`), lu comme gras. Sans la migration, seul le
+  gras est proposé et passe par `est_important` (sonde dans `useCompteRendu`,
+  `miseEnForme` du `CrContexte`).
 - **Rapport PDF** : vrai fichier fabriqué dans le navigateur par pdfmake
   (chargé à la demande, `genererRapport.js`). Tout le contenu se décide dans
   `rapportLogique.js` (sélection selon les réglages, `definitionPdf`), testé

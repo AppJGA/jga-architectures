@@ -7,7 +7,7 @@ import assert from 'node:assert/strict'
 import { test, describe } from 'node:test'
 
 import {
-  filtreVisite, groupesVisite, compteursVisite, echeanceRapide, suggestionsTypes, ajouterDictee, normaliserTexte,
+  filtreVisite, groupesVisite, compteursVisite, echeanceRapide, ajouterDictee, normaliserTexte,
 } from '../src/modules/chantier/comptes-rendus/visiteLogique.js'
 
 const sections = [
@@ -56,27 +56,6 @@ test('echeanceRapide : semaines calendaires, passage de mois et d’heure d’hi
   assert.equal(echeanceRapide('2026-09-15', 1), '2026-09-22')
   assert.equal(echeanceRapide('2026-10-22', 2), '2026-11-05')
   assert.equal(echeanceRapide('2026-12-28', 1), '2027-01-04')
-})
-
-describe('suggestionsTypes', () => {
-  const types = [
-    { id: 1, texte: 'Nettoyage de fin de journée non réalisé', utilisations: 12 },
-    { id: 2, texte: 'Protection des menuiseries à reprendre', utilisations: 30 },
-    { id: 3, texte: 'Nettoyer les abords du chantier', utilisations: 2 },
-    { id: 4, texte: 'Évacuation des gravats', utilisations: 5 },
-  ]
-  test('sans saisie : les plus utilisées d’abord', () => {
-    assert.deepEqual(suggestionsTypes(types, '').map((t) => t.id), [2, 1, 4, 3])
-  })
-  test('tous les mots tapés, sans accents ; début de texte en tête', () => {
-    assert.deepEqual(suggestionsTypes(types, 'nettoy').map((t) => t.id), [1, 3])
-    assert.deepEqual(suggestionsTypes(types, 'evacuation').map((t) => t.id), [4])
-    assert.deepEqual(suggestionsTypes(types, 'reprendre protection').map((t) => t.id), [2])
-    assert.deepEqual(suggestionsTypes(types, 'fin chantier').map((t) => t.id), [])
-  })
-  test('texte déjà saisi en entier : pas reproposé', () => {
-    assert.deepEqual(suggestionsTypes(types, 'évacuation des  gravats').map((t) => t.id), [])
-  })
 })
 
 test('ajouterDictee', () => {

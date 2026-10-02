@@ -16,6 +16,8 @@ export const CrContexte = createContext({
   utilisateurId: null,
   profils: [],
   signalerErreur: () => {},
+  // Gras, italique, surligné (migration 056) ; sans, seul le gras existe
+  miseEnForme: false,
 })
 
 export function useCr() {

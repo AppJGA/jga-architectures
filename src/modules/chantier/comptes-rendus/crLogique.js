@@ -85,6 +85,28 @@ export function estEnRetard(r, dateReference) {
   return !estClos(r) && r.date_echeance < dateReference
 }
 
+// ─── Mise en forme (migration 056) ───────────────────────────────────────────
+//
+// Toute la remarque, en gras, en italique et/ou surlignée. Avant, la case
+// « Important » la mettait en gras : une remarque encore marquée ainsi compte
+// comme grasse.
+
+export const COULEUR_SURLIGNE = '#FFEF99'
+
+export function miseEnForme(r) {
+  return { gras: !!(r?.gras || r?.est_important), italique: !!r?.italique, surligne: !!r?.surligne }
+}
+
+/**
+ * Colonnes à écrire. Sans la migration 056, seul le gras existe, porté par
+ * l'ancienne colonne `est_important`. Avec elle, « Important » est remis à
+ * faux : décocher Gras doit vraiment retirer le gras.
+ */
+export function champsMiseEnForme({ gras, italique, surligne }, disponible) {
+  if (!disponible) return { est_important: !!gras }
+  return { gras: !!gras, italique: !!italique, surligne: !!surligne, est_important: false }
+}
+
 // Présents à la réunion, retardataires compris. Les codes sont stockés en
 // minuscules : la comparaison à 'P' faisait afficher 0 présent en permanence.
 export function compterPresents(presences) {
@@ -174,6 +196,8 @@ export function preparerReprise({ sections = [], sousSections = [], remarques = 
         statut, date_echeance: r.date_echeance ?? null,
         est_important: !!r.est_important, est_clos: clos, est_nouveau: false,
         ordre: r.ordre ?? 0,
+        // Mise en forme (migration 056) : absente avant, comme les autres ajouts
+        ...(r.gras !== undefined && { gras: !!r.gras, italique: !!r.italique, surligne: !!r.surligne }),
         // L'auteur suit sa remarque de visite en visite : une remarque écrite
         // par un intervenant extérieur reste la sienne (migration 050)
         ...(r.created_by !== undefined && { created_by: r.created_by ?? null }),

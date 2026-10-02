@@ -17,6 +17,8 @@ import { exporterPlanningChantierExcel } from './exportPlanningChantierExcel'
 import { trierZones } from '../../../shared/hooks/ordreZones'
 import { useUndoRedo } from '../../../shared/hooks/useUndoRedo'
 import { diffSnapshots, diffEstVide } from './snapshotDiff'
+import { jalonsARecaler, dateAncre, champsAccroche, CHAMPS_DETACHE } from './jalonsAncres'
+import { ancrageDisponible } from '../../../shared/planning/ancrage'
 import { supabase } from '../../../core/supabase/client'
 import { usePlanningZones } from '../../../shared/hooks/usePlanningZones'
 import { usePlanningSegments } from '../../../shared/hooks/usePlanningSegments'
@@ -83,6 +85,8 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
   const [error, setError] = useState(null)
 
   const [jalons, setJalons] = useState([])
+  // Glissement de segment en cours : le recalage des jalons attend sa fin
+  const [gesteSegment, setGesteSegment] = useState(false)
 
   const [undoError, setUndoError] = useState(null)
   const [editingTask, setEditingTask] = useState(null)
@@ -143,7 +147,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
   const zones = useMemo(() => trierZones(zonesBrutes), [zonesBrutes])
   const {
     segments, addSegment, updateSegment, updateSegmentLocal, deleteSegment, getSegmentsForTache,
-    replaceSegments, refetch: refetchSegments,
+    replaceSegments, refetch: refetchSegments, loading: segmentsEnChargement,
   } = usePlanningSegments(affaireId)
   const {
     dependances, addDependance, deleteDependance, updateLags, replaceDependances, refetch: refetchDependances,
@@ -168,7 +172,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
     label,
   }), [tasks, segments, dependances, jalons])
   const {
-    periodes, addPeriode, updatePeriode, deletePeriode,
+    periodes, addPeriode, updatePeriode, deletePeriode, loading: periodesEnChargement,
   } = usePeriodesBloquees(affaireId)
 
   // Message d'échec d'une écriture, affiché au-dessus de la barre d'outils
@@ -700,7 +704,13 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
   // segment ne laisse donc pas d'entrée vide.
   const handleSegmentDragBegin = useCallback((label) => {
     beginPending(takeSnapshot(label))
+    setGesteSegment(true)
   }, [beginPending, takeSnapshot])
+
+  const handleSegmentDragCancel = useCallback(() => {
+    cancelPending()
+    setGesteSegment(false)
+  }, [cancelPending])
 
   // `avant` : dates du segment au début du geste. L'état local a déjà suivi
   // la souris, le comparer à `seg` ne détecterait jamais de déplacement.
@@ -729,6 +739,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
 
   const handleSegmentCommit = useCallback(async (segmentId, changes, avant) => {
     const seg = segments.find((s) => s.id === segmentId)
+    setGesteSegment(false)
     if (!seg) return
     commitPending()
     await enregistrerSegment(seg, changes, avant)
@@ -953,6 +964,61 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
     if (failed?.error) await signalerEchec('Réorganisation impossible', failed.error.message)
   }, [tasks, signalerEchec, saveSnapshot, takeSnapshot])
 
+  // ── Jalons : roue, accroche, recalage ───────────────────────────────────────
+  //
+  // Déplacer, accrocher et détacher un jalon sont des actions du planning : une
+  // étape d'historique chacune. Le créer, le renommer ou le supprimer reste
+  // hors historique, comme dans sa fenêtre.
+  const [jalonReglages, setJalonReglages] = useState(null)
+  const peutAccrocher = ancrageDisponible(jalons)
+
+  const handleJalonModif = useCallback(async (id, changes, label) => {
+    saveSnapshot(takeSnapshot(label))
+    setJalons((prev) => prev.map((j) => (j.id === id ? { ...j, ...changes } : j)))
+    ecrituresEnCours.current++
+    const { error } = await supabase.from('planning_jalons').update(changes).eq('id', id)
+    ecrituresEnCours.current--
+    if (error) { retirerDernier(); await signalerEchec('Jalon non enregistré', error.message) }
+  }, [saveSnapshot, takeSnapshot, retirerDernier, signalerEchec])
+
+  const handleJalonAccroche = useCallback((id, cible, bord) => {
+    const jalon = jalons.find((j) => j.id === id)
+    if (!jalon) return
+    const champs = champsAccroche(cible, bord)
+    const date = dateAncre({ ...jalon, ...champs }, { tasks, segments, periodes })
+    handleJalonModif(id, { ...champs, ...(date ? { date } : {}) }, `Accroche du jalon « ${jalon.label} »`)
+  }, [jalons, tasks, segments, periodes, handleJalonModif])
+
+  const handleJalonSupprime = useCallback(async (jalon) => {
+    if (!window.confirm(`Supprimer le jalon « ${jalon.label} » ?`)) return
+    setJalons((prev) => prev.filter((j) => j.id !== jalon.id))
+    const { error } = await supabase.from('planning_jalons').delete().eq('id', jalon.id)
+    if (error) await signalerEchec('Suppression du jalon impossible', error.message)
+  }, [signalerEchec])
+
+  // Un jalon accroché suit sa barre, quelle que soit la façon dont elle a bougé
+  // (glissement, fiche, liens, fermetures, Décaler, annulation) : on compare
+  // après coup plutôt que de compléter chacun de ces chemins. Différé, et
+  // suspendu pendant un glissement de segment, qui modifie l'état à chaque
+  // image ; attend aussi que segments et fermetures soient chargés, sinon une
+  // fin calculée sans fermeture partirait en base.
+  useEffect(() => {
+    if (isLoading || segmentsEnChargement || periodesEnChargement || gesteSegment) return
+    const aRecaler = jalonsARecaler(jalons, { tasks, segments, periodes })
+    if (aRecaler.length === 0) return
+    const minuteur = setTimeout(async () => {
+      const dates = new Map(aRecaler.map((r) => [r.id, r.date]))
+      setJalons((prev) => prev.map((j) => (dates.has(j.id) ? { ...j, date: dates.get(j.id) } : j)))
+      ecrituresEnCours.current++
+      const resultats = await Promise.all(aRecaler.map((r) =>
+        supabase.from('planning_jalons').update({ date: r.date }).eq('id', r.id)))
+      ecrituresEnCours.current--
+      const echec = resultats.find((r) => r.error)
+      if (echec) setErreurEcriture(`Jalon accroché non recalé : ${echec.error.message}`)
+    }, 300)
+    return () => clearTimeout(minuteur)
+  }, [jalons, tasks, segments, periodes, isLoading, segmentsEnChargement, periodesEnChargement, gesteSegment])
+
   // ── Application d'un instantané ─────────────────────────────────────────────
   //
   // On écrit le strict nécessaire : les lignes modifiées, celles créées depuis
@@ -967,8 +1033,8 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
     replaceSegments(vers.segments)
     if (vers.dependances) replaceDependances(vers.dependances)
     if (diff.jalons.updates.length) {
-      const dates = new Map(diff.jalons.updates.map((u) => [u.id, u.changes.date]))
-      setJalons((prev) => prev.map((j) => (dates.has(j.id) ? { ...j, date: dates.get(j.id) } : j)))
+      const changements = new Map(diff.jalons.updates.map((u) => [u.id, u.changes]))
+      setJalons((prev) => prev.map((j) => (changements.has(j.id) ? { ...j, ...changements.get(j.id) } : j)))
     }
     ecrituresEnCours.current++
 
@@ -1283,7 +1349,14 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
             rowHeight={rowHeight}
             showConnections={showConnections}
             jalons={jalons}
-            onJalonClick={() => setShowJalonsModal(true)}
+            peutAccrocher={peutAccrocher}
+            onJalonModif={handleJalonModif}
+            onJalonAccroche={handleJalonAccroche}
+            onJalonDetache={(j) => handleJalonModif(j.id, CHAMPS_DETACHE, `Détachement du jalon « ${j.label} »`)}
+            onJalonSupprime={handleJalonSupprime}
+            onJalonReglages={(j) => { setJalonReglages(j.id); setShowJalonsModal(true) }}
+            onAccrochageIndisponible={() => setErreurEcriture(
+              'Accrocher un jalon demande la mise à jour 053 de la base (Supabase → SQL Editor).')}
             onTaskClick={(t) => handleOpenTaskModal(t, 'edit')}
             onTaskUpdate={handleTaskUpdate}
             onTaskDuplicate={handleDuplicateTask}
@@ -1302,7 +1375,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
             updateSegmentLocal={updateSegmentLocal}
             onSegmentCommit={handleSegmentCommit}
             onSegmentDragBegin={handleSegmentDragBegin}
-            onSegmentDragCancel={cancelPending}
+            onSegmentDragCancel={handleSegmentDragCancel}
             dependances={dependances}
             onSegmentDependencyCreate={handleLienEtenduCreate}
             onSegmentDependencyDelete={handleLienEtenduDelete}
@@ -1707,10 +1780,11 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
 
       <JalonModal
         open={showJalonsModal}
-        onClose={() => setShowJalonsModal(false)}
+        onClose={() => { setShowJalonsModal(false); setJalonReglages(null) }}
         jalons={jalons}
         affaireId={affaireId}
         onRefetch={fetchAllData}
+        jalonInitialId={jalonReglages}
       />
 
       <PeriodesBloqueesModal

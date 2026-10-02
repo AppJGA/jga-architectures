@@ -1,7 +1,9 @@
 import { useMemo, useRef, useCallback, useState, useEffect, useLayoutEffect } from 'react'
 import { GitBranch } from 'lucide-react'
 import { MenuRadial, EditionBarre, BandeauLien } from '../../../shared/planning/MenuRadial'
-import { ACTIONS_SEGMENT } from '../../../shared/planning/positionsPetales'
+import { ACTIONS_SEGMENT, actionsJalon } from '../../../shared/planning/positionsPetales'
+import { estAncre, bordTouche } from '../../../shared/planning/ancrage'
+import { dateAncre } from './jalonsAncres'
 import { recadrerSurBarre, arreterRecadrageAuPincement } from '../../../shared/planning/recadrage'
 import {
   parseDate,
@@ -25,6 +27,8 @@ import {
   xAtDateMonth,
   barreSemaine,
   barreMois,
+  deplacerJalon,
+  lendemain,
 } from './geometrie'
 
 // Étendue minimale de la timeline, même sans tâche (la plage réelle est calculée
@@ -282,9 +286,21 @@ function hexToRgba(hex, alpha) {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`
 }
 
+// Signe d'un jalon accroché, dans son étiquette (blanc sur la couleur du jalon)
+function IconeLien() {
+  return (
+    <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor"
+      strokeWidth="2.6" strokeLinecap="round" aria-label="accroché">
+      <path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7" />
+      <path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7" />
+    </svg>
+  )
+}
+
 export function GanttTimeline({
   tasks, lots, rows = null, dayWidth, rowHeight, showConnections,
-  jalons = [], onJalonClick,
+  jalons = [], peutAccrocher = false, onJalonModif, onJalonAccroche, onJalonDetache,
+  onJalonSupprime, onJalonReglages, onAccrochageIndisponible,
   onTaskClick, onTaskUpdate, onDependencyCreate, onDependencyDelete,
   onTaskDuplicate, onTaskDelete, onTaskAddSegment, onSelectionChange,
   zones = [], colorMode = 'lot', viewMode = 'day', zoomLevel = 1,
@@ -629,6 +645,30 @@ export function GanttTimeline({
     apercu && apercu.taskId === t.id ? { ...t, debut: apercu.debut, duree: apercu.duree } : t
   ), [apercu])
 
+  // ── Jalons : roue, déplacement, accroche ─────────────────────────────────────
+  // { jalonId, mode: 'menu' | 'move' | 'accroche', haut, origine } — exclusive
+  // des sélections de barre et de segment. `haut` : hauteur de la roue, figée
+  // au toucher (la ligne d'un jalon traverse tout le planning).
+  const [selectionJalon, setSelectionJalon] = useState(null)
+  const [apercuJalon, setApercuJalon] = useState(null)
+  const [draggingJalon, setDraggingJalon] = useState(false)
+  const jalonDragRef = useRef(null)
+  const enAccroche = selectionJalon?.mode === 'accroche'
+
+  // Un jalon accroché se dessine depuis la barre affichée, aperçu du geste
+  // compris : il suit le doigt pendant qu'on déplace ou étire sa barre.
+  const jalonsAffiches = useMemo(() => {
+    const tachesAffichees = apercu ? tasks.map(tacheAffichee) : tasks
+    return jalons.map((j) => {
+      const date = estAncre(j) ? dateAncre(j, { tasks: tachesAffichees, segments, periodes }) : null
+      const affiche = { ...j, ancre: date != null, date: date ?? j.date }
+      return apercuJalon?.jalonId === j.id ? { ...affiche, date: apercuJalon.date } : affiche
+    })
+  }, [jalons, tasks, segments, periodes, apercu, tacheAffichee, apercuJalon])
+  const jalonSelectionne = selectionJalon
+    ? jalonsAffiches.find((j) => j.id === selectionJalon.jalonId) ?? null
+    : null
+
   // À la souris, une barre se glisse directement. Au doigt, seulement en mode
   // Déplacer ou Allonger de cette tâche : ailleurs le geste reste un toucher,
   // qui ouvre le menu radial.
@@ -640,13 +680,14 @@ export function GanttTimeline({
     barDragRef.current = {
       type, taskId: task.id, startX: e.clientX, startY: e.clientY,
       origDebut: parseDate(task.debut), origDuree: task.duree,
-      glissable: e.pointerType === 'mouse' || enEdition,
+      // En mode Accrocher, toucher une barre la désigne : elle ne doit pas bouger
+      glissable: (e.pointerType === 'mouse' && !enAccroche) || enEdition,
       pointerType: e.pointerType,
       moved: false,
     }
     setDraggingBar(task.id)
     if (e.pointerType === 'mouse') document.body.style.cursor = type === 'move' ? 'grabbing' : 'ew-resize'
-  }, [drawMode, selection])
+  }, [drawMode, selection, enAccroche])
 
   // ── Drag segment ──────────────────────────────────────────────────────────────
   const [draggingSegment, setDraggingSegment] = useState(null)
@@ -663,6 +704,7 @@ export function GanttTimeline({
     // toucher qui suit un glissement passait pour sa fin et n'ouvrait rien.
     segmentDragRef.current = { moved: false }
     if (e.pointerType && e.pointerType !== 'mouse' && !segEnEdition(segment.id, 'move')) return
+    if (enAccroche) return
     e.stopPropagation()
     e.preventDefault()
 
@@ -673,7 +715,7 @@ export function GanttTimeline({
       startX: e.clientX,
       originalDateDebut: segment.date_debut,
     })
-  }, [drawMode, onSegmentDragBegin, segEnEdition])
+  }, [drawMode, onSegmentDragBegin, segEnEdition, enAccroche])
 
   useEffect(() => {
     if (!draggingSegment) return
@@ -967,8 +1009,22 @@ export function GanttTimeline({
     return () => volet.removeEventListener('click', fermer)
   }, [selection?.mode, scrollRef])
 
+  // Mode Accrocher : la barre touchée reçoit le jalon, au début ou à la fin
+  // selon la moitié touchée
+  const accrocherA = useCallback((cible, element, clientX) => {
+    const rect = element?.getBoundingClientRect()
+    const bord = rect && clientX != null ? bordTouche(clientX, rect) : 'fin'
+    onJalonAccroche?.(selectionJalon.jalonId, cible, bord)
+    setSelectionJalon(null)
+  }, [selectionJalon, onJalonAccroche])
+
   // Toucher (ou clic sans glisser) une barre de tâche
-  const toucherBarre = useCallback((taskId) => {
+  const toucherBarre = useCallback((taskId, clientX) => {
+    if (selectionJalon?.mode === 'accroche') {
+      accrocherA({ type: 'task', id: taskId }, scrollRef?.current?.querySelector(`[data-taskid="${taskId}"]`), clientX)
+      return
+    }
+    setSelectionJalon(null)
     if (selection?.mode === 'lien') {
       if (taskId !== selection.taskId) creerLien({ type: 'task', taskId: selection.taskId }, { type: 'task', taskId })
       setSelection(null)
@@ -977,11 +1033,16 @@ export function GanttTimeline({
     setSelectionSeg(null)
     setSelection({ taskId, mode: 'menu' })
     recadrerSurBarre(scrollRef, `[data-taskid="${taskId}"]`, camera)
-  }, [selection, creerLien, scrollRef])
+  }, [selection, selectionJalon, accrocherA, creerLien, scrollRef])
 
   // En mode Lier, toucher un segment en fait la suite de la tâche choisie
   // Ailleurs, il ouvre sa roue et recadre la vue sur lui, comme une barre.
-  const toucherSegment = useCallback((seg) => {
+  const toucherSegment = useCallback((seg, e) => {
+    if (selectionJalon?.mode === 'accroche') {
+      accrocherA({ type: 'segment', id: seg.id }, e?.currentTarget, e?.clientX)
+      return true
+    }
+    setSelectionJalon(null)
     if (selection?.mode === 'lien') {
       creerLien({ type: 'task', taskId: selection.taskId }, { type: 'segment', segmentId: seg.id })
       setSelection(null)
@@ -991,7 +1052,82 @@ export function GanttTimeline({
     setSelectionSeg({ segmentId: seg.id, mode: 'menu' })
     recadrerSurBarre(scrollRef, `[data-segmentid="${seg.id}"]`, camera)
     return true
-  }, [selection, creerLien, scrollRef])
+  }, [selection, selectionJalon, accrocherA, creerLien, scrollRef])
+
+  // Toucher un jalon (sa ligne ou son étiquette) ouvre sa roue, à mi-hauteur
+  // de ce qui est visible plutôt qu'en haut d'un planning qu'on a fait défiler
+  const toucherJalon = useCallback((jalon, labelTop) => {
+    if (drawMode) return
+    setSelection(null)
+    setSelectionSeg(null)
+    const visible = scrollRef?.current?.scrollTop ?? 0
+    setSelectionJalon({ jalonId: jalon.id, mode: 'menu', haut: Math.max(labelTop + 70, visible + 110) })
+  }, [drawMode, scrollRef])
+
+  const actionMenuJalon = useCallback((action) => {
+    const jalon = jalonSelectionne
+    if (!jalon) { setSelectionJalon(null); return }
+    if (action === 'move') { setSelectionJalon((sel) => ({ ...sel, mode: 'move', origine: jalon.date })); return }
+    if (action === 'accrocher') {
+      if (!peutAccrocher) { setSelectionJalon(null); onAccrochageIndisponible?.(); return }
+      setSelectionJalon((sel) => ({ ...sel, mode: 'accroche' }))
+      return
+    }
+    setSelectionJalon(null)
+    if (action === 'params') onJalonReglages?.(jalon)
+    else if (action === 'detacher') onJalonDetache?.(jalon)
+    else if (action === 'del') onJalonSupprime?.(jalon)
+  }, [jalonSelectionne, peutAccrocher, onAccrochageIndisponible, onJalonReglages, onJalonDetache, onJalonSupprime])
+
+  // Même fermeture que la roue d'une barre : un clic hors de la roue la referme
+  useEffect(() => {
+    const volet = scrollRef?.current
+    if (selectionJalon?.mode !== 'menu' || !volet) return
+    const fermer = (e) => {
+      if (e.target.closest?.('[role="menu"], [data-jalonid]')) return
+      setSelectionJalon(null)
+    }
+    volet.addEventListener('click', fermer)
+    return () => volet.removeEventListener('click', fermer)
+  }, [selectionJalon?.mode, scrollRef])
+
+  // Glisser un jalon par la poignée du mode Déplacer, au jour près. Même règle
+  // que pour une barre : un geste interrompu par le système n'écrit rien.
+  const startJalonDrag = useCallback((e) => {
+    if (!jalonSelectionne) return
+    e.preventDefault(); e.stopPropagation()
+    jalonDragRef.current = { jalonId: jalonSelectionne.id, startX: e.clientX, origine: jalonSelectionne.date }
+    setDraggingJalon(true)
+  }, [jalonSelectionne])
+
+  useLayoutEffect(() => {
+    if (!draggingJalon) return
+    const dateSous = (drag, clientX) => formatDateISO(deplacerJalon({ date: drag.origine, dx: clientX - drag.startX, geo }))
+    const handleMove = (e) => {
+      const drag = jalonDragRef.current
+      if (!drag) return
+      const date = dateSous(drag, e.clientX)
+      setApercuJalon((prev) => (prev?.date === date ? prev : { jalonId: drag.jalonId, date }))
+    }
+    const handleUp = (e) => {
+      const drag = jalonDragRef.current
+      jalonDragRef.current = null
+      setDraggingJalon(false)
+      setApercuJalon(null)
+      if (!drag || e.type === 'pointercancel') return
+      const date = dateSous(drag, e.clientX)
+      const jalon = jalons.find((j) => j.id === drag.jalonId)
+      if (jalon && date !== jalon.date) onJalonModif?.(drag.jalonId, { date }, `Déplacement du jalon « ${jalon.label} »`)
+    }
+    window.addEventListener('pointermove', handleMove)
+    window.addEventListener('pointerup', handleUp)
+    window.addEventListener('pointercancel', handleUp)
+    return () => {
+      window.removeEventListener('pointermove', handleMove)
+      window.removeEventListener('pointerup', handleUp)
+      window.removeEventListener('pointercancel', handleUp)
+    }
+  }, [draggingJalon, geo, jalons, onJalonModif])
 
   const actionMenuSegment = useCallback((action) => {
     const seg = segmentSelectionne
@@ -1062,7 +1198,7 @@ export function GanttTimeline({
       document.body.style.cursor = ''
       if (!drag) return
       if (!drag.moved) {
-        if (e.type !== 'pointercancel') toucherBarre(drag.taskId)
+        if (e.type !== 'pointercancel') toucherBarre(drag.taskId, drag.startX)
         return
       }
       if (!drag.glissable || e.type === 'pointercancel') return
@@ -1094,7 +1230,7 @@ export function GanttTimeline({
   }, [connectingFrom, hoveredPoint])
 
   useEffect(() => {
-    const h = (e) => { if (e.key === 'Escape') { setConnectingFrom(null); setSelection(null); setSelectionSeg(null) } }
+    const h = (e) => { if (e.key === 'Escape') { setConnectingFrom(null); setSelection(null); setSelectionSeg(null); setSelectionJalon(null) } }
     window.addEventListener('keydown', h)
     return () => window.removeEventListener('keydown', h)
   }, [])
@@ -1134,15 +1270,22 @@ export function GanttTimeline({
     return avantDebut || x < 0 || x > totalWidth ? null : x
   }, [getX, dateRef, viewMode, totalWidth])
 
+  // Un jalon de fin de barre se dessine au bord droit de son jour, là où la
+  // barre s'arrête ; les autres au bord gauche, comme jusqu'ici
+  const xJalon = useCallback((j) => (
+    j.ancre_bord === 'fin' ? getX(lendemain(parseDate(j.date))) : getX(parseDate(j.date))
+  ), [getX])
+
   // Voie verticale de chaque label de jalon (anti-chevauchement)
   const jalonLabelLanes = useMemo(
     () => assignLabelLanes(
-      jalons.map((j) => getX(parseDate(j.date))),
+      jalonsAffiches.map(xJalon),
       JALON_LABEL_MIN_GAP,
-      // Largeur approchée du libellé (corps 10, gras) plus sa marge
-      jalons.map((j) => String(j.label ?? '').length * 6.5 + 16),
+      // Largeur approchée du libellé (corps 10, gras) plus sa marge et le
+      // signe de lien d'un jalon accroché
+      jalonsAffiches.map((j) => String(j.label ?? '').length * 6.5 + 16 + (j.ancre ? 14 : 0)),
     ),
-    [jalons, getX]
+    [jalonsAffiches, xJalon]
   )
 
   return (
@@ -1337,8 +1480,8 @@ export function GanttTimeline({
         ))}
 
         {/* Indicateurs jalons dans le header */}
-        {jalons.map(jalon => {
-          const x = getX(parseDate(jalon.date))
+        {jalonsAffiches.map(jalon => {
+          const x = xJalon(jalon)
           return (
             <div key={jalon.id} style={{
               position: 'absolute', left: x - 1, top: 0, bottom: 0,
@@ -1486,33 +1629,42 @@ export function GanttTimeline({
           )
         })()}
 
-        {/* Jalons — lignes verticales (labels décalés pour ne pas se chevaucher) */}
-        {jalons.map((jalon, idx) => {
-          const x = getX(parseDate(jalon.date))
+        {/* Jalons — lignes verticales (labels décalés pour ne pas se chevaucher).
+            La zone de toucher déborde la ligne de 2,5 px : au doigt, une ligne
+            aussi fine ne se touche pas. */}
+        {jalonsAffiches.map((jalon, idx) => {
+          const x = xJalon(jalon)
+          const labelTop = 4 + (jalonLabelLanes[idx] ?? 0) * JALON_LABEL_HEIGHT
           return (
             <div
               key={jalon.id}
+              data-jalonid={jalon.id}
               style={{
-                position: 'absolute', left: x, top: 0, bottom: 0,
-                width: 2.5, backgroundColor: jalon.couleur, opacity: 0.85,
-                zIndex: 15, pointerEvents: 'auto', cursor: 'pointer',
+                position: 'absolute', left: x - 10, width: 22, top: 0, bottom: 0,
+                zIndex: 15, pointerEvents: drawMode ? 'none' : 'auto', cursor: 'pointer',
               }}
-              title={`${jalon.label} — ${new Date(jalon.date + 'T00:00:00').toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })}`}
-              onClick={(e) => { e.stopPropagation(); onJalonClick?.(jalon) }}
+              title={`${jalon.label} — ${new Date(jalon.date + 'T00:00:00').toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })}${jalon.ancre ? ' · accroché à une barre' : ''}`}
+              onClick={(e) => { e.stopPropagation(); toucherJalon(jalon, labelTop) }}
             >
               <div style={{
+                position: 'absolute', left: 10, top: 0, bottom: 0,
+                width: 2.5, backgroundColor: jalon.couleur, opacity: 0.85,
+              }} />
+              <div style={{
                 position: 'absolute',
-                top: 4 + (jalonLabelLanes[idx] ?? 0) * JALON_LABEL_HEIGHT,
-                left: 5,
+                top: labelTop,
+                left: 15,
+                display: 'flex', alignItems: 'center', gap: 4,
                 backgroundColor: jalon.couleur, color: 'white',
                 fontSize: 10, fontWeight: 600, padding: '2px 6px', borderRadius: 3,
                 whiteSpace: 'nowrap', letterSpacing: '0.02em',
                 boxShadow: '0 1px 4px rgba(0,0,0,0.15)', userSelect: 'none',
               }}>
+                {jalon.ancre && <IconeLien />}
                 {jalon.label}
               </div>
               <div style={{
-                position: 'absolute', bottom: 4, left: '50%', transform: 'translateX(-50%)',
+                position: 'absolute', bottom: 4, left: 11.25, transform: 'translateX(-50%)',
                 width: 0, height: 0,
                 borderLeft: '5px solid transparent', borderRight: '5px solid transparent',
                 borderTop: `7px solid ${jalon.couleur}`, opacity: 0.85,
@@ -1828,6 +1980,41 @@ export function GanttTimeline({
           )
         })()}
 
+        {/* ── Roue et déplacement d'un jalon ───────────────────────────── */}
+        {jalonSelectionne && selectionJalon.mode !== 'accroche' && (() => {
+          const x = xJalon(jalonSelectionne)
+          const barre = {
+            left: x - 10, width: 20, haut: selectionJalon.haut, hauteurLigne: 24, barPad: 2,
+            fond: { background: jalonSelectionne.couleur },
+          }
+          const jourMois = new Date(jalonSelectionne.date + 'T00:00:00')
+            .toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })
+          if (selectionJalon.mode === 'menu') {
+            return (
+              <MenuRadial
+                barre={barre}
+                objet="jalon"
+                actions={actionsJalon(jalonSelectionne.ancre)}
+                numero={jourMois}
+                duree={jalonSelectionne.ancre ? 'accroché' : 'jalon'}
+                onAction={actionMenuJalon}
+                onFermer={() => setSelectionJalon(null)}
+              />
+            )
+          }
+          const ecart = joursEntre(parseDate(selectionJalon.origine), parseDate(jalonSelectionne.date))
+          return (
+            <EditionBarre
+              barre={barre}
+              mode="move"
+              objet="jalon"
+              ecart={ecart === 0 ? '±0 j' : `${ecart > 0 ? '+' : ''}${ecart} j`}
+              onPoigneeDown={startJalonDrag}
+              onTerminer={() => setSelectionJalon(null)}
+            />
+          )
+        })()}
+
         {/* Today marker */}
         {todayOffset != null && <div style={{
           position: 'absolute', top: 0, bottom: 0, zIndex: 20,
@@ -1858,6 +2045,12 @@ export function GanttTimeline({
       )}
 
       {selection?.mode === 'lien' && selectionTache && <BandeauLien onAnnuler={() => setSelection(null)} />}
+      {enAccroche && (
+        <BandeauLien
+          texte="Touchez une barre près de son début ou de sa fin"
+          onAnnuler={() => setSelectionJalon(null)}
+        />
+      )}
 
       {/* Toast mode dessin */}
       {drawMode && (
@@ -2128,7 +2321,7 @@ function TaskBarRow({
               onClick={(e) => {
                 e.stopPropagation()
                 if (drawMode || segmentDragMovedRef?.current?.moved) return
-                if (onSegmentTap?.(seg)) return
+                if (onSegmentTap?.(seg, e)) return
                 onBarClick(task)
               }}
             >

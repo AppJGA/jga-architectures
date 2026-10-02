@@ -40,6 +40,11 @@ export function annuaireAffaire({ interlocuteurs = [], lots = [] } = {}) {
         detail: [i.fonction, nomComplet(i.prenom, i.nom) ? i.organisation : null].filter(Boolean).join(' · '),
         telephone: i.telephone || null,
         email: i.email || null,
+        // Champs séparés, pour l'export vers le téléphone et Outlook
+        prenom: i.prenom || null,
+        nomFamille: i.nom || null,
+        organisation: i.organisation || null,
+        fonction: i.fonction || null,
       })),
     // Seuls les lots attribués ont quelqu'un à joindre. Sans représentant
     // nommé, les coordonnées de l'entreprise elle-même.
@@ -53,6 +58,10 @@ export function annuaireAffaire({ interlocuteurs = [], lots = [] } = {}) {
         detail: [nomComplet(l.prenom, l.nom_contact), l.fonction].filter(Boolean).join(' · '),
         telephone: l.interlocuteur_tel || l.entreprise_tel || null,
         email: l.interlocuteur_email || l.entreprise_email || null,
+        prenom: l.prenom || null,
+        nomFamille: l.nom_contact || null,
+        organisation: l.raison_sociale || null,
+        fonction: l.fonction || null,
       })),
   }
 }

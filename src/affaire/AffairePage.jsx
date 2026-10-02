@@ -985,6 +985,7 @@ function AffaireOverview({ affaire, stats, affaireId, onEdit, onGererContacts, v
       {estAgence && (
         <ContactsAffaire
           key={versionContacts}
+          affaire={affaire}
           affaireId={affaireId}
           canEdit={canEdit}
           onGerer={onGererContacts}

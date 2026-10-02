@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 642 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
+npm test         # 656 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
 npx eslint src   # ~73 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -56,6 +56,11 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
   Cet éditeur vit dans un `<form>` : **aucun `<form>` dedans et tout bouton en
   `type="button"`**, sinon enregistrer un interlocuteur envoie et ferme la
   fiche entière.
+  Export (`exportContactsLogique.js`, testé, fabriqué dans la page) : tous
+  les contacts en vCard 3.0 pour le téléphone, ou en CSV aux en-têtes
+  anglais d'Outlook (marque UTF-8) — l'Outlook classique ne retient que le
+  premier contact d'un .vcf. Une icône par fiche donne la carte seule. La
+  note de chaque contact porte l'affaire et le rôle.
 - **Base** : `supabase/migrations/`, numérotées, 56 fichiers, **passées à la
   main** dans le SQL Editor de Supabase : un code qui dépend d'une nouvelle
   colonne doit tolérer son absence tant que la migration n'est pas faite. La photo de

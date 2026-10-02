@@ -2,8 +2,29 @@ import { useState, useEffect, useRef } from 'react'
 import { ChevronUp, ChevronDown, Trash2, Plus, Download, Lock, X } from 'lucide-react'
 import {
   normaliserGeneralites, aDuTexte, squeletteHabituel, copierPourImport,
-  ajouter, modifier, supprimer, deplacer, generalitesAImprimer,
+  ajouter, modifier, supprimer, deplacer, generalitesAImprimer, decrireElement,
 } from './generalitesLogique'
+import { ModaleConfirmation } from '../../../shared/components/ModaleConfirmation'
+
+const pluriel = (n, mot) => `${n} ${mot}${n > 1 ? 's' : ''}`
+
+// Texte de la confirmation d'une suppression : ce qui part, et ce qui ne bouge pas
+function demandeSuppression(element) {
+  const contenu = [
+    element.nbRubriques > 0 && pluriel(element.nbRubriques, 'rubrique'),
+    element.nbParagraphes > 0 && pluriel(element.nbParagraphes, 'paragraphe'),
+  ].filter(Boolean).join(' et ')
+  const extrait = element.libelle.length > 90 ? `${element.libelle.slice(0, 90)}…` : element.libelle
+  const suite = 'Ce sera retiré des généralités de toute l’affaire. Les comptes rendus déjà émis gardent leur version.'
+  if (element.type === 'paragraphe') {
+    return { titre: 'Supprimer ce paragraphe ?', texte: suite, details: `« ${extrait} »` }
+  }
+  const nom = element.type === 'partie' ? 'la partie' : 'la rubrique'
+  return {
+    titre: `Supprimer ${nom}${extrait ? ` « ${extrait} »` : ''} ?`,
+    texte: `${contenu ? `Elle contient ${contenu}, supprimé${element.nbParagraphes + element.nbRubriques > 1 ? 's' : ''} avec elle. ` : ''}${suite}`,
+  }
+}
 
 // ─── Généralités du compte rendu (parties I à V) ─────────────────────────────
 //
@@ -70,6 +91,8 @@ export function GeneralitesVue({ cr, generalites, peutModifier, signalerErreur }
   const [etat, setEtat] = useState('enregistre') // enregistre | modifie | enregistrement | erreur
   const [importOuvert, setImportOuvert] = useState(false)
   const [sources, setSources] = useState(null)
+  // Demande de confirmation en cours : { titre, texte, details, libelle, danger, action }
+  const [confirmation, setConfirmation] = useState(null)
   // Dernière version saisie : une frappe pendant un enregistrement doit
   // relancer l'enregistrement suivant, pas se perdre
   const dernier = useRef(null)
@@ -102,9 +125,14 @@ export function GeneralitesVue({ cr, generalites, peutModifier, signalerErreur }
   const actions = {
     modifier: (id, champs) => changer(g => modifier(g, id, champs)),
     deplacer: (id, sens) => changer(g => deplacer(g, id, sens)),
+    // Un élément vide part tout de suite ; sinon la modale dit ce qui sera perdu
     supprimer: (id) => {
-      if (!window.confirm('Supprimer cet élément et tout ce qu’il contient ?')) return
-      changer(g => supprimer(g, id))
+      const element = decrireElement(affiche, id)
+      if (!element || element.vide) { changer(g => supprimer(g, id)); return }
+      setConfirmation({
+        ...demandeSuppression(element), libelle: 'Supprimer', danger: true,
+        action: () => changer(g => supprimer(g, id)),
+      })
     },
     ajouter: (parentId, type) => changer(g => ajouter(g, parentId, type, nouvelId)),
   }
@@ -114,9 +142,16 @@ export function GeneralitesVue({ cr, generalites, peutModifier, signalerErreur }
     try { setSources(await sourcesImport()) } catch (err) { signalerErreur(err); setSources([]) }
   }
   const importer = (source) => {
-    if (aDuTexte(affiche) && !window.confirm(`Remplacer les généralités actuelles par celles de « ${source.nom} » ?`)) return
-    changer(() => copierPourImport(source.contenu, nouvelId))
-    setImportOuvert(false)
+    const remplacer = () => {
+      changer(() => copierPourImport(source.contenu, nouvelId))
+      setImportOuvert(false)
+    }
+    if (!aDuTexte(affiche)) { remplacer(); return }
+    setConfirmation({
+      titre: 'Remplacer les généralités ?',
+      texte: `Celles de cette affaire seront remplacées par celles de « ${source.nom} ». Les comptes rendus déjà émis gardent leur version.`,
+      libelle: 'Remplacer', danger: false, action: remplacer,
+    })
   }
 
   if (!disponible) {
@@ -254,6 +289,18 @@ export function GeneralitesVue({ cr, generalites, peutModifier, signalerErreur }
         <button type="button" onClick={() => actions.ajouter(null, 'partie')} style={{ ...BOUTON_DISCRET, padding: '8px 14px', fontSize: 12 }}>
           <Plus size={13} /> Ajouter une partie
         </button>
+      )}
+
+      {confirmation && (
+        <ModaleConfirmation
+          titre={confirmation.titre}
+          texte={confirmation.texte}
+          details={confirmation.details ?? null}
+          libelle={confirmation.libelle}
+          danger={confirmation.danger}
+          onConfirmer={() => { confirmation.action(); setConfirmation(null) }}
+          onAnnuler={() => setConfirmation(null)}
+        />
       )}
     </div>
   )

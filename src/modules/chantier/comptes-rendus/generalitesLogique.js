@@ -140,6 +140,34 @@ export function supprimer(contenu, id) {
   return surChaqueListe(normaliserGeneralites(contenu), (l) => l.filter((e) => e.id !== id))
 }
 
+/**
+ * Ce qu'emporterait la suppression d'un élément, pour la demande de
+ * confirmation : son type, son nom, ce qu'il contient. `vide` : rien de saisi,
+ * la suppression peut se passer de confirmation.
+ */
+export function decrireElement(contenu, id) {
+  const g = normaliserGeneralites(contenu)
+  const plein = (paragraphes) => paragraphes.filter((p) => p.texte.trim()).length
+  for (const p of g.parties) {
+    if (p.id === id) {
+      const nbParagraphes = plein(p.paragraphes) + p.rubriques.reduce((n, r) => n + plein(r.paragraphes), 0)
+      return {
+        type: 'partie', libelle: [p.numero_romain, p.titre].filter(Boolean).join(' - '),
+        nbRubriques: p.rubriques.length, nbParagraphes, vide: nbParagraphes === 0 && !p.titre.trim() && p.rubriques.length === 0,
+      }
+    }
+    for (const r of p.rubriques) {
+      if (r.id === id) {
+        const nbParagraphes = plein(r.paragraphes)
+        return { type: 'rubrique', libelle: [r.code, r.titre].filter(Boolean).join(' '), nbRubriques: 0, nbParagraphes, vide: nbParagraphes === 0 && !r.titre.trim() }
+      }
+    }
+    const para = [...p.paragraphes, ...p.rubriques.flatMap((r) => r.paragraphes)].find((x) => x.id === id)
+    if (para) return { type: 'paragraphe', libelle: para.texte.trim(), nbRubriques: 0, nbParagraphes: para.texte.trim() ? 1 : 0, vide: !para.texte.trim() }
+  }
+  return null
+}
+
 /** Monte (sens -1) ou descend (sens +1) un élément parmi ses voisins. */
 export function deplacer(contenu, id, sens) {
   return surChaqueListe(normaliserGeneralites(contenu), (l) => {

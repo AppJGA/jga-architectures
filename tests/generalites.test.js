@@ -5,7 +5,7 @@ import { test, describe } from 'node:test'
 
 import {
   normaliserGeneralites, aDuTexte, squeletteHabituel, copierPourImport,
-  ajouter, modifier, supprimer, deplacer, prochainRomain, prochainCode, generalitesAImprimer,
+  ajouter, modifier, supprimer, deplacer, prochainRomain, prochainCode, generalitesAImprimer, decrireElement,
 } from '../src/modules/chantier/comptes-rendus/generalitesLogique.js'
 
 let n = 0
@@ -90,6 +90,17 @@ describe('édition', () => {
     assert.deepEqual(g.parties.map((p) => p.id), ['p4', 'p1'])
     g = supprimer(g, 'r1')
     assert.deepEqual(g.parties[1].rubriques.map((r) => r.id), ['r2'])
+  })
+
+  test('ce qu’emporterait une suppression, pour la confirmation', () => {
+    const g = exemple()
+    assert.deepEqual(decrireElement(g, 'p1'), { type: 'partie', libelle: 'I - MISE AU POINT ADMINISTRATIVE', nbRubriques: 2, nbParagraphes: 2, vide: false })
+    assert.deepEqual(decrireElement(g, 'r1'), { type: 'rubrique', libelle: '1-1 Réunion de chantier', nbRubriques: 0, nbParagraphes: 2, vide: false })
+    assert.equal(decrireElement(g, 'a').type, 'paragraphe')
+    assert.deepEqual(decrireElement(ajouter(g, 'r2', 'paragraphe', id), 'r2'), decrireElement(g, 'r2'), 'un paragraphe vide ne compte pas')
+    const vierge = ajouter({ parties: [] }, null, 'partie', id)
+    assert.equal(decrireElement(vierge, vierge.parties[0].id).vide, true, 'une partie toute neuve se supprime sans confirmation')
+    assert.equal(decrireElement(g, 'inconnu'), null)
   })
 
   test('numéros proposés', () => {

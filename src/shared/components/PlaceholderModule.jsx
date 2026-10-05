@@ -1,8 +1,5 @@
-import { useNavigate } from 'react-router-dom'
-import { Button } from './Button'
 
 export function PlaceholderModule({ icon: Icon, label }) {
-  const navigate = useNavigate()
   return (
     <div
       className="flex flex-col items-center justify-center min-h-96 p-8 text-center"
@@ -17,9 +14,6 @@ export function PlaceholderModule({ icon: Icon, label }) {
       <h2 className="text-base font-medium text-gray-700 mb-1">Module {label}</h2>
       <p className="text-sm mb-6">en cours de développement</p>
       <p className="text-xs mb-6">Ce module sera disponible prochainement.</p>
-      <Button variant="secondary" onClick={() => navigate('/dashboard')}>
-        Retour au portail d'affaires
-      </Button>
     </div>
   )
 }

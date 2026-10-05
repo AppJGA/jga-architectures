@@ -1,6 +1,7 @@
 import { Suspense, useEffect, useState, useCallback, useRef } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Pencil, ChevronRight, Eye, ChevronDown, Check } from 'lucide-react'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
+import { RetourPage } from '../shared/components/RetourPage'
+import { Pencil, ChevronRight, Eye, ChevronDown, Check } from 'lucide-react'
 import { useAffaire } from '../shared/hooks/useAffaires'
 import { useAffaireCollaborateurs } from '../shared/hooks/useAffaireCollaborateurs'
 import { useAuth } from '../core/auth/useAuth'
@@ -15,7 +16,7 @@ import { supabase } from '../core/supabase/client'
 import { infosStatut } from '../modules/chantier/comptes-rendus/crLogique'
 import { dernierePhaseRenseignee, nomPhase } from '../modules/etude/financier/phases'
 import {
-  IconeTableauDeBord, IconePlanningEtude, IconeFinancierEtude, IconeEntreprisesLots, IconeVisitesChantier,
+  IconeTableauDeBord, IconePortail, IconePlanningEtude, IconeFinancierEtude, IconeEntreprisesLots, IconeVisitesChantier,
   IconeOpr, IconeFtm, IconePlanningChantier, IconeFinancierChantier, IconeDocuments, IconeTodo,
 } from '../shared/icones/IconesAffaire'
 
@@ -322,8 +323,6 @@ function ChoixPhase({ phase, canEdit, onChanger }) {
 }
 
 function AffaireHeader({ affaire, onEdit, onChangerPhase, collaborateurs, canEdit, collabLoading, isProprietaire, onCollabClick, onSelfAssign }) {
-  const navigate = useNavigate()
-
   return (
     <div style={{
       backgroundColor: 'white',
@@ -335,19 +334,7 @@ function AffaireHeader({ affaire, onEdit, onChangerPhase, collaborateurs, canEdi
       flexShrink: 0,
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 }}>
-        <button
-          onClick={() => navigate('/dashboard')}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 5,
-            background: 'none', border: 'none', cursor: 'pointer',
-            fontSize: 11, color: 'var(--jga-beige)', padding: 0, flexShrink: 0,
-          }}
-          onMouseEnter={e => e.currentTarget.style.color = 'var(--affaire-accent)'}
-          onMouseLeave={e => e.currentTarget.style.color = 'var(--jga-beige)'}
-        >
-          <ArrowLeft size={13} strokeWidth={1.25} />
-          Portail d'affaires
-        </button>
+        <RetourPage libelle="Portail d'affaires" Icone={IconePortail} vers="/dashboard" />
 
         <div style={{ width: 1, height: 16, backgroundColor: 'rgba(0,0,0,0.1)', flexShrink: 0 }} />
         <div style={{ width: 3, height: 20, borderRadius: 2, backgroundColor: 'var(--affaire-accent)', flexShrink: 0 }} />
@@ -1109,6 +1096,8 @@ export function AffairePage() {
   }, [rawAffaire])
 
   const activeModule = getAllModules().find(m => m.path === moduleId) ?? null
+  const [parametres] = useSearchParams()
+  const sousPage = parametres.has('cr') || (moduleId === 'opr' && parametres.has('visite'))
 
   const fermerEdition = () => {
     setEditOpen(false)
@@ -1196,7 +1185,18 @@ export function AffairePage() {
               </div>
             )}
             {activeModule
-              ? <ModuleRenderer mod={activeModule} lectureSeule={!collabLoading && !canEdit} />
+              ? (
+                <>
+                  {/* Retour au tableau de bord de l'affaire — sauf dans une sous-page
+                      (une visite, une OPR), qui porte son propre retour */}
+                  {!sousPage && (
+                    <div style={{ padding: activeModule.layout === 'fullbleed' ? '8px 24px 0' : '0 0 8px', flexShrink: 0, position: 'relative', zIndex: 1 }}>
+                      <RetourPage libelle="Tableau de bord de l’affaire" Icone={IconeTableauDeBord} vers={`/affaires/${affaireId}`} />
+                    </div>
+                  )}
+                  <ModuleRenderer mod={activeModule} lectureSeule={!collabLoading && !canEdit} />
+                </>
+              )
               : <AffaireOverview
                   affaire={affaire} stats={stats} affaireId={affaireId} canEdit={canEdit}
                   onEdit={() => setEditOpen(true)}

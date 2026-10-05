@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import {
-  ArrowLeft, ArrowRight, Send, ChevronRight, Zap, Lock, RotateCcw,
+  ArrowRight, Send, ChevronRight, Zap, Lock, RotateCcw,
   AlertTriangle, X, Smartphone,
 } from 'lucide-react'
 import {
@@ -13,6 +13,7 @@ import { propositionsAValider } from './enregistrement/analyseIaLogique'
 import { proposerRemarques } from './enregistrement/propositions'
 import { BandeauPropositions } from './enregistrement/Proposition'
 import { useSearchParams, useNavigate } from 'react-router-dom'
+import { RetourPage } from '../../../shared/components/RetourPage'
 import { useCompteRendu } from '../../../shared/hooks/useCompteRendu'
 import { useAuth } from '../../../core/auth/useAuth'
 import { useAffaireInterlocuteurs } from '../../../shared/hooks/useAffaireInterlocuteurs'
@@ -862,9 +863,7 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
   if (!loading && !cr && erreurChargement) {
     return (
       <div>
-        <button onClick={onBack} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 10px', borderRadius: 2, fontSize: 12, border: '0.5px solid rgba(0,0,0,0.12)', backgroundColor: 'white', color: '#5E5854', cursor: 'pointer', marginBottom: 16 }}>
-          <ArrowLeft size={13} /> Liste des visites
-        </button>
+        <RetourPage libelle="Liste des visites" Icone={IconeVisitesChantier} onClick={onBack} style={{ marginBottom: 8 }} />
         <BandeauErreur message={`Le compte rendu n’a pas pu être chargé : ${erreurChargement}`} onFermer={onBack} />
       </div>
     )
@@ -906,22 +905,7 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
       {/* Navigation */}
       {activeView ? (
         <div style={{ marginBottom: 24 }}>
-          {/* Retour discret, au-dessus du titre : une flèche, l'icône des
-              visites et le texte, sans cadre */}
-          <button
-            onClick={() => setActiveView(null)}
-            style={{
-              display: 'inline-flex', alignItems: 'center', gap: 8, minHeight: 44, padding: 0,
-              border: 'none', background: 'none', cursor: 'pointer',
-              fontSize: 13, fontWeight: 600, color: '#5E5854', transition: 'color 0.15s',
-            }}
-            onMouseEnter={e => { e.currentTarget.style.color = 'var(--jga-orange)' }}
-            onMouseLeave={e => { e.currentTarget.style.color = '#5E5854' }}
-          >
-            <ArrowLeft size={16} />
-            <IconeVisitesChantier size={20} />
-            Retour au tableau de bord de la visite
-          </button>
+          <RetourPage libelle="Retour au tableau de bord de la visite" Icone={IconeVisitesChantier} onClick={() => setActiveView(null)} />
           <h2 style={{
             display: 'flex', alignItems: 'center', gap: 12, margin: '6px 0 0',
             fontSize: 22, fontWeight: 500, letterSpacing: '-0.01em',
@@ -941,20 +925,7 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
         </div>
       ) : (
         <div style={{ marginBottom: 24 }}>
-          <button
-            onClick={onBack}
-            style={{
-              display: 'inline-flex', alignItems: 'center', gap: 8, minHeight: 44, padding: 0,
-              border: 'none', background: 'none', cursor: 'pointer',
-              fontSize: 13, fontWeight: 600, color: '#5E5854', transition: 'color 0.15s',
-            }}
-            onMouseEnter={e => { e.currentTarget.style.color = 'var(--jga-orange)' }}
-            onMouseLeave={e => { e.currentTarget.style.color = '#5E5854' }}
-          >
-            <ArrowLeft size={16} />
-            <IconeVisitesChantier size={20} />
-            Liste des visites
-          </button>
+          <RetourPage libelle="Liste des visites" Icone={IconeVisitesChantier} onClick={onBack} />
         </div>
       )}
 

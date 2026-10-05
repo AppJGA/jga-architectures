@@ -1,13 +1,14 @@
 import { useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
+import { IconePortail, IconeBoiteOutils } from '../../shared/icones/IconesAffaire'
 import {
-  Building2, Calendar, BarChart2, CheckSquare, Clock,
-  Wrench, Settings,
+  Calendar, BarChart2, CheckSquare, Clock,
+  Settings,
 } from 'lucide-react'
 
 const mainNav = [
-  { icon: Building2, path: '/dashboard', label: "Portail d'affaires" },
+  { icon: IconePortail, path: '/dashboard', label: "Portail d'affaires" },
   { icon: Calendar, path: '/planning', label: 'Planning' },
   { icon: BarChart2, path: '/financier', label: 'Suivi financier' },
   { icon: CheckSquare, path: '/todo', label: 'To-do list' },
@@ -60,7 +61,7 @@ function NavIcon({ icon: Icon, path, label, isTools }) {
         textDecoration: 'none',
       }}
     >
-      <Icon size={18} strokeWidth={1.8} style={{ color: iconColor }} />
+      <Icon size={22} strokeWidth={1.8} style={{ color: iconColor }} />
     </NavLink>
   )
 }
@@ -101,7 +102,7 @@ export function Sidebar() {
       {estAgence && (
         <>
           <Separator />
-          <NavIcon icon={Wrench} path="/tools" label="Boîte à outils" isTools />
+          <NavIcon icon={IconeBoiteOutils} path="/tools" label="Boîte à outils" isTools />
         </>
       )}
 

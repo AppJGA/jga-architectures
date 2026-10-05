@@ -3,6 +3,8 @@ import { Plus, Search, Trash2, Lock } from 'lucide-react'
 import { useAffaires } from '../shared/hooks/useAffaires'
 import { AffaireCard } from './AffaireCard'
 import { AffaireFormModal } from './AffaireFormModal'
+import { House } from 'lucide-react'
+import { RetourPage } from '../shared/components/RetourPage'
 
 // Cadence de la cascade d'entrée, et rang au-delà duquel elle ne s'allonge plus.
 // Le design échelonne 8 cartes ; sans plafond, une agence à trente affaires
@@ -74,6 +76,7 @@ export function DashboardPage() {
   return (
     <>
       <div style={{ padding: '20px 24px', overflowY: 'auto', height: '100%' }}>
+        <RetourPage libelle="Accueil" Icone={House} vers="/home" />
         {/* Header */}
         <div className="jga-entree-entete" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
           <div>

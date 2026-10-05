@@ -135,3 +135,19 @@ export function IconeOrganisation(props) {
   const masque = useMasque()
   return <Icone {...props}><defs><mask id={masque}><rect width="64" height="64" fill="#fff" stroke="none"/><circle cx="50" cy="50" r="16" fill="#000" stroke="none"/></mask></defs><g mask={`url(#${masque})`}><rect x="6" y="10" width="52" height="46" rx="4"/><path d="M20 5v10M44 5v10M6 22h52"/><circle cx="14" cy="30" r="1.5" fill="currentColor" stroke="none"/><circle cx="23" cy="30" r="1.5" fill="currentColor" stroke="none"/><circle cx="32" cy="30" r="1.5" fill="currentColor" stroke="none"/><circle cx="41" cy="30" r="1.5" fill="currentColor" stroke="none"/><circle cx="50" cy="30" r="1.5" fill="currentColor" stroke="none"/><circle cx="14" cy="39" r="1.5" fill="currentColor" stroke="none"/><circle cx="32" cy="39" r="1.5" fill="currentColor" stroke="none"/><circle cx="41" cy="39" r="1.5" fill="currentColor" stroke="none"/><circle cx="50" cy="39" r="1.5" fill="currentColor" stroke="none"/><circle cx="14" cy="48" r="1.5" fill="currentColor" stroke="none"/><circle cx="23" cy="48" r="1.5" fill="currentColor" stroke="none"/><circle cx="32" cy="48" r="1.5" fill="currentColor" stroke="none"/><circle cx="41" cy="48" r="1.5" fill="currentColor" stroke="none"/><circle cx="50" cy="48" r="1.5" fill="currentColor" stroke="none"/><rect x="19" y="35" width="8" height="8" rx="2" fill="currentColor"/></g><circle cx="46" cy="47" r="4"/><path d="M38 61a8 8 0 0 1 16 0"/><circle cx="55.5" cy="43" r="3.5"/><path d="M54 50.2a7 7 0 0 1 8 6.8"/></Icone>
 }
+
+// Portail d'affaires
+export function IconePortail(props) {
+  return <Icone {...props}><rect x="5" y="5" width="24" height="24" rx="4"/><path d="M12 23V17L17 12L22 17V23z"/><rect x="35" y="5" width="24" height="24" rx="4"/><path d="M42 23V17L47 12L52 17V23z"/><rect x="5" y="35" width="24" height="24" rx="4"/><path d="M12 53V47L17 42L22 47V53z"/><rect x="35" y="35" width="24" height="24" rx="4"/><path d="M42 53V47L47 42L52 47V53z"/></Icone>
+}
+
+// Boîte à outils
+export function IconeBoiteOutils(props) {
+  const masque = useMasque()
+  return <Icone {...props}><defs><mask id={masque}><rect width="64" height="32" fill="#fff" stroke="none"/></mask></defs><g mask={`url(#${masque})`}><g transform="rotate(-22 26 32)"><rect x="21" y="3" width="10" height="17" rx="4"/><path d="M24.5 8v7M27.5 8v7"/><rect x="22.5" y="20" width="7" height="4" rx="1"/><path d="M23.5 24v14M28.5 24v14"/></g><g transform="rotate(22 38 32)"><path d="M35 40V18.3A7 7 0 0 1 35.5 5.46V10h5V5.46A7 7 0 0 1 41 18.3V40"/></g></g><rect x="6" y="32" width="52" height="24" rx="3"/><path d="M6 41h21M37 41h21"/><rect x="27" y="38" width="10" height="7" rx="1.5"/></Icone>
+}
+
+// Carnet d'adresses
+export function IconeCarnet(props) {
+  return <Icone {...props}><rect x="12" y="6" width="38" height="52" rx="4"/><path d="M8 16h8M8 27h8M8 38h8M8 49h8"/><path d="M50 12h3a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-3M50 26h3a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-3M50 40h3a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-3"/><circle cx="31" cy="24" r="6"/><path d="M20 44a11 11 0 0 1 22 0"/><path d="M23 50h16"/></Icone>
+}

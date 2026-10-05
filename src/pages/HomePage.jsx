@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Building2, Wrench, BookUser, ArrowRight } from 'lucide-react'
+import { ArrowRight } from 'lucide-react'
+import { IconePortail, IconeBoiteOutils, IconeCarnet } from '../shared/icones/IconesAffaire'
 import { useAuth } from '../core/auth/useAuth'
 import { supabase } from '../core/supabase/client'
 
@@ -13,7 +14,7 @@ const MODULES = [
     description: 'Projets, chantiers et suivi des dossiers.',
     path: '/dashboard',
     exterieur: true,
-    Icon: Building2,
+    Icon: IconePortail,
     accent: '#E8602C',
     bordure: '#F8B89A',
     gradient: 'linear-gradient(135deg, #E8602C 0%, #F8B89A 100%)',
@@ -24,7 +25,7 @@ const MODULES = [
     label: 'Boîte à outils',
     description: 'Rastérisation, analyseur, saisie des heures.',
     path: '/tools',
-    Icon: Wrench,
+    Icon: IconeBoiteOutils,
     accent: '#2A8A4E',
     bordure: '#8BC34A',
     gradient: 'linear-gradient(135deg, #2A8A4E 0%, #8BC34A 100%)',
@@ -35,7 +36,7 @@ const MODULES = [
     label: "Carnet d'adresses",
     description: "Entreprises, bureaux d'études et contacts.",
     path: '/carnet-adresses',
-    Icon: BookUser,
+    Icon: IconeCarnet,
     accent: '#1B3A5C',
     bordure: '#60A5FA',
     gradient: 'linear-gradient(135deg, #1B3A5C 0%, #60A5FA 100%)',
@@ -148,7 +149,7 @@ function CarteModule({ module, rang, reduit, onOpen }) {
               background: module.gradient,
             }}
           >
-            <Icon size={30} color="#FFFFFF" strokeWidth={1.25} />
+            <Icon size={38} color="#FFFFFF" strokeWidth={1.25} />
           </span>
         </div>
         <span

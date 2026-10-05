@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Search, Plus, Phone, Mail, Pencil, ExternalLink, X, Trash2, LayoutGrid, List } from 'lucide-react'
 import { supabase } from '../core/supabase/client'
+import { House } from 'lucide-react'
+import { RetourPage } from '../shared/components/RetourPage'
 
 const INPUT = {
   width: '100%', height: 36, padding: '0 12px',
@@ -453,6 +455,7 @@ export default function CarnetAdressesPage() {
     <div style={{ padding: '28px 32px', backgroundColor: '#FAFAF9', minHeight: 'calc(100vh - 52px)' }}>
       <style>{`.entreprise-card:hover .delete-btn { opacity: 1 !important; }`}</style>
 
+      <RetourPage libelle="Accueil" Icone={House} vers="/home" />
       {/* En-tête */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
         <div>

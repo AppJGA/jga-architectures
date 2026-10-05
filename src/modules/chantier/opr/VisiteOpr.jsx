@@ -1,10 +1,11 @@
 import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  ArrowLeft, Send, RotateCcw, Lock, Plus, Camera, MapPin, Pencil, MoreHorizontal, Eye,
+  Send, RotateCcw, Lock, Plus, Camera, MapPin, Pencil, MoreHorizontal, Eye,
   Archive, Download, Mail, AlertTriangle, X, FileSignature,
 } from 'lucide-react'
-import { IconeFtm, IconePresence, IconeExportPdf } from '../../../shared/icones/IconesAffaire'
+import { IconeFtm, IconePresence, IconeExportPdf, IconeOpr } from '../../../shared/icones/IconesAffaire'
+import { RetourPage } from '../../../shared/components/RetourPage'
 import { CrContexte } from '../comptes-rendus/CrContexte'
 import { PhotosContexte, usePhotosRemarque } from '../comptes-rendus/usePhotosRemarque'
 import { PhotosDeRemarque } from '../comptes-rendus/PhotosRemarque'
@@ -366,8 +367,8 @@ export function VisiteOpr({ visite, affaire, opr, plansCr, lectureSeuleAffaire, 
     <CrContexte.Provider value={{ lectureSeule, signalerErreur }}>
       <PhotosContexte.Provider value={contextePhotos}>
         <div style={{ paddingBottom: 80 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
-            <button type="button" onClick={onRetour} style={bouton()}><ArrowLeft size={16} /> Visites</button>
+          <RetourPage libelle="Visites d’OPR" Icone={IconeOpr} onClick={onRetour} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12, marginTop: 4 }}>
             <div style={{ flex: '1 1 240px' }}>
               <p style={{ fontSize: 18, fontWeight: 600, color: '#1F1B17' }}>{type.libelle === 'OPR' ? 'OPR' : 'Levée des réserves'} n°{visite.numero}</p>
               <p style={{ fontSize: 13, color: '#9C9591' }}>{jour(visite.date_visite, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} · {lotsVisite.length} lot{lotsVisite.length > 1 ? 's' : ''}</p>

@@ -38,7 +38,17 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
 - **Routes** : `src/core/router/AppRouter.jsx`. Tout est sous `RequireAuth` +
   `AppShell` sauf `/login` et `/_preview/home` (cette dernière n'existe qu'en
   développement, `import.meta.env.DEV`).
-- **Coquille** : `src/core/layout/AppShell.jsx` (Topbar 52 px + Sidebar).
+- **Coquille** : `src/core/layout/AppShell.jsx` (Topbar 52 px + Sidebar,
+  masquée sur l'accueil, le portail, les affaires, le carnet et la boîte à
+  outils).
+- **Retour en haut à gauche de chaque page** : `RetourPage`
+  (`shared/components/`) — flèche, icône de la page qui menait ici, nom en
+  gras, sans cadre. Accueil ← portail, carnet, boîte à outils, heures,
+  réglages ; Boîte à outils ← chaque outil (`AvecRetour` du routeur) ;
+  Portail ← affaire ; Tableau de bord de l'affaire ← chaque module (posé par
+  `AffairePage`, masqué dans une sous-page : `?cr=`, ou `?visite=` des OPR) ;
+  Liste des visites ← CR, Tableau de bord de la visite ← ses pages, Visites
+  d'OPR ← une visite d'OPR. Toute nouvelle page en reçoit un.
 - **Modules d'affaire** : déclarés dans `src/modules/manifest.js` — deux phases
   (`etude`, `chantier`), chaque module a `enabled`, `path`, `icon`, un
   `component` en `lazy()`. Les tuiles du tableau de bord et la sidebar de

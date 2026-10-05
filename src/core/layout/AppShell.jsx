@@ -8,7 +8,10 @@ export function AppShell() {
     !location.pathname.startsWith('/dashboard') &&
     !location.pathname.startsWith('/affaires/') &&
     !location.pathname.startsWith('/home') &&
-    !location.pathname.startsWith('/carnet-adresses')
+    !location.pathname.startsWith('/carnet-adresses') &&
+    // La boîte à outils tient sur une page : la barre latérale y égarait plus
+    // qu'elle n'aidait (à reprendre quand les outils seront nombreux)
+    !location.pathname.startsWith('/tools')
 
   return (
     // Installée sur l'écran d'accueil de l'iPad, l'app s'affiche sous la barre

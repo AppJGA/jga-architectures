@@ -1,10 +1,5 @@
-import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft } from 'lucide-react'
-
+// Le retour au tableau de bord de l'affaire est au-dessus (AffairePage)
 export function PlaceholderModule({ label, description, icon: Icon, phaseColor }) {
-  const navigate = useNavigate()
-  const { affaireId } = useParams()
-
   const lightBg = phaseColor === '#2A8A4E' ? 'rgba(42,138,78,0.12)' : 'rgba(232,96,44,0.10)'
 
   return (
@@ -50,24 +45,6 @@ export function PlaceholderModule({ label, description, icon: Icon, phaseColor }
         En cours de développement
       </span>
 
-      <button
-        onClick={() => navigate(`/affaires/${affaireId}`)}
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 6,
-          padding: '7px 14px',
-          borderRadius: 2,
-          border: '0.5px solid var(--jga-orange)',
-          backgroundColor: 'transparent',
-          color: 'var(--jga-orange)',
-          fontSize: 12,
-          cursor: 'pointer',
-        }}
-      >
-        <ArrowLeft size={13} />
-        Retour à l'affaire
-      </button>
     </div>
   )
 }

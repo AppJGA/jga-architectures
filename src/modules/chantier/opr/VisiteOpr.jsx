@@ -1,10 +1,10 @@
 import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  ArrowLeft, Send, RotateCcw, Lock, Plus, Camera, MapPin, Pencil, MoreHorizontal,
-  FileDown, Eye, Archive, Download, Mail, AlertTriangle, X, FileSignature,
+  ArrowLeft, Send, RotateCcw, Lock, Plus, Camera, MapPin, Pencil, MoreHorizontal, Eye,
+  Archive, Download, Mail, AlertTriangle, X, FileSignature,
 } from 'lucide-react'
-import { IconeFtm, IconePresence } from '../../../shared/icones/IconesAffaire'
+import { IconeFtm, IconePresence, IconeExportPdf } from '../../../shared/icones/IconesAffaire'
 import { CrContexte } from '../comptes-rendus/CrContexte'
 import { PhotosContexte, usePhotosRemarque } from '../comptes-rendus/usePhotosRemarque'
 import { PhotosDeRemarque } from '../comptes-rendus/PhotosRemarque'
@@ -285,7 +285,7 @@ function DocumentVisite({ visite, affaire, opr, plansCr, lectureSeuleAffaire, si
         </div>
         <div style={{ display: 'flex', gap: 10, marginTop: 16, flexWrap: 'wrap' }}>
           <button type="button" disabled={!!enCours} onClick={() => executer('telecharger')} style={{ ...bouton('#E8602C', 'white'), opacity: enCours ? 0.6 : 1 }}>
-            <FileDown size={16} /> {enCours === 'telecharger' ? 'Préparation…' : 'Télécharger le PDF'}
+            <IconeExportPdf size={20} /> {enCours === 'telecharger' ? 'Préparation…' : 'Télécharger le PDF'}
           </button>
           <button type="button" disabled={!!enCours} onClick={() => executer('apercu')} style={{ ...bouton(), opacity: enCours ? 0.6 : 1 }}>
             <Eye size={16} /> {enCours === 'apercu' ? 'Préparation…' : 'Aperçu'}

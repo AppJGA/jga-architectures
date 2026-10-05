@@ -59,7 +59,8 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
   `PHASES_AFFAIRE` est la liste commune.
 - **Icônes de l'affaire** (`src/shared/icones/IconesAffaire.jsx`) : dessins
   de l'agence (tableau de bord, chaque module dont la to-do list, robot,
-  avancement et présences du CR, plans,
+  avancement, présences, remarques, organisation, généralités et export
+  PDF du CR, plans,
   documents), en
   composants qui s'emploient comme lucide (`size`, `color`). Le manifeste
   garde ses noms lucide ; `ICON_MAP` d'`AffairePage` les traduit. Détaillées :

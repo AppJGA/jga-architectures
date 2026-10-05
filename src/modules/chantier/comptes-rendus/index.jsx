@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
-import { Plus, Trash2, Users, LayoutList, LayoutGrid, CalendarPlus, ArrowRight, AlertTriangle, X, Lock, Smartphone, ScrollText } from 'lucide-react'
+import { Plus, Trash2, Users, LayoutList, LayoutGrid, CalendarPlus, ArrowRight, AlertTriangle, X, Lock, Smartphone } from 'lucide-react'
 import { useAffaire } from '../../../shared/hooks/useAffaires'
 import { useComptesRendus } from '../../../shared/hooks/useComptesRendus'
 import { InterlocuteursModal } from './InterlocuteursModal'
 import { GeneralitesModal } from './GeneralitesModal'
 import { CrDetail } from './CrDetail'
+import { IconeGeneralites } from '../../../shared/icones/IconesAffaire'
 
 function fmtDate(d) {
   if (!d) return '—'
@@ -515,7 +516,7 @@ export default function ComptesRendusModule({ lectureSeule = false }) {
             title="Parties I à V, communes à tous les comptes rendus de l’affaire"
             style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 2, fontSize: 12, border: '0.5px solid rgba(0,0,0,0.15)', backgroundColor: 'white', color: '#374151', cursor: 'pointer' }}
           >
-            <ScrollText size={13} /> Généralités
+            <IconeGeneralites size={18} /> Généralités
           </button>}
           {!lectureSeule && <BoutonNouvelleVisite onClick={handleCreate} disabled={creating} />}
         </div>

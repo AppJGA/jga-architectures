@@ -112,3 +112,26 @@ export function IconePresence(props) {
   const masque = useMasque()
   return <Icone {...props}><defs><mask id={masque}><rect width="64" height="64" fill="#fff" stroke="none"/><circle cx="50" cy="50" r="14" fill="#000" stroke="none"/></mask></defs><g mask={`url(#${masque})`}><path d="M14 20a12 10 0 0 1 24 0"/><path d="M10 20h32"/><path d="M23 11.5v4.5M29 11.5v4.5"/><path d="M17 20a9 9 0 0 0 18 0"/><path d="M4 60v-6a22 22 0 0 1 44 0v6"/></g><circle cx="50" cy="50" r="10"/><path d="M45.5 50l3.2 3.2 6-6.4"/></Icone>
 }
+
+// Export PDF
+export function IconeExportPdf(props) {
+  const masque = useMasque()
+  return <Icone {...props}><defs><mask id={masque}><rect width="64" height="64" fill="#fff" stroke="none"/><circle cx="50" cy="50" r="15" fill="#000" stroke="none"/><rect x="3.5" y="23.5" width="37" height="19" rx="3" fill="#000" stroke="none"/></mask></defs><g mask={`url(#${masque})`}><path d="M12 9a3 3 0 0 1 3-3h19l10 10v39a3 3 0 0 1-3 3H15a3 3 0 0 1-3-3z"/><path d="M34 6v10h10"/><path d="M19 16h10M19 47h12"/></g><rect x="6" y="26" width="32" height="14" rx="2"/><path d="M10 37v-8h3a2.25 2.25 0 0 1 0 4.5h-3" strokeWidth="2.2"/><path d="M18 29v8h1.5a4 4 0 0 0 0-8z" strokeWidth="2.2"/><path d="M32 29h-5v8M27 33h4" strokeWidth="2.2"/><path d="M50 40v13M45 48l5 5 5-5"/><path d="M41 55v3a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-3"/></Icone>
+}
+
+// Généralités (parties I à V des CR)
+export function IconeGeneralites(props) {
+  return <Icone {...props}><path d="M6 16a3 3 0 0 1 3-3h13l5 5h28a3 3 0 0 1 3 3v31a3 3 0 0 1-3 3H9a3 3 0 0 1-3-3z"/><path d="M32 26v21M26 47h12M20 29h24"/><path d="M20 29l-4.5 9M20 29l4.5 9M44 29l-4.5 9M44 29l4.5 9"/><path d="M14.5 38h11a5.5 5.5 0 0 1-11 0zM38.5 38h11a5.5 5.5 0 0 1-11 0z"/><circle cx="32" cy="25" r="1.6" fill="currentColor" stroke="none"/></Icone>
+}
+
+// Remarques du CR
+export function IconeRemarques(props) {
+  const masque = useMasque()
+  return <Icone {...props}><defs><mask id={masque}><rect width="64" height="64" fill="#fff" stroke="none"/><rect x="35" y="35" width="29" height="29" rx="4" fill="#000" stroke="none"/></mask></defs><g mask={`url(#${masque})`}><path d="M12 9a3 3 0 0 1 3-3h19l10 10v39a3 3 0 0 1-3 3H15a3 3 0 0 1-3-3z"/><path d="M34 6v10h10"/><path d="M19 18h9M19 26h18M19 34h18M19 42h10"/></g><path d="M42 40h16a3 3 0 0 1 3 3v10a3 3 0 0 1-3 3h-9l-5 5v-5h-2a3 3 0 0 1-3-3V43a3 3 0 0 1 3-3z"/><path d="M44 46h12M44 51h8"/></Icone>
+}
+
+// Organisation de la visite
+export function IconeOrganisation(props) {
+  const masque = useMasque()
+  return <Icone {...props}><defs><mask id={masque}><rect width="64" height="64" fill="#fff" stroke="none"/><circle cx="50" cy="50" r="16" fill="#000" stroke="none"/></mask></defs><g mask={`url(#${masque})`}><rect x="6" y="10" width="52" height="46" rx="4"/><path d="M20 5v10M44 5v10M6 22h52"/><circle cx="14" cy="30" r="1.5" fill="currentColor" stroke="none"/><circle cx="23" cy="30" r="1.5" fill="currentColor" stroke="none"/><circle cx="32" cy="30" r="1.5" fill="currentColor" stroke="none"/><circle cx="41" cy="30" r="1.5" fill="currentColor" stroke="none"/><circle cx="50" cy="30" r="1.5" fill="currentColor" stroke="none"/><circle cx="14" cy="39" r="1.5" fill="currentColor" stroke="none"/><circle cx="32" cy="39" r="1.5" fill="currentColor" stroke="none"/><circle cx="41" cy="39" r="1.5" fill="currentColor" stroke="none"/><circle cx="50" cy="39" r="1.5" fill="currentColor" stroke="none"/><circle cx="14" cy="48" r="1.5" fill="currentColor" stroke="none"/><circle cx="23" cy="48" r="1.5" fill="currentColor" stroke="none"/><circle cx="32" cy="48" r="1.5" fill="currentColor" stroke="none"/><circle cx="41" cy="48" r="1.5" fill="currentColor" stroke="none"/><circle cx="50" cy="48" r="1.5" fill="currentColor" stroke="none"/><rect x="19" y="35" width="8" height="8" rx="2" fill="currentColor"/></g><circle cx="46" cy="47" r="4"/><path d="M38 61a8 8 0 0 1 16 0"/><circle cx="55.5" cy="43" r="3.5"/><path d="M54 50.2a7 7 0 0 1 8 6.8"/></Icone>
+}

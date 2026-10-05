@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { FileText, FileDown, Eye, Archive, Download, Mail } from 'lucide-react'
+import { FileText, Eye, Archive, Download, Mail } from 'lucide-react'
 import { useCr } from './CrContexte'
 import { NettoyageStockage } from './NettoyageStockage'
 import { formatOctets, niveauEspace, LIMITE_STOCKAGE } from './photosLogique'
@@ -7,6 +7,7 @@ import { lireReglagesRapport, ecrireReglagesRapport } from './rapportReglages'
 import { genererPdfCr, telechargerBlob } from './genererRapport'
 import { lienArchive } from './rapportStockage'
 import { DiffusionCr } from './DiffusionCr'
+import { IconeExportPdf } from '../../../shared/icones/IconesAffaire'
 
 // ─── Écran « Exporter le CR » ────────────────────────────────────────────────
 // Réglages du rapport, aperçu et téléchargement du PDF, archives des émissions,
@@ -242,7 +243,7 @@ export function ExportRapport({
         )}
         <div style={{ display: 'flex', gap: 10, marginTop: 18, flexWrap: 'wrap', alignItems: 'center' }}>
           <button type="button" onClick={telecharger} disabled={!!enCours} style={bouton(true)}>
-            <FileDown size={15} /> {enCours === 'telecharger' ? 'Préparation…' : 'Télécharger le PDF'}
+            <IconeExportPdf size={20} /> {enCours === 'telecharger' ? 'Préparation…' : 'Télécharger le PDF'}
           </button>
           <button type="button" onClick={apercu} disabled={!!enCours} style={bouton(false)}>
             <Eye size={15} /> {enCours === 'apercu' ? 'Préparation…' : 'Aperçu'}

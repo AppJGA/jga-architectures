@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import {
-  ArrowLeft, ArrowRight, Send, FileDown, ChevronRight, ClipboardList, MessageSquare,
-  Zap, LayoutDashboard, Lock, RotateCcw, AlertTriangle, X, Smartphone, ScrollText,
+  ArrowLeft, ArrowRight, Send, ChevronRight, Zap, LayoutDashboard, Lock, RotateCcw,
+  AlertTriangle, X, Smartphone,
 } from 'lucide-react'
-import { IconePlans, IconeRobot, IconeAvancement, IconePresence } from '../../../shared/icones/IconesAffaire'
+import {
+  IconePlans, IconeRobot, IconeAvancement, IconePresence, IconeExportPdf, IconeGeneralites, IconeRemarques, IconeOrganisation,
+} from '../../../shared/icones/IconesAffaire'
 import { useEnregistrementsDisponibles } from './enregistrement/useEnregistrementVisite'
 import { ListeEnregistrements } from './enregistrement/PanneauEnregistrements'
 import { vocabulaireAffaire } from './enregistrement/transcriptionLogique'
@@ -62,7 +64,7 @@ const VUES = [
     id: 'organisation',
     label: 'Organisation de la visite',
     description: 'Informations générales,\nprochaine réunion',
-    icon: ClipboardList,
+    icon: IconeOrganisation,
     couleur: '#E8602C',
     fondClair: 'rgba(232,96,44,0.10)',
   },
@@ -78,7 +80,7 @@ const VUES = [
     id: 'generalites',
     label: 'Généralités',
     description: 'Parties I à V, communes\nà tous les CR de l’affaire',
-    icon: ScrollText,
+    icon: IconeGeneralites,
     couleur: '#5E5854',
     fondClair: 'rgba(94,88,84,0.10)',
   },
@@ -86,7 +88,7 @@ const VUES = [
     id: 'remarques',
     label: 'Remarques',
     description: 'Sections, sous-sections\net points de suivi',
-    icon: MessageSquare,
+    icon: IconeRemarques,
     couleur: '#2A8A4E',
     fondClair: 'rgba(42,138,78,0.12)',
   },
@@ -118,7 +120,7 @@ const VUES = [
     id: 'export',
     label: 'Exporter le CR',
     description: 'Générer le PDF\ndu compte rendu',
-    icon: FileDown,
+    icon: IconeExportPdf,
     couleur: '#9C9591',
     fondClair: '#FAF7F2',
   },
@@ -368,7 +370,7 @@ function CrAccueil({ cr, affaire, presences, sections, onNavigate, onOuvrirSecti
             background: 'rgba(42,138,78,0.12)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
-            <MessageSquare size={28} color="#2A8A4E" strokeWidth={1.5} />
+            <IconeRemarques size={34} color="#2A8A4E" />
           </div>
           <div style={{ flex: 1, minWidth: 200 }}>
             <h3 style={{ fontFamily: "'Archivo', sans-serif", fontSize: 18, fontWeight: 500, color: '#1F1B17' }}>

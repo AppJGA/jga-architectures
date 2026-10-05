@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, ClipboardList, ClipboardCheck, Calendar, CalendarRange,
   BarChart2, TrendingUp, CheckSquare, FilePen, Building2, Pencil, FileText, ChevronRight,
-  LayoutDashboard, Eye, ChevronDown,
+  LayoutDashboard, Eye, ChevronDown, Check,
 } from 'lucide-react'
 import { useAffaire } from '../shared/hooks/useAffaires'
 import { useAffaireCollaborateurs } from '../shared/hooks/useAffaireCollaborateurs'
@@ -11,7 +11,7 @@ import { useAuth } from '../core/auth/useAuth'
 import { BandeauVisite } from '../modules/chantier/comptes-rendus/BandeauVisite'
 import { CollabModal } from './CollabModal'
 import { phasesPour, getAllModules } from '../modules/manifest'
-import { PhaseBadge } from '../shared/components/Badge'
+import { PHASES_AFFAIRE, periodeAffaire, libellePhase, variablesPhase, phasesDuTableau } from './phaseAffaire'
 
 import { AffaireFormModal } from '../dashboard/AffaireFormModal'
 import { ContactsAffaire } from './ContactsAffaire'
@@ -24,12 +24,6 @@ import { dernierePhaseRenseignee, nomPhase } from '../modules/etude/financier/ph
 const ICON_MAP = {
   ClipboardList, ClipboardCheck, Calendar, CalendarRange,
   BarChart2, TrendingUp, CheckSquare, FilePen, Building2,
-}
-
-const PHASE_BAR_COLORS = {
-  esq: 'var(--jga-orange)', avp: 'var(--jga-orange)',
-  pro: 'var(--jga-orange)', dce: 'var(--jga-orange)',
-  chantier: 'var(--jga-green)', livree: 'var(--jga-beige)',
 }
 
 
@@ -247,9 +241,80 @@ function PhotoFond({ url }) {
 }
 
 // ─── Header ───────────────────────────────────────────────────────────────────
-function AffaireHeader({ affaire, onEdit, collaborateurs, canEdit, collabLoading, isProprietaire, onCollabClick, onSelfAssign }) {
+// ─── Phase de l'affaire, modifiable depuis l'en-tête ─────────────────────────
+// Écrit le même champ que la fiche de l'affaire : les deux restent d'accord.
+function ChoixPhase({ phase, canEdit, onChanger }) {
+  const [ouvert, setOuvert] = useState(false)
+  const groupes = [
+    ['Étude', PHASES_AFFAIRE.filter((p) => periodeAffaire(p.value) === 'etude')],
+    ['Chantier', PHASES_AFFAIRE.filter((p) => periodeAffaire(p.value) === 'chantier')],
+  ]
+  const etiquette = {
+    display: 'inline-flex', alignItems: 'center', gap: 4,
+    padding: '3px 9px', borderRadius: 3, fontSize: 11, fontWeight: 600,
+    color: 'var(--affaire-accent)', backgroundColor: 'var(--affaire-accent-clair)',
+    border: '0.5px solid var(--affaire-accent-bord)',
+  }
+  if (!canEdit) return <span style={etiquette}>{libellePhase(phase)}</span>
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <button
+        type="button"
+        onClick={() => setOuvert((o) => !o)}
+        aria-expanded={ouvert}
+        title="Changer la phase de l'affaire"
+        style={{ ...etiquette, cursor: 'pointer' }}
+      >
+        {libellePhase(phase)}
+        <ChevronDown size={12} strokeWidth={1.5} />
+      </button>
+      {ouvert && (
+        <>
+          <div onClick={() => setOuvert(false)} style={{ position: 'fixed', inset: 0, zIndex: 30 }} />
+          <div style={{
+            position: 'absolute', top: 'calc(100% + 4px)', right: 0, zIndex: 31, width: 210,
+            backgroundColor: 'white', border: '0.5px solid rgba(0,0,0,0.12)',
+            boxShadow: '0 6px 20px rgba(0,0,0,0.10)', padding: 4,
+          }}>
+            {groupes.map(([titre, phases]) => (
+              <div key={titre}>
+                <p style={{
+                  fontSize: 10, fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase',
+                  color: titre === 'Étude' ? 'var(--jga-orange)' : 'var(--jga-green)',
+                  margin: 0, padding: '8px 10px 4px',
+                }}>
+                  {titre}
+                </p>
+                {phases.map((p) => (
+                  <button
+                    key={p.value}
+                    type="button"
+                    onClick={() => { setOuvert(false); if (p.value !== phase) onChanger(p.value) }}
+                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#FAF7F2' }}
+                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent' }}
+                    style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      width: '100%', minHeight: 32, padding: '6px 10px', textAlign: 'left',
+                      background: 'transparent', border: 'none', cursor: 'pointer',
+                      fontSize: 12, color: '#1F1B17', fontWeight: p.value === phase ? 600 : 400,
+                    }}
+                  >
+                    {p.label}
+                    {p.value === phase && <Check size={13} strokeWidth={2} color="var(--affaire-accent)" />}
+                  </button>
+                ))}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+function AffaireHeader({ affaire, onEdit, onChangerPhase, collaborateurs, canEdit, collabLoading, isProprietaire, onCollabClick, onSelfAssign }) {
   const navigate = useNavigate()
-  const barColor = PHASE_BAR_COLORS[affaire.phase] ?? 'var(--jga-beige)'
 
   return (
     <div style={{
@@ -269,7 +334,7 @@ function AffaireHeader({ affaire, onEdit, collaborateurs, canEdit, collabLoading
             background: 'none', border: 'none', cursor: 'pointer',
             fontSize: 11, color: 'var(--jga-beige)', padding: 0, flexShrink: 0,
           }}
-          onMouseEnter={e => e.currentTarget.style.color = 'var(--jga-orange)'}
+          onMouseEnter={e => e.currentTarget.style.color = 'var(--affaire-accent)'}
           onMouseLeave={e => e.currentTarget.style.color = 'var(--jga-beige)'}
         >
           <ArrowLeft size={13} strokeWidth={1.25} />
@@ -277,7 +342,7 @@ function AffaireHeader({ affaire, onEdit, collaborateurs, canEdit, collabLoading
         </button>
 
         <div style={{ width: 1, height: 16, backgroundColor: 'rgba(0,0,0,0.1)', flexShrink: 0 }} />
-        <div style={{ width: 3, height: 20, borderRadius: 2, backgroundColor: barColor, flexShrink: 0 }} />
+        <div style={{ width: 3, height: 20, borderRadius: 2, backgroundColor: 'var(--affaire-accent)', flexShrink: 0 }} />
 
         <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--jga-beige)', fontFamily: "'JetBrains Mono', monospace", letterSpacing: '0.04em', flexShrink: 0 }}>
           {affaire.code_affaire}
@@ -295,7 +360,7 @@ function AffaireHeader({ affaire, onEdit, collaborateurs, canEdit, collabLoading
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
-        <PhaseBadge phase={affaire.phase} />
+        <ChoixPhase phase={affaire.phase} canEdit={canEdit} onChanger={onChangerPhase} />
 
         {!collabLoading && collaborateurs.length > 0 && (
           <div
@@ -308,7 +373,7 @@ function AffaireHeader({ affaire, onEdit, collaborateurs, canEdit, collabLoading
               return (
                 <div key={c.user_id} style={{
                   width: 28, height: 28, borderRadius: '50%',
-                  background: c.role === 'proprietaire' ? 'var(--jga-orange)' : '#9C9591',
+                  background: c.role === 'proprietaire' ? 'var(--affaire-accent)' : '#9C9591',
                   color: 'white', fontSize: 10, fontWeight: 500,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   border: '2px solid white', marginLeft: i === 0 ? 0 : -8,
@@ -334,9 +399,9 @@ function AffaireHeader({ affaire, onEdit, collaborateurs, canEdit, collabLoading
           <button
             onClick={onSelfAssign}
             style={{
-              fontSize: 11, color: 'var(--jga-orange)',
-              background: 'var(--jga-orange-light)',
-              border: '0.5px solid var(--jga-orange-mid)',
+              fontSize: 11, color: 'var(--affaire-accent)',
+              background: 'var(--affaire-accent-clair)',
+              border: '0.5px solid var(--affaire-accent-bord)',
               borderRadius: 3, padding: '4px 10px', cursor: 'pointer',
             }}
           >
@@ -350,8 +415,8 @@ function AffaireHeader({ affaire, onEdit, collaborateurs, canEdit, collabLoading
             style={{
               display: 'inline-flex', alignItems: 'center', gap: 5,
               padding: '4px 10px', borderRadius: 3,
-              border: '0.5px solid var(--jga-orange)',
-              backgroundColor: 'transparent', color: 'var(--jga-orange)',
+              border: '0.5px solid var(--affaire-accent)',
+              backgroundColor: 'transparent', color: 'var(--affaire-accent)',
               fontSize: 11, cursor: 'pointer',
             }}
           >
@@ -481,12 +546,12 @@ function ModulesSidebar({ affaireId, moduleId }) {
           border: 'none', cursor: 'pointer',
           fontSize: 11, fontWeight: 600, textAlign: 'left',
           textTransform: 'uppercase', letterSpacing: '0.06em',
-          backgroundColor: !moduleId ? 'var(--jga-orange)' : 'var(--jga-orange-light)',
-          color: !moduleId ? 'white' : 'var(--jga-orange)',
+          backgroundColor: !moduleId ? 'var(--affaire-accent)' : 'var(--affaire-accent-clair)',
+          color: !moduleId ? 'white' : 'var(--affaire-accent)',
           transition: 'background-color 0.15s, color 0.15s', marginBottom: 4,
         }}
-        onMouseEnter={e => { if (moduleId) e.currentTarget.style.backgroundColor = 'rgba(232,96,44,0.18)' }}
-        onMouseLeave={e => { if (moduleId) e.currentTarget.style.backgroundColor = 'var(--jga-orange-light)' }}
+        onMouseEnter={e => { if (moduleId) e.currentTarget.style.backgroundColor = 'var(--affaire-accent-survol)' }}
+        onMouseLeave={e => { if (moduleId) e.currentTarget.style.backgroundColor = 'var(--affaire-accent-clair)' }}
       >
         <LayoutDashboard size={14} strokeWidth={1.5} />
         Tableau de bord
@@ -910,7 +975,8 @@ function PhaseSection({ phase, affaire, stats, affaireId, navigate, rangBase }) 
 function AffaireOverview({ affaire, stats, affaireId, onEdit, onGererContacts, versionContacts, canEdit }) {
   const navigate = useNavigate()
   const { estAgence } = useAuth()
-  const phasesVues = phasesPour(estAgence)
+  // Seulement la phase en cours : la colonne de gauche garde tous les modules
+  const phasesVues = phasesDuTableau(phasesPour(estAgence), affaire?.phase)
 
   // Rang de départ de chaque phase dans la suite des décalages d'entrée, pour
   // qu'ils courent d'une section à l'autre au lieu de redémarrer à chaque phase.
@@ -961,7 +1027,7 @@ function AffaireOverview({ affaire, stats, affaireId, onEdit, onGererContacts, v
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 4,
                 background: 'none', border: 'none', cursor: 'pointer',
-                fontSize: 11, color: 'var(--jga-orange)',
+                fontSize: 11, color: 'var(--affaire-accent)',
               }}
             >
               Modifier <ChevronRight size={12} strokeWidth={1.25} />
@@ -1042,6 +1108,19 @@ export function AffairePage() {
     setVersionContacts((v) => v + 1)
   }
 
+  const [erreurPhase, setErreurPhase] = useState(null)
+  // Affichée tout de suite, enregistrée ensuite ; un refus la remet en place
+  const changerPhase = async (phase) => {
+    const avant = affaire.phase
+    setErreurPhase(null)
+    setAffaire((a) => ({ ...a, phase }))
+    const { error } = await updateAffaire({ phase })
+    if (error) {
+      setAffaire((a) => ({ ...a, phase: avant }))
+      setErreurPhase(`La phase n'a pas pu être enregistrée (${error.message}).`)
+    }
+  }
+
   const handleSave = async (data) => {
     await updateAffaire(data)
     fermerEdition()
@@ -1058,10 +1137,12 @@ export function AffairePage() {
   return (
     <>
       <style>{`@keyframes jga-spin { to { transform: rotate(360deg); } }`}</style>
-      <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {/* La couleur de la phase habille tout le cadre de l'affaire */}
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', ...variablesPhase(affaire.phase) }}>
         <AffaireHeader
           affaire={affaire}
           onEdit={() => setEditOpen(true)}
+          onChangerPhase={changerPhase}
           collaborateurs={collaborateurs}
           canEdit={canEdit}
           collabLoading={collabLoading}
@@ -1095,6 +1176,15 @@ export function AffairePage() {
               }}>
                 <Eye size={14} strokeWidth={1.25} />
                 Vous consultez cette affaire en lecture seule. Contactez le responsable pour obtenir les droits de modification.
+              </div>
+            )}
+            {erreurPhase && (
+              <div role="alert" style={{
+                background: '#FEF2F2', border: '0.5px solid #B8412C', borderRadius: 2,
+                padding: '8px 14px', fontSize: 12, color: '#B8412C', marginBottom: 16,
+                position: 'relative', zIndex: 1,
+              }}>
+                {erreurPhase}
               </div>
             )}
             {activeModule

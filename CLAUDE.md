@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 656 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
+npm test         # 660 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
 npx eslint src   # ~73 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -47,6 +47,16 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
 - **Accès aux données** : hooks dans `src/shared/hooks/`. `useAffaires()` pour
   la liste, `useAffaire(id)` pour une affaire (les deux font `select('*')`),
   `useAffaireCollaborateurs(id)` pour les droits (`canEdit`, `isProprietaire`).
+- **Phase de l'affaire** (`src/affaire/phaseAffaire.js`, testé) : la phase
+  fine (ESQ… Chantier, Livrée) se réduit à une période, étude ou chantier
+  (livrée = chantier). Le tableau de bord n'affiche que les tuiles de cette
+  période (`phasesDuTableau` ; la colonne de gauche garde tout), et la page
+  pose des variables CSS `--affaire-accent*` (orange à l'étude, vert au
+  chantier) que tout le cadre lit : un élément du cadre de l'affaire prend
+  `var(--affaire-accent)`, pas `--jga-orange`. Un composant aussi utilisé
+  ailleurs met l'orange en repli (`var(--affaire-accent, …)`). La phase se
+  change aussi depuis l'en-tête (`ChoixPhase`), même champ que la fiche ;
+  `PHASES_AFFAIRE` est la liste commune.
 - **Contacts de l'affaire** : carte « Contacts » de la vue d'ensemble
   (`ContactsAffaire.jsx`, agence seule), fiches calculées par
   `annuaireLogique.js` — interlocuteurs (`affaire_interlocuteurs`, les mêmes

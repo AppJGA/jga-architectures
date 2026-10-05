@@ -43,7 +43,7 @@ export function BandeauVisite({ affaireId, lectureSeule = false }) {
     <div className="jga-entree-carte" style={{
       background: 'white',
       border: '0.5px solid rgba(0,0,0,0.08)',
-      borderTop: '3px solid #E8602C',
+      borderTop: '3px solid var(--affaire-accent, #E8602C)',
       padding: '18px 20px',
       display: 'flex',
       alignItems: 'center',
@@ -75,9 +75,9 @@ export function BandeauVisite({ affaireId, lectureSeule = false }) {
             display: 'inline-flex', alignItems: 'center', gap: 10,
             minHeight: 52, padding: '0 24px', flexShrink: 0,
             border: 'none', borderRadius: 3,
-            background: '#E8602C', color: 'white',
+            background: 'var(--affaire-accent, #E8602C)', color: 'white',
             fontSize: 15, fontWeight: 600, cursor: enCours ? 'default' : 'pointer',
-            boxShadow: '0 10px 24px -12px rgba(232,96,44,0.9)',
+            boxShadow: '0 10px 24px -12px var(--affaire-accent-ombre, rgba(232,96,44,0.9))',
             opacity: enCours ? 0.7 : 1,
           }}
         >

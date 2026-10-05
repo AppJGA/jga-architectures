@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { X, ImagePlus } from 'lucide-react'
 import { CollaborateursSection } from '../shared/components/CollaborateursSection'
+import { PHASES_AFFAIRE } from '../affaire/phaseAffaire'
 import { InterlocuteursEditeur } from '../modules/chantier/comptes-rendus/InterlocuteursModal'
 import { supabase } from '../core/supabase/client'
 import { useAuth } from '../core/auth/useAuth'
@@ -633,14 +634,7 @@ export function AffaireFormModal({ affaire = null, onSave, onClose, scrollToSect
               <SelectInput
                 value={form.phase}
                 onChange={set('phase')}
-                options={[
-                  { value: 'esq', label: 'ESQ — Esquisse' },
-                  { value: 'avp', label: 'AVP — Avant-Projet' },
-                  { value: 'pro', label: 'PRO — Projet' },
-                  { value: 'dce', label: 'DCE' },
-                  { value: 'chantier', label: 'Chantier' },
-                  { value: 'livree', label: 'Livrée' },
-                ]}
+                options={PHASES_AFFAIRE}
               />
             </Field>
           </div>

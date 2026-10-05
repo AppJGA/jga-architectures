@@ -61,12 +61,12 @@ function Fiche({ fiche, couleur, onExporter }) {
         )}
         {numeros.map((n) => (
           <a key={n} href={lienTelephone(n)} style={LIEN}>
-            <Phone size={12} strokeWidth={1.5} color="var(--jga-orange)" style={{ flexShrink: 0 }} />{n}
+            <Phone size={12} strokeWidth={1.5} color="var(--affaire-accent, var(--jga-orange))" style={{ flexShrink: 0 }} />{n}
           </a>
         ))}
         {fiche.email && (
           <a href={`mailto:${fiche.email}`} style={LIEN}>
-            <Mail size={12} strokeWidth={1.5} color="var(--jga-orange)" style={{ flexShrink: 0 }} />{fiche.email}
+            <Mail size={12} strokeWidth={1.5} color="var(--affaire-accent, var(--jga-orange))" style={{ flexShrink: 0 }} />{fiche.email}
           </a>
         )}
         {!fiche.telephone && !fiche.email && (
@@ -140,7 +140,7 @@ export function ContactsAffaire({ affaire, affaireId, canEdit, onGerer, style })
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 5,
                 background: 'none', border: 'none', cursor: 'pointer',
-                fontSize: 11, color: 'var(--jga-orange)', padding: '6px 0',
+                fontSize: 11, color: 'var(--affaire-accent, var(--jga-orange))', padding: '6px 0',
               }}
             >
               <Download size={12} strokeWidth={1.5} /> Exporter <ChevronDown size={12} strokeWidth={1.25} />
@@ -177,7 +177,7 @@ export function ContactsAffaire({ affaire, affaireId, canEdit, onGerer, style })
             style={{
               display: 'inline-flex', alignItems: 'center', gap: 4,
               background: 'none', border: 'none', cursor: 'pointer',
-              fontSize: 11, color: 'var(--jga-orange)',
+              fontSize: 11, color: 'var(--affaire-accent, var(--jga-orange))',
             }}
           >
             Gérer les interlocuteurs <ChevronRight size={12} strokeWidth={1.25} />

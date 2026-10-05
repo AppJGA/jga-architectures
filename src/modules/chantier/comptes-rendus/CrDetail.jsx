@@ -14,6 +14,7 @@ import { proposerRemarques } from './enregistrement/propositions'
 import { BandeauPropositions } from './enregistrement/Proposition'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { useRetourPage } from '../../../core/layout/retourContexte'
+import { useConvocationsPrecedentes } from './useConvocationsPrecedentes'
 import { useCompteRendu } from '../../../shared/hooks/useCompteRendu'
 import { useAuth } from '../../../core/auth/useAuth'
 import { useAffaireInterlocuteurs } from '../../../shared/hooks/useAffaireInterlocuteurs'
@@ -589,6 +590,8 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
     addSousRemarque, changerStatutRemarques,
     setPresence, refetch,
   } = useCompteRendu(crId, affaire?.id)
+  // Qui était convoqué à cette réunion, d'après le CR précédent
+  const convocations = useConvocationsPrecedentes(cr)
 
   // Généralités (parties I à V, migration 055) : celles de l'affaire, ou la
   // copie faite à l'émission pour un CR émis
@@ -932,6 +935,7 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
           presences={presences}
           setPresence={setPresence}
           updatePresence={updatePresence}
+          convocations={convocations}
         />
       )}
 
@@ -969,6 +973,7 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
         <ModeVisite
           cr={cr}
           affaire={affaire}
+          convocations={convocations}
           sections={sections}
           presences={presences}
           setPresence={setPresence}

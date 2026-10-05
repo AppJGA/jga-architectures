@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 709 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
+npm test         # 713 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
 npx eslint src   # ~72 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -188,6 +188,13 @@ création avec reprise de la visite précédente) et `useCompteRendu` (un CR).
   `comptes_rendus.generalites` : un CR émis imprime la version de son jour
   (`generalitesAImprimer`). Le PDF les place après présences et avancement,
   avant les remarques, et n'imprime plus les sections générales sans remarque.
+- **Convocations** : la colonne « Convoqué » d'un CR (et son heure) vaut
+  pour la **prochaine** réunion. Au pointage des présences de la visite
+  suivante (mode Visite et page Présences), chaque participant convoqué au
+  CR précédent porte « Convoqué au CR n°X · 09h00 » et passe en tête de son
+  groupe (`convocationLogique.js`, testé ; `useConvocationsPrecedentes`,
+  gardé sur l'appareil pour une visite sans réseau). Un participant se
+  reconnaît d'un CR à l'autre par `interlocuteur_id` ou `lot_entreprise_id`.
 - **Statuts fixes** (migration 038, `STATUTS` de `crLogique.js`) : le statut
   décide seul de la clôture ; `est_clos` en est déduit par le déclencheur
   `cr_remarques_suivi`. Toujours lire un statut via `statutNormalise` /

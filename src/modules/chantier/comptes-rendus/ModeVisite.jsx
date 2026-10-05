@@ -317,7 +317,7 @@ const LIBELLE_OPERATION = {
   'pastille.poser': 'Pastille sur un plan',
 }
 
-export function ModeVisite({ cr, affaire = null, sections, presences, setPresence, lots: lotsAffaire, interlocuteurs, zones = [], ftms = [], ouvrirFtm, planning, modifierAvancementTache, horsLigne, ops, lectureSeule, erreur, onFermerErreur, signalerErreur, onTerminer }) {
+export function ModeVisite({ cr, affaire = null, convocations = new Map(), sections, presences, setPresence, lots: lotsAffaire, interlocuteurs, zones = [], ftms = [], ouvrirFtm, planning, modifierAvancementTache, horsLigne, ops, lectureSeule, erreur, onFermerErreur, signalerErreur, onTerminer }) {
   const [filtre, setFiltre] = useState('ouvertes')
   const [destinataire, setDestinataire] = useState('')
   const [zone, setZone] = useState('')
@@ -598,7 +598,7 @@ export function ModeVisite({ cr, affaire = null, sections, presences, setPresenc
         />
       )}
       {panneau?.type === 'presences' && (
-        <PanneauPresences presences={presences} setPresence={setPresence} lectureSeule={lectureSeule} onFermer={() => setPanneau(null)} signalerErreur={signalerErreur} />
+        <PanneauPresences presences={presences} setPresence={setPresence} convocations={convocations} lectureSeule={lectureSeule} onFermer={() => setPanneau(null)} signalerErreur={signalerErreur} />
       )}
       {panneau?.type === 'statuts' && (
         <PanneauStatuts remarque={panneau.remarque} onChoisir={code => ops.updateRemarque(panneau.remarque.id, { statut: code, est_clos: PAR_CODE.get(code).clos }).catch(() => {})} onFermer={() => setPanneau(null)} />

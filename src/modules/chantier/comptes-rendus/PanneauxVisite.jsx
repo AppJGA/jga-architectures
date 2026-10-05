@@ -10,6 +10,8 @@ import { AnnotationPhoto } from './AnnotationPhoto'
 import { compresserPhoto } from './compressionPhoto'
 import { PhotosContexte } from './usePhotosRemarque'
 import { avancementParLot, avancementGlobal, infosEcart, lignesAvancement } from './avancementLogique'
+import { MentionConvocation } from './MentionConvocation'
+import { convocationDe } from './convocationLogique'
 
 // ─── Panneaux du mode Visite ─────────────────────────────────────────────────
 // Ancrés en haut de l'écran et non en bas : sur iPad, le clavier recouvrirait
@@ -439,16 +441,19 @@ const CODES_PRESENCE = [
   { id: 'e', libelle: 'Excusé', couleur: '#5E5854' },
 ]
 
-export function PanneauPresences({ presences, setPresence, lectureSeule, onFermer, signalerErreur }) {
-  const lignes = presences.map(p => ({ p, v: affichagePresence(p) })).filter(l => l.v.type)
+export function PanneauPresences({ presences, setPresence, convocations = new Map(), lectureSeule, onFermer, signalerErreur }) {
+  // Équipe puis entreprises ; dans chaque groupe, les convoqués au CR
+  // précédent d'abord : ce sont ceux qu'on attend
+  const lignes = presences.map(p => ({ p, v: affichagePresence(p), c: convocationDe(p, convocations) })).filter(l => l.v.type)
     .sort((a, b) => (a.v.type === b.v.type ? 0 : a.v.type === 'interlocuteur' ? -1 : 1)
+      || (a.c ? 0 : 1) - (b.c ? 0 : 1)
       || (a.v.type === 'interlocuteur' ? a.v.ordre - b.v.ordre : (a.v.lotNumero ?? 99) - (b.v.lotNumero ?? 99)))
 
   return (
     <Panneau titre="Présences" onFermer={onFermer}>
       {lignes.length === 0 && <p style={{ fontSize: 14, color: '#5E5854' }}>Aucun participant pour cette affaire.</p>}
       <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {lignes.map(({ p, v }) => (
+        {lignes.map(({ p, v, c }) => (
           <li key={p.id} style={{ background: 'white', border: '0.5px solid rgba(0,0,0,0.08)', padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <div style={{ flex: '1 1 200px', minWidth: 0 }}>
               <p style={{ fontSize: 15, fontWeight: 500, color: '#1F1B17' }}>
@@ -459,6 +464,7 @@ export function PanneauPresences({ presences, setPresence, lectureSeule, onFerme
                   ? [v.lotNom && `Lot ${v.lotNumero ?? ''} — ${v.lotNom}`, v.contact].filter(Boolean).join(' · ')
                   : [v.categorieLabel || CATEGORIE_META[v.categorie]?.label, v.organisation].filter(Boolean).join(' · ')}
               </p>
+              <MentionConvocation convocation={c} />
             </div>
             <div style={{ display: 'flex', gap: 6 }}>
               {CODES_PRESENCE.map(c => {

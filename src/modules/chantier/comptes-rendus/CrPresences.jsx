@@ -1,6 +1,8 @@
 import { CATEGORIE_META } from '../../../shared/hooks/useAffaireInterlocuteurs'
 import { affichagePresence } from './crLogique'
 import { useCr } from './CrContexte'
+import { MentionConvocation } from './MentionConvocation'
+import { convocationDe, convoquesDabord } from './convocationLogique'
 
 const PRESENCE_OPTIONS = [
   { id: 'p', label: 'P', title: 'Présent',  bg: '#2A8A4E', color: 'white' },
@@ -113,7 +115,7 @@ function ConvoqueCell({ presence, onUpdate }) {
 // Affichées depuis la copie du participant : une fiche supprimée depuis reste
 // visible dans les comptes rendus où elle figurait.
 
-function InterloRow({ presence, onPresence, onUpdate }) {
+function InterloRow({ presence, convocation, onPresence, onUpdate }) {
   const { lectureSeule } = useCr()
   const i = affichagePresence(presence)
   const meta = CATEGORIE_META[i.categorie]
@@ -132,6 +134,7 @@ function InterloRow({ presence, onPresence, onUpdate }) {
         </p>
         {i.fonction && <p style={{ fontSize: 11, color: '#5E5854' }}>{i.fonction}</p>}
         {i.organisation && <p style={{ fontSize: 11, color: '#5E5854' }}>{i.organisation}</p>}
+        <MentionConvocation convocation={convocation} petite />
       </td>
       <td style={{ padding: '10px 12px', verticalAlign: 'top' }}>
         {i.email && <a href={`mailto:${i.email}`} style={{ display: 'block', fontSize: 11, color: '#1B3A5C', textDecoration: 'none' }}>{i.email}</a>}
@@ -147,7 +150,7 @@ function InterloRow({ presence, onPresence, onUpdate }) {
   )
 }
 
-function LotRow({ presence, onPresence, onUpdate }) {
+function LotRow({ presence, convocation, onPresence, onUpdate }) {
   const { lectureSeule } = useCr()
   const e = affichagePresence(presence)
 
@@ -161,6 +164,7 @@ function LotRow({ presence, onPresence, onUpdate }) {
       <td style={{ padding: '10px 12px', verticalAlign: 'top' }}>
         <p style={{ fontSize: 12, fontWeight: 500, color: '#1F1B17', marginBottom: 1 }}>{e.entreprise ?? '—'}</p>
         {e.contact && <p style={{ fontSize: 11, color: '#5E5854' }}>{e.contact}</p>}
+        <MentionConvocation convocation={convocation} petite />
       </td>
       <td style={{ padding: '10px 12px', verticalAlign: 'top' }}>
         {e.email && <a href={`mailto:${e.email}`} style={{ display: 'block', fontSize: 11, color: '#1B3A5C', textDecoration: 'none' }}>{e.email}</a>}
@@ -203,7 +207,7 @@ function PresenceTable({ title, headers, rows }) {
 
 // Les écritures sont optimistes (le hook met l'écran à jour tout de suite) ;
 // un échec est signalé dans le bandeau du compte rendu.
-export function CrPresences({ presences, setPresence, updatePresence }) {
+export function CrPresences({ presences, setPresence, updatePresence, convocations = new Map() }) {
   const { signalerErreur } = useCr()
 
   const handlePresence = (presenceId, val) => {
@@ -213,13 +217,14 @@ export function CrPresences({ presences, setPresence, updatePresence }) {
     updatePresence(presenceId, changes).catch(signalerErreur)
   }
 
-  const interloPresences = presences
+  // Les convoqués au CR précédent en tête : ce sont ceux qu'on attend
+  const interloPresences = convoquesDabord(presences
     .filter(p => affichagePresence(p).type === 'interlocuteur')
-    .sort((a, b) => affichagePresence(a).ordre - affichagePresence(b).ordre)
+    .sort((a, b) => affichagePresence(a).ordre - affichagePresence(b).ordre), convocations)
 
-  const lotPresences = presences
+  const lotPresences = convoquesDabord(presences
     .filter(p => affichagePresence(p).type === 'entreprise')
-    .sort((a, b) => (affichagePresence(a).lotNumero ?? 99) - (affichagePresence(b).lotNumero ?? 99))
+    .sort((a, b) => (affichagePresence(a).lotNumero ?? 99) - (affichagePresence(b).lotNumero ?? 99)), convocations)
 
   return (
     <div>
@@ -248,17 +253,17 @@ export function CrPresences({ presences, setPresence, updatePresence }) {
 
       <PresenceTable
         title="Interlocuteurs projet"
-        headers={['Rôle', 'Contact', 'Email & Tél', 'Présence', 'Convoqué']}
+        headers={['Rôle', 'Contact', 'Email & Tél', 'Présence', 'Convoqué à la prochaine réunion']}
         rows={interloPresences.map(p => (
-          <InterloRow key={p.id} presence={p} onPresence={handlePresence} onUpdate={handleUpdate} />
+          <InterloRow key={p.id} presence={p} convocation={convocationDe(p, convocations)} onPresence={handlePresence} onUpdate={handleUpdate} />
         ))}
       />
 
       <PresenceTable
         title="Entreprises"
-        headers={['Lot', 'Entreprise', 'Email & Tél', 'Présence', 'Convoqué']}
+        headers={['Lot', 'Entreprise', 'Email & Tél', 'Présence', 'Convoqué à la prochaine réunion']}
         rows={lotPresences.map(p => (
-          <LotRow key={p.id} presence={p} onPresence={handlePresence} onUpdate={handleUpdate} />
+          <LotRow key={p.id} presence={p} convocation={convocationDe(p, convocations)} onPresence={handlePresence} onUpdate={handleUpdate} />
         ))}
       />
 

@@ -36,6 +36,23 @@ export function dureeLisible(secondes) {
 // En deçà, l'écart vient du passage d'un morceau au suivant, pas d'une coupure
 const TROU_MINIMAL_S = 2
 
+// Une sourdine (écran verrouillé brièvement) enregistre du silence : le
+// morceau dure, mais rien n'est capté. Elle finit quand le micro revient ou
+// quand l'enregistrement s'arrête.
+const FINS_SOURDINE = new Set(['piste-reprise', 'piste-terminee', 'fin-du-moteur', 'arret'])
+
+/** Secondes passées en sourdine, d'après le journal. */
+export function dureeSourdine(evenements = [], fin = null) {
+  let total = 0
+  let depuis = null
+  for (const e of [...evenements].sort((a, b) => a.t - b.t)) {
+    if (e.type === 'piste-muette' && depuis === null) depuis = e.t
+    else if (FINS_SOURDINE.has(e.type) && depuis !== null) { total += e.t - depuis; depuis = null }
+  }
+  if (depuis !== null && fin !== null) total += Math.max(0, fin - depuis)
+  return Math.round(total / 1000)
+}
+
 const heure = (t) => new Date(t).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 
 /** Ce que l'essai a donné, et un texte à recopier dans la conversation. */
@@ -49,7 +66,9 @@ export function bilanEssai({ debut, fin, morceaux = [], evenements = [], environ
     const ecart = Math.round((tries[i].debut - finPrecedent) / 1000)
     if (ecart > TROU_MINIMAL_S) trous.push({ apresRang: tries[i - 1].rang, duree_s: ecart })
   }
-  const perdue = Math.max(0, dureeEcoulee - dureeEnregistree)
+  const muet = dureeSourdine(evenements, fin)
+  // Perdu : ce qui n'a pas été enregistré, plus le silence de la sourdine
+  const perdue = Math.max(0, dureeEcoulee - dureeEnregistree) + muet
   const taille = tries.reduce((n, m) => n + (m.taille || 0), 0)
 
   const lignes = [
@@ -60,10 +79,11 @@ export function bilanEssai({ debut, fin, morceaux = [], evenements = [], environ
     // Le débit décide de la longueur des morceaux envoyés au lot 1 (4 Mo au plus)
     ...(dureeEnregistree > 0 ? [`Débit : ${Math.round(taille / 1000 / (dureeEnregistree / 60))} Ko par minute`] : []),
     ...trous.map((t) => `Coupure de ${dureeLisible(t.duree_s)} après le morceau ${t.apresRang}`),
+    ...(muet > 0 ? [`Micro en sourdine : ${dureeLisible(muet)} (silence enregistré)`] : []),
     'Événements :',
     ...evenements.map((e) => `  ${heure(e.t)} ${e.type}${e.detail ? ` (${e.detail})` : ''}`),
   ]
-  return { dureeEnregistree, dureeEcoulee, perdue, trous, texte: lignes.join('\n') }
+  return { dureeEnregistree, dureeEcoulee, perdue, muet, trous, texte: lignes.join('\n') }
 }
 
 // Durée d'une tranche : celle demandée à `MediaRecorder.start` (enregistreur.js)

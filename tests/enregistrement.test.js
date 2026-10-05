@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import { test, describe } from 'node:test'
 
 import {
-  choisirFormat, extensionDe, dureeLisible, bilanEssai, regrouperTranches,
+  choisirFormat, extensionDe, dureeLisible, bilanEssai, regrouperTranches, dureeSourdine,
 } from '../src/modules/chantier/comptes-rendus/enregistrement/enregistrementLogique.js'
 
 describe('format', () => {
@@ -84,5 +84,28 @@ describe('tranches recollées après une fermeture brutale', () => {
 
   test('sans sa première tranche (l’en-tête du fichier), un morceau est écarté', () => {
     assert.deepEqual(regrouperTranches([t(5, 1), t(5, 2)]), [])
+  })
+})
+
+describe('sourdine (écran verrouillé brièvement)', () => {
+  const t0 = Date.UTC(2026, 9, 6, 13, 36, 26)
+  const s = (sec) => t0 + sec * 1000
+  // Essai réel de Victor : muet à +13 s, rétabli à +19 s
+  const evenements = [
+    { t: s(0), type: 'demarrage' }, { t: s(13), type: 'piste-muette' }, { t: s(13), type: 'page-masquee' },
+    { t: s(18), type: 'page-visible' }, { t: s(19), type: 'piste-reprise' }, { t: s(27), type: 'arret' },
+  ]
+
+  test('le silence enregistré compte comme perdu', () => {
+    const b = bilanEssai({ debut: s(0), fin: s(28), morceaux: [{ rang: 1, debut: s(0), duree_s: 26, taille: 81000 }], evenements, environnement: {} })
+    assert.equal(b.muet, 6)
+    assert.equal(b.perdue, 8)
+    assert.ok(b.texte.includes('Micro en sourdine : 0:06'))
+  })
+
+  test('une sourdine qui finit par la coupure, ou encore ouverte à la fin', () => {
+    assert.equal(dureeSourdine([{ t: s(10), type: 'piste-muette' }, { t: s(14), type: 'piste-terminee' }]), 4)
+    assert.equal(dureeSourdine([{ t: s(10), type: 'piste-muette' }], s(15)), 5)
+    assert.equal(dureeSourdine([]), 0)
   })
 })

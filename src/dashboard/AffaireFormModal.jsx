@@ -435,8 +435,9 @@ export function AffaireFormModal({ affaire = null, onSave, onClose, scrollToSect
   const isEdit = Boolean(affaire?.id)
 
   return (
+    // Pas de fermeture au clic à côté : la fiche se refermait en perdant les
+    // modifications. On la quitte par la croix ou « Annuler ».
     <div
-      onClick={onClose}
       style={{
         position: 'fixed',
         inset: 0,

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { X, Plus, Pencil, Trash2, ChevronUp, ChevronDown, Search } from 'lucide-react'
 import { useAffaireInterlocuteurs, CATEGORIE_META } from '../../../shared/hooks/useAffaireInterlocuteurs'
 import { supabase } from '../../../core/supabase/client'
+import { verserAuCarnet } from './carnet'
 
 const CATEGORIES = Object.entries(CATEGORIE_META).map(([id, m]) => ({ id, ...m }))
 
@@ -28,6 +29,10 @@ function InterloForm({ initial, onSave, onCancel, onDelete }) {
   const [confirmDel, setConfirmDel] = useState(false)
   const [search, setSearch] = useState('')
   const [suggestions, setSuggestions] = useState([])
+  // Nouvel interlocuteur absent du carnet : on peut l'y verser d'une case
+  const [versCarnet, setVersCarnet] = useState(false)
+  const [deCarnet, setDeCarnet] = useState(false)
+  const [erreurCarnet, setErreurCarnet] = useState(null)
 
   useEffect(() => {
     if (search.length < 2) { setSuggestions([]); return }
@@ -54,17 +59,30 @@ function InterloForm({ initial, onSave, onCancel, onDelete }) {
     }))
     setSearch('')
     setSuggestions([])
+    setDeCarnet(true)
   }
 
   const handleSubmit = async (e) => {
     e?.preventDefault()
     if (!form.nom?.trim() && !form.organisation?.trim()) return
     setSaving(true)
+    setErreurCarnet(null)
+    // Le carnet d'abord : s'il échoue, le formulaire reste ouvert avec le
+    // message, et l'on peut décocher la case pour enregistrer quand même
+    if (proposerCarnet && versCarnet) {
+      try { await verserAuCarnet(form) } catch (err) {
+        setErreurCarnet(`Ajout au carnet d’adresses impossible : ${err?.message ?? err}`)
+        setSaving(false)
+        return
+      }
+    }
     try {
       await onSave({ ...form, categorie_label: form.categorie === 'autre' ? form.categorie_label : null })
     } catch (err) { console.error(err) }
     setSaving(false)
   }
+
+  const proposerCarnet = !initial?.id && !deCarnet && !!(form.nom?.trim() || form.organisation?.trim())
 
   const needsLabel = form.categorie === 'autre'
 
@@ -157,6 +175,20 @@ function InterloForm({ initial, onSave, onCancel, onDelete }) {
           </div>
         </div>
       </div>
+
+      {proposerCarnet && (
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 14, fontSize: 12, color: '#1F1B17', cursor: 'pointer' }}>
+          <input type="checkbox" checked={versCarnet} onChange={e => setVersCarnet(e.target.checked)}
+            style={{ width: 18, height: 18, minHeight: 0, accentColor: '#E8602C', cursor: 'pointer' }} />
+          <span>
+            <strong>Ajouter au carnet d’adresses</strong>
+            <span style={{ color: '#9C9591' }}> — {form.organisation?.trim()
+              ? `fiche « ${form.organisation.trim()} »${form.nom?.trim() || form.prenom?.trim() ? ', avec cette personne en contact' : ''}`
+              : 'fiche à son nom'}</span>
+          </span>
+        </label>
+      )}
+      {erreurCarnet && <p role="alert" style={{ fontSize: 12, color: '#B8412C', margin: '8px 0 0' }}>{erreurCarnet}</p>}
 
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14, alignItems: 'center' }}>
         {onDelete && (

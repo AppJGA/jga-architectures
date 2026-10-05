@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 692 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
+npm test         # 697 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
 npx eslint src   # ~73 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -76,6 +76,11 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
   Cet éditeur vit dans un `<form>` : **aucun `<form>` dedans et tout bouton en
   `type="button"`**, sinon enregistrer un interlocuteur envoie et ferme la
   fiche entière.
+  Un nouvel interlocuteur absent du carnet peut y être versé (case « Ajouter
+  au carnet d'adresses », `carnet.js` / `carnetLogique.js`, testé) : la fiche
+  `entreprises` de son organisation — ou à son nom s'il n'en a pas — puis la
+  personne en `interlocuteurs`, sans doublon (comparaison sans majuscules ni
+  accents). La fiche de l'affaire ne se ferme plus au clic à côté.
   Export (`exportContactsLogique.js`, testé, fabriqué dans la page) : tous
   les contacts en vCard 3.0 pour le téléphone, ou en CSV aux en-têtes
   anglais d'Outlook (marque UTF-8) — l'Outlook classique ne retient que le

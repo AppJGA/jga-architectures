@@ -249,7 +249,9 @@ function remarquesDeSection(s) {
   ]
 }
 
-// Raccourci vers une autre vue du CR : ligne compacte, icône, chevron.
+// Raccourci vers une autre vue du CR : ligne compacte, icône, chevron. Trois
+// tuiles par rangée même sur un écran étroit (iPad en portrait) : le texte
+// passe alors sous l'icône plutôt que de s'écraser à côté.
 function TuileVue({ vue, titre, sousTitre, onClick }) {
   const [survol, setSurvol] = useState(false)
   return (
@@ -258,8 +260,8 @@ function TuileVue({ vue, titre, sousTitre, onClick }) {
       onMouseEnter={() => setSurvol(true)}
       onMouseLeave={() => setSurvol(false)}
       style={{
-        display: 'flex', alignItems: 'center', gap: 12,
-        background: 'white', padding: '14px 16px', cursor: 'pointer',
+        position: 'relative', display: 'flex', alignItems: 'center', alignContent: 'flex-start', flexWrap: 'wrap', gap: 12,
+        background: 'white', padding: '14px 30px 14px 16px', cursor: 'pointer',
         border: `0.5px solid ${survol ? vue.couleur : 'rgba(0,0,0,0.08)'}`,
         transition: 'border-color 0.15s',
       }}
@@ -272,11 +274,11 @@ function TuileVue({ vue, titre, sousTitre, onClick }) {
         {/* Les icônes de l'agence sont plus détaillées que celles de lucide : un cran plus grand */}
         <vue.icon size={32} color={vue.couleur} strokeWidth={1.25} />
       </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
+      <div style={{ flex: '1 1 110px', minWidth: 0 }}>
         <p style={{ fontSize: 13, fontWeight: 500, color: '#1F1B17' }}>{titre}</p>
         <p style={{ fontSize: 11, color: '#9C9591', marginTop: 1 }}>{sousTitre}</p>
       </div>
-      <ChevronRight size={14} color="#C9C4C0" strokeWidth={1.5} style={{ flexShrink: 0 }} />
+      <ChevronRight size={14} color="#C9C4C0" strokeWidth={1.5} style={{ position: 'absolute', right: 12, top: '50%', marginTop: -7 }} />
     </div>
   )
 }
@@ -430,8 +432,10 @@ function CrAccueil({ cr, affaire, presences, sections, onNavigate, onEmettre, on
 
       </div>
 
-      {/* Les autres vues, dans l'ordre du déroulé d'une visite */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>
+      {/* Les autres vues, dans l'ordre du déroulé d'une visite. Toujours trois
+          par rangée, à la demande de l'agence : ce sont les tuiles qui
+          s'élargissent avec l'écran, pas leur disposition qui change. */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 12 }}>
         <TuileVue
           vue={vuePresences}
           titre="Présences"

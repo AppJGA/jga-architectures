@@ -377,7 +377,6 @@ export function InterlocuteursModal({ affaireId, onClose }) {
   return (
     <div
       style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', zIndex: 100, overflowY: 'auto', padding: '40px 20px' }}
-      onClick={onClose}
     >
       <div
         style={{ backgroundColor: 'white', borderRadius: 0, padding: '28px 32px', width: '100%', maxWidth: 700, minHeight: 200 }}

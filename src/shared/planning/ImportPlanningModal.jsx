@@ -80,7 +80,6 @@ export function ImportPlanningModal({ moteur, affaires = [], onValider, onAnnule
 
   return (
     <div
-      onClick={() => { if (!enCours) onAnnuler() }}
       style={{
         position: 'fixed', inset: 0, background: 'rgba(20,18,16,0.38)', zIndex: 400,
         display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,

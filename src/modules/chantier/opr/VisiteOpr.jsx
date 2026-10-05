@@ -494,7 +494,7 @@ export function VisiteOpr({ visite, affaire, opr, plansCr, lectureSeuleAffaire, 
           />
         )}
         {confirmation && (
-          <div onClick={() => setConfirmation(null)} style={{ position: 'fixed', inset: 0, zIndex: 330, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div style={{ position: 'fixed', inset: 0, zIndex: 330, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
             <div role="dialog" aria-modal="true" onClick={e => e.stopPropagation()} style={{ background: 'white', padding: '22px 26px', maxWidth: 460, width: '100%' }}>
               <p style={{ fontSize: 16, fontWeight: 600, marginBottom: 10 }}>{confirmation === 'emettre' ? `Émettre la visite n°${visite.numero} ?` : `Rouvrir la visite n°${visite.numero} ?`}</p>
               <p style={{ fontSize: 14, color: '#5E5854', lineHeight: 1.5, marginBottom: 20 }}>

@@ -128,6 +128,12 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
 - **Animations** : les `@keyframes` et les classes d'entrée vivent dans
   `src/index.css`, jamais inline — seul le `animation-delay` est inline. C'est
   ce qui permet au bloc `prefers-reduced-motion` de les neutraliser.
+- **Une fenêtre (modale, panneau, confirmation, visionneuse) ne se ferme
+  jamais au clic à côté**, à la demande de l'agence : un geste de trop
+  perdait une remarque en cours de rédaction. Seuls ✕, Annuler, Échap ou
+  l'action elle-même la ferment ; le fond ne porte aucun `onClick`. Les menus
+  déroulants et sélecteurs (date, couleur) gardent, eux, la fermeture au
+  clic extérieur.
 - Les commentaires expliquent **pourquoi**, pas quoi. Un commentaire qui
   paraphrase la ligne suivante est du bruit.
 

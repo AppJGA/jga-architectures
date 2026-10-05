@@ -1200,7 +1200,7 @@ export function GanttEtudeTimeline({
         <div style={{
           position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)',
           zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }} onClick={() => setDeletingArrow(null)}>
+        }}>
           <div style={{
             backgroundColor: 'white', borderRadius: 0, padding: '28px 32px',
             maxWidth: 420, width: '100%', boxShadow: '0 8px 40px rgba(0,0,0,0.12)',

@@ -34,7 +34,7 @@ function NouvelleVisite({ type, lots, lotsOuverts, onCreer, onFermer }) {
   }
 
   return (
-    <div onClick={occupe ? undefined : onFermer} style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '48px 16px', overflowY: 'auto' }}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '48px 16px', overflowY: 'auto' }}>
       <div role="dialog" aria-modal="true" onClick={e => e.stopPropagation()} style={{ background: 'white', width: '100%', maxWidth: 520, padding: '22px 24px' }}>
         <h3 style={{ fontSize: 16, fontWeight: 600, margin: '0 0 16px' }}>{type === 'levee' ? 'Nouvelle visite de levée des réserves' : 'Nouvelles opérations préalables à la réception'}</h3>
         <label style={{ display: 'block', marginBottom: 14 }}>

@@ -10,7 +10,7 @@ export function GeneralitesModal({ affaireId, peutModifier, onClose }) {
   const [erreur, setErreur] = useState(null)
 
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.35)', display: 'flex', justifyContent: 'center', alignItems: 'flex-start', overflowY: 'auto', padding: 'calc(24px + env(safe-area-inset-top)) 16px 24px' }}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.35)', display: 'flex', justifyContent: 'center', alignItems: 'flex-start', overflowY: 'auto', padding: 'calc(24px + env(safe-area-inset-top)) 16px 24px' }}>
       <div role="dialog" aria-modal="true" aria-label="Généralités" onClick={e => e.stopPropagation()}
         style={{ width: '100%', maxWidth: 960, background: '#FAF7F2', boxShadow: '0 24px 60px -20px rgba(0,0,0,0.5)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 20px', background: 'white', borderBottom: '0.5px solid rgba(0,0,0,0.08)' }}>

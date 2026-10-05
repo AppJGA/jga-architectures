@@ -1236,7 +1236,7 @@ function NewRemarqueModal({ sections, crDate, lots, interlocuteurs, zones, ops, 
   }
 
   if (sectionsOffertes.length === 0) return (
-    <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }} onClick={onClose}>
+    <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }}>
       <div style={{ backgroundColor: 'white', borderRadius: 0, padding: '28px 32px', maxWidth: 420, width: '100%' }} onClick={e => e.stopPropagation()}>
         <p style={{ fontSize: 13, color: '#5E5854', marginBottom: 16 }}>Aucune section disponible. Ajoutez d'abord une section avant d'ajouter une remarque.</p>
         <button onClick={onClose} style={{ padding: '7px 14px', borderRadius: 2, fontSize: 12, border: '0.5px solid rgba(0,0,0,0.15)', backgroundColor: 'white', color: '#374151', cursor: 'pointer' }}>Fermer</button>
@@ -1245,7 +1245,7 @@ function NewRemarqueModal({ sections, crDate, lots, interlocuteurs, zones, ops, 
   )
 
   return (
-    <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', zIndex: 200, overflowY: 'auto', padding: '40px 20px' }} onClick={onClose}>
+    <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', zIndex: 200, overflowY: 'auto', padding: '40px 20px' }}>
       <div style={{ backgroundColor: 'white', borderRadius: 0, padding: '24px 28px', width: '100%', maxWidth: 620 }} onClick={e => e.stopPropagation()}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
           <h3 style={{ fontSize: 15, fontWeight: 500, color: '#1F1B17', margin: 0 }}>Nouvelle remarque</h3>

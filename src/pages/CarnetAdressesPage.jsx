@@ -309,7 +309,6 @@ function EntrepriseEditModal({ entreprise, onSave, onClose }) {
   return (
     <div
       style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}
-      onClick={onClose}
     >
       <div
         style={{ backgroundColor: 'white', borderRadius: 0, padding: 28, width: '100%', maxWidth: 480, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 8px 40px rgba(0,0,0,0.12)' }}
@@ -559,7 +558,6 @@ export default function CarnetAdressesPage() {
       {deletingEntreprise && (
         <div
           style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.3)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px 16px' }}
-          onClick={() => setDeletingEntreprise(null)}
         >
           <div
             style={{ background: 'white', borderRadius: 0, padding: '28px 32px', maxWidth: 420, width: '100%', border: '0.5px solid rgba(0,0,0,0.08)', boxShadow: '0 8px 40px rgba(0,0,0,0.12)' }}

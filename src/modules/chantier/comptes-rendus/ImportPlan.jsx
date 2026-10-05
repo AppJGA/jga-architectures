@@ -55,7 +55,7 @@ export function ImportPlan({ fichier, planExistant, indice, onImporter, onFermer
   const occupe = etape === 'conversion' || etape === 'envoi'
 
   return (
-    <div onClick={occupe ? undefined : onFermer} style={{ position: 'fixed', inset: 0, zIndex: 390, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', overflowY: 'auto', padding: '40px 16px' }}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 390, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', overflowY: 'auto', padding: '40px 16px' }}>
       <div role="dialog" aria-modal="true" onClick={e => e.stopPropagation()} style={{ background: 'white', width: '100%', maxWidth: etape === 'page' ? 760 : 460, padding: '22px 24px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
           <h3 style={{ fontSize: 15, fontWeight: 500, color: '#1F1B17', margin: 0 }}>

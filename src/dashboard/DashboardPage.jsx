@@ -198,7 +198,6 @@ export function DashboardPage() {
 
       {deletingAffaire && (
         <div
-          onClick={() => setDeletingAffaire(null)}
           style={{
             position: 'fixed', inset: 0,
             backgroundColor: 'rgba(0,0,0,0.4)',

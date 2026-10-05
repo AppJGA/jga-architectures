@@ -195,7 +195,6 @@ function PhaseFormModal({ open, onClose, existing, affaire, phases, onSave, onDe
   return (
     <div
       style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}
-      onClick={onClose}
     >
       <div
         style={{ backgroundColor: 'white', borderRadius: 0, padding: '28px 32px', width: '100%', maxWidth: 480, maxHeight: '90vh', overflowY: 'auto' }}
@@ -435,7 +434,6 @@ function EstimationFormModal({ open, onClose, existing, affaire, phases, lotsExi
   return (
     <div
       style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}
-      onClick={onClose}
     >
       <div
         style={{ backgroundColor: 'white', borderRadius: 0, padding: '28px 32px', width: '100%', maxWidth: 440, maxHeight: '90vh', overflowY: 'auto' }}

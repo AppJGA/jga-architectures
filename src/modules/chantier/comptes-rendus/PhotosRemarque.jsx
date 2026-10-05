@@ -130,7 +130,7 @@ function Visionneuse({ ctl, index }) {
   const rond = { width: 44, height: 44, borderRadius: '50%', border: 'none', background: 'rgba(255,255,255,0.14)', color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }
 
   return (
-    <div role="dialog" aria-modal="true" aria-label="Photo" onClick={ctl.fermer} style={{ position: 'fixed', inset: 0, zIndex: 350, background: 'rgba(20,18,16,0.94)', display: 'flex', flexDirection: 'column' }}>
+    <div role="dialog" aria-modal="true" aria-label="Photo" style={{ position: 'fixed', inset: 0, zIndex: 350, background: 'rgba(20,18,16,0.94)', display: 'flex', flexDirection: 'column' }}>
       <div onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', color: 'white', fontSize: 13 }}>
         <span style={{ fontFamily: "'JetBrains Mono', monospace", opacity: 0.7 }}>
           {ctl.remarque.numero != null && `n°${ctl.remarque.numero} · `}{index + 1} / {photos.length}

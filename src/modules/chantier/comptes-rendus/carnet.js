@@ -5,7 +5,7 @@
 // Une fiche ou une personne déjà présente n'est pas recréée.
 
 import { supabase } from '../../../core/supabase/client'
-import { ficheCarnet, memeNom } from './carnetLogique'
+import { ficheCarnet, memeNom, correspondanceCarnet, ecrituresCarnet } from './carnetLogique'
 
 /** @returns { ficheCreee, personneCreee } ou null s'il n'y avait rien à verser */
 export async function verserAuCarnet(form) {
@@ -40,4 +40,27 @@ export async function verserAuCarnet(form) {
     }
   }
   return { ficheCreee, personneCreee }
+}
+
+/**
+ * La fiche du carnet (et la personne) de cet interlocuteur d'affaire, s'il y
+ * figure. Cherchée d'après ses valeurs enregistrées, avant modification.
+ */
+export async function chercherDansCarnet(form) {
+  const nomFiche = (form?.organisation || [form?.prenom, form?.nom].filter(Boolean).join(' ') || '').trim()
+  if (!nomFiche) return null
+  const { data, error } = await supabase
+    .from('entreprises')
+    .select('id, raison_sociale, adresse, code_postal, ville, telephone, email, interlocuteurs(id, prenom, nom, fonction, telephone, email)')
+    .ilike('raison_sociale', `%${nomFiche.replace(/[%_\\]/g, ' ').trim()}%`).limit(20)
+  if (error) throw error
+  return correspondanceCarnet(form, data ?? [])
+}
+
+/** Reporte les écarts choisis dans le carnet. */
+export async function mettreAJourCarnet(ecarts) {
+  for (const { table, id, champs } of ecrituresCarnet(ecarts)) {
+    const { error } = await supabase.from(table).update(champs).eq('id', id)
+    if (error) throw error
+  }
 }

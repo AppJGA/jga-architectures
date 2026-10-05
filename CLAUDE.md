@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 702 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
+npm test         # 706 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
 npx eslint src   # ~72 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -86,6 +86,14 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
   testé) : carnet chargé une fois, une option par personne et une par fiche,
   chaque mot tapé cherché dans tous les champs (sans majuscules ni accents,
   numéros sans espaces) ; choisir une personne remplit tout le formulaire.
+  Interlocuteur déjà au carnet (retrouvé par `chercherDansCarnet` d'après ses
+  valeurs enregistrées) : à l'enregistrement, `ecartsCarnet` liste ce qui
+  diffère et une fenêtre propose « Mettre aussi à jour le carnet » ou
+  « Seulement dans l'affaire » (`ecrituresCarnet`, adresse réécrite en rue
+  si le lieu n'a pas changé). Crayon sur chaque fiche d'interlocuteur de la
+  carte Contacts (`ModaleInterlocuteur`). Piège : une fenêtre `fixed` ouverte
+  sous une carte `jga-entree-carte` (animation `both`, `transform` gardé)
+  reste prise dans la carte — passer par `createPortal`.
   Export (`exportContactsLogique.js`, testé, fabriqué dans la page) : tous
   les contacts en vCard 3.0 pour le téléphone, ou en CSV aux en-têtes
   anglais d'Outlook (marque UTF-8) — l'Outlook classique ne retient que le

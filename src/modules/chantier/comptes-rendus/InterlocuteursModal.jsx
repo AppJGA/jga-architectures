@@ -1,7 +1,9 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { X, Plus, Pencil, Trash2, ChevronUp, ChevronDown } from 'lucide-react'
 import { useAffaireInterlocuteurs, CATEGORIE_META } from '../../../shared/hooks/useAffaireInterlocuteurs'
-import { verserAuCarnet } from './carnet'
+import { verserAuCarnet, chercherDansCarnet, mettreAJourCarnet } from './carnet'
+import { ecartsCarnet } from './carnetLogique'
 import { RechercheCarnet } from './RechercheCarnet'
 import { remplirDepuis } from './rechercheCarnetLogique'
 
@@ -32,6 +34,17 @@ function InterloForm({ initial, onSave, onCancel, onDelete }) {
   const [versCarnet, setVersCarnet] = useState(false)
   const [deCarnet, setDeCarnet] = useState(false)
   const [erreurCarnet, setErreurCarnet] = useState(null)
+  // Interlocuteur déjà au carnet : sa fiche, cherchée d'après ses valeurs
+  // enregistrées ; à l'enregistrement, les écarts sont proposés au carnet
+  const [liaison, setLiaison] = useState(null)
+  const [ecarts, setEcarts] = useState(null)
+
+  useEffect(() => {
+    if (!initial?.id) return undefined
+    let annule = false
+    chercherDansCarnet(initial).then((l) => { if (!annule) setLiaison(l) }).catch(() => {})
+    return () => { annule = true }
+  }, [initial])
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
@@ -41,9 +54,35 @@ function InterloForm({ initial, onSave, onCancel, onDelete }) {
     setDeCarnet(true)
   }
 
+  const enregistrer = async () => {
+    setSaving(true)
+    try {
+      await onSave({ ...form, categorie_label: form.categorie === 'autre' ? form.categorie_label : null })
+    } catch (err) { console.error(err) }
+    setSaving(false)
+  }
+
+  // Choix de la fenêtre des écarts : le carnet aussi, ou l'affaire seule
+  const reporterAuCarnet = async (aussiCarnet) => {
+    const choisis = ecarts
+    setEcarts(null)
+    if (aussiCarnet) {
+      try { await mettreAJourCarnet(choisis) } catch (err) {
+        setErreurCarnet(`Mise à jour du carnet d’adresses impossible : ${err?.message ?? err}`)
+        return
+      }
+    }
+    await enregistrer()
+  }
+
   const handleSubmit = async (e) => {
     e?.preventDefault()
     if (!form.nom?.trim() && !form.organisation?.trim()) return
+    // Déjà au carnet et différent de sa fiche : on demande avant d'enregistrer
+    if (liaison && !deCarnet) {
+      const differences = ecartsCarnet(liaison, form)
+      if (differences.length > 0) { setEcarts(differences); return }
+    }
     setSaving(true)
     setErreurCarnet(null)
     // Le carnet d'abord : s'il échoue, le formulaire reste ouvert avec le
@@ -55,16 +94,13 @@ function InterloForm({ initial, onSave, onCancel, onDelete }) {
         return
       }
     }
-    try {
-      await onSave({ ...form, categorie_label: form.categorie === 'autre' ? form.categorie_label : null })
-    } catch (err) { console.error(err) }
-    setSaving(false)
+    await enregistrer()
   }
 
   // Aussi pour un interlocuteur déjà enregistré dans l'affaire : ceux saisis
   // avant cette case n'ont jamais rejoint le carnet. Rien n'y est recréé s'il
   // y figure déjà (carnet.js)
-  const proposerCarnet = !deCarnet && !!(form.nom?.trim() || form.organisation?.trim())
+  const proposerCarnet = !deCarnet && !liaison && !!(form.nom?.trim() || form.organisation?.trim())
 
   const needsLabel = form.categorie === 'autre'
 
@@ -148,7 +184,13 @@ function InterloForm({ initial, onSave, onCancel, onDelete }) {
           </span>
         </label>
       )}
+      {liaison && !deCarnet && (
+        <p style={{ fontSize: 11, color: '#2A8A4E', margin: '12px 0 0' }}>
+          ✓ Au carnet d’adresses (fiche « {liaison.entreprise.raison_sociale} ») : une modification vous sera proposée pour le carnet aussi.
+        </p>
+      )}
       {erreurCarnet && <p role="alert" style={{ fontSize: 12, color: '#B8412C', margin: '8px 0 0' }}>{erreurCarnet}</p>}
+      {ecarts && <ModaleEcarts ecarts={ecarts} nomFiche={liaison?.entreprise?.raison_sociale} onChoisir={reporterAuCarnet} onAnnuler={() => setEcarts(null)} />}
 
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14, alignItems: 'center' }}>
         {onDelete && (
@@ -168,6 +210,77 @@ function InterloForm({ initial, onSave, onCancel, onDelete }) {
         >{saving ? 'Enregistrement…' : 'Enregistrer'}</button>
       </div>
     </div>
+  )
+}
+
+// Les informations saisies diffèrent du carnet : les reporter, ou non
+// Les deux fenêtres s'affichent au niveau de la page (portail) : un parent
+// animé (`jga-entree-carte` garde un `transform`) enfermerait sinon leur
+// `position: fixed` dans sa propre boîte
+function ModaleEcarts({ ecarts, nomFiche, onChoisir, onAnnuler }) {
+  const bouton = (fond, couleur) => ({
+    minHeight: 40, padding: '0 14px', borderRadius: 2, fontSize: 13, fontWeight: 500, cursor: 'pointer',
+    border: fond === 'white' ? '0.5px solid rgba(0,0,0,0.15)' : 'none', backgroundColor: fond, color: couleur,
+  })
+  return createPortal(
+    <div role="dialog" aria-modal="true" aria-labelledby="ecarts-carnet-titre"
+      style={{ position: 'fixed', inset: 0, zIndex: 500, backgroundColor: 'rgba(31,27,23,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div style={{ backgroundColor: 'white', width: '100%', maxWidth: 520, padding: 22, display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div>
+          <p id="ecarts-carnet-titre" style={{ fontSize: 16, fontWeight: 600, color: '#1F1B17', margin: 0 }}>Mettre aussi à jour le carnet d’adresses ?</p>
+          <p style={{ fontSize: 13, color: '#5E5854', margin: '6px 0 0', lineHeight: 1.5 }}>
+            Ces informations ne correspondent plus à celles du carnet{nomFiche ? <> (fiche « {nomFiche} »)</> : null}.
+            Le carnet sert à toutes les affaires : une mise à jour s’y verra partout.
+          </p>
+        </div>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+          <thead>
+            <tr style={{ color: '#9C9591', textAlign: 'left' }}>
+              <th style={{ fontWeight: 500, padding: '4px 6px' }}></th>
+              <th style={{ fontWeight: 500, padding: '4px 6px' }}>Carnet</th>
+              <th style={{ fontWeight: 500, padding: '4px 6px' }}>Affaire</th>
+            </tr>
+          </thead>
+          <tbody>
+            {ecarts.map((x) => (
+              <tr key={`${x.cible}-${x.champ}`} style={{ borderTop: '0.5px solid rgba(0,0,0,0.08)' }}>
+                <td style={{ padding: '6px', fontWeight: 600, color: '#1F1B17', whiteSpace: 'nowrap' }}>{x.libelle}</td>
+                <td style={{ padding: '6px', color: '#9C9591', textDecoration: x.avant ? 'line-through' : 'none' }}>{x.avant || '—'}</td>
+                <td style={{ padding: '6px', color: '#1F1B17' }}>{x.apres}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+          <button type="button" onClick={onAnnuler} style={bouton('white', '#5E5854')}>Revenir</button>
+          <button type="button" onClick={() => onChoisir(false)} style={bouton('white', '#1F1B17')}>Seulement dans l’affaire</button>
+          <button type="button" onClick={() => onChoisir(true)} style={bouton('#E8602C', 'white')}>Mettre aussi à jour le carnet</button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  )
+}
+
+// Un seul interlocuteur, dans une fenêtre : le crayon des fiches de contacts
+export function ModaleInterlocuteur({ interlocuteur, onEnregistrer, onSupprimer, onFermer }) {
+  return createPortal(
+    <div role="dialog" aria-modal="true" aria-label="Modifier l’interlocuteur"
+      style={{ position: 'fixed', inset: 0, zIndex: 400, backgroundColor: 'rgba(31,27,23,0.45)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 'calc(env(safe-area-inset-top) + 48px) 16px 16px', overflowY: 'auto' }}>
+      <div style={{ backgroundColor: 'white', width: '100%', maxWidth: 680, padding: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+          <p style={{ fontSize: 15, fontWeight: 600, color: '#1F1B17', margin: 0 }}>Modifier l’interlocuteur</p>
+          <button type="button" onClick={onFermer} aria-label="Fermer" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9C9591', padding: 4 }}><X size={18} /></button>
+        </div>
+        <InterloForm
+          initial={interlocuteur}
+          onSave={async (data) => { await onEnregistrer(data); onFermer() }}
+          onCancel={onFermer}
+          onDelete={onSupprimer ? async () => { await onSupprimer(); onFermer() } : undefined}
+        />
+      </div>
+    </div>,
+    document.body,
   )
 }
 

@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { ChevronRight, ChevronDown, Phone, Mail, UserPlus, Download } from 'lucide-react'
+import { ChevronRight, ChevronDown, Phone, Mail, UserPlus, Download, Pencil } from 'lucide-react'
 import { useAffaireInterlocuteurs, CATEGORIE_META } from '../shared/hooks/useAffaireInterlocuteurs'
 import { useLotsEntreprises } from '../shared/hooks/useLotsEntreprises'
 import { annuaireAffaire, lienTelephone, telephones } from './annuaireLogique'
+import { ModaleInterlocuteur } from '../modules/chantier/comptes-rendus/InterlocuteursModal'
 import { vcard, vcards, csvOutlook, nomFichierContacts, nomFichierContact } from './exportContactsLogique'
 
 // Le fichier est fabriqué dans la page : rien ne passe par Supabase
@@ -26,31 +27,36 @@ const LIEN = {
   overflowWrap: 'anywhere', minHeight: 24,
 }
 
-function Fiche({ fiche, couleur, onExporter }) {
+const BOUTON_FICHE = {
+  width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center',
+  background: 'none', border: 'none', cursor: 'pointer', color: '#9C9591', padding: 0,
+}
+
+function Fiche({ fiche, couleur, onExporter, onModifier }) {
   const numeros = telephones(fiche.telephone)
+  const marge = onModifier ? 60 : 28
   return (
     <div style={{
       position: 'relative',
       border: '0.5px solid rgba(0,0,0,0.08)', backgroundColor: '#FAFAF9',
       padding: '10px 12px', minWidth: 0,
     }}>
-      <button
-        type="button"
-        onClick={() => onExporter(fiche)}
-        title="Ajouter ce contact au téléphone (.vcf)"
-        aria-label={`Ajouter ${fiche.nom} au téléphone`}
-        style={{
-          position: 'absolute', top: 4, right: 4, width: 32, height: 32,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          background: 'none', border: 'none', cursor: 'pointer', color: '#9C9591',
-        }}
-      >
-        <UserPlus size={14} strokeWidth={1.5} />
-      </button>
-      <p style={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: couleur ?? 'var(--jga-beige)', margin: '0 28px 3px 0' }}>
+      <div style={{ position: 'absolute', top: 4, right: 4, display: 'flex' }}>
+        {onModifier && (
+          <button type="button" onClick={() => onModifier(fiche)} title="Modifier cet interlocuteur"
+            aria-label={`Modifier ${fiche.nom}`} style={BOUTON_FICHE}>
+            <Pencil size={14} strokeWidth={1.5} />
+          </button>
+        )}
+        <button type="button" onClick={() => onExporter(fiche)} title="Ajouter ce contact au téléphone (.vcf)"
+          aria-label={`Ajouter ${fiche.nom} au téléphone`} style={BOUTON_FICHE}>
+          <UserPlus size={14} strokeWidth={1.5} />
+        </button>
+      </div>
+      <p style={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: couleur ?? 'var(--jga-beige)', margin: `0 ${marge}px 3px 0` }}>
         {fiche.role}
       </p>
-      <p style={{ fontSize: 13, fontWeight: 500, color: '#1F1B17', margin: '0 28px 0 0' }}>{fiche.nom}</p>
+      <p style={{ fontSize: 13, fontWeight: 500, color: '#1F1B17', margin: `0 ${marge}px 0 0` }}>{fiche.nom}</p>
       {fiche.detail && (
         <p style={{ fontSize: 11, color: '#7A736E', margin: '1px 0 0' }}>{fiche.detail}</p>
       )}
@@ -95,12 +101,12 @@ function ChoixExport({ titre, detail, onClick }) {
   )
 }
 
-function Groupe({ titre, fiches, couleur, onExporter }) {
+function Groupe({ titre, fiches, couleur, onExporter, onModifier }) {
   return (
     <div>
       <p style={{ fontSize: 11, fontWeight: 500, color: '#5E5854', margin: '0 0 8px' }}>{titre}</p>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8 }}>
-        {fiches.map((f) => <Fiche key={f.cle} fiche={f} couleur={couleur?.(f)} onExporter={onExporter} />)}
+        {fiches.map((f) => <Fiche key={f.cle} fiche={f} couleur={couleur?.(f)} onExporter={onExporter} onModifier={onModifier} />)}
       </div>
     </div>
   )
@@ -110,7 +116,10 @@ function Groupe({ titre, fiches, couleur, onExporter }) {
 // geste : interlocuteurs (ceux des visites de chantier) et représentants des
 // entreprises de chaque lot.
 export function ContactsAffaire({ affaire, affaireId, canEdit, onGerer, style }) {
-  const { interlocuteurs, loading: chargeInterlo } = useAffaireInterlocuteurs(affaireId)
+  const { interlocuteurs, loading: chargeInterlo, updateInterlocuteur, deleteInterlocuteur } = useAffaireInterlocuteurs(affaireId)
+  // Le crayon d'une fiche : modifier l'interlocuteur sans passer par la fiche de l'affaire
+  const [aModifier, setAModifier] = useState(null)
+  const modifier = (fiche) => setAModifier(interlocuteurs.find((i) => `interlo:${i.id}` === fiche.cle) ?? null)
   const { lots, loading: chargeLots } = useLotsEntreprises(affaireId)
   const [menuExport, setMenuExport] = useState(false)
   const annuaire = annuaireAffaire({ interlocuteurs, lots })
@@ -195,12 +204,21 @@ export function ContactsAffaire({ affaire, affaireId, canEdit, onGerer, style })
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
           {annuaire.interlocuteurs.length > 0 && (
-            <Groupe titre="Interlocuteurs" fiches={annuaire.interlocuteurs} couleur={(f) => CATEGORIE_META[f.categorie]?.color} onExporter={exporterUn} />
+            <Groupe titre="Interlocuteurs" fiches={annuaire.interlocuteurs} couleur={(f) => CATEGORIE_META[f.categorie]?.color} onExporter={exporterUn}
+              onModifier={canEdit ? modifier : undefined} />
           )}
           {annuaire.entreprises.length > 0 && (
             <Groupe titre="Entreprises" fiches={annuaire.entreprises} onExporter={exporterUn} />
           )}
         </div>
+      )}
+      {aModifier && (
+        <ModaleInterlocuteur
+          interlocuteur={aModifier}
+          onEnregistrer={(data) => updateInterlocuteur(aModifier.id, data)}
+          onSupprimer={() => deleteInterlocuteur(aModifier.id)}
+          onFermer={() => setAModifier(null)}
+        />
       )}
     </div>
   )

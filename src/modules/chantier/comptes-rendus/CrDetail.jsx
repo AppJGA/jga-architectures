@@ -64,8 +64,8 @@ function focusOff(e) { e.target.style.borderColor = 'rgba(0,0,0,0.12)'; e.target
 const VUES = [
   {
     id: 'organisation',
-    label: 'Organisation de la visite',
-    description: 'Informations générales,\nprochaine réunion',
+    label: 'Prochaine visite',
+    description: 'Date et heure de la prochaine réunion,\nrédacteur',
     icon: IconeOrganisation,
     couleur: '#E8602C',
     fondClair: 'rgba(232,96,44,0.10)',
@@ -430,20 +430,8 @@ function CrAccueil({ cr, affaire, presences, sections, onNavigate, onEmettre, on
 
       </div>
 
-      {/* Les autres vues */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
-        <TuileVue
-          vue={vueOrga}
-          titre="Organisation"
-          sousTitre="Dates, rédacteur, template"
-          onClick={() => onNavigate('organisation')}
-        />
-        <TuileVue
-          vue={vueGeneralites}
-          titre="Généralités"
-          sousTitre={nbPartiesGeneralites > 0 ? `Parties I à ${nbPartiesGeneralites > 5 ? 'V+' : ['I', 'II', 'III', 'IV', 'V'][nbPartiesGeneralites - 1]} · communes à l’affaire` : 'À remplir ou importer'}
-          onClick={() => onNavigate('generalites')}
-        />
+      {/* Les autres vues, dans l'ordre du déroulé d'une visite */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>
         <TuileVue
           vue={vuePresences}
           titre="Présences"
@@ -451,32 +439,82 @@ function CrAccueil({ cr, affaire, presences, sections, onNavigate, onEmettre, on
           onClick={() => onNavigate('presences')}
         />
         <TuileVue
+          vue={vueAvancement}
+          titre="Avancement"
+          sousTitre={avancement ? `${avancement.realise}% réalisé · prévu ${avancement.prevu}%` : 'Planning non renseigné'}
+          onClick={() => onNavigate('avancement')}
+        />
+        <TuileVue
+          vue={vueOrga}
+          titre="Prochaine visite"
+          sousTitre={cr.date_prochaine_reunion
+            ? `${new Date(cr.date_prochaine_reunion + 'T00:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}${cr.heure_prochaine_reunion ? ` à ${cr.heure_prochaine_reunion.slice(0, 5).replace(':', 'h')}` : ''}`
+            : 'Date à fixer'}
+          onClick={() => onNavigate('organisation')}
+        />
+        {enregistrements && (
+          <TuileVue
+            vue={vueEnregistrements}
+            titre="Enregistrement"
+            sousTitre="Transcriptions de la réunion"
+            onClick={() => onNavigate('enregistrements')}
+          />
+        )}
+        <TuileVue
           vue={vuePlans}
           titre="Plans"
           sousTitre={nbPlans === 0 ? 'Aucun plan' : `${nbPlans} plan${nbPlans > 1 ? 's' : ''} · ${nbPastilles} pastille${nbPastilles > 1 ? 's' : ''}`}
           onClick={() => onNavigate('plans')}
         />
         <TuileVue
-          vue={vueAvancement}
-          titre="Avancement"
-          sousTitre={avancement ? `${avancement.realise}% réalisé · prévu ${avancement.prevu}%` : 'Planning non renseigné'}
-          onClick={() => onNavigate('avancement')}
-        />
-        {enregistrements && (
-          <TuileVue
-            vue={vueEnregistrements}
-            titre="Enregistrements"
-            sousTitre="Transcriptions de la réunion"
-            onClick={() => onNavigate('enregistrements')}
-          />
-        )}
-        <TuileVue
-          vue={vueExport}
-          titre="Exporter le PDF"
-          sousTitre="Aperçu avant impression"
-          onClick={() => onNavigate('export')}
+          vue={vueGeneralites}
+          titre="Généralités"
+          sousTitre={nbPartiesGeneralites > 0 ? `Parties I à ${nbPartiesGeneralites > 5 ? 'V+' : ['I', 'II', 'III', 'IV', 'V'][nbPartiesGeneralites - 1]} · communes à l’affaire` : 'À remplir ou importer'}
+          onClick={() => onNavigate('generalites')}
         />
       </div>
+
+      {/* L'export à part : c'est l'aboutissement de la rédaction, pas une page parmi d'autres */}
+      <BlocExport vue={vueExport} emis={cr.statut === 'emis'} onClick={() => onNavigate('export')} />
+    </div>
+  )
+}
+
+function BlocExport({ vue, emis, onClick }) {
+  const [survol, setSurvol] = useState(false)
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap',
+      marginTop: 28, padding: '18px 20px', background: 'white',
+      border: '0.5px solid rgba(31,27,23,0.25)', borderLeft: '3px solid #1F1B17',
+    }}>
+      <div style={{
+        width: 56, height: 56, borderRadius: '50%', flexShrink: 0, background: '#F3F1EE',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}>
+        <vue.icon size={34} color="#1F1B17" strokeWidth={1.25} />
+      </div>
+      <div style={{ flex: 1, minWidth: 200 }}>
+        <h3 style={{ fontFamily: "'Archivo', sans-serif", fontSize: 17, fontWeight: 500, color: '#1F1B17' }}>
+          Exporter le PDF
+        </h3>
+        <p style={{ fontSize: 12, color: '#9C9591', marginTop: 3 }}>
+          {emis ? 'Le compte rendu émis : aperçu, téléchargement, archives' : 'L’aboutissement du compte rendu : aperçu, téléchargement, archive'}
+        </p>
+      </div>
+      <button
+        onClick={onClick}
+        onMouseEnter={() => setSurvol(true)}
+        onMouseLeave={() => setSurvol(false)}
+        style={{
+          display: 'inline-flex', alignItems: 'center', gap: 8, flexShrink: 0,
+          padding: '10px 20px', minHeight: 44, borderRadius: 2, border: 'none',
+          backgroundColor: survol ? '#000' : '#1F1B17', color: 'white',
+          fontSize: 13, fontWeight: 600, cursor: 'pointer',
+        }}
+      >
+        Exporter <ArrowRight size={15} strokeWidth={1.8} />
+      </button>
     </div>
   )
 }

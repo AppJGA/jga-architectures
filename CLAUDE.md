@@ -231,6 +231,11 @@ création avec reprise de la visite précédente) et `useCompteRendu` (un CR).
   émis gardent la leur, et un plan ou une version qu'ils affichent ne se
   supprime pas. La visionneuse (`VisionneusePlan.jsx`) garde ses calculs de
   zoom dans `plansLogique.js`.
+- **Tableau de bord d'une visite** (`CrAccueil`, dans `CrDetail.jsx`) : le
+  bloc Remarques en tête, puis les tuiles dans l'ordre voulu par l'agence —
+  Présences, Avancement, Prochaine visite (l'ancienne « Organisation » : dates,
+  rédacteur, template), Enregistrement, Plans, Généralités. L'export PDF est
+  un bloc à part en bas (`BlocExport`) : c'est l'aboutissement du CR.
 - **Aller vite à la visite** : sur le chantier, écrire une remarque doit
   demander deux gestes, pas cinq. La page de l'affaire porte un bandeau
   (`BandeauVisite.jsx`) qui reprend la visite en cours ou crée celle du jour ;

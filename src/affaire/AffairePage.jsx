@@ -1,6 +1,6 @@
 import { Suspense, useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, CheckSquare, Pencil, ChevronRight, Eye, ChevronDown, Check } from 'lucide-react'
+import { ArrowLeft, Pencil, ChevronRight, Eye, ChevronDown, Check } from 'lucide-react'
 import { useAffaire } from '../shared/hooks/useAffaires'
 import { useAffaireCollaborateurs } from '../shared/hooks/useAffaireCollaborateurs'
 import { useAuth } from '../core/auth/useAuth'
@@ -16,16 +16,16 @@ import { infosStatut } from '../modules/chantier/comptes-rendus/crLogique'
 import { dernierePhaseRenseignee, nomPhase } from '../modules/etude/financier/phases'
 import {
   IconeTableauDeBord, IconePlanningEtude, IconeFinancierEtude, IconeEntreprisesLots, IconeVisitesChantier,
-  IconeOpr, IconeFtm, IconePlanningChantier, IconeFinancierChantier, IconeDocuments,
+  IconeOpr, IconeFtm, IconePlanningChantier, IconeFinancierChantier, IconeDocuments, IconeTodo,
 } from '../shared/icones/IconesAffaire'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-// Noms du manifeste → icônes de l'agence (la to-do list n'en a pas)
+// Noms du manifeste → icônes de l'agence
 const ICON_MAP = {
   Calendar: IconePlanningEtude,
   BarChart2: IconeFinancierEtude,
-  CheckSquare,
+  CheckSquare: IconeTodo,
   Building2: IconeEntreprisesLots,
   ClipboardList: IconeVisitesChantier,
   ClipboardCheck: IconeOpr,

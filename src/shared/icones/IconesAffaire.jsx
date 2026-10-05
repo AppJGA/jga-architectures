@@ -1,7 +1,8 @@
 // ─── Icônes de l'affaire ─────────────────────────────────────────────────────
 //
 // Dessinées pour l'agence (dossier « Icônes/icons » qu'elle a fourni) :
-// tableau de bord, modules, plans et documents de la page d'une affaire.
+// tableau de bord, modules (to-do list comprise), plans et documents de la
+// page d'une affaire.
 // Elles s'emploient comme celles de lucide-react — `size`, `color`, `style` —
 // pour se substituer sans retoucher les appels. Leur épaisseur de trait est
 // celle du dessin : un `strokeWidth` passé par l'appel est ignoré.
@@ -89,4 +90,9 @@ export function IconePlans(props) {
 // Documents
 export function IconeDocuments(props) {
   return <Icone {...props}><path d="M22 12V9a3 3 0 0 1 3-3h17l10 10v30a3 3 0 0 1-3 3h-3"/><path d="M42 6v10h10"/><path d="M12 18a3 3 0 0 1 3-3h17l10 10v30a3 3 0 0 1-3 3H15a3 3 0 0 1-3-3z"/><path d="M32 15v10h10"/><path d="M18 34h18M18 41h18M18 48h12"/></Icone>
+}
+
+// To-do list
+export function IconeTodo(props) {
+  return <Icone {...props}><rect x="6" y="8" width="12" height="12" rx="2.5"/><path d="M9.5 14l3.5 3.5 8-9"/><path d="M26 14h32"/><rect x="6" y="26" width="12" height="12" rx="2.5"/><path d="M9.5 32l3.5 3.5 8-9"/><path d="M26 32h32"/><rect x="6" y="44" width="12" height="12" rx="2.5"/><path d="M26 50h24"/></Icone>
 }

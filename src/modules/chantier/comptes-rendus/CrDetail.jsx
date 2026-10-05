@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import {
   ArrowLeft, ArrowRight, Send, FileDown, ChevronRight, Users, ClipboardList, MessageSquare,
-  Zap, LayoutDashboard, Lock, RotateCcw, AlertTriangle, X, Smartphone, TrendingUp, ScrollText, Bot,
+  Zap, LayoutDashboard, Lock, RotateCcw, AlertTriangle, X, Smartphone, TrendingUp, ScrollText,
 } from 'lucide-react'
-import { IconePlans } from '../../../shared/icones/IconesAffaire'
+import { IconePlans, IconeRobot } from '../../../shared/icones/IconesAffaire'
 import { useEnregistrementsDisponibles } from './enregistrement/useEnregistrementVisite'
 import { ListeEnregistrements } from './enregistrement/PanneauEnregistrements'
 import { vocabulaireAffaire } from './enregistrement/transcriptionLogique'
@@ -107,7 +107,7 @@ const VUES = [
     id: 'enregistrements',
     label: 'Enregistrements de la réunion',
     description: 'Transcriptions du robot\net fichiers importés',
-    icon: Bot,
+    icon: IconeRobot,
     couleur: '#B8412C',
     fondClair: 'rgba(184,65,44,0.10)',
   },

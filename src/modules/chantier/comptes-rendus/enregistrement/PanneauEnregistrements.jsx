@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
-import { Bot, Upload, Trash2, ChevronDown, ChevronUp, Mic, FileAudio, RefreshCw } from 'lucide-react'
+import { Upload, Trash2, ChevronDown, ChevronUp, Mic, FileAudio, RefreshCw } from 'lucide-react'
 import { dureeLisible } from './enregistrementLogique'
 import { texteTranscription, resumeEnregistrement } from './transcriptionLogique'
 import { listerEnregistrements, supprimerEnregistrement, importerFichier, messageTranscription } from './transcription'
 import { Panneau } from '../PanneauxVisite'
+import { IconeRobot } from '../../../../shared/icones/IconesAffaire'
 
 // ─── Enregistrements d'un compte rendu ───────────────────────────────────────
 //
@@ -122,7 +123,7 @@ export function ListeEnregistrements({ crId, affaireId, vocabulaire = [], versio
       {liste === null && <p style={{ fontSize: 13, color: '#9C9591' }}>Chargement…</p>}
       {liste?.length === 0 && (
         <p style={{ fontSize: 14, color: '#5E5854', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Bot size={18} /> Aucun enregistrement transcrit pour ce compte rendu.
+          <IconeRobot size={22} /> Aucun enregistrement transcrit pour ce compte rendu.
         </p>
       )}
       {liste?.length > 0 && (
@@ -158,7 +159,7 @@ function Demarrage({ onCommencer }) {
         <li>Continuez à noter vos remarques comme d’habitude : elles restent la référence.</li>
       </ul>
       <button type="button" onClick={onCommencer} style={{ ...bouton('#B8412C', 'white'), alignSelf: 'flex-start', fontSize: 15, fontWeight: 600, padding: '0 20px' }}>
-        <Bot size={18} /> Commencer l’enregistrement
+        <IconeRobot size={22} /> Commencer l’enregistrement
       </button>
     </div>
   )

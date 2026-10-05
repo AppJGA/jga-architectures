@@ -1,4 +1,5 @@
-import { Bot, Square, RotateCcw } from 'lucide-react'
+import { Square, RotateCcw } from 'lucide-react'
+import { IconeRobot } from '../../../../shared/icones/IconesAffaire'
 import { dureeLisible } from './enregistrementLogique'
 
 // ─── Robot de la barre du mode Visite ────────────────────────────────────────
@@ -50,7 +51,7 @@ export function BoutonRobot({ robot, onOuvrirPanneau }) {
   return (
     <button type="button" onClick={onOuvrirPanneau} title="Enregistrer la réunion"
       style={{ ...base, border: '1px solid rgba(0,0,0,0.15)', background: 'white', color: '#1F1B17' }}>
-      <Bot size={17} /> Enregistrer
+      <IconeRobot size={22} /> Enregistrer
       {robot.erreur && (
         <span title={robot.erreur} style={{ fontSize: 11, fontWeight: 700, color: 'white', background: '#B8412C', borderRadius: 10, padding: '1px 7px' }}>!</span>
       )}

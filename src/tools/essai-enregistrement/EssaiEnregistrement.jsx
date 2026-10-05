@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
-import { Bot, Square, RotateCcw, Camera, Copy, Trash2, Download } from 'lucide-react'
+import { Square, RotateCcw, Camera, Copy, Trash2, Download } from 'lucide-react'
+import { IconeRobot } from '../../shared/icones/IconesAffaire'
 import { enregistrementPossible, demarrerEnregistreur } from '../../modules/chantier/comptes-rendus/enregistrement/enregistreur'
 import { rangerMorceau, rangerTranche, lireMorceaux, recupererMorceaux, dernierEnregistrement, effacerEnregistrement } from '../../modules/chantier/comptes-rendus/enregistrement/audioLocal'
 import { dureeLisible, bilanEssai, extensionDe } from '../../modules/chantier/comptes-rendus/enregistrement/enregistrementLogique'
@@ -245,7 +246,7 @@ export function EssaiEnregistrement() {
         <button type="button" onClick={enCours ? arreter : () => lancer(false)}
           aria-label={enCours ? 'Arrêter l’enregistrement' : 'Démarrer l’enregistrement'}
           style={{ width: 64, height: 64, borderRadius: '50%', border: 'none', cursor: 'pointer', background: enCours ? '#B8412C' : 'var(--jga-green)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          {enCours ? <Square size={24} /> : <Bot size={30} />}
+          {enCours ? <Square size={24} /> : <IconeRobot size={36} />}
         </button>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 180 }}>
           {enCours ? (

@@ -31,7 +31,7 @@ export const tools = [
   {
     id: 'essai-enregistrement',
     label: 'Essai d’enregistrement',
-    icon: 'Bot',
+    icon: 'Robot',
     description: 'Tester l’enregistrement d’une visite sur cet appareil',
     path: 'essai-enregistrement',
     component: lazy(() => import('./essai-enregistrement')),

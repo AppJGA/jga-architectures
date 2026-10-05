@@ -96,3 +96,8 @@ export function IconeDocuments(props) {
 export function IconeTodo(props) {
   return <Icone {...props}><rect x="6" y="8" width="12" height="12" rx="2.5"/><path d="M9.5 14l3.5 3.5 8-9"/><path d="M26 14h32"/><rect x="6" y="26" width="12" height="12" rx="2.5"/><path d="M9.5 32l3.5 3.5 8-9"/><path d="M26 32h32"/><rect x="6" y="44" width="12" height="12" rx="2.5"/><path d="M26 50h24"/></Icone>
 }
+
+// Robot (visite enregistrée)
+export function IconeRobot(props) {
+  return <Icone {...props}><path d="M14 25a18 14 0 0 1 36 0"/><path d="M8 25h48"/><path d="M28 14v7M36 14v7"/><rect x="13" y="30" width="38" height="26" rx="5"/><circle cx="24" cy="41" r="3.5"/><circle cx="40" cy="41" r="3.5"/><rect x="24" y="47" width="16" height="5" rx="1.5"/><path d="M29.3 47v5M34.7 47v5"/><path d="M13 38H8v10h5M51 38h5v10h-5"/></Icone>
+}

@@ -28,7 +28,7 @@ function InterloForm({ initial, onSave, onCancel, onDelete }) {
   const [form, setForm] = useState(initial ?? emptyForm())
   const [saving, setSaving] = useState(false)
   const [confirmDel, setConfirmDel] = useState(false)
-  // Nouvel interlocuteur absent du carnet : on peut l'y verser d'une case
+  // Interlocuteur absent du carnet : on peut l'y verser d'une case
   const [versCarnet, setVersCarnet] = useState(false)
   const [deCarnet, setDeCarnet] = useState(false)
   const [erreurCarnet, setErreurCarnet] = useState(null)
@@ -61,7 +61,10 @@ function InterloForm({ initial, onSave, onCancel, onDelete }) {
     setSaving(false)
   }
 
-  const proposerCarnet = !initial?.id && !deCarnet && !!(form.nom?.trim() || form.organisation?.trim())
+  // Aussi pour un interlocuteur déjà enregistré dans l'affaire : ceux saisis
+  // avant cette case n'ont jamais rejoint le carnet. Rien n'y est recréé s'il
+  // y figure déjà (carnet.js)
+  const proposerCarnet = !deCarnet && !!(form.nom?.trim() || form.organisation?.trim())
 
   const needsLabel = form.categorie === 'autre'
 

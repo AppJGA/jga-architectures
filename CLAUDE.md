@@ -76,8 +76,9 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
   Cet éditeur vit dans un `<form>` : **aucun `<form>` dedans et tout bouton en
   `type="button"`**, sinon enregistrer un interlocuteur envoie et ferme la
   fiche entière.
-  Un nouvel interlocuteur absent du carnet peut y être versé (case « Ajouter
-  au carnet d'adresses », `carnet.js` / `carnetLogique.js`, testé) : la fiche
+  Un interlocuteur absent du carnet, nouveau ou déjà dans l'affaire, peut y
+  être versé (case « Ajouter au carnet d'adresses », `carnet.js` /
+  `carnetLogique.js`, testé) : la fiche
   `entreprises` de son organisation — ou à son nom s'il n'en a pas — puis la
   personne en `interlocuteurs`, sans doublon (comparaison sans majuscules ni
   accents). La fiche de l'affaire ne se ferme plus au clic à côté.

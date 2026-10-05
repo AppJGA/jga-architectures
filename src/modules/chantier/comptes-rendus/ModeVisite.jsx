@@ -115,7 +115,7 @@ function CarteRemarque({ rem, cr, lots, interlocuteurs, zones, ftms, ouvrirFtm, 
         {signature && <span style={{ fontSize: 12, fontWeight: 500, color: '#6B4E9B', background: 'rgba(107,78,155,0.10)', borderRadius: 3, padding: '2px 8px' }}>{signature}</span>}
         {ftm && (
           <button type="button" onClick={() => ouvrirFtm(ftm)} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 500, borderRadius: 3, padding: '2px 8px', color: resumeFtm(ftm).couleur, background: resumeFtm(ftm).fond }}>
-            <IconeFtm size={14} /> {resumeFtm(ftm).texte}
+            <IconeFtm size={16} /> {resumeFtm(ftm).texte}
           </button>
         )}
         <span style={{ flex: 1 }} />

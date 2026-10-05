@@ -506,7 +506,7 @@ function ModuleItem({ mod, phaseColor, affaireId, isActive }) {
         opacity: disabled ? 0.45 : 1,
       }}
     >
-      {Icon && <Icon size={18} strokeWidth={1.25} style={{ flexShrink: 0 }} />}
+      {Icon && <Icon size={22} strokeWidth={1.25} style={{ flexShrink: 0 }} />}
       <span style={{ flex: 1 }}>{mod.label}</span>
     </button>
   )
@@ -561,7 +561,7 @@ function ModulesSidebar({ affaireId, moduleId }) {
         onMouseEnter={e => { if (moduleId) e.currentTarget.style.backgroundColor = 'var(--affaire-accent-survol)' }}
         onMouseLeave={e => { if (moduleId) e.currentTarget.style.backgroundColor = 'var(--affaire-accent-clair)' }}
       >
-        <IconeTableauDeBord size={18} />
+        <IconeTableauDeBord size={22} />
         Tableau de bord
       </button>
 
@@ -635,7 +635,7 @@ function ModulesSidebar({ affaireId, moduleId }) {
         fontSize: 12, color: '#5E5854',
         opacity: 0.4, cursor: 'default',
       }}>
-        <IconeDocuments size={18} />
+        <IconeDocuments size={22} />
         <span>Documents · bientôt</span>
       </div>
     </aside>
@@ -693,7 +693,7 @@ function ModuleTile({ icon: Icon, label, phaseColor, active, children, onClick, 
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Icon size={22} strokeWidth={1.25} style={{ color: iconColor }} />
+            <Icon size={28} strokeWidth={1.25} style={{ color: iconColor }} />
             <span style={{ fontSize: 13, fontWeight: 500, color: active ? '#1F1B17' : '#9C9591' }}>
               {label}
             </span>

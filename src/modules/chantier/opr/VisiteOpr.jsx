@@ -73,7 +73,7 @@ function CarteReserve({ reserve, visite, lectureSeule, pastille, planNom, opr, o
         <span style={{ flex: 1 }} />
         {ftm && (
           <button type="button" onClick={() => ouvrirFtm(ftm)} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 500, borderRadius: 3, padding: '2px 8px', color: resumeFtm(ftm).couleur, background: resumeFtm(ftm).fond }}>
-            <IconeFtm size={14} /> {resumeFtm(ftm).texte}
+            <IconeFtm size={16} /> {resumeFtm(ftm).texte}
           </button>
         )}
         <span style={{ fontSize: 12, fontWeight: 600, color: statutJour.couleur, background: `${statutJour.couleur}1A`, borderRadius: 3, padding: '3px 10px' }}>{statutJour.libelle}</span>

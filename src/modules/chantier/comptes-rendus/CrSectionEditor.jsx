@@ -539,7 +539,7 @@ function RemarqueRow({ rem, idx, total, crDate, lots, interlocuteurs, zones, sec
               title="Ouvrir la fiche de travaux modificatifs"
               style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 5, marginRight: 8, padding: '2px 7px', borderRadius: 3, border: 'none', cursor: 'pointer', fontSize: 11, color: resumeFtm(ftm).couleur, background: resumeFtm(ftm).fond }}
             >
-              <IconeFtm size={14} /> {resumeFtm(ftm).texte}
+              <IconeFtm size={16} /> {resumeFtm(ftm).texte}
             </button>
           )}
           {zoneLibelle && (

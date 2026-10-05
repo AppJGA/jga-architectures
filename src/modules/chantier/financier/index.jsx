@@ -428,7 +428,7 @@ function LigneRow({ ligne, filter, onEdit, onDelete, onOpenFtm }) {
               e.currentTarget.style.borderColor = 'rgba(0,0,0,0.12)'
             }}
           >
-            <IconeFtm size={14} />
+            <IconeFtm size={16} />
             {ligne.ftm_numero != null && `FTM-${String(ligne.ftm_numero).padStart(3, '0')}`}
           </button>
         )}

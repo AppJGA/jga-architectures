@@ -236,7 +236,7 @@ export default function FtmModule() {
         marginBottom: 20,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <IconeFtm size={22} style={{ color: '#2A8A4E' }} />
+          <IconeFtm size={26} style={{ color: '#2A8A4E' }} />
           <h2 style={{ fontSize: 15, fontWeight: 600, color: '#1F1B17', margin: 0 }}>
             Fiches de travaux modificatifs
           </h2>

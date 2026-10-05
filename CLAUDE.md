@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 713 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
+npm test         # 716 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
 npx eslint src   # ~72 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -195,6 +195,13 @@ création avec reprise de la visite précédente) et `useCompteRendu` (un CR).
   groupe (`convocationLogique.js`, testé ; `useConvocationsPrecedentes`,
   gardé sur l'appareil pour une visite sans réseau). Un participant se
   reconnaît d'un CR à l'autre par `interlocuteur_id` ou `lot_entreprise_id`.
+- **Convocations du CR précédent** (`convocationLogique.js`, `useConvocationsPrecedentes`,
+  gardées sur l'appareil pour la visite hors ligne) : au pointage, un
+  participant convoqué au CR précédent porte la mention « Convoqué au CR n°X »
+  et passe en tête. Pointé **absent** (pas excusé), il passe en rouge, avec un
+  compteur en tête des présences ; dans le PDF, sa case porte « convoqué » et
+  une ligne rouge le nomme. Les participants se reconnaissent d'un CR à
+  l'autre par `interlocuteur_id` / `lot_entreprise_id` (`cleParticipant`).
 - **Statuts fixes** (migration 038, `STATUTS` de `crLogique.js`) : le statut
   décide seul de la clôture ; `est_clos` en est déduit par le déclencheur
   `cr_remarques_suivi`. Toujours lire un statut via `statutNormalise` /

@@ -97,7 +97,7 @@ export async function imagesDocument({ elements, photos, liensPhotos, pastilles,
 /**
  * @returns { blob, nomFichier, avertissements }
  */
-export async function genererPdfCr({ cr, affaire, sections, presences, generalites = null, lots, interlocuteurs, zones, avancement, profils, photos, liensPhotos, pastilles, plansCr, reglages: brut }) {
+export async function genererPdfCr({ cr, affaire, sections, presences, convocations, generalites = null, lots, interlocuteurs, zones, avancement, profils, photos, liensPhotos, pastilles, plansCr, reglages: brut }) {
   const reglages = reglagesEffectifs(brut)
   const pdfMake = await chargerPdfMake()
   const choisies = selectionnerSections(sections, reglages)
@@ -111,7 +111,7 @@ export async function genererPdfCr({ cr, affaire, sections, presences, generalit
   })
 
   const versionPour = reglages.destinataire ? libelleVersion(reglages.destinataire, lots, interlocuteurs) : null
-  const definition = definitionPdf({ cr, affaire, sections: choisies, presences, generalites, lots, interlocuteurs, zones, avancement, profils, reglages, versionPour, images })
+  const definition = definitionPdf({ cr, affaire, sections: choisies, presences, convocations, generalites, lots, interlocuteurs, zones, avancement, profils, reglages, versionPour, images })
   const blob = await pdfMake.createPdf(definition).getBlob()
   return { blob, nomFichier: nomFichierCr(cr, affaire, versionPour), avertissements }
 }

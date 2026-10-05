@@ -754,7 +754,7 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
   }, [crId, versionArchives])
 
   const fabriquerPdf = (reglages, crPdf) => genererPdfCr({
-    cr: crPdf, affaire, sections, presences, generalites: generalitesAImprimer(crPdf, generalites.contenu),
+    cr: crPdf, affaire, sections, presences, convocations, generalites: generalitesAImprimer(crPdf, generalites.contenu),
     lots: lotsAffaire, interlocuteurs: interlocuteurs ?? [], zones,
     avancement: lignesAvancementCr, profils: profiles,
     photos, liensPhotos, pastilles, plansCr, reglages,
@@ -1024,6 +1024,7 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
           cr={cr}
           sections={sections}
           presences={presences}
+          convocations={convocations}
           affaire={affaire}
           lotEntreprises={lotEntreprises}
           lots={lotsAffaire}

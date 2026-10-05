@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { cleParticipant, convocationsDe, convocationDe, libelleConvocation, convoquesDabord } from '../src/modules/chantier/comptes-rendus/convocationLogique.js'
+import { cleParticipant, convocationsDe, convocationDe, libelleConvocation, convoquesDabord, estConvoqueAbsent, convoquesAbsents, libelleConvoquesAbsents } from '../src/modules/chantier/comptes-rendus/convocationLogique.js'
 
 const precedent = [
   { id: 'x1', interlocuteur_id: 'moa', convoque: true, heure_convocation: '09:00:00' },
@@ -34,4 +34,25 @@ test('les convoqués en tête, l’ordre habituel conservé', () => {
   const liste = [{ lot_entreprise_id: 'le-pl' }, { lot_entreprise_id: 'le-ch' }, { lot_entreprise_id: 'le-go' }]
   assert.deepEqual(convoquesDabord(liste, convocations).map((p) => p.lot_entreprise_id), ['le-go', 'le-pl', 'le-ch'])
   assert.deepEqual(convoquesDabord(liste, new Map()).map((p) => p.lot_entreprise_id), ['le-pl', 'le-ch', 'le-go'])
+})
+
+test('un convoqué pointé absent ; un excusé ou un non-convoqué ne compte pas', () => {
+  const presences = [
+    { id: 'a', interlocuteur_id: 'moa', presence: 'a' },
+    { id: 'b', lot_entreprise_id: 'le-go', presence: 'e' },
+    { id: 'c', lot_entreprise_id: 'le-pl', presence: 'a' },
+    { id: 'd', lot_entreprise_id: 'le-go', presence: null },
+  ]
+  assert.equal(estConvoqueAbsent(presences[0], convocations), true)
+  assert.equal(estConvoqueAbsent(presences[1], convocations), false)
+  assert.equal(estConvoqueAbsent(presences[2], convocations), false)
+  assert.equal(estConvoqueAbsent(presences[3], convocations), false, 'pas encore pointé')
+  assert.deepEqual(convoquesAbsents(presences, convocations).map((p) => p.id), ['a'])
+  assert.deepEqual(convoquesAbsents(presences, new Map()), [])
+})
+
+test('le compteur', () => {
+  assert.equal(libelleConvoquesAbsents(0), '')
+  assert.equal(libelleConvoquesAbsents(1), '1 convoqué absent')
+  assert.equal(libelleConvoquesAbsents(3), '3 convoqués absents')
 })

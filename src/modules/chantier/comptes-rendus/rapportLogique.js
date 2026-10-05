@@ -7,6 +7,7 @@
 import { infosStatut, estEnRetard, affichagePresence, grouperParZone, libelleZone, auteurExterieur, miseEnForme, COULEUR_SURLIGNE } from './crLogique'
 import { estPartieRemarques, groupesDestinataires, libelleLot } from './remarquesLogique'
 import { normaliserGeneralites } from './generalitesLogique'
+import { estConvoqueAbsent, convocationDe, libelleConvoquesAbsents } from './convocationLogique'
 
 export const REGLAGES_DEFAUT = {
   modele: 'complet',        // complet | synthese
@@ -247,8 +248,13 @@ function tableauPresences(titre, lignes, colonnes) {
   ]
 }
 
-const cellulePresence = ({ p }) => {
+// Un convoqué absent : la case rouge dit aussi « convoqué », lisible
+// d'un coup d'œil sur la feuille imprimée.
+const cellulePresence = ({ p, absentConvoque }) => {
   const [lettre, couleur] = PRESENCES[p.presence] ?? ['—', null]
+  if (absentConvoque) {
+    return { stack: [{ text: lettre, bold: true, fontSize: 8 }, { text: 'convoqué', fontSize: 6 }], color: 'white', fillColor: couleur, alignment: 'center' }
+  }
   return couleur
     ? { text: lettre, bold: true, color: 'white', fillColor: couleur, alignment: 'center', fontSize: 8 }
     : { text: '—', color: COULEUR.grisClair, alignment: 'center', fontSize: 8 }
@@ -261,7 +267,7 @@ const celluleContact = ({ v }) => ({ stack: [v.email, v.telephone].filter(Boolea
  * @param donnees { cr, affaire, sections (déjà sélectionnées), presences, lots,
  *   interlocuteurs, reglages, versionPour, images: { logo, photos: Map, extraits: Map, planches: [] } }
  */
-export function definitionPdf({ cr, affaire, sections, presences, generalites = null, lots, interlocuteurs, zones = [], avancement = [], profils = [], reglages: brut, versionPour, images = {} }) {
+export function definitionPdf({ cr, affaire, sections, presences, convocations = new Map(), generalites = null, lots, interlocuteurs, zones = [], avancement = [], profils = [], reglages: brut, versionPour, images = {} }) {
   const reglages = reglagesEffectifs(brut)
   const complet = reglages.modele === 'complet'
   const num = String(cr.numero).padStart(2, '0')
@@ -345,7 +351,7 @@ export function definitionPdf({ cr, affaire, sections, presences, generalites = 
         layout: { hLineWidth: () => 0, vLineWidth: () => 0, fillColor: () => '#FDEFE9', paddingLeft: () => 8, paddingTop: () => 5, paddingBottom: () => 5 },
         margin: [0, 0, 0, 6],
       },
-      ...blocsPresences(presences, complet),
+      ...blocsPresences(presences, complet, convocations),
       ...(reglages.avancement === 'oui' ? blocAvancement(avancement) : []),
       ...blocGeneralites(generalites),
       ...(reglages.zones === 'grouper' ? contenuZones() : contenuSections),
@@ -448,8 +454,8 @@ export function blocAffaire(affaire) {
 }
 
 /** Feuille de présence : légende, interlocuteurs, entreprises (coordonnées si `complet`) */
-export function blocsPresences(presences, complet) {
-  const participants = (presences ?? []).map((p) => ({ p, v: affichagePresence(p) }))
+export function blocsPresences(presences, complet, convocations = new Map()) {
+  const participants = (presences ?? []).map((p) => ({ p, v: affichagePresence(p), absentConvoque: estConvoqueAbsent(p, convocations) }))
   const interlos = participants.filter((l) => l.v.type === 'interlocuteur').sort((a, b) => a.v.ordre - b.v.ordre)
   const entreprises = participants.filter((l) => l.v.type === 'entreprise').sort((a, b) => (a.v.lotNumero ?? 99) - (b.v.lotNumero ?? 99))
 
@@ -473,9 +479,26 @@ export function blocsPresences(presences, complet) {
 
   return [
     ...(participants.length > 0 ? [{ text: 'Présence : P présent · R retard · A absent · E excusé', fontSize: 7.5, color: COULEUR.gris, margin: [0, 2, 0, 0] }] : []),
+    ...ligneConvoquesAbsents(participants.filter((l) => l.absentConvoque), convocations),
     ...tableauPresences('Personnes relatives au projet', interlos, colonnesInterlos),
     ...tableauPresences('Entreprises', entreprises, colonnesEntreprises),
   ]
+}
+
+/** « 2 convoqués absents (convocation du CR n°2) : Plomberie Martin (lot 3), … » */
+function ligneConvoquesAbsents(absents, convocations) {
+  if (!absents.length) return []
+  const numero = convocationDe(absents[0].p, convocations)?.numero
+  const noms = absents.map(({ v }) => (v.type === 'entreprise'
+    ? `${v.entreprise ?? '—'}${v.lotNom ? ` (lot ${[v.lotNumero, v.lotNom].filter((x) => x != null && x !== '').join(' ')})` : ''}`
+    : (v.nom || v.organisation || '—')))
+  return [{
+    text: [
+      { text: `${libelleConvoquesAbsents(absents.length)}${numero != null ? ` (convocation du CR n°${numero})` : ''} : `, bold: true },
+      noms.join(', '),
+    ],
+    fontSize: 8, color: '#B8412C', margin: [0, 3, 0, 0],
+  }]
 }
 
 /**

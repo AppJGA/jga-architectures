@@ -40,3 +40,20 @@ export function convoquesDabord(liste = [], convocations) {
     .sort((a, b) => a.attendu - b.attendu || a.rang - b.rang)
     .map((x) => x.p)
 }
+
+// Un convoqué pointé absent saute aux yeux, à l'écran comme dans le PDF :
+// c'est l'entreprise qu'on attendait et qui n'est pas venue. Un excusé a
+// prévenu, il ne compte pas.
+export function estConvoqueAbsent(presence, convocations) {
+  return presence?.presence === 'a' && !!convocationDe(presence, convocations)
+}
+
+export function convoquesAbsents(presences = [], convocations) {
+  return presences.filter((p) => estConvoqueAbsent(p, convocations))
+}
+
+/** « 2 convoqués absents » */
+export function libelleConvoquesAbsents(n) {
+  if (!n) return ''
+  return `${n} convoqué${n > 1 ? 's' : ''} absent${n > 1 ? 's' : ''}`
+}

@@ -102,6 +102,23 @@ describe('definitionPdf', () => {
     assert.ok(!t.includes('(02 - Gros œuvre)'), 'sous l’intertitre du lot, le destinataire n’est pas répété')
   })
 
+  test('convoqués absents : case marquée « convoqué » et ligne qui les nomme', () => {
+    const presences = [
+      ...base.presences,
+      { lot_entreprise_id: 'le-pl', presence: 'a', copie_type: 'entreprise', copie_entreprise: 'Plomberie Martin', copie_lot_numero: 3, copie_lot_nom: 'Plomberie' },
+      { lot_entreprise_id: 'le-ch', presence: 'a', copie_type: 'entreprise', copie_entreprise: 'Chauffage Dumas', copie_lot_numero: 4, copie_lot_nom: 'Chauffage' },
+    ]
+    const convocations = new Map([['l:le-pl', { numero: 4, heure: '09:00' }]])
+    const morceaux = textes(definitionPdf({ ...base, presences, convocations, sections: [], reglages: {} }).content)
+    const avec = morceaux.join(' | ')
+    assert.ok(avec.includes('1 convoqué absent (convocation du CR n°4) : '))
+    assert.ok(avec.includes('Plomberie Martin (lot 3 Plomberie)'))
+    assert.equal(morceaux.filter((t) => t === 'convoqué').length, 1, 'seule la case du convoqué absent')
+    assert.ok(!avec.includes('Chauffage Dumas (lot'), 'absent sans convocation : rien de plus')
+    const sans = textes(definitionPdf({ ...base, presences, sections: [], reglages: {} }).content).join(' | ')
+    assert.ok(!sans.includes('convoqué absent'))
+  })
+
   test('synthèse : ni coordonnées ni suivis', () => {
     const def = definitionPdf({ ...base, sections: selectionnerSections(sections, { modele: 'synthese' }), reglages: { modele: 'synthese' } })
     const t = textes(def.content).join(' | ')

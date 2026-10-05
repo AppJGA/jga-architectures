@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { Plus, Trash2, Users, LayoutList, LayoutGrid, CalendarPlus, ArrowRight, AlertTriangle, X, Lock, Smartphone } from 'lucide-react'
 import { useAffaire } from '../../../shared/hooks/useAffaires'
@@ -376,7 +376,7 @@ function CarteVisiteEnCours({ cr, onVisite, onEditeur }) {
 export default function ComptesRendusModule({ lectureSeule = false }) {
   const { affaireId } = useParams()
   const { affaire } = useAffaire(affaireId)
-  const { comptesRendus, loading, createCR, deleteCR } = useComptesRendus(affaireId)
+  const { comptesRendus, loading, createCR, deleteCR, refetch } = useComptesRendus(affaireId)
   // Le CR ouvert est dans l'adresse (?cr=…) : un rechargement sur la tablette,
   // ou le bouton Retour, retombe au bon endroit
   const [params, setParams] = useSearchParams()
@@ -390,6 +390,13 @@ export default function ComptesRendusModule({ lectureSeule = false }) {
     } else { suivant.delete('cr'); suivant.delete('visite') }
     return suivant
   })
+  // La liste reste montée pendant qu'un CR est ouvert : en revenir la relit,
+  // sinon un numéro, une date ou un rédacteur changés n'y apparaîtraient pas
+  const crOuvert = useRef(selectedCrId)
+  useEffect(() => {
+    if (crOuvert.current && !selectedCrId) refetch()
+    crOuvert.current = selectedCrId
+  }, [selectedCrId, refetch])
   const [interloOpen, setInterloOpen] = useState(false)
   const [generalitesOpen, setGeneralitesOpen] = useState(false)
   const [creating, setCreating] = useState(false)

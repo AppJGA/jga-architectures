@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import {
-  ArrowRight, Send, ChevronRight, Zap, Lock, RotateCcw,
+  ArrowRight, Send, ChevronRight, Lock, RotateCcw, Pencil,
   AlertTriangle, X, Smartphone,
 } from 'lucide-react'
 import {
@@ -21,13 +21,15 @@ import { useAffaireInterlocuteurs } from '../../../shared/hooks/useAffaireInterl
 import { supabase } from '../../../core/supabase/client'
 import { CrPresences } from './CrPresences'
 import { CrSectionEditor } from './CrSectionEditor'
-import { TemplateModal } from './TemplateModal'
+import { ProchaineVisite } from './ProchaineVisite'
+import { ModaleIdentiteVisite } from './ModaleIdentiteVisite'
+import { useAffaireCollaborateurs } from '../../../shared/hooks/useAffaireCollaborateurs'
 import { ExportRapport } from './ExportRapport'
 import { lireReglagesRapport } from './rapportReglages'
 import { genererPdfCr, libelleVersion } from './genererRapport'
 import { archivesDuCr, archiverPdf } from './rapportStockage'
 import { compterPresents, FAMILLES_STATUT, infosStatut, estEnRetard } from './crLogique'
-import { CrContexte, useCr } from './CrContexte'
+import { CrContexte } from './CrContexte'
 import { PhotosContexte } from './usePhotosRemarque'
 import { ordonnerParties, numeroterParties } from './remarquesLogique'
 import { GeneralitesVue } from './GeneralitesVue'
@@ -45,27 +47,13 @@ import { AvancementLots } from './AvancementLots'
 import { garderImages } from './horsLigne/images'
 import { avancementParLot, avancementGlobal, lignesAvancement } from './avancementLogique'
 
-// ─── Styles partagés ──────────────────────────────────────────────────────────
-
-const LABEL = {
-  display: 'block', fontSize: 11, fontWeight: 500,
-  textTransform: 'uppercase', letterSpacing: '0.05em', color: '#9C9591', marginBottom: 4,
-}
-const INPUT = {
-  width: '100%', height: 36, padding: '0 10px', borderRadius: 2, fontSize: 13,
-  border: '0.5px solid rgba(0,0,0,0.12)', backgroundColor: 'white', outline: 'none',
-  boxSizing: 'border-box', color: '#1F1B17',
-}
-function focusOn(e)  { e.target.style.borderColor = '#E8602C'; e.target.style.boxShadow = '0 0 0 3px rgba(224,90,30,0.07)' }
-function focusOff(e) { e.target.style.borderColor = 'rgba(0,0,0,0.12)'; e.target.style.boxShadow = 'none' }
-
 // ─── Vues disponibles ─────────────────────────────────────────────────────────
 
 const VUES = [
   {
     id: 'organisation',
     label: 'Prochaine visite',
-    description: 'Date et heure de la prochaine réunion,\nrédacteur',
+    description: 'Date de la prochaine réunion,\nconvocations',
     icon: IconeOrganisation,
     couleur: '#E8602C',
     fondClair: 'rgba(232,96,44,0.10)',
@@ -138,108 +126,6 @@ function Spinner() {
   )
 }
 
-// ─── Formulaire Infos générales ───────────────────────────────────────────────
-
-function OrganisationView({ cr, profiles, updateCr, onApplyTemplate, lots, interlocuteurs }) {
-  const [form, setForm] = useState({})
-  const [saving, setSaving] = useState(false)
-  const [templateOpen, setTemplateOpen] = useState(false)
-  const { lectureSeule, signalerErreur } = useCr()
-
-  useEffect(() => {
-    if (cr) setForm({
-      numero: cr.numero ?? '',
-      date_reunion: cr.date_reunion ?? '',
-      date_prochaine_reunion: cr.date_prochaine_reunion ?? '',
-      heure_prochaine_reunion: cr.heure_prochaine_reunion ?? '',
-      redacteur_id: cr.redacteur_id ?? '',
-    })
-  }, [cr])
-
-  const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
-
-  const handleSave = async () => {
-    setSaving(true)
-    try {
-      await updateCr({
-        numero: Number(form.numero) || cr.numero,
-        date_reunion: form.date_reunion || null,
-        date_prochaine_reunion: form.date_prochaine_reunion || null,
-        heure_prochaine_reunion: form.heure_prochaine_reunion || null,
-        redacteur_id: form.redacteur_id || null,
-      })
-    } catch (err) { signalerErreur(err) }
-    setSaving(false)
-  }
-
-  return (
-    <div style={{ maxWidth: 600 }}>
-      <fieldset disabled={lectureSeule} style={{ border: 'none', margin: 0, padding: 0, minWidth: 0 }}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-
-        <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: 12 }}>
-          <div>
-            <label style={LABEL}>N° réunion</label>
-            <input type="number" min={1} value={form.numero ?? ''} onChange={e => set('numero', e.target.value)} style={INPUT} onFocus={focusOn} onBlur={focusOff} />
-          </div>
-          <div>
-            <label style={LABEL}>Date de la réunion</label>
-            <input type="date" value={form.date_reunion ?? ''} onChange={e => set('date_reunion', e.target.value)} style={INPUT} onFocus={focusOn} onBlur={focusOff} />
-          </div>
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px', gap: 12 }}>
-          <div>
-            <label style={LABEL}>Prochaine réunion</label>
-            <input type="date" value={form.date_prochaine_reunion ?? ''} onChange={e => set('date_prochaine_reunion', e.target.value)} style={INPUT} onFocus={focusOn} onBlur={focusOff} />
-          </div>
-          <div>
-            <label style={LABEL}>Heure</label>
-            <input type="time" value={form.heure_prochaine_reunion ?? ''} onChange={e => set('heure_prochaine_reunion', e.target.value)} style={INPUT} onFocus={focusOn} onBlur={focusOff} />
-          </div>
-        </div>
-
-        <div>
-          <label style={LABEL}>Rédacteur</label>
-          <select value={form.redacteur_id ?? ''} onChange={e => set('redacteur_id', e.target.value || null)} style={{ ...INPUT, cursor: 'pointer' }} onFocus={focusOn} onBlur={focusOff}>
-            <option value="">— Non défini —</option>
-            {profiles.map(p => (
-              <option key={p.id} value={p.id}>{[p.prenom, p.nom].filter(Boolean).join(' ') || p.email}</option>
-            ))}
-          </select>
-        </div>
-
-        {!lectureSeule && <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          <button
-            onClick={handleSave} disabled={saving}
-            style={{ padding: '7px 16px', borderRadius: 2, fontSize: 12, fontWeight: 500, border: 'none', backgroundColor: '#2A8A4E', color: 'white', cursor: 'pointer', opacity: saving ? 0.6 : 1 }}
-          >
-            {saving ? 'Enregistrement…' : 'Enregistrer'}
-          </button>
-          <button
-            onClick={() => setTemplateOpen(true)}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 2, fontSize: 12, border: '0.5px solid rgba(0,0,0,0.15)', backgroundColor: 'white', color: '#374151', cursor: 'pointer' }}
-          >
-            <Zap size={13} /> Appliquer un template de sections
-          </button>
-        </div>}
-      </div>
-      </fieldset>
-
-      {templateOpen && !lectureSeule && (
-        <TemplateModal
-          affaireId={cr.affaire_id}
-          crId={cr.id}
-          lots={lots}
-          interlocuteurs={interlocuteurs}
-          onClose={() => setTemplateOpen(false)}
-          onApplied={onApplyTemplate}
-        />
-      )}
-    </div>
-  )
-}
-
 // ─── Page d'accueil du CR ─────────────────────────────────────────────────────
 
 function remarquesDeSection(s) {
@@ -283,7 +169,7 @@ function TuileVue({ vue, titre, sousTitre, onClick }) {
   )
 }
 
-function CrAccueil({ cr, affaire, presences, sections, onNavigate, onEmettre, onVisite, peutModifier, nbPlans, nbPastilles, avancement, nbPartiesGeneralites, enregistrements }) {
+function CrAccueil({ cr, affaire, presences, sections, onNavigate, onEmettre, onVisite, onModifier, peutModifier, nbPlans, nbPastilles, avancement, nbPartiesGeneralites, enregistrements }) {
   const [survolEditeur, setSurvolEditeur] = useState(false)
   const dateLabel = cr.date_reunion
     ? new Date(cr.date_reunion + 'T00:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })
@@ -297,6 +183,7 @@ function CrAccueil({ cr, affaire, presences, sections, onNavigate, onEmettre, on
   const enRetard = toutesRemarques.filter(r => estEnRetard(r, cr.date_reunion)).length
 
   const convoques = presences.filter(p => p.convoque).length
+  const redacteur = [cr.profiles?.prenom, cr.profiles?.nom].filter(Boolean).join(' ')
   const presents = compterPresents(presences)
 
   const vueOrga = VUES.find(v => v.id === 'organisation')
@@ -311,16 +198,32 @@ function CrAccueil({ cr, affaire, presences, sections, onNavigate, onEmettre, on
     <div>
       {/* En-tête du CR */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', marginBottom: 18 }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flex: 1, minWidth: 0 }}>
-          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 28, fontWeight: 600, color: '#E8602C', letterSpacing: '-0.02em' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, flex: 1, minWidth: 0 }}>
+          {/* Hauteurs de ligne fixées : les chiffres vont du haut du titre au
+              bas de la date */}
+          <span aria-hidden="true" style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 47, lineHeight: '40px', marginTop: 5, fontWeight: 600, color: '#E8602C', letterSpacing: '-0.03em', flexShrink: 0 }}>
             {String(cr.numero).padStart(2, '0')}
           </span>
-          <div>
-            <p style={{ fontFamily: "'Archivo', sans-serif", fontSize: 16, fontWeight: 500, color: '#1F1B17' }}>
-              Réunion n°{cr.numero}
-            </p>
-            <p style={{ fontSize: 12, color: '#9C9591', marginTop: 2 }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <p style={{ fontFamily: "'Archivo', sans-serif", fontSize: 16, lineHeight: '20px', fontWeight: 500, color: '#1F1B17' }}>
+                Réunion n°{cr.numero}
+              </p>
+              {onModifier && (
+                <button
+                  type="button" onClick={onModifier}
+                  title="Modifier le numéro, la date et le rédacteur" aria-label="Modifier le numéro, la date et le rédacteur"
+                  style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 26, minHeight: 0, borderRadius: 3, border: 'none', background: 'transparent', color: '#9C9591', cursor: 'pointer' }}
+                  onMouseEnter={e => { e.currentTarget.style.background = 'rgba(232,96,44,0.10)'; e.currentTarget.style.color = '#E8602C' }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#9C9591' }}
+                >
+                  <Pencil size={13} />
+                </button>
+              )}
+            </div>
+            <p style={{ fontSize: 12, lineHeight: '16px', color: '#9C9591', marginTop: 4 }}>
               {dateLabel}{affaire?.nom && ` · ${affaire.nom}`}
+              {redacteur && ` · rédigé par ${redacteur}`}
             </p>
           </div>
         </div>
@@ -439,7 +342,7 @@ function CrAccueil({ cr, affaire, presences, sections, onNavigate, onEmettre, on
         <TuileVue
           vue={vuePresences}
           titre="Présences"
-          sousTitre={presences.length === 0 ? 'Aucun participant' : `${convoques} convoqué${convoques > 1 ? 's' : ''} · ${presents} présent${presents > 1 ? 's' : ''}`}
+          sousTitre={presences.length === 0 ? 'Aucun participant' : `${presents} présent${presents > 1 ? 's' : ''} sur ${presences.length}`}
           onClick={() => onNavigate('presences')}
         />
         <TuileVue
@@ -451,9 +354,12 @@ function CrAccueil({ cr, affaire, presences, sections, onNavigate, onEmettre, on
         <TuileVue
           vue={vueOrga}
           titre="Prochaine visite"
-          sousTitre={cr.date_prochaine_reunion
-            ? `${new Date(cr.date_prochaine_reunion + 'T00:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}${cr.heure_prochaine_reunion ? ` à ${cr.heure_prochaine_reunion.slice(0, 5).replace(':', 'h')}` : ''}`
-            : 'Date à fixer'}
+          sousTitre={[
+            cr.date_prochaine_reunion
+              ? `${new Date(cr.date_prochaine_reunion + 'T00:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}${cr.heure_prochaine_reunion ? ` à ${cr.heure_prochaine_reunion.slice(0, 5).replace(':', 'h')}` : ''}`
+              : 'Date à fixer',
+            convoques > 0 ? `${convoques} convoqué${convoques > 1 ? 's' : ''}` : null,
+          ].filter(Boolean).join(' · ')}
           onClick={() => onNavigate('organisation')}
         />
         {enregistrements && (
@@ -601,6 +507,8 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
   const [lotEntreprises, setLotEntreprises] = useState([])
   const [erreur, setErreur] = useState(null)
   const [confirmation, setConfirmation] = useState(null) // 'emettre' | 'rouvrir'
+  const [identiteOuverte, setIdentiteOuverte] = useState(false)
+  const { collaborateurs } = useAffaireCollaborateurs(affaire?.id)
   const syncDone = useRef(false)
 
   const signalerErreur = useCallback((err) => {
@@ -630,7 +538,7 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
     addSousSection, updateSousSection, deleteSousSection, reorderSousSection,
     addRemarque, addSectionRemarque, updateRemarque, deleteRemarque, reorderRemarque, reorderSectionRemarque,
     addSousRemarque, changerStatutRemarques,
-    setPresence, refetch,
+    setPresence,
   } = useCompteRendu(crId, affaire?.id)
   // Qui était convoqué à cette réunion, d'après le CR précédent
   const convocations = useConvocationsPrecedentes(cr)
@@ -943,12 +851,23 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
           onNavigate={setActiveView}
           onEmettre={demanderEmission}
           onVisite={() => setVisite(true)}
+          onModifier={lectureSeule || contributeur ? null : () => setIdentiteOuverte(true)}
           peutModifier={!lectureSeuleAffaire}
           nbPlans={plansCr.plans.length}
           nbPastilles={pastilles.length}
           avancement={resumeAvancement}
           nbPartiesGeneralites={generalitesCr.parties.length}
           enregistrements={enregistrementsVisibles}
+        />
+      )}
+
+      {identiteOuverte && (
+        <ModaleIdentiteVisite
+          cr={cr}
+          profils={profiles}
+          collaborateurs={collaborateurs}
+          onEnregistrer={updateCr}
+          onFermer={() => setIdentiteOuverte(false)}
         />
       )}
 
@@ -962,13 +881,11 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
       )}
 
       {activeView === 'organisation' && (
-        <OrganisationView
+        <ProchaineVisite
           cr={cr}
-          profiles={profiles}
+          presences={presences}
           updateCr={updateCr}
-          onApplyTemplate={refetch}
-          lots={lotEntreprises.map(le => le.lots).filter(Boolean)}
-          interlocuteurs={interlocuteurs}
+          updatePresence={updatePresence}
         />
       )}
 
@@ -976,7 +893,6 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
         <CrPresences
           presences={presences}
           setPresence={setPresence}
-          updatePresence={updatePresence}
           convocations={convocations}
         />
       )}

@@ -18,31 +18,6 @@ const LEGEND_ITEMS = [
   { code: 'E', label: 'Excusé',   bg: '#F1EFE8', color: '#5E5854' },
 ]
 
-// ─── Toggle switch ────────────────────────────────────────────────────────────
-
-function Toggle({ value, onChange, disabled }) {
-  return (
-    <div
-      role="switch"
-      aria-checked={!!value}
-      onClick={() => { if (!disabled) onChange(!value) }}
-      style={{
-        width: 36, height: 20, borderRadius: 2, cursor: disabled ? 'default' : 'pointer',
-        opacity: disabled ? 0.6 : 1,
-        background: value ? '#2A8A4E' : 'rgba(0,0,0,0.15)',
-        position: 'relative', transition: 'background 0.2s', flexShrink: 0,
-      }}
-    >
-      <div style={{
-        position: 'absolute', top: 2, left: value ? 18 : 2,
-        width: 16, height: 16, borderRadius: '50%',
-        background: 'white', transition: 'left 0.2s',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
-      }} />
-    </div>
-  )
-}
-
 // ─── Presence pills ───────────────────────────────────────────────────────────
 
 function PresencePills({ value, onChange, disabled }) {
@@ -74,48 +49,11 @@ function PresencePills({ value, onChange, disabled }) {
   )
 }
 
-// ─── Convoqué cell — toujours visible, jamais de saut ────────────────────────
-
-const HEURE_PAR_DEFAUT = '09:00'
-
-function ConvoqueCell({ presence, onUpdate }) {
-  const { lectureSeule } = useCr()
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, height: 28 }}>
-      <Toggle
-        value={presence.convoque}
-        disabled={lectureSeule}
-        // L'heure affichée par défaut n'existait qu'à l'écran : elle est
-        // enregistrée au moment de la convocation, sinon le PDF n'en montre aucune.
-        onChange={val => onUpdate(presence.id, val && !presence.heure_convocation
-          ? { convoque: true, heure_convocation: HEURE_PAR_DEFAUT }
-          : { convoque: val })}
-      />
-      <input
-        type="time"
-        value={presence.heure_convocation?.slice(0, 5) ?? HEURE_PAR_DEFAUT}
-        disabled={!presence.convoque || lectureSeule}
-        onChange={e => onUpdate(presence.id, { heure_convocation: e.target.value || null })}
-        style={{
-          fontSize: 11, width: 70,
-          border: '0.5px solid rgba(0,0,0,0.12)', borderRadius: 3,
-          padding: '2px 6px', outline: 'none',
-          color: presence.convoque ? '#1F1B17' : '#9C9591',
-          background: presence.convoque ? 'white' : '#FAF7F2',
-          cursor: presence.convoque && !lectureSeule ? 'text' : 'not-allowed',
-          opacity: presence.convoque ? 1 : 0.5,
-          transition: 'all 0.2s',
-        }}
-      />
-    </div>
-  )
-}
-
 // ─── Lignes ───────────────────────────────────────────────────────────────────
 // Affichées depuis la copie du participant : une fiche supprimée depuis reste
 // visible dans les comptes rendus où elle figurait.
 
-function InterloRow({ presence, convocation, absent, onPresence, onUpdate }) {
+function InterloRow({ presence, convocation, absent, onPresence }) {
   const { lectureSeule } = useCr()
   const i = affichagePresence(presence)
   const meta = CATEGORIE_META[i.categorie]
@@ -143,14 +81,11 @@ function InterloRow({ presence, convocation, absent, onPresence, onUpdate }) {
       <td style={{ padding: '10px 12px', verticalAlign: 'middle' }}>
         <PresencePills value={presence.presence} disabled={lectureSeule} onChange={val => onPresence(presence.id, val)} />
       </td>
-      <td style={{ padding: '10px 12px', verticalAlign: 'middle' }}>
-        <ConvoqueCell presence={presence} onUpdate={onUpdate} />
-      </td>
     </tr>
   )
 }
 
-function LotRow({ presence, convocation, absent, onPresence, onUpdate }) {
+function LotRow({ presence, convocation, absent, onPresence }) {
   const { lectureSeule } = useCr()
   const e = affichagePresence(presence)
 
@@ -172,9 +107,6 @@ function LotRow({ presence, convocation, absent, onPresence, onUpdate }) {
       </td>
       <td style={{ padding: '10px 12px', verticalAlign: 'middle' }}>
         <PresencePills value={presence.presence} disabled={lectureSeule} onChange={val => onPresence(presence.id, val)} />
-      </td>
-      <td style={{ padding: '10px 12px', verticalAlign: 'middle' }}>
-        <ConvoqueCell presence={presence} onUpdate={onUpdate} />
       </td>
     </tr>
   )
@@ -207,14 +139,13 @@ function PresenceTable({ title, headers, rows }) {
 
 // Les écritures sont optimistes (le hook met l'écran à jour tout de suite) ;
 // un échec est signalé dans le bandeau du compte rendu.
-export function CrPresences({ presences, setPresence, updatePresence, convocations = new Map() }) {
+// Les convocations à la prochaine réunion se règlent dans la page « Prochaine
+// visite » : ici, on ne pointe que la réunion du jour.
+export function CrPresences({ presences, setPresence, convocations = new Map() }) {
   const { signalerErreur } = useCr()
 
   const handlePresence = (presenceId, val) => {
     setPresence(presenceId, val).catch(signalerErreur)
-  }
-  const handleUpdate = (presenceId, changes) => {
-    updatePresence(presenceId, changes).catch(signalerErreur)
   }
 
   // Les convoqués au CR précédent en tête : ce sont ceux qu'on attend
@@ -255,17 +186,17 @@ export function CrPresences({ presences, setPresence, updatePresence, convocatio
 
       <PresenceTable
         title="Interlocuteurs projet"
-        headers={['Rôle', 'Contact', 'Email & Tél', 'Présence', 'Convoqué à la prochaine réunion']}
+        headers={['Rôle', 'Contact', 'Email & Tél', 'Présence']}
         rows={interloPresences.map(p => (
-          <InterloRow key={p.id} presence={p} convocation={convocationDe(p, convocations)} absent={estConvoqueAbsent(p, convocations)} onPresence={handlePresence} onUpdate={handleUpdate} />
+          <InterloRow key={p.id} presence={p} convocation={convocationDe(p, convocations)} absent={estConvoqueAbsent(p, convocations)} onPresence={handlePresence} />
         ))}
       />
 
       <PresenceTable
         title="Entreprises"
-        headers={['Lot', 'Entreprise', 'Email & Tél', 'Présence', 'Convoqué à la prochaine réunion']}
+        headers={['Lot', 'Entreprise', 'Email & Tél', 'Présence']}
         rows={lotPresences.map(p => (
-          <LotRow key={p.id} presence={p} convocation={convocationDe(p, convocations)} absent={estConvoqueAbsent(p, convocations)} onPresence={handlePresence} onUpdate={handleUpdate} />
+          <LotRow key={p.id} presence={p} convocation={convocationDe(p, convocations)} absent={estConvoqueAbsent(p, convocations)} onPresence={handlePresence} />
         ))}
       />
 

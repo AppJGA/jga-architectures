@@ -11,8 +11,8 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 716 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
-npx eslint src   # ~72 problèmes préexistants : comparer, ne pas viser zéro
+npm test         # 722 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
+npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
 `npm test` couvre, dans `tests/` : les chemins critiques (`planning.test.js`,
@@ -188,8 +188,8 @@ création avec reprise de la visite précédente) et `useCompteRendu` (un CR).
   `comptes_rendus.generalites` : un CR émis imprime la version de son jour
   (`generalitesAImprimer`). Le PDF les place après présences et avancement,
   avant les remarques, et n'imprime plus les sections générales sans remarque.
-- **Convocations** : la colonne « Convoqué » d'un CR (et son heure) vaut
-  pour la **prochaine** réunion. Au pointage des présences de la visite
+- **Convocations** : la convocation d'un CR (et son heure, page « Prochaine
+  visite ») vaut pour la **prochaine** réunion. Au pointage des présences de la visite
   suivante (mode Visite et page Présences), chaque participant convoqué au
   CR précédent porte « Convoqué au CR n°X · 09h00 » et passe en tête de son
   groupe (`convocationLogique.js`, testé ; `useConvocationsPrecedentes`,
@@ -233,10 +233,23 @@ création avec reprise de la visite précédente) et `useCompteRendu` (un CR).
   zoom dans `plansLogique.js`.
 - **Tableau de bord d'une visite** (`CrAccueil`, dans `CrDetail.jsx`) : le
   bloc Remarques en tête, puis les tuiles dans l'ordre voulu par l'agence —
-  Présences, Avancement, Prochaine visite (l'ancienne « Organisation » : dates,
-  rédacteur, template), Enregistrement, Plans, Généralités — **toujours trois
+  Présences, Avancement, Prochaine visite, Enregistrement, Plans, Généralités — **toujours trois
   par rangée**, seule leur largeur suit l'écran. L'export PDF est
   un bloc à part en bas (`BlocExport`) : c'est l'aboutissement du CR.
+  Numéro, date et rédacteur se modifient par le **crayon** à côté du titre
+  (`ModaleIdentiteVisite.jsx`, logique dans `identiteVisiteLogique.js`,
+  testé) : un numéro déjà pris dans l'affaire est signalé avant l'envoi
+  (la base le refuse aussi, `unique(affaire_id, numero)`, `23505`) ; les
+  rédacteurs proposés sont les collaborateurs de l'affaire (propriétaire,
+  collaborateur — jamais un extérieur), toute l'agence si l'affaire n'en a
+  aucun. La liste des visites se relit quand on quitte un CR. Le grand
+  numéro a des hauteurs de ligne fixées pour aller du haut du titre au bas
+  de la date. Le « template de sections » (sections I à V) n'est plus
+  proposé : les généralités l'ont remplacé.
+- **Page « Prochaine visite »** (`ProchaineVisite.jsx`, vue `organisation`)
+  : date et heure de la prochaine réunion, et **les convocations** (bascule
+  et heure par participant, heure par défaut = celle de la réunion). Elles
+  ne se règlent plus dans la page Présences, qui ne sert qu'au pointage.
 - **Aller vite à la visite** : sur le chantier, écrire une remarque doit
   demander deux gestes, pas cinq. La page de l'affaire porte un bandeau
   (`BandeauVisite.jsx`) qui reprend la visite en cours ou crée celle du jour ;

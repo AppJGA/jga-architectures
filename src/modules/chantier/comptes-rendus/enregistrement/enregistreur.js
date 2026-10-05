@@ -20,7 +20,7 @@ export async function demarrerEnregistreur({ dureeMorceauMs, rangDepart = 1, onM
     audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 },
   })
   const piste = flux.getAudioTracks()[0]
-  const format = choisirFormat((t) => MediaRecorder.isTypeSupported(t))
+  let format = choisirFormat((t) => MediaRecorder.isTypeSupported(t))
 
   // Niveau sonore : le seul moyen, sur place, de voir que le micro capte
   const Contexte = window.AudioContext || window.webkitAudioContext
@@ -63,22 +63,53 @@ export async function demarrerEnregistreur({ dureeMorceauMs, rangDepart = 1, onM
   let minuterieMorceau = null
   let finMorceau = null
 
+  // Un encodeur qui échoue rendait un morceau vide, aussitôt relancé : des
+  // centaines d'échecs par seconde. On réessaie un peu, puis l'autre format
+  // (AAC ↔ Opus), puis on s'arrête en le disant.
+  let echecs = 0
+  const formatsEssayes = new Set([format.type])
+  const famille = (t) => t.split(';')[0]
+  const relancer = () => { if (actif && piste.readyState === 'live') lancerMorceau() }
+  const apresEchec = (message) => {
+    if (echecs === 0) signaler('erreur', message)
+    echecs += 1
+    if (echecs < 3) { setTimeout(relancer, 500); return }
+    const secours = choisirFormat((t) => famille(t) !== famille(format.type) && !formatsEssayes.has(t) && MediaRecorder.isTypeSupported(t))
+    if (secours.type) {
+      formatsEssayes.add(secours.type)
+      format = secours
+      echecs = 0
+      signaler('format-de-secours', secours.type)
+      setTimeout(relancer, 500)
+      return
+    }
+    signaler('enregistreur-en-echec')
+    fermer('fin-du-moteur')
+  }
+
   const lancerMorceau = () => {
     morceaux = []
-    enregistreur = new MediaRecorder(flux, { ...(format.type ? { mimeType: format.type } : {}), audioBitsPerSecond: 32000 })
+    try {
+      enregistreur = new MediaRecorder(flux, { ...(format.type ? { mimeType: format.type } : {}), audioBitsPerSecond: 32000 })
+    } catch (err) {
+      apresEchec(err?.message ?? 'enregistreur')
+      return
+    }
     let index = 0
+    let enErreur = false
     enregistreur.ondataavailable = (e) => {
       if (!e.data?.size) return
       morceaux.push(e.data)
       // Rangée aussitôt : si la page est fermée, le morceau en cours se recolle
       onTranche?.({ rang, index: index++, debut: debutMorceau, type: enregistreur.mimeType || format.type || e.data.type, blob: e.data })
     }
-    enregistreur.onerror = (e) => signaler('erreur', e.error?.message ?? 'enregistreur')
+    enregistreur.onerror = (e) => { enErreur = e.error?.message ?? 'enregistreur' }
     enregistreur.onstop = () => {
       const duree_s = (Date.now() - debutMorceau) / 1000
       const type = enregistreur.mimeType || format.type || morceaux[0]?.type || ''
       const blob = new Blob(morceaux, { type })
       if (blob.size > 0) {
+        echecs = 0
         onMorceau?.({ rang, debut: debutMorceau, duree_s, type, taille: blob.size, blob })
         signaler('morceau', `n° ${rang}, ${Math.round(duree_s)} s, ${Math.round(blob.size / 1000)} Ko`)
         rang += 1
@@ -86,11 +117,17 @@ export async function demarrerEnregistreur({ dureeMorceauMs, rangDepart = 1, onM
       const suite = finMorceau
       finMorceau = null
       if (suite) suite()
-      else if (actif && piste.readyState === 'live') lancerMorceau()
+      else if (blob.size === 0 && actif) apresEchec(enErreur || 'morceau vide')
+      else relancer()
     }
     debutMorceau = Date.now()
     // Tranches d'une seconde : un arrêt brutal garde ce qui a déjà été capté
-    enregistreur.start(DUREE_TRANCHE_S * 1000)
+    try {
+      enregistreur.start(DUREE_TRANCHE_S * 1000)
+    } catch (err) {
+      apresEchec(err?.message ?? 'démarrage de l’enregistreur')
+      return
+    }
     clearTimeout(minuterieMorceau)
     minuterieMorceau = setTimeout(() => { if (enregistreur?.state === 'recording') enregistreur.stop() }, dureeMorceauMs)
   }
@@ -111,9 +148,6 @@ export async function demarrerEnregistreur({ dureeMorceauMs, rangDepart = 1, onM
   }
   document.addEventListener('visibilitychange', surVisibilite)
 
-  signaler('demarrage', `${format.type || 'format du navigateur'}, morceaux de ${Math.round(dureeMorceauMs / 1000)} s`)
-  lancerMorceau()
-
   // Range le dernier morceau puis libère micro, écoute du niveau, verrou
   // d'écran et écoute de la page
   const fermer = (evenement) => new Promise((resoudre) => {
@@ -133,5 +167,9 @@ export async function demarrerEnregistreur({ dureeMorceauMs, rangDepart = 1, onM
   })
   const arreter = () => fermer('arret')
 
-  return { arreter, format: format.type, get verrouEcran() { return verrouEcran } }
+  // Démarré une fois tout défini : un échec immédiat peut déjà vouloir fermer
+  signaler('demarrage', `${format.type || 'format du navigateur'}, morceaux de ${Math.round(dureeMorceauMs / 1000)} s`)
+  lancerMorceau()
+
+  return { arreter, get format() { return format.type }, get verrouEcran() { return verrouEcran } }
 }

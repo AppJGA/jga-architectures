@@ -21,7 +21,7 @@ function lireJournal() {
 // L'app installée sur l'iPad garde parfois l'ancienne version : ce numéro,
 // affiché et recopié dans le bilan, dit laquelle a servi à l'essai.
 // À augmenter à chaque changement de la page ou du moteur.
-const VERSION_ESSAI = 3
+const VERSION_ESSAI = 4
 
 const DUREES = [{ ms: 60_000, libelle: '1 min (essai rapide)' }, { ms: 300_000, libelle: '5 min (comme en vrai)' }]
 
@@ -51,6 +51,10 @@ export function EssaiEnregistrement() {
   const [session, setSession] = useState(null) // { id, debut, fin, format, verrouEcran }
   // Hors de l'affichage : le moteur en marche, et les liens à libérer
   const moteur = useRef(null)
+  // Dernier numéro de morceau, tenu hors de l'affichage : une reprise
+  // automatique peut partir avant que l'écran ait noté le morceau précédent,
+  // elle repartait alors du n° 1
+  const dernierRang = useRef(0)
   const urls = useRef([])
 
   const avecUrl = (m) => {
@@ -81,6 +85,7 @@ export function EssaiEnregistrement() {
         ...recuperes.map((m) => ({ t: Date.now(), type: 'morceau-recupere', detail: `n° ${m.rang}, ${Math.round(m.duree_s)} s` })),
       ]
       setEvenements([...(memorisee ? journal.evenements ?? [] : []), ...retour])
+      dernierRang.current = lus.at(-1).rang
       setMorceaux(lus.map(avecUrl))
       setEtat('arrete')
     }).catch((err) => setErreur(`Lecture des essais précédents impossible : ${err?.message ?? err}`))
@@ -116,16 +121,22 @@ export function EssaiEnregistrement() {
     try {
       const m = await demarrerEnregistreur({
         dureeMorceauMs: dureeMorceau,
-        rangDepart: (morceaux.at(-1)?.rang ?? 0) + 1,
+        rangDepart: (reprise ? dernierRang.current : 0) + 1,
         onNiveau: setNiveau,
         onEvenement: (e) => {
           ajouterEvenement(e)
           if (e.type === 'piste-terminee') setEtat('coupe')
+          if (e.type === 'format-de-secours') setSession((x) => (x ? { ...x, format: e.detail } : x))
+          if (e.type === 'enregistreur-en-echec') {
+            setEtat('arrete')
+            setErreur('Le navigateur n’arrive pas à enregistrer le son (encodeur en échec). Fermez l’app, rouvrez-la et réessayez.')
+          }
         },
         onTranche: (tranche) => {
           rangerTranche({ ...tranche, id: `${s.id}:${tranche.rang}:${tranche.index}`, enregistrementId: s.id }).catch(() => {})
         },
         onMorceau: async (brut) => {
+          dernierRang.current = Math.max(dernierRang.current, brut.rang)
           const morceau = { ...brut, id: crypto.randomUUID(), enregistrementId: s.id }
           setMorceaux((liste) => [...liste, avecUrl(morceau)])
           try { await rangerMorceau(morceau) } catch (err) {
@@ -180,6 +191,7 @@ export function EssaiEnregistrement() {
   }
 
   const effacer = async () => {
+    dernierRang.current = 0
     if (session?.id) await effacerEnregistrement(session.id)
     for (const u of urls.current) URL.revokeObjectURL(u)
     urls.current = []

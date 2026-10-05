@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 671 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
+npm test         # 678 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
 npx eslint src   # ~73 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -79,7 +79,7 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
   anglais d'Outlook (marque UTF-8) — l'Outlook classique ne retient que le
   premier contact d'un .vcf. Une icône par fiche donne la carte seule. La
   note de chaque contact porte l'affaire et le rôle.
-- **Base** : `supabase/migrations/`, numérotées, 56 fichiers, **passées à la
+- **Base** : `supabase/migrations/`, numérotées, 57 fichiers, **passées à la
   main** dans le SQL Editor de Supabase : un code qui dépend d'une nouvelle
   colonne doit tolérer son absence tant que la migration n'est pas faite. La photo de
   couverture d'une affaire est `affaires.photo_url` (migration 014, bucket
@@ -244,17 +244,33 @@ création avec reprise de la visite précédente) et `useCompteRendu` (un CR).
   l'écran**. Hors ligne : ni création de CR, ni émission, ni PDF, et pas de
   ré-annotation d'une photo déjà envoyée.
 
-- **Visite enregistrée** (en cours ; conception
-  `docs/superpowers/specs/2026-10-05-visite-enregistree-ia-design.md`, plan
-  du lot 0 dans `docs/superpowers/plans/`) : `enregistrement/` — logique pure
-  (`enregistrementLogique.js`, testée : format, durées, bilan, tranches),
-  moteur (`enregistreur.js` : un `MediaRecorder` relancé à chaque morceau,
-  chaque morceau est un fichier complet ; tranches d'une seconde au fil de
-  l'eau), rangement local (`audioLocal.js`, base IndexedDB à part
-  `jga-audio` : une page fermée par Safari ne perd qu'une seconde, le morceau
-  interrompu se recolle au retour). Lot 0 : l'outil « Essai
-  d'enregistrement » mesure ce que tiennent Safari et Chrome sur le terrain ;
-  rien ne quitte l'appareil. Chrome produit ≈ 800 Ko d'AAC par minute.
+- **Visite enregistrée** (conception
+  `docs/superpowers/specs/2026-10-05-visite-enregistree-ia-design.md`, plans
+  des lots dans `docs/superpowers/plans/`) : dossier `enregistrement/`.
+  - **Lot 0** (outil « Essai d'enregistrement ») : moteur `enregistreur.js`
+    (un `MediaRecorder` relancé à chaque morceau, chaque morceau est un
+    fichier complet ; tranches d'une seconde au fil de l'eau ; reprise
+    possible, bascule AAC ↔ Opus si l'encodeur échoue), rangement local
+    `audioLocal.js` (base IndexedDB à part `jga-audio` : une page fermée ne
+    perd qu'une seconde). Essais iPad : écran verrouillé ou autre app =
+    sourdine puis micro coupé au bout de 4 s, **reprise automatique au
+    retour** acceptée par iOS ; une photo ne coupe rien ; ≈ 250 Ko/min sur
+    iPad, ≈ 800 Ko/min sur Chrome Mac.
+  - **Lot 1** (migration 057) : robot dans la barre du mode Visite
+    (`BoutonRobot`, `useEnregistrementVisite`), le panneau porte le rappel
+    (prévenir les participants, ne pas verrouiller) et « Commencer ».
+    Morceaux de **3 minutes** (limite de 4,5 Mo des fonctions Vercel).
+    Chaque morceau part à `api/transcrire.js` (session vérifiée,
+    `est_agence()`, puis Mistral `voxtral-mini-latest`, langue fr,
+    vocabulaire de l'affaire en `context_bias`, retenté sans s'il est
+    refusé) ; le **texte seul** va dans `cr_enregistrements.segments`, la
+    ligne naît au premier morceau transcrit (`upsert`, id décidé sur
+    l'appareil). Sans réseau ou sans clé, les morceaux attendent sur
+    l'appareil. Import d'un fichier du Dictaphone : stockage privé
+    `audio-temporaire` le temps de la transcription (lien signé passé à
+    Mistral), effacé ensuite. Vue « Enregistrements » du CR au bureau.
+    Agence seule partout. Clé `MISTRAL_API_KEY` : variable Vercel, jamais
+    `VITE_`.
 
 ## Suivi financier d'étude
 

@@ -28,8 +28,9 @@ est choisi selon le navigateur (§ 5).
 - **Rappel à l'oral** au démarrage : « Prévenez les participants que la
   réunion est enregistrée. » (obligation RGPD, § 6).
 - Un second appui sur le robot arrête l'enregistrement.
-- **Interruption** (écran verrouillé, photo prise, appel, autre app) : un
-  bandeau orange « Enregistrement interrompu à 34:10 — Reprendre ». Ce qui a
+- **Interruption** (écran verrouillé, appel, autre app) : l'enregistrement
+  **repart seul** dès que la page revient (essai du lot 0 : iOS l'accepte) ;
+  à défaut, « Micro coupé — Reprendre ». Une photo prise ne coupe rien. Ce qui a
   été enregistré avant est conservé ; la reprise ouvre un nouveau morceau
   dans le même enregistrement.
 - L'écran reste allumé pendant l'enregistrement (verrou d'écran du

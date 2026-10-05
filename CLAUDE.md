@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 689 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
+npm test         # 692 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
 npx eslint src   # ~73 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -137,6 +137,15 @@ création avec reprise de la visite précédente) et `useCompteRendu` (un CR).
   propre statut et son échéance ; toucher une remarque ouvre `PanneauSuite`
   (avec « Clore la remarque d'origine »). Les sections I à V restent des
   sections classiques ; elles sont remplacées par les généralités.
+- **Glisser une remarque vers un autre destinataire** (mode Visite et
+  éditeur de bureau, parties VI / VII) : une poignée (⋮⋮, `touch-action:
+  none` — le reste de la carte fait toujours défiler la liste au doigt)
+  ouvre une bande de tous les destinataires (`BandeDepot`, cibles
+  `data-cible-depot`) ; le dépôt passe par `champsModification`, comme un
+  changement de destinataire au crayon (partie VI ↔ VII, file hors ligne).
+  Événements pointeur (`useGlisserRemarque`), `pointercancel` = annulation.
+  Pas pour les suites ni les observations des intervenants
+  (`glisserLogique.js`, testé).
 - **Généralités** (chantier 2, migration 055) : parties I à V, **une version
   par affaire** (`affaire_generalites.contenu`, jsonb parties → rubriques →
   paragraphes, repère de suite ; **pas de date**, à la demande de l'agence :

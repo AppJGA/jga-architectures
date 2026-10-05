@@ -5,7 +5,7 @@ import { FILTRES_VISITE, filtreVisite, groupesVisite, compteursVisite } from './
 import { STATUTS, infosStatut, estEnRetard, libelleZone, peutModifierRemarque, auteurExterieur, miseEnForme, COULEUR_SURLIGNE } from './crLogique'
 import { useCr } from './CrContexte'
 import { PanneauRemarque, PanneauSuite, PanneauPresences, PanneauStatuts, PanneauAvancement } from './PanneauxVisite'
-import { libelleLot, nomInterlocuteur, numerosParties } from './remarquesLogique'
+import { libelleLot, nomInterlocuteur, numerosParties, champsDestinataire } from './remarquesLogique'
 import { creerRemarqueAdressee, champsModification } from './rangerRemarque'
 import { usePhotosRemarque, PhotosContexte } from './usePhotosRemarque'
 import { PhotosDeRemarque } from './PhotosRemarque'
@@ -20,6 +20,9 @@ import { propositionsAValider } from './enregistrement/analyseIaLogique'
 import { proposerRemarques } from './enregistrement/propositions'
 import { EtiquetteProposition, ExtraitProposition, BoutonsProposition, BandeauPropositions } from './enregistrement/Proposition'
 import { styleProposition } from './enregistrement/styleProposition'
+import { useGlisserRemarque } from './useGlisserRemarque'
+import { PoigneeGlisser, BandeDepot } from './GlisserRemarque'
+import { peutGlisser } from './glisserLogique'
 
 // ─── Mode Visite ─────────────────────────────────────────────────────────────
 //
@@ -83,7 +86,7 @@ function libelleDestinataire(rem, lots, interlocuteurs) {
   return rem.copie_destinataire ?? null
 }
 
-function CarteRemarque({ rem, cr, lots, interlocuteurs, zones, ftms, ouvrirFtm, lectureSeule: lectureSeuleCr, surbrillance, masquerDestinataire, ops, onPanneau }) {
+function CarteRemarque({ rem, cr, lots, interlocuteurs, zones, ftms, ouvrirFtm, lectureSeule: lectureSeuleCr, surbrillance, masquerDestinataire, ops, onPanneau, demarrerGlisser }) {
   // Un intervenant extérieur ne touche qu'à ses propres observations
   const acces = useCr()
   const lectureSeule = lectureSeuleCr || !peutModifierRemarque(rem, acces)
@@ -119,6 +122,7 @@ function CarteRemarque({ rem, cr, lots, interlocuteurs, zones, ftms, ouvrirFtm, 
     >
       {proposee && <div style={{ marginBottom: 8 }}><EtiquetteProposition /></div>}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
+        {demarrerGlisser && !lectureSeule && <PoigneeGlisser rem={rem} demarrer={demarrerGlisser} />}
         {rem.numero != null
           ? <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, fontWeight: 600, color: '#E8602C' }}>n°{rem.numero}</span>
           : <span title="Le numéro est attribué à l’envoi" style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: '#9C9591' }}>n° en attente</span>}
@@ -336,6 +340,18 @@ export function ModeVisite({ cr, affaire = null, sections, presences, setPresenc
   const robot = useEnregistrementVisite({ crId: cr.id, affaireId: cr.affaire_id, vocabulaire, actif: estAgence })
   const peutEnregistrer = robot.disponible && !lectureSeule && cr.statut !== 'emis'
   const aValider = propositionsAValider(sections)
+
+  // Glisser une remarque vers un autre destinataire : comme une modification
+  // du destinataire, donc partie VI ↔ VII si besoin, et hors ligne aussi
+  const glisser = useGlisserRemarque({
+    onDeposer: async (rem, cle) => {
+      const champs = await champsModification(ops, sections, rem, cle, champsDestinataire(cle))
+      await ops.updateRemarque(rem.id, champs).catch(() => {})
+      setDestinataire('')
+      montrer(rem.id)
+    },
+  })
+  const typeDeSection = new Map(sections.map(s => [s.id, s.type_section]))
   const proposer = () => proposerRemarques({ cr, affaire, lots, interlocuteurs: interlocuteurs ?? [], zones, sections, ops })
 
   const lots = lotsAffaire ?? []
@@ -523,6 +539,7 @@ export function ModeVisite({ cr, affaire = null, sections, presences, setPresenc
                       lectureSeule={lectureSeule} surbrillance={surbrillance === rem.id} ops={ops}
                       masquerDestinataire={sg.cle.startsWith('lot:')}
                       onPanneau={setPanneau}
+                      demarrerGlisser={!contributeur && peutGlisser(rem, { lectureSeule, sectionType: typeDeSection.get(rem.section_id) ?? null }) ? glisser.demarrer : null}
                     />
                   ))}
                 </div>
@@ -540,6 +557,8 @@ export function ModeVisite({ cr, affaire = null, sections, presences, setPresenc
           </button>
         </div>
       )}
+
+      <BandeDepot geste={glisser.geste} lots={lots} interlocuteurs={interlocuteurs ?? []} />
 
       {(panneau?.type === 'nouvelle' || panneau?.type === 'modifier') && (
         <PanneauRemarque

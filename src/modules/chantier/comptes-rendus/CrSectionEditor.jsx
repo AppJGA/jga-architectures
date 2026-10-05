@@ -1,9 +1,12 @@
 import { useState, useMemo, createContext, useContext } from 'react'
-import { estPartieRemarques, groupesDestinataires, numerosParties } from './remarquesLogique'
+import { estPartieRemarques, groupesDestinataires, numerosParties, champsDestinataire } from './remarquesLogique'
 import { creerRemarqueAdressee, champsModification } from './rangerRemarque'
 import { PanneauRemarque, PanneauSuite } from './PanneauxVisite'
 import { EtiquetteProposition, ExtraitProposition, BoutonsProposition } from './enregistrement/Proposition'
 import { styleProposition } from './enregistrement/styleProposition'
+import { useGlisserRemarque } from './useGlisserRemarque'
+import { PoigneeGlisser, BandeDepot } from './GlisserRemarque'
+import { peutGlisser } from './glisserLogique'
 import { PhotosContexte } from './usePhotosRemarque'
 import {
   Plus, Pencil, ChevronDown, ChevronUp, ChevronRight, X, GripVertical, MessageSquarePlus,
@@ -30,6 +33,7 @@ const EditeurContexte = createContext({
   modeSelection: false, selection: new Set(), basculerSelection: () => {},
   historiqueDe: () => [], dateReference: null,
   ftms: [], ouvrirFtm: () => {},
+  demarrerGlisser: null,
 })
 
 // ─── Utilitaires ──────────────────────────────────────────────────────────────
@@ -446,7 +450,7 @@ function RemarqueRow({ rem, idx, total, crDate, lots, interlocuteurs, zones, sec
   // Un intervenant extérieur ne touche qu'à ses propres remarques
   const lectureSeule = !peutModifierRemarque(rem, acces)
   const signature = auteurExterieur(rem, acces.profils)
-  const { modeSelection, selection, basculerSelection, historiqueDe, dateReference, ftms, ouvrirFtm } = useContext(EditeurContexte)
+  const { modeSelection, selection, basculerSelection, historiqueDe, dateReference, ftms, ouvrirFtm, demarrerGlisser } = useContext(EditeurContexte)
   const fmtD = (d) => fmtJour(d)
   const statut = infosStatut(rem)
   const enRetard = estEnRetard(rem, dateReference)
@@ -510,6 +514,10 @@ function RemarqueRow({ rem, idx, total, crDate, lots, interlocuteurs, zones, sec
             checked={selection.has(rem.id)} onChange={() => basculerSelection(rem.id)}
             style={{ width: 18, height: 18, marginTop: 2, flexShrink: 0, cursor: 'pointer', accentColor: '#E8602C' }}
           />
+        )}
+        {/* Parties VI / VII : glisser vers un autre destinataire */}
+        {onModifier && demarrerGlisser && !modeSelection && peutGlisser(rem, { lectureSeule, sectionType }) && (
+          <PoigneeGlisser rem={rem} demarrer={demarrerGlisser} petite />
         )}
         <div style={{ flexShrink: 0, width: 100, paddingTop: 2 }}>
           {rem.numero != null && (
@@ -1326,6 +1334,14 @@ export function CrSectionEditor({ sections, crId, crDate, interlocuteurs, lotEnt
   // Tous les lots de l'affaire : une remarque peut viser un lot encore sans titulaire
   const lots = lotsAffaire ?? (lotEntreprises ?? []).map(le => le.lots).filter(Boolean)
 
+  // Glisser une remarque vers un autre destinataire, comme au mode Visite
+  const glisser = useGlisserRemarque({
+    onDeposer: async (rem, cle) => {
+      const champs = await champsModification(ops, sections, rem, cle, champsDestinataire(cle))
+      await ops.updateRemarque(rem.id, champs).catch(() => {})
+    },
+  })
+
   const enregistrerAdressee = async (payload, { destinataire: cle, compressions }) => {
     if (panneau.type === 'modifier') {
       const champs = await champsModification(ops, sections, panneau.remarque, cle, payload)
@@ -1368,8 +1384,9 @@ export function CrSectionEditor({ sections, crId, crDate, interlocuteurs, lotEnt
       historiqueDe: (rem) => historiqueRemarque(rem, versions, historique?.crs),
       dateReference: crDate,
       ftms, ouvrirFtm,
+      demarrerGlisser: glisser.demarrer,
     }
-  }, [modeSelection, selection, historique, crId, toutes, crDate, ftms, ouvrirFtm])
+  }, [modeSelection, selection, historique, crId, toutes, crDate, ftms, ouvrirFtm, glisser.demarrer])
 
   const quitterSelection = () => { setModeSelection(false); setSelection(new Set()) }
 
@@ -1408,6 +1425,7 @@ export function CrSectionEditor({ sections, crId, crDate, interlocuteurs, lotEnt
   return (
     <EditeurContexte.Provider value={contexteEditeur}>
     <div>
+      <BandeDepot geste={glisser.geste} lots={lots} interlocuteurs={interlocuteurs ?? []} />
       {/* Barre supérieure : filtres, sélection, nouvelle remarque */}
       <div style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: '#FAF7F2', paddingBottom: 10, marginBottom: 4 }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>

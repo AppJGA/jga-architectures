@@ -72,7 +72,7 @@ export function bilanEssai({ debut, fin, morceaux = [], evenements = [], environ
   const taille = tries.reduce((n, m) => n + (m.taille || 0), 0)
 
   const lignes = [
-    'Essai d’enregistrement — bilan',
+    `Essai d’enregistrement — bilan${environnement.version ? ` (version ${environnement.version})` : ''}`,
     `Navigateur : ${environnement.navigateur ?? 'inconnu'} · app installée : ${environnement.installee ? 'oui' : 'non'}`,
     `Format : ${environnement.format || 'choisi par le navigateur'} · écran maintenu allumé : ${environnement.verrouEcran ?? 'inconnu'}`,
     `${tries.length} morceau${tries.length > 1 ? 'x' : ''} · enregistré ${dureeLisible(dureeEnregistree)} sur ${dureeLisible(dureeEcoulee)} · perdu : ${dureeLisible(perdue)} · ${(taille / 1e6).toFixed(1)} Mo`,

@@ -18,6 +18,11 @@ function lireJournal() {
   try { return JSON.parse(localStorage.getItem(CLE_JOURNAL)) } catch { return null }
 }
 
+// L'app installée sur l'iPad garde parfois l'ancienne version : ce numéro,
+// affiché et recopié dans le bilan, dit laquelle a servi à l'essai.
+// À augmenter à chaque changement de la page ou du moteur.
+const VERSION_ESSAI = 3
+
 const DUREES = [{ ms: 60_000, libelle: '1 min (essai rapide)' }, { ms: 300_000, libelle: '5 min (comme en vrai)' }]
 
 function navigateurLisible() {
@@ -189,7 +194,7 @@ export function EssaiEnregistrement() {
   const s = session
   const bilan = s ? bilanEssai({
     debut: s.debut, fin: s.fin ?? maintenant, morceaux, evenements,
-    environnement: { navigateur: navigateurLisible(), installee: estInstallee(), verrouEcran: s.verrouEcran ?? 'inconnu', format: s.format },
+    environnement: { version: VERSION_ESSAI, navigateur: navigateurLisible(), installee: estInstallee(), verrouEcran: s.verrouEcran ?? 'inconnu', format: s.format },
   }) : null
 
   const copier = async () => {
@@ -204,7 +209,9 @@ export function EssaiEnregistrement() {
   return (
     <div style={{ maxWidth: 720, display: 'flex', flexDirection: 'column', gap: 18 }}>
       <div>
-        <h1 style={{ fontSize: 18, fontWeight: 500, margin: '0 0 4px', color: '#1F1B17' }}>Essai d’enregistrement</h1>
+        <h1 style={{ fontSize: 18, fontWeight: 500, margin: '0 0 4px', color: '#1F1B17' }}>
+          Essai d’enregistrement <span style={{ fontSize: 12, fontWeight: 400, color: '#9C9591' }}>· version {VERSION_ESSAI}</span>
+        </h1>
         <p style={{ fontSize: 12, color: '#7A736E', margin: 0, lineHeight: 1.5 }}>
           Lancez l’enregistrement, puis vivez la visite normalement : verrouillez l’écran, prenez une photo, passez à une autre
           app, revenez. À la fin, arrêtez et copiez le bilan. Rien ne quitte cet appareil.

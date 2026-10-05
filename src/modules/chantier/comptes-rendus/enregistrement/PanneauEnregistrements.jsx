@@ -3,6 +3,8 @@ import { Upload, Trash2, ChevronDown, ChevronUp, Mic, FileAudio, RefreshCw } fro
 import { dureeLisible } from './enregistrementLogique'
 import { texteTranscription, resumeEnregistrement } from './transcriptionLogique'
 import { listerEnregistrements, supprimerEnregistrement, importerFichier, messageTranscription } from './transcription'
+import { messageAnalyse } from './propositions'
+import { COULEUR_IA } from './styleProposition'
 import { Panneau } from '../PanneauxVisite'
 import { IconeRobot } from '../../../../shared/icones/IconesAffaire'
 
@@ -36,6 +38,7 @@ function Enregistrement({ enr, lectureSeule, onSupprimer }) {
           </p>
           <p style={{ fontSize: 12, color: '#9C9591', margin: 0 }}>
             {dureeLisible(resume.duree_s)} transcrites · {resume.transcrits} morceau{resume.transcrits > 1 ? 'x' : ''}
+            {enr.analyse_le && <span style={{ color: COULEUR_IA }}> · analysé à {new Date(enr.analyse_le).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>}
           </p>
         </div>
         {texte && (
@@ -67,8 +70,9 @@ function Enregistrement({ enr, lectureSeule, onSupprimer }) {
 }
 
 /** Contenu commun au panneau du mode Visite et à la vue du bureau. */
-export function ListeEnregistrements({ crId, affaireId, vocabulaire = [], version = 0, attente = { enAttente: 0, refuses: 0 }, erreur = null, onTranscrire, lectureSeule = false }) {
+export function ListeEnregistrements({ crId, affaireId, vocabulaire = [], version = 0, attente = { enAttente: 0, refuses: 0 }, erreur = null, onTranscrire, onProposer, lectureSeule = false }) {
   const [liste, setListe] = useState(null)
+  const [analyse, setAnalyse] = useState(null) // null | 'en-cours' | { message, ok }
   const [erreurLocale, setErreurLocale] = useState(null)
   const [import_, setImport] = useState(null) // null | 'envoi'
   const [rafraichir, setRafraichir] = useState(0)
@@ -104,9 +108,42 @@ export function ListeEnregistrements({ crId, affaireId, vocabulaire = [], versio
     }
   }
 
+  const proposer = async () => {
+    setAnalyse('en-cours')
+    try {
+      const { nombre, cout } = await onProposer()
+      setAnalyse({
+        ok: true,
+        message: nombre === 0
+          ? 'L’IA n’a trouvé aucune remarque nouvelle dans cet enregistrement.'
+          : `${nombre} remarque${nombre > 1 ? 's' : ''} proposée${nombre > 1 ? 's' : ''}, en bleu dans le compte rendu (coût ≈ ${cout.toFixed(2).replace('.', ',')} $).`,
+      })
+      setRafraichir((r) => r + 1)
+    } catch (err) {
+      setAnalyse({ ok: false, message: messageAnalyse(err) })
+    }
+  }
+  const aAnalyser = (liste ?? []).filter((e) => !e.analyse_le && texteTranscription(e.segments)).length
+
   const message = erreurLocale ?? erreur
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {onProposer && !lectureSeule && (aAnalyser > 0 || analyse) && (
+        <div style={{ background: '#EEF4FB', border: `1px solid ${COULEUR_IA}`, padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <span style={{ flex: '1 1 240px', fontSize: 13, color: '#1D4570' }}>
+            {analyse === 'en-cours'
+              ? 'L’IA lit la réunion et prépare les remarques… (une minute environ)'
+              : analyse?.message ?? `${aAnalyser} enregistrement${aAnalyser > 1 ? 's' : ''} transcrit${aAnalyser > 1 ? 's' : ''} à analyser. Les remarques proposées apparaîtront en bleu, à valider une à une.`}
+          </span>
+          {aAnalyser > 0 && analyse !== 'en-cours' && (
+            <button type="button" onClick={proposer} disabled={attente.enAttente > 0}
+              title={attente.enAttente > 0 ? 'Des morceaux attendent encore leur transcription' : undefined}
+              style={{ ...bouton(COULEUR_IA, 'white'), fontWeight: 600, opacity: attente.enAttente > 0 ? 0.5 : 1 }}>
+              <IconeRobot size={20} /> Proposer les remarques
+            </button>
+          )}
+        </div>
+      )}
       {(attente.enAttente > 0 || attente.refuses > 0) && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', background: '#FFFBEB', border: '0.5px solid #F59E0B', padding: '10px 12px', fontSize: 13, color: '#92400E' }}>
           <span style={{ flex: '1 1 220px' }}>

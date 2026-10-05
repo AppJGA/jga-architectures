@@ -46,6 +46,20 @@ describe('compteurs', () => {
   })
 })
 
+test('preparerReprise : une proposition de l’IA non validée ne passe pas à la visite suivante', () => {
+  const r = preparerReprise({
+    sections: [{ id: 'S1', numero_romain: 'VII', titre: 'Entreprises', ordre: 0, type_section: 'entreprises' }],
+    remarques: [
+      { id: 'R1', section_id: 'S1', description: 'Validée', est_clos: false, ordre: 0 },
+      { id: 'R2', section_id: 'S1', description: 'Proposée', est_clos: false, ordre: 1, a_valider: true },
+      { id: 'SR1', parent_id: 'R1', description: 'Suite proposée', est_clos: false, a_valider: true },
+    ],
+    crId: 'CR2', affaireId: 'AFF', nouvelId: id,
+  })
+  assert.deepEqual(r.remarques.map((x) => x.description), ['Validée'])
+  assert.deepEqual(r.sousRemarques ?? r.remarques.filter((x) => x.parent_id), [])
+})
+
 describe('preparerReprise', () => {
   const precedent = {
     sections: [{ id: 'S1', numero_romain: 'I', titre: 'Général', ordre: 0, type_section: 'general' }],

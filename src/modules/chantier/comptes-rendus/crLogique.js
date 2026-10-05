@@ -171,8 +171,10 @@ export function preparerReprise({ sections = [], sousSections = [], remarques = 
 
   const idRemarque = new Map()
   const lignesRemarques = []
+  // Une proposition de l'IA pas encore validée (migration 058) ne passe pas
+  // à la visite suivante : personne ne l'a relue
   remarques
-    .filter((r) => !r.parent_id)
+    .filter((r) => !r.parent_id && !r.a_valider)
     .filter((r) => !estClos(r) || r.cloture_reportee === false)
     .forEach((r) => {
       const sousSectionId = r.sous_section_id ? idSousSection.get(r.sous_section_id) : null
@@ -213,7 +215,7 @@ export function preparerReprise({ sections = [], sousSections = [], remarques = 
   // Une suite garde son statut et son échéance (migration 054), comme sa
   // remarque : « À faire » sous une remarque « Fait » reste à faire.
   const lignesSousRemarques = remarques
-    .filter((r) => r.parent_id && idRemarque.has(r.parent_id))
+    .filter((r) => r.parent_id && idRemarque.has(r.parent_id) && !r.a_valider)
     .map((r) => {
       const statut = statutNormalise(r)
       const clos = PAR_CODE.get(statut).clos

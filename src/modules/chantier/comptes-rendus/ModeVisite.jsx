@@ -16,6 +16,10 @@ import { useEnregistrementVisite } from './enregistrement/useEnregistrementVisit
 import { BoutonRobot } from './enregistrement/BoutonRobot'
 import { PanneauEnregistrements } from './enregistrement/PanneauEnregistrements'
 import { vocabulaireAffaire } from './enregistrement/transcriptionLogique'
+import { propositionsAValider } from './enregistrement/analyseIaLogique'
+import { proposerRemarques } from './enregistrement/propositions'
+import { EtiquetteProposition, ExtraitProposition, BoutonsProposition, BandeauPropositions } from './enregistrement/Proposition'
+import { styleProposition } from './enregistrement/styleProposition'
 
 // ─── Mode Visite ─────────────────────────────────────────────────────────────
 //
@@ -94,6 +98,8 @@ function CarteRemarque({ rem, cr, lots, interlocuteurs, zones, ftms, ouvrirFtm, 
   const pastille = plansCr.pastilles.find(p => p.remarque_id === rem.id)
   const planNom = pastille && plansCr.plans.find(p => p.id === pastille.plan_id)?.nom
   const suivis = rem.sous_remarques ?? []
+  // Proposée par l'IA (migration 058) : en surbrillance, à valider avant tout
+  const proposee = !!rem.a_valider
 
   const changerStatut = (code) => ops.updateRemarque(rem.id, { statut: code, est_clos: PAR_CODE.get(code).clos }).catch(() => {})
 
@@ -108,8 +114,10 @@ function CarteRemarque({ rem, cr, lots, interlocuteurs, zones, ftms, ouvrirFtm, 
         borderLeft: `4px solid ${statut.couleur}`,
         boxShadow: surbrillance ? '0 0 0 3px rgba(232,96,44,0.2)' : 'none',
         transition: 'box-shadow 0.3s, border-color 0.3s',
+        ...(proposee && !surbrillance ? styleProposition : {}),
       }}
     >
+      {proposee && <div style={{ marginBottom: 8 }}><EtiquetteProposition /></div>}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
         {rem.numero != null
           ? <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, fontWeight: 600, color: '#E8602C' }}>n°{rem.numero}</span>
@@ -144,10 +152,23 @@ function CarteRemarque({ rem, cr, lots, interlocuteurs, zones, ftms, ouvrirFtm, 
         }}>
         {rem.description}
       </p>
+      {proposee && <ExtraitProposition rem={rem} />}
       {suivis.length > 0 && (
         <ul style={{ listStyle: 'none', margin: '6px 0 0', padding: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
           {suivis.map(sr => {
             const st = infosStatut(sr)
+            if (sr.a_valider) return (
+              <li key={sr.id} id={`visite-remarque-${sr.id}`} style={{ ...styleProposition, padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 6, scrollMarginTop: 180 }}>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap', fontSize: 14 }}>
+                  <EtiquetteProposition petite />
+                  <span style={{ color: '#9C9591', fontSize: 12 }}>▶ suite</span>
+                  <span style={{ flex: 1, color: '#1F1B17' }}>{sr.description}</span>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: st.couleur, whiteSpace: 'nowrap' }}>{st.libelle}{sr.ia_clore_origine ? ' · clôt la remarque' : ''}</span>
+                </div>
+                <ExtraitProposition rem={sr} petit />
+                {!lectureSeule && <BoutonsProposition rem={sr} ops={ops} />}
+              </li>
+            )
             return (
               <li key={sr.id} onClick={() => onPanneau({ type: 'suivi', remarque: rem })}
                 style={{ display: 'flex', gap: 8, alignItems: 'baseline', fontSize: 14, paddingLeft: 10, cursor: 'pointer' }}>
@@ -171,6 +192,11 @@ function CarteRemarque({ rem, cr, lots, interlocuteurs, zones, ftms, ouvrirFtm, 
 
       <PhotosDeRemarque ctl={photos} />
 
+      {proposee && !lectureSeule ? (
+        <div style={{ marginTop: 12 }}>
+          <BoutonsProposition rem={rem} ops={ops} onModifier={(r) => onPanneau({ type: 'modifier', remarque: r })} />
+        </div>
+      ) : (
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12, alignItems: 'center' }}>
         {!lectureSeule && (
           <div role="group" aria-label="Statut" style={{ display: 'flex', gap: 6 }}>
@@ -214,6 +240,7 @@ function CarteRemarque({ rem, cr, lots, interlocuteurs, zones, ftms, ouvrirFtm, 
           </button>
         )}
       </div>
+      )}
     </article>
   )
 }
@@ -286,7 +313,7 @@ const LIBELLE_OPERATION = {
   'pastille.poser': 'Pastille sur un plan',
 }
 
-export function ModeVisite({ cr, sections, presences, setPresence, lots: lotsAffaire, interlocuteurs, zones = [], ftms = [], ouvrirFtm, planning, modifierAvancementTache, horsLigne, ops, lectureSeule, erreur, onFermerErreur, signalerErreur, onTerminer }) {
+export function ModeVisite({ cr, affaire = null, sections, presences, setPresence, lots: lotsAffaire, interlocuteurs, zones = [], ftms = [], ouvrirFtm, planning, modifierAvancementTache, horsLigne, ops, lectureSeule, erreur, onFermerErreur, signalerErreur, onTerminer }) {
   const [filtre, setFiltre] = useState('ouvertes')
   const [destinataire, setDestinataire] = useState('')
   const [zone, setZone] = useState('')
@@ -308,6 +335,8 @@ export function ModeVisite({ cr, sections, presences, setPresence, lots: lotsAff
   )
   const robot = useEnregistrementVisite({ crId: cr.id, affaireId: cr.affaire_id, vocabulaire, actif: estAgence })
   const peutEnregistrer = robot.disponible && !lectureSeule && cr.statut !== 'emis'
+  const aValider = propositionsAValider(sections)
+  const proposer = () => proposerRemarques({ cr, affaire, lots, interlocuteurs: interlocuteurs ?? [], zones, sections, ops })
 
   const lots = lotsAffaire ?? []
   const contexteDestinataires = { lots, interlocuteurs: interlocuteurs ?? [] }
@@ -353,7 +382,8 @@ export function ModeVisite({ cr, sections, presences, setPresence, lots: lotsAff
   const enregistrerRemarque = async (payload, { destinataire: cle, compressions }) => {
     if (panneau.type === 'modifier') {
       const champs = contributeur ? payload : await champsModification(ops, sections, panneau.remarque, cle, payload)
-      await ops.updateRemarque(panneau.remarque.id, champs)
+      // Modifier une proposition de l'IA vaut validation
+      await ops.updateRemarque(panneau.remarque.id, panneau.remarque.a_valider ? { ...champs, a_valider: false } : champs)
       montrer(panneau.remarque.id)
       return
     }
@@ -456,6 +486,11 @@ export function ModeVisite({ cr, sections, presences, setPresence, lots: lotsAff
 
       <main style={{ flex: 1, overflowY: 'auto', padding: '12px 16px 96px', WebkitOverflowScrolling: 'touch' }}>
         <div style={{ maxWidth: 900, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 18 }}>
+          <BandeauPropositions nombre={aValider.length} onSuivante={() => {
+            // La suivante peut être cachée par un filtre : on les lève
+            setFiltre('toutes'); setDestinataire(''); setZone(''); setRecherche('')
+            montrer(aValider[0].id)
+          }} />
           {groupes.length === 0 && (
             <p style={{ textAlign: 'center', fontSize: 15, color: '#5E5854', padding: '48px 0' }}>
               {compteurs.total === 0 ? 'Aucune remarque pour l’instant.' : 'Aucune remarque ne correspond à ce filtre.'}
@@ -539,6 +574,7 @@ export function ModeVisite({ cr, sections, presences, setPresence, lots: lotsAff
           crId={cr.id} affaireId={cr.affaire_id} vocabulaire={vocabulaire}
           version={robot.version} attente={robot.attente} erreur={robot.erreur}
           onTranscrire={robot.transcrire} lectureSeule={lectureSeule}
+          onProposer={cr.statut !== 'emis' ? proposer : undefined}
           onFermer={() => setPanneau(null)}
         />
       )}

@@ -156,7 +156,9 @@ function lignesRemarque(rem, contexte) {
     // Mise en forme choisie pour toute la remarque (migration 056) ; une
     // remarque close reste grise et barrée, sans surlignage
     {
-      text: rem.description,
+      // Une proposition de l'IA pas encore validée ne figure que dans l'aperçu
+      // d'un brouillon (la base refuse l'émission) : elle y est signalée
+      text: rem.a_valider ? [rem.description, { text: '  (proposée, à valider)', italics: true, color: '#2F6FB5', bold: false }] : rem.description,
       decoration: statut.clos ? 'lineThrough' : undefined,
       color: statut.clos ? COULEUR.grisClair : COULEUR.texte,
       bold: miseEnForme(rem).gras,
@@ -200,7 +202,7 @@ function lignesRemarque(rem, contexte) {
     const retardSuite = estEnRetard(sr, dateReference)
     lignes.push([
       { text: [{ text: '» ', color: COULEUR.orange }, jour(sr.date_note) || '—'], fontSize: 7, color: COULEUR.gris, margin: [8, 0, 0, 0], fillColor: '#FAFAFA' },
-      { text: sr.description, fontSize: 8, color: st.clos ? COULEUR.grisClair : '#374151', decoration: st.clos ? 'lineThrough' : undefined, fillColor: '#FAFAFA' },
+      { text: sr.a_valider ? [sr.description, { text: '  (proposée, à valider)', italics: true, color: '#2F6FB5' }] : sr.description, fontSize: 8, color: st.clos ? COULEUR.grisClair : '#374151', decoration: st.clos ? 'lineThrough' : undefined, fillColor: '#FAFAFA' },
       sr.date_echeance
         ? { text: jour(sr.date_echeance), fontSize: 7.5, color: retardSuite ? '#B8412C' : COULEUR.gris, bold: retardSuite, fillColor: '#FAFAFA' }
         : { text: '', fillColor: '#FAFAFA' },

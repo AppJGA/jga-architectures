@@ -7,6 +7,9 @@ import { IconePlans, IconeRobot } from '../../../shared/icones/IconesAffaire'
 import { useEnregistrementsDisponibles } from './enregistrement/useEnregistrementVisite'
 import { ListeEnregistrements } from './enregistrement/PanneauEnregistrements'
 import { vocabulaireAffaire } from './enregistrement/transcriptionLogique'
+import { propositionsAValider } from './enregistrement/analyseIaLogique'
+import { proposerRemarques } from './enregistrement/propositions'
+import { BandeauPropositions } from './enregistrement/Proposition'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { useCompteRendu } from '../../../shared/hooks/useCompteRendu'
 import { useAuth } from '../../../core/auth/useAuth'
@@ -867,12 +870,35 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
 
   const vueMeta = VUES.find(v => v.id === activeView)
 
+  // Propositions de l'IA pas encore validées (migration 058) : la base refuse
+  // l'émission ; on le dit avant d'ouvrir la confirmation
+  const aValider = propositionsAValider(sections)
+  const allerALaProposition = () => {
+    const p = aValider[0]
+    if (!p) return
+    setActiveView('remarques')
+    defilerVers(`cr-remarque-${p.parent_id ?? p.id}`, 4, 'center')
+  }
+  const demanderEmission = () => {
+    if (aValider.length > 0) {
+      signalerErreur(new Error(`${aValider.length} remarque${aValider.length > 1 ? 's' : ''} proposée${aValider.length > 1 ? 's' : ''} par l’IA reste${aValider.length > 1 ? 'nt' : ''} à valider, modifier ou écarter avant d’émettre.`))
+      allerALaProposition()
+      return
+    }
+    setConfirmation('emettre')
+  }
+
   return (
     <CrContexte.Provider value={contexte}>
     <PhotosContexte.Provider value={contextePhotos}>
     <PlansContexte.Provider value={contextePlans}>
     <div>
       {erreur && <BandeauErreur message={erreur} onFermer={() => setErreur(null)} />}
+      {cr.statut !== 'emis' && aValider.length > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <BandeauPropositions petit nombre={aValider.length} onSuivante={allerALaProposition} />
+        </div>
+      )}
 
       {/* Navigation */}
       {activeView ? (
@@ -922,7 +948,7 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
           sections={sections}
           onNavigate={setActiveView}
           onOuvrirSection={(id) => { setActiveView('remarques'); defilerVersSection(id) }}
-          onEmettre={() => setConfirmation('emettre')}
+          onEmettre={demanderEmission}
           onVisite={() => setVisite(true)}
           peutModifier={!lectureSeuleAffaire}
           nbPlans={plansCr.plans.length}
@@ -994,6 +1020,7 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
       {visite && (
         <ModeVisite
           cr={cr}
+          affaire={affaire}
           sections={sections}
           presences={presences}
           setPresence={setPresence}
@@ -1033,6 +1060,9 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
           crId={cr.id} affaireId={affaire?.id ?? cr.affaire_id}
           vocabulaire={vocabulaireAffaire({ lots: lotsAffaire ?? [], interlocuteurs: interlocuteurs ?? [], zones })}
           lectureSeule={lectureSeuleAffaire}
+          onProposer={cr.statut !== 'emis'
+            ? () => proposerRemarques({ cr, affaire, lots: lotsAffaire ?? [], interlocuteurs: interlocuteurs ?? [], zones, sections, ops })
+            : undefined}
         />
       )}
 

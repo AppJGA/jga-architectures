@@ -2,6 +2,8 @@ import { useState, useMemo, createContext, useContext } from 'react'
 import { estPartieRemarques, groupesDestinataires, numerosParties } from './remarquesLogique'
 import { creerRemarqueAdressee, champsModification } from './rangerRemarque'
 import { PanneauRemarque, PanneauSuite } from './PanneauxVisite'
+import { EtiquetteProposition, ExtraitProposition, BoutonsProposition } from './enregistrement/Proposition'
+import { styleProposition } from './enregistrement/styleProposition'
 import { PhotosContexte } from './usePhotosRemarque'
 import {
   Plus, Pencil, ChevronDown, ChevronUp, ChevronRight, X, GripVertical, MessageSquarePlus,
@@ -342,11 +344,23 @@ function AttrBadge({ rem, lots, interlocuteurs, sectionType }) {
 // ─── Sous-remarque (fil de suivi) ─────────────────────────────────────────────
 // Évolution 4
 
-function SousRemarqueRow({ sr, onDelete, onStatut }) {
+function SousRemarqueRow({ sr, onDelete, onStatut, onEdit }) {
   const acces = useCr()
   const lectureSeule = !peutModifierRemarque(sr, acces)
   const st = infosStatut(sr)
   const fmtD = (d) => d ? new Date(d + 'T00:00:00').toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' }) : '—'
+  // Suite proposée par l'IA (migration 058)
+  if (sr.a_valider) return (
+    <div style={{ ...styleProposition, padding: '6px 8px', margin: '4px 0', display: 'flex', flexDirection: 'column', gap: 5 }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap', fontSize: 12 }}>
+        <EtiquetteProposition petite />
+        <span style={{ flex: 1, color: '#374151' }}>{sr.description}</span>
+        <span style={{ fontSize: 11, fontWeight: 600, color: st.couleur }}>{st.libelle}{sr.ia_clore_origine ? ' · clôt la remarque' : ''}</span>
+      </div>
+      <ExtraitProposition rem={sr} petit />
+      {!lectureSeule && <BoutonsProposition rem={sr} petit ops={{ updateRemarque: onEdit, deleteRemarque: onDelete }} />}
+    </div>
+  )
   return (
     <div className="sous-remarque-row" style={{ display: 'flex', gap: 8, padding: '4px 0', borderBottom: '0.5px solid rgba(0,0,0,0.05)', alignItems: 'flex-start' }}>
       {sr.est_nouveau && <span style={{ color: '#E8602C', fontSize: 10, flexShrink: 0, marginTop: 2 }}>▶</span>}
@@ -452,6 +466,8 @@ function RemarqueRow({ rem, idx, total, crDate, lots, interlocuteurs, zones, sec
   if (forme.surligne && !statut.clos) descStyle = { ...descStyle, background: COULEUR_SURLIGNE, padding: '0 3px' }
 
   const sousSousRems = rem.sous_remarques ?? []
+  const proposee = !!rem.a_valider
+  const modifier = () => (onModifier ? onModifier(rem) : setEditOpen(true))
 
   if (editOpen && !lectureSeule) return (
     <div style={{ marginBottom: 4 }}>
@@ -462,7 +478,8 @@ function RemarqueRow({ rem, idx, total, crDate, lots, interlocuteurs, zones, sec
         interlocuteurs={interlocuteurs}
         zones={zones}
         sectionType={sectionType}
-        onSave={async (data) => { await onEdit(rem.id, data); setEditOpen(false) }}
+        // Modifier une proposition de l'IA vaut validation
+        onSave={async (data) => { await onEdit(rem.id, rem.a_valider ? { ...data, a_valider: false } : data); setEditOpen(false) }}
         onCancel={() => setEditOpen(false)}
         onDelete={async () => { await onDelete(rem.id); setEditOpen(false) }}
       />
@@ -470,7 +487,7 @@ function RemarqueRow({ rem, idx, total, crDate, lots, interlocuteurs, zones, sec
         <div style={{ marginLeft: 24, borderLeft: '2px solid #E9E2D6', paddingLeft: 12, marginBottom: 4 }}>
           {sousSousRems.map(sr => (
             <SousRemarqueRow key={sr.id} sr={sr}
-              onDelete={onDelete}
+              onDelete={onDelete} onEdit={onEdit}
               onStatut={(id, code) => onEdit(id, changementStatut(code)).catch(() => {})}
             />
           ))}
@@ -485,6 +502,7 @@ function RemarqueRow({ rem, idx, total, crDate, lots, interlocuteurs, zones, sec
         display: 'flex', gap: 8, padding: '8px 10px', borderRadius: 2,
         backgroundColor: selection.has(rem.id) ? 'rgba(232,96,44,0.06)' : 'white',
         border: `0.5px solid ${selection.has(rem.id) ? 'rgba(232,96,44,0.45)' : 'rgba(0,0,0,0.06)'}`,
+        ...(proposee ? styleProposition : {}),
       }}>
         {modeSelection && !lectureSeule && (
           <input
@@ -512,7 +530,15 @@ function RemarqueRow({ rem, idx, total, crDate, lots, interlocuteurs, zones, sec
               {rem.description}
             </p>
             <AttrBadge rem={rem} lots={lots} interlocuteurs={interlocuteurs} sectionType={sectionType} />
+            {proposee && <EtiquetteProposition petite />}
           </div>
+          {proposee && <ExtraitProposition rem={rem} petit />}
+          {proposee && !lectureSeule && (
+            <div style={{ marginTop: 6 }}>
+              <BoutonsProposition rem={rem} petit sectionType={sectionType} onModifier={modifier}
+                ops={{ updateRemarque: onEdit, deleteRemarque: onDelete }} />
+            </div>
+          )}
           {(rem.date_echeance || (statut.clos && rem.date_cloture)) && (
             <p style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', fontSize: 11, color: '#5E5854', marginTop: 3 }}>
               {rem.date_echeance && <span style={{ color: enRetard ? '#B8412C' : undefined, fontWeight: enRetard ? 500 : 400 }}>Pour le {fmtD(rem.date_echeance)}</span>}
@@ -587,7 +613,7 @@ function RemarqueRow({ rem, idx, total, crDate, lots, interlocuteurs, zones, sec
               <button onClick={() => onReorder(rem.id, 'down')} disabled={idx === total - 1} data-compact style={{ padding: 3, background: 'none', border: 'none', cursor: idx === total - 1 ? 'default' : 'pointer', color: idx === total - 1 ? '#D1D5DB' : '#9C9591' }}><ChevronDown size={12} /></button>
             </>
           )}
-          <button onClick={() => (onModifier ? onModifier(rem) : setEditOpen(true))} data-compact style={{ padding: 3, background: 'none', border: 'none', cursor: 'pointer', color: '#9C9591' }}><Pencil size={12} /></button>
+          <button onClick={modifier} data-compact style={{ padding: 3, background: 'none', border: 'none', cursor: 'pointer', color: '#9C9591' }}><Pencil size={12} /></button>
           <BoutonPhoto ctl={photos} />
           {plansCr.disponible && (
             <button
@@ -614,7 +640,7 @@ function RemarqueRow({ rem, idx, total, crDate, lots, interlocuteurs, zones, sec
         <div style={{ marginLeft: 24, borderLeft: '2px solid #E9E2D6', paddingLeft: 12, marginTop: 2 }}>
           {sousSousRems.map(sr => (
             <SousRemarqueRow key={sr.id} sr={sr}
-              onDelete={onDelete}
+              onDelete={onDelete} onEdit={onEdit}
               onStatut={(id, code) => onEdit(id, changementStatut(code)).catch(() => {})}
             />
           ))}
@@ -1302,7 +1328,9 @@ export function CrSectionEditor({ sections, crId, crDate, interlocuteurs, lotEnt
 
   const enregistrerAdressee = async (payload, { destinataire: cle, compressions }) => {
     if (panneau.type === 'modifier') {
-      await ops.updateRemarque(panneau.remarque.id, await champsModification(ops, sections, panneau.remarque, cle, payload))
+      const champs = await champsModification(ops, sections, panneau.remarque, cle, payload)
+      // Modifier une proposition de l'IA vaut validation
+      await ops.updateRemarque(panneau.remarque.id, panneau.remarque.a_valider ? { ...champs, a_valider: false } : champs)
       return
     }
     const id = await creerRemarqueAdressee(ops, sections, cle, payload)

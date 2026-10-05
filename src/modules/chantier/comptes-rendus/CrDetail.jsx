@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import {
-  ArrowLeft, ArrowRight, Send, ChevronRight, Zap, LayoutDashboard, Lock, RotateCcw,
+  ArrowLeft, ArrowRight, Send, ChevronRight, Zap, Lock, RotateCcw,
   AlertTriangle, X, Smartphone,
 } from 'lucide-react'
 import {
-  IconePlans, IconeRobot, IconeAvancement, IconePresence, IconeExportPdf, IconeGeneralites, IconeRemarques, IconeOrganisation,
+  IconeVisitesChantier, IconePlans, IconeRobot, IconeAvancement, IconePresence, IconeExportPdf, IconeGeneralites, IconeRemarques, IconeOrganisation,
 } from '../../../shared/icones/IconesAffaire'
 import { useEnregistrementsDisponibles } from './enregistrement/useEnregistrementVisite'
 import { ListeEnregistrements } from './enregistrement/PanneauEnregistrements'
@@ -906,34 +906,54 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
       {/* Navigation */}
       {activeView ? (
         <div style={{ marginBottom: 24 }}>
-          <h2 style={{
-            fontSize: 22, fontWeight: 500, letterSpacing: '-0.01em',
-            color: vueMeta?.couleur ?? '#1F1B17', marginBottom: 16,
-          }}>
-            {vueMeta?.label}
-          </h2>
+          {/* Retour discret, au-dessus du titre : une flèche, l'icône des
+              visites et le texte, sans cadre */}
           <button
             onClick={() => setActiveView(null)}
             style={{
-              display: 'flex', alignItems: 'center', gap: 8,
-              padding: '10px 16px', borderRadius: 2,
-              border: '0.5px solid rgba(0,0,0,0.15)', background: 'white',
-              fontSize: 13, fontWeight: 500, color: '#1F1B17',
-              cursor: 'pointer', transition: 'all 0.15s',
+              display: 'inline-flex', alignItems: 'center', gap: 8, minHeight: 44, padding: 0,
+              border: 'none', background: 'none', cursor: 'pointer',
+              fontSize: 13, fontWeight: 600, color: '#5E5854', transition: 'color 0.15s',
             }}
-            onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--jga-orange)'; e.currentTarget.style.color = 'var(--jga-orange)' }}
-            onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(0,0,0,0.15)'; e.currentTarget.style.color = '#1F1B17' }}
+            onMouseEnter={e => { e.currentTarget.style.color = 'var(--jga-orange)' }}
+            onMouseLeave={e => { e.currentTarget.style.color = '#5E5854' }}
           >
-            <LayoutDashboard size={16} /> Retour à la visite
+            <ArrowLeft size={16} />
+            <IconeVisitesChantier size={20} />
+            Retour au tableau de bord de la visite
           </button>
+          <h2 style={{
+            display: 'flex', alignItems: 'center', gap: 12, margin: '6px 0 0',
+            fontSize: 22, fontWeight: 500, letterSpacing: '-0.01em',
+            color: vueMeta?.couleur ?? '#1F1B17',
+          }}>
+            {/* La même icône que la tuile : on reconnaît la page d'un coup d'œil */}
+            {vueMeta?.icon && (
+              <span style={{
+                width: 48, height: 48, borderRadius: '50%', flexShrink: 0, background: vueMeta.fondClair,
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                <vueMeta.icon size={30} color={vueMeta.couleur} strokeWidth={1.25} />
+              </span>
+            )}
+            {vueMeta?.label}
+          </h2>
         </div>
       ) : (
         <div style={{ marginBottom: 24 }}>
           <button
             onClick={onBack}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 10px', borderRadius: 2, fontSize: 12, border: '0.5px solid rgba(0,0,0,0.12)', backgroundColor: 'white', color: '#5E5854', cursor: 'pointer' }}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 8, minHeight: 44, padding: 0,
+              border: 'none', background: 'none', cursor: 'pointer',
+              fontSize: 13, fontWeight: 600, color: '#5E5854', transition: 'color 0.15s',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.color = 'var(--jga-orange)' }}
+            onMouseLeave={e => { e.currentTarget.style.color = '#5E5854' }}
           >
-            <ArrowLeft size={13} /> Liste des visites
+            <ArrowLeft size={16} />
+            <IconeVisitesChantier size={20} />
+            Liste des visites
           </button>
         </div>
       )}

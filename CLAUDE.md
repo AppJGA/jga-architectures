@@ -11,8 +11,8 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 697 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
-npx eslint src   # ~73 problèmes préexistants : comparer, ne pas viser zéro
+npm test         # 702 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
+npx eslint src   # ~72 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
 `npm test` couvre, dans `tests/` : les chemins critiques (`planning.test.js`,
@@ -81,6 +81,10 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
   `entreprises` de son organisation — ou à son nom s'il n'en a pas — puis la
   personne en `interlocuteurs`, sans doublon (comparaison sans majuscules ni
   accents). La fiche de l'affaire ne se ferme plus au clic à côté.
+  Recherche dans le carnet (`RechercheCarnet.jsx`, `rechercheCarnetLogique.js`,
+  testé) : carnet chargé une fois, une option par personne et une par fiche,
+  chaque mot tapé cherché dans tous les champs (sans majuscules ni accents,
+  numéros sans espaces) ; choisir une personne remplit tout le formulaire.
   Export (`exportContactsLogique.js`, testé, fabriqué dans la page) : tous
   les contacts en vCard 3.0 pour le téléphone, ou en CSV aux en-têtes
   anglais d'Outlook (marque UTF-8) — l'Outlook classique ne retient que le

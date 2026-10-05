@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react'
-import { X, Plus, Pencil, Trash2, ChevronUp, ChevronDown, Search } from 'lucide-react'
+import { useState } from 'react'
+import { X, Plus, Pencil, Trash2, ChevronUp, ChevronDown } from 'lucide-react'
 import { useAffaireInterlocuteurs, CATEGORIE_META } from '../../../shared/hooks/useAffaireInterlocuteurs'
-import { supabase } from '../../../core/supabase/client'
 import { verserAuCarnet } from './carnet'
+import { RechercheCarnet } from './RechercheCarnet'
+import { remplirDepuis } from './rechercheCarnetLogique'
 
 const CATEGORIES = Object.entries(CATEGORIE_META).map(([id, m]) => ({ id, ...m }))
 
@@ -27,38 +28,16 @@ function InterloForm({ initial, onSave, onCancel, onDelete }) {
   const [form, setForm] = useState(initial ?? emptyForm())
   const [saving, setSaving] = useState(false)
   const [confirmDel, setConfirmDel] = useState(false)
-  const [search, setSearch] = useState('')
-  const [suggestions, setSuggestions] = useState([])
   // Nouvel interlocuteur absent du carnet : on peut l'y verser d'une case
   const [versCarnet, setVersCarnet] = useState(false)
   const [deCarnet, setDeCarnet] = useState(false)
   const [erreurCarnet, setErreurCarnet] = useState(null)
 
-  useEffect(() => {
-    if (search.length < 2) { setSuggestions([]); return }
-    const t = setTimeout(async () => {
-      const { data } = await supabase
-        .from('entreprises')
-        .select('id, raison_sociale, adresse, email, telephone')
-        .ilike('raison_sociale', `%${search}%`)
-        .limit(5)
-      setSuggestions(data ?? [])
-    }, 250)
-    return () => clearTimeout(t)
-  }, [search])
-
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
-  const applySuggestion = (ent) => {
-    setForm(f => ({
-      ...f,
-      organisation: ent.raison_sociale,
-      adresse: ent.adresse ?? f.adresse,
-      email: ent.email ?? f.email,
-      telephone: ent.telephone ?? f.telephone,
-    }))
-    setSearch('')
-    setSuggestions([])
+  // Une fiche du carnet choisie remplit le formulaire : rien à y reverser
+  const choisirDansCarnet = (option) => {
+    setForm(f => remplirDepuis(option, f))
     setDeCarnet(true)
   }
 
@@ -111,32 +90,10 @@ function InterloForm({ initial, onSave, onCancel, onDelete }) {
           )}
         </div>
 
-        {/* Recherche carnet d'adresses */}
-        <div style={{ position: 'relative' }}>
+        {/* Recherche carnet d'adresses : dans tous les champs des fiches */}
+        <div>
           <label style={LABEL}>Rechercher dans le carnet d'adresses</label>
-          <div style={{ position: 'relative' }}>
-            <Search size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#9C9591' }} />
-            <input
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Nom de l'entreprise…"
-              style={{ ...INPUT, paddingLeft: 30 }}
-              onFocus={focusOn} onBlur={focusOff}
-            />
-          </div>
-          {suggestions.length > 0 && (
-            <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50, backgroundColor: 'white', border: '0.5px solid rgba(0,0,0,0.12)', borderRadius: 2, overflow: 'hidden' }}>
-              {suggestions.map(s => (
-                <button key={s.id} type="button" onMouseDown={() => applySuggestion(s)}
-                  style={{ display: 'block', width: '100%', padding: '8px 12px', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: '#1F1B17', borderBottom: '0.5px solid rgba(0,0,0,0.06)' }}
-                  onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(232,96,44,0.10)'}
-                  onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
-                >
-                  {s.raison_sociale}
-                </button>
-              ))}
-            </div>
-          )}
+          <RechercheCarnet onChoisir={choisirDansCarnet} />
         </div>
 
         {/* Identité */}

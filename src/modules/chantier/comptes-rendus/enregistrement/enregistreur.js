@@ -97,9 +97,11 @@ export async function demarrerEnregistreur({ dureeMorceauMs, rangDepart = 1, onM
 
   piste.addEventListener('mute', () => signaler('piste-muette'))
   piste.addEventListener('unmute', () => signaler('piste-reprise'))
+  // Micro coupé par le système (écran verrouillé…) : ce moteur est fini, il
+  // rend tout ce qu'il tenait ; la reprise en démarre un autre
   piste.addEventListener('ended', () => {
     signaler('piste-terminee')
-    if (enregistreur?.state === 'recording') enregistreur.stop()
+    fermer('fin-du-moteur')
   })
   const surVisibilite = () => {
     if (document.visibilityState === 'hidden') { signaler('page-masquee'); return }
@@ -112,7 +114,9 @@ export async function demarrerEnregistreur({ dureeMorceauMs, rangDepart = 1, onM
   signaler('demarrage', `${format.type || 'format du navigateur'}, morceaux de ${Math.round(dureeMorceauMs / 1000)} s`)
   lancerMorceau()
 
-  const arreter = () => new Promise((resoudre) => {
+  // Range le dernier morceau puis libère micro, écoute du niveau, verrou
+  // d'écran et écoute de la page
+  const fermer = (evenement) => new Promise((resoudre) => {
     if (!actif) { resoudre(); return }
     actif = false
     clearTimeout(minuterieMorceau)
@@ -122,11 +126,12 @@ export async function demarrerEnregistreur({ dureeMorceauMs, rangDepart = 1, onM
       contexte?.close().catch(() => {})
       verrou?.release().catch(() => {})
       document.removeEventListener('visibilitychange', surVisibilite)
-      signaler('arret')
+      signaler(evenement)
       resoudre()
     }
     if (enregistreur?.state === 'recording') { finMorceau = liberer; enregistreur.stop() } else liberer()
   })
+  const arreter = () => fermer('arret')
 
   return { arreter, format: format.type, get verrouEcran() { return verrouEcran } }
 }

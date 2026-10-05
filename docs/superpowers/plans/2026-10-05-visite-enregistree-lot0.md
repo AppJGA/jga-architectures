@@ -869,5 +869,12 @@ git push origin main
   des fonctions Vercel. Le lot 1 devra raccourcir les morceaux ou préférer
   Opus selon ce que donnent les iPad.
 
+- Premiers essais de Victor (Safari, iPad, app installée) : AAC à
+  ≈ 250 Ko par minute (le débit demandé est respecté), écran maintenu
+  allumé obtenu. **Verrouiller l'écran coupe le micro** : piste muette
+  aussitôt, terminée 4 s plus tard. D'où la **reprise automatique** au
+  retour de la page (`fermer('fin-du-moteur')` libère le moteur coupé, un
+  effet en relance un autre) — reste à savoir si iOS l'accepte sans appui.
+
 Fin du lot 0 : Victor fait l'essai (protocole donné dans la réponse de fin
 de tâche) et colle les bilans ; le plan des lots 1 à 3 s'écrit ensuite.

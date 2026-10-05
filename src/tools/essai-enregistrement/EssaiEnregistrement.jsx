@@ -100,7 +100,7 @@ export function EssaiEnregistrement() {
     for (const u of urls.current) URL.revokeObjectURL(u)
   }, [])
 
-  const lancer = async (reprise = false) => {
+  const lancer = async (reprise = false, { auto = false } = {}) => {
     setErreur(null)
     const s = reprise && session ? session : { id: crypto.randomUUID(), debut: Date.now() }
     if (!reprise) {
@@ -130,14 +130,41 @@ export function EssaiEnregistrement() {
       })
       moteur.current = m
       setSession({ ...s, fin: null, format: m.format, verrouEcran: m.verrouEcran })
-      if (reprise) ajouterEvenement({ t: Date.now(), type: 'reprise' })
+      if (reprise && !auto) ajouterEvenement({ t: Date.now(), type: 'reprise' })
       setEtat('enregistre')
+      return true
     } catch (err) {
+      if (auto) {
+        ajouterEvenement({ t: Date.now(), type: 'erreur', detail: `reprise : ${err?.name ?? ''} ${err?.message ?? err}` })
+        return false
+      }
       setErreur(err?.name === 'NotAllowedError'
         ? 'Micro refusé : autorisez-le pour ce site dans les réglages du navigateur.'
         : `Impossible de démarrer : ${err?.message ?? err}`)
+      return false
     }
   }
+
+  // Après une coupure (écran verrouillé), repartir seul dès que la page est
+  // de nouveau visible : iOS peut exiger un appui, l'essai le dira. Sinon le
+  // bouton « Reprendre » reste là.
+  useEffect(() => {
+    if (etat !== 'coupe') return undefined
+    let tente = false
+    const essayer = async () => {
+      if (tente || document.visibilityState !== 'visible') return
+      tente = true
+      await new Promise((r) => setTimeout(r, 400))
+      const ok = await lancer(true, { auto: true })
+      ajouterEvenement({ t: Date.now(), type: ok ? 'reprise-automatique' : 'reprise-automatique-impossible' })
+    }
+    essayer()
+    document.addEventListener('visibilitychange', essayer)
+    return () => document.removeEventListener('visibilitychange', essayer)
+    // Une seule tentative par coupure : relancer l'effet à chaque nouvel
+    // `lancer` (recréé à chaque affichage) en ferait plusieurs
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [etat])
 
   const arreter = async () => {
     await moteur.current?.arreter()

@@ -7,9 +7,6 @@ import { DashboardPage } from '../../dashboard/DashboardPage'
 import { AffairePage } from '../../affaire/AffairePage'
 import { ToolsPage } from '../../tools/ToolsPage'
 import { tools } from '../../tools/manifest'
-import { House } from 'lucide-react'
-import { RetourPage } from '../../shared/components/RetourPage'
-import { IconeBoiteOutils } from '../../shared/icones/IconesAffaire'
 
 const Heures = lazy(() => import('../../tools/heures'))
 const HomePage = lazy(() => import('../../pages/HomePage'))
@@ -28,18 +25,6 @@ function Spinner() {
 
 function Wrap({ children }) {
   return <Suspense fallback={<Spinner />}>{children}</Suspense>
-}
-
-// Le retour vers la page qui menait ici, au-dessus d'une page qui n'en a pas
-function AvecRetour({ libelle, Icone, vers, children }) {
-  return (
-    <>
-      <div style={{ padding: '12px 24px 0' }}>
-        <RetourPage libelle={libelle} Icone={Icone} vers={vers} />
-      </div>
-      {children}
-    </>
-  )
 }
 
 function RequireAuth({ children }) {
@@ -98,7 +83,7 @@ export function AppRouter() {
           <Route path="affaires/:affaireId/:moduleId" element={<AffairePage />} />
 
           <Route path="carnet-adresses" element={<AgenceSeule><Wrap><CarnetAdresses /></Wrap></AgenceSeule>} />
-          <Route path="heures" element={<AgenceSeule><AvecRetour libelle="Accueil" Icone={House} vers="/home"><Wrap><Heures /></Wrap></AvecRetour></AgenceSeule>} />
+          <Route path="heures" element={<AgenceSeule><Wrap><Heures /></Wrap></AgenceSeule>} />
 
           {/* Tools */}
           <Route path="tools" element={<AgenceSeule><ToolsPage /></AgenceSeule>} />
@@ -106,11 +91,11 @@ export function AppRouter() {
             <Route
               key={tool.id}
               path={`tools/${tool.path}`}
-              element={<AgenceSeule><AvecRetour libelle="Boîte à outils" Icone={IconeBoiteOutils} vers="/tools"><Wrap><tool.component /></Wrap></AvecRetour></AgenceSeule>}
+              element={<AgenceSeule><Wrap><tool.component /></Wrap></AgenceSeule>}
             />
           ))}
 
-          <Route path="settings" element={<AvecRetour libelle="Accueil" Icone={House} vers="/home"><PlaceholderSettings /></AvecRetour>} />
+          <Route path="settings" element={<PlaceholderSettings />} />
           <Route path="*" element={<Navigate to="/home" replace />} />
         </Route>
       </Routes>

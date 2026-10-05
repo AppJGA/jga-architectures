@@ -1,6 +1,15 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useContext } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { Bell } from 'lucide-react'
+import { Bell, House } from 'lucide-react'
+import { RetourPage } from '../../shared/components/RetourPage'
+import { IconePortail, IconeBoiteOutils, IconeTableauDeBord, IconeVisitesChantier, IconeOpr } from '../../shared/icones/IconesAffaire'
+import { retourParDefaut } from './retourLogique'
+import { RetourContexte } from './retourContexte'
+
+const ICONES_RETOUR = {
+  accueil: House, portail: IconePortail, outils: IconeBoiteOutils,
+  tableau: IconeTableauDeBord, visites: IconeVisitesChantier, opr: IconeOpr,
+}
 import { useAuth } from '../auth/useAuth'
 import { supabase } from '../supabase/client'
 
@@ -8,23 +17,11 @@ export function Topbar() {
   const location = useLocation()
   const { user, signOut } = useAuth()
   const navigate = useNavigate()
-  const isHome = location.pathname === '/home'
   const [profile, setProfile] = useState(null)
 
-  const PAGE_TITLES = {
-    '/dashboard':       "Portail d'affaires",
-    '/tools':           'Boîte à outils',
-    '/carnet-adresses': "Carnet d'adresses",
-  }
-
-  const getPageTitle = (pathname) => {
-    if (PAGE_TITLES[pathname] !== undefined) return PAGE_TITLES[pathname]
-    if (pathname.startsWith('/affaires/')) return "Gestionnaire d'affaire"
-    if (pathname.startsWith('/tools/')) return 'Boîte à outils'
-    return "Gestionnaire d'affaire"
-  }
-
-  const pageTitle = getPageTitle(location.pathname)
+  const { retour: retourImpose } = useContext(RetourContexte)
+  const parDefaut = retourParDefaut(location.pathname, location.search)
+  const retourAffiche = retourImpose ?? (parDefaut && { ...parDefaut, Icone: ICONES_RETOUR[parDefaut.icone] })
 
   useEffect(() => {
     if (!user) return
@@ -53,39 +50,25 @@ export function Topbar() {
         flexShrink: 0,
       }}
     >
-      {/* Logo + titre — cliquable sauf sur /home */}
-      {isHome ? (
-        <>
-          <img
-            src="/Logo_JGA_Archi.jpg"
-            alt="JGA Architectures"
-            style={{ height: 28, width: 'auto', objectFit: 'contain', flexShrink: 0, mixBlendMode: 'multiply' }}
-          />
-          <div style={{ flex: 1 }} />
-        </>
-      ) : (
-        <>
-          <button
-            onClick={() => navigate('/home')}
-            title="Retour à l'accueil"
-            style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10 }}
-            onMouseEnter={e => { e.currentTarget.querySelector('span').style.color = 'var(--jga-orange)' }}
-            onMouseLeave={e => { e.currentTarget.querySelector('span').style.color = '#1F1B17' }}
-          >
-            <img
-              src="/Logo_JGA_Archi.jpg"
-              alt="JGA Architectures"
-              style={{ height: 32, width: 'auto', objectFit: 'contain', flexShrink: 0 }}
-            />
-            {pageTitle && (
-              <span style={{ fontSize: 13, fontWeight: 500, color: '#1F1B17', fontFamily: "'Archivo', sans-serif", borderLeft: '1px solid rgba(0,0,0,0.1)', paddingLeft: 12, transition: 'color 0.15s' }}>
-                {pageTitle}
-              </span>
-            )}
-          </button>
-          <div style={{ flex: 1 }} />
-        </>
+      {/* Le logo mène toujours à l'accueil ; à côté, le retour vers la page
+          qui menait ici (d'après l'adresse, ou imposé par la page) */}
+      <button
+        onClick={() => navigate('/home')}
+        title="Accueil"
+        style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', flexShrink: 0 }}
+      >
+        <img
+          src="/Logo_JGA_Archi.jpg"
+          alt="JGA Architectures"
+          style={{ height: 32, width: 'auto', objectFit: 'contain', flexShrink: 0, mixBlendMode: 'multiply' }}
+        />
+      </button>
+      {retourAffiche && (
+        <div style={{ display: 'flex', alignItems: 'center', borderLeft: '1px solid rgba(0,0,0,0.1)', paddingLeft: 12, minWidth: 0 }}>
+          <RetourPage libelle={retourAffiche.libelle} Icone={retourAffiche.Icone} vers={retourAffiche.vers} onClick={retourAffiche.onClick} />
+        </div>
       )}
+      <div style={{ flex: 1 }} />
 
       {/* Actions à droite */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>

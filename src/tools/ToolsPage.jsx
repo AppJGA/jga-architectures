@@ -1,9 +1,8 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Layers, Clock, ShieldCheck, ArrowRightLeft, House } from 'lucide-react'
+import { Layers, Clock, ShieldCheck, ArrowRightLeft } from 'lucide-react'
 import { IconeRobot } from '../shared/icones/IconesAffaire'
 import { tools } from './manifest'
-import { RetourPage } from '../shared/components/RetourPage'
 
 const ICON_MAP = { Layers, Robot: IconeRobot, Clock, ShieldCheck, ArrowRightLeft }
 
@@ -84,9 +83,8 @@ export function ToolsPage() {
   const navigate = useNavigate()
 
   return (
-    <div style={{ padding: '20px 40px 32px' }}>
-      <RetourPage libelle="Accueil" Icone={House} vers="/home" />
-      <div style={{ marginBottom: 24, marginTop: 8 }}>
+    <div style={{ padding: '32px 40px' }}>
+      <div style={{ marginBottom: 24 }}>
         <h1 style={{ fontSize: 18, fontWeight: 500, color: '#1F1B17', fontFamily: "'Archivo', sans-serif", marginBottom: 6 }}>
           Boîte à outils
         </h1>

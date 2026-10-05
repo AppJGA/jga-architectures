@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 706 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
+npm test         # 709 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
 npx eslint src   # ~72 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -41,14 +41,16 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
 - **Coquille** : `src/core/layout/AppShell.jsx` (Topbar 52 px + Sidebar,
   masquée sur l'accueil, le portail, les affaires, le carnet et la boîte à
   outils).
-- **Retour en haut à gauche de chaque page** : `RetourPage`
-  (`shared/components/`) — flèche, icône de la page qui menait ici, nom en
-  gras, sans cadre. Accueil ← portail, carnet, boîte à outils, heures,
-  réglages ; Boîte à outils ← chaque outil (`AvecRetour` du routeur) ;
-  Portail ← affaire ; Tableau de bord de l'affaire ← chaque module (posé par
-  `AffairePage`, masqué dans une sous-page : `?cr=`, ou `?visite=` des OPR) ;
-  Liste des visites ← CR, Tableau de bord de la visite ← ses pages, Visites
-  d'OPR ← une visite d'OPR. Toute nouvelle page en reçoit un.
+- **Retour dans le bandeau du haut** (`Topbar`), à la place de l'ancien
+  titre de page, à côté du logo (qui mène toujours à l'accueil) : flèche,
+  icône de la page qui menait ici, nom en gras (`RetourPage`). Déduit de
+  l'adresse par `retourParDefaut` (`core/layout/retourLogique.js`, testé) :
+  Accueil ← portail, carnet, boîte à outils, heures, réglages ; Boîte à
+  outils ← un outil ; Portail ← une affaire ; Tableau de bord de l'affaire
+  ← un module ; Liste des visites ← `?cr=` ; Visites d'OPR ← `?visite=` de
+  l'OPR. Une page aux vues internes l'impose par `useRetourPage`
+  (`retourContexte.js`) : les pages d'un CR → Tableau de bord de la visite.
+  Toute nouvelle page reçoit son retour là, jamais dans la page.
 - **Modules d'affaire** : déclarés dans `src/modules/manifest.js` — deux phases
   (`etude`, `chantier`), chaque module a `enabled`, `path`, `icon`, un
   `component` en `lazy()`. Les tuiles du tableau de bord et la sidebar de

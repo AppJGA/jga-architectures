@@ -13,7 +13,7 @@ import { propositionsAValider } from './enregistrement/analyseIaLogique'
 import { proposerRemarques } from './enregistrement/propositions'
 import { BandeauPropositions } from './enregistrement/Proposition'
 import { useSearchParams, useNavigate } from 'react-router-dom'
-import { RetourPage } from '../../../shared/components/RetourPage'
+import { useRetourPage } from '../../../core/layout/retourContexte'
 import { useCompteRendu } from '../../../shared/hooks/useCompteRendu'
 import { useAuth } from '../../../core/auth/useAuth'
 import { useAffaireInterlocuteurs } from '../../../shared/hooks/useAffaireInterlocuteurs'
@@ -591,8 +591,11 @@ function messageErreur(err) {
 
 export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffaire = false }) {
   const { user, estAgence } = useAuth()
-  const enregistrementsVisibles = useEnregistrementsDisponibles(estAgence)
+  // Dans une page du CR (Organisation, Présences…), le retour du bandeau
+  // ramène au tableau de bord de la visite ; sinon, à la liste des visites
   const [activeView, setActiveView] = useState(null)
+  useRetourPage(activeView ? { libelle: 'Tableau de bord de la visite', Icone: IconeVisitesChantier, onClick: () => setActiveView(null) } : null)
+  const enregistrementsVisibles = useEnregistrementsDisponibles(estAgence)
   const { interlocuteurs } = useAffaireInterlocuteurs(affaire?.id)
   const [lotEntreprises, setLotEntreprises] = useState([])
   const [erreur, setErreur] = useState(null)
@@ -863,7 +866,6 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
   if (!loading && !cr && erreurChargement) {
     return (
       <div>
-        <RetourPage libelle="Liste des visites" Icone={IconeVisitesChantier} onClick={onBack} style={{ marginBottom: 8 }} />
         <BandeauErreur message={`Le compte rendu n’a pas pu être chargé : ${erreurChargement}`} onFermer={onBack} />
       </div>
     )
@@ -905,7 +907,6 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
       {/* Navigation */}
       {activeView ? (
         <div style={{ marginBottom: 24 }}>
-          <RetourPage libelle="Retour au tableau de bord de la visite" Icone={IconeVisitesChantier} onClick={() => setActiveView(null)} />
           <h2 style={{
             display: 'flex', alignItems: 'center', gap: 12, margin: '6px 0 0',
             fontSize: 22, fontWeight: 500, letterSpacing: '-0.01em',
@@ -923,11 +924,7 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
             {vueMeta?.label}
           </h2>
         </div>
-      ) : (
-        <div style={{ marginBottom: 24 }}>
-          <RetourPage libelle="Liste des visites" Icone={IconeVisitesChantier} onClick={onBack} />
-        </div>
-      )}
+      ) : null /* le retour à la liste des visites est dans le bandeau du haut */}
 
       {cr.statut === 'emis' && (
         <BandeauEmis cr={cr} peutModifier={!lectureSeuleAffaire} onRouvrir={() => setConfirmation('rouvrir')} />

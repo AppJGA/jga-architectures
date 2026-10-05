@@ -1,6 +1,5 @@
 import { Suspense, useEffect, useState, useCallback, useRef } from 'react'
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
-import { RetourPage } from '../shared/components/RetourPage'
+import { useParams, useNavigate } from 'react-router-dom'
 import { Pencil, ChevronRight, Eye, ChevronDown, Check } from 'lucide-react'
 import { useAffaire } from '../shared/hooks/useAffaires'
 import { useAffaireCollaborateurs } from '../shared/hooks/useAffaireCollaborateurs'
@@ -16,7 +15,7 @@ import { supabase } from '../core/supabase/client'
 import { infosStatut } from '../modules/chantier/comptes-rendus/crLogique'
 import { dernierePhaseRenseignee, nomPhase } from '../modules/etude/financier/phases'
 import {
-  IconeTableauDeBord, IconePortail, IconePlanningEtude, IconeFinancierEtude, IconeEntreprisesLots, IconeVisitesChantier,
+  IconeTableauDeBord, IconePlanningEtude, IconeFinancierEtude, IconeEntreprisesLots, IconeVisitesChantier,
   IconeOpr, IconeFtm, IconePlanningChantier, IconeFinancierChantier, IconeDocuments, IconeTodo,
 } from '../shared/icones/IconesAffaire'
 
@@ -334,9 +333,7 @@ function AffaireHeader({ affaire, onEdit, onChangerPhase, collaborateurs, canEdi
       flexShrink: 0,
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 }}>
-        <RetourPage libelle="Portail d'affaires" Icone={IconePortail} vers="/dashboard" />
-
-        <div style={{ width: 1, height: 16, backgroundColor: 'rgba(0,0,0,0.1)', flexShrink: 0 }} />
+        {/* Le retour au portail est dans le bandeau du haut */}
         <div style={{ width: 3, height: 20, borderRadius: 2, backgroundColor: 'var(--affaire-accent)', flexShrink: 0 }} />
 
         <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--jga-beige)', fontFamily: "'JetBrains Mono', monospace", letterSpacing: '0.04em', flexShrink: 0 }}>
@@ -539,7 +536,7 @@ function ModulesSidebar({ affaireId, moduleId }) {
           display: 'flex', alignItems: 'center', gap: 8,
           width: '100%', padding: '9px 12px', borderRadius: 3,
           border: 'none', cursor: 'pointer',
-          fontSize: 11, fontWeight: 600, textAlign: 'left',
+          fontSize: 11, fontWeight: 600, textAlign: 'left', whiteSpace: 'nowrap',
           textTransform: 'uppercase', letterSpacing: '0.06em',
           backgroundColor: !moduleId ? 'var(--affaire-accent)' : 'var(--affaire-accent-clair)',
           color: !moduleId ? 'white' : 'var(--affaire-accent)',
@@ -1096,8 +1093,6 @@ export function AffairePage() {
   }, [rawAffaire])
 
   const activeModule = getAllModules().find(m => m.path === moduleId) ?? null
-  const [parametres] = useSearchParams()
-  const sousPage = parametres.has('cr') || (moduleId === 'opr' && parametres.has('visite'))
 
   const fermerEdition = () => {
     setEditOpen(false)
@@ -1185,18 +1180,7 @@ export function AffairePage() {
               </div>
             )}
             {activeModule
-              ? (
-                <>
-                  {/* Retour au tableau de bord de l'affaire — sauf dans une sous-page
-                      (une visite, une OPR), qui porte son propre retour */}
-                  {!sousPage && (
-                    <div style={{ padding: activeModule.layout === 'fullbleed' ? '8px 24px 0' : '0 0 8px', flexShrink: 0, position: 'relative', zIndex: 1 }}>
-                      <RetourPage libelle="Tableau de bord de l’affaire" Icone={IconeTableauDeBord} vers={`/affaires/${affaireId}`} />
-                    </div>
-                  )}
-                  <ModuleRenderer mod={activeModule} lectureSeule={!collabLoading && !canEdit} />
-                </>
-              )
+              ? <ModuleRenderer mod={activeModule} lectureSeule={!collabLoading && !canEdit} />
               : <AffaireOverview
                   affaire={affaire} stats={stats} affaireId={affaireId} canEdit={canEdit}
                   onEdit={() => setEditOpen(true)}

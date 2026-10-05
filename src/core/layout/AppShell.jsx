@@ -1,9 +1,14 @@
+import { useState, useMemo } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
+import { RetourContexte } from './retourContexte'
 import { Sidebar } from './Sidebar'
 import { Topbar } from './Topbar'
 
 export function AppShell() {
   const location = useLocation()
+  // Retour du bandeau imposé par la page affichée (sinon : d'après l'adresse)
+  const [retour, definir] = useState(null)
+  const contexteRetour = useMemo(() => ({ retour, definir }), [retour])
   const showSidebar =
     !location.pathname.startsWith('/dashboard') &&
     !location.pathname.startsWith('/affaires/') &&
@@ -19,6 +24,7 @@ export function AppShell() {
     // La marge `safe-area-inset-top` redescend le logo et le compte sous elle ;
     // la bande reste sombre pour que l'heure, écrite en blanc, se lise. Sur
     // ordinateur et dans Safari, cette marge vaut zéro.
+    <RetourContexte.Provider value={contexteRetour}>
     <div
       className="flex h-screen overflow-hidden"
       style={{ backgroundColor: '#1F1B17', paddingTop: 'env(safe-area-inset-top)' }}
@@ -31,5 +37,6 @@ export function AppShell() {
         </main>
       </div>
     </div>
+    </RetourContexte.Provider>
   )
 }

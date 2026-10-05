@@ -174,6 +174,14 @@ body {
 .jga-entree-vue { animation: jga-vue-in 0.4s cubic-bezier(0.22, 1, 0.36, 1) backwards; }
 .jga-respire    { animation: jga-respire 3.4s ease-in-out infinite; }
 
+/* Essai d'enregistrement / robot : le point rouge bat tant que le micro
+   enregistre — on doit voir d'un coup d'œil que ça tourne. */
+@keyframes jga-enregistre {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.35; transform: scale(0.8); }
+}
+.jga-enregistre { animation: jga-enregistre 1.4s ease-in-out infinite; }
+
 /* ── Planning chantier : menu radial d'une barre ──────────────────────────────
    Repris du composant Claude Design « Editeur Gantt - menu radial » (variante
    B). Chaque pétale part du centre de la couronne : son décalage final est posé
@@ -194,7 +202,7 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .jga-entree-carte, .jga-entree-libelle,
   .jga-entree-affaire, .jga-entree-entete, .jga-entree-photo,
-  .jga-entree-vue, .jga-respire,
+  .jga-entree-vue, .jga-respire, .jga-enregistre,
   .jga-petale, .jga-disque, .jga-voile { animation: none; }
 }
 

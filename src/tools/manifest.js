@@ -29,6 +29,15 @@ export const tools = [
     enabled: true,
   },
   {
+    id: 'essai-enregistrement',
+    label: 'Essai d’enregistrement',
+    icon: 'Bot',
+    description: 'Tester l’enregistrement d’une visite sur cet appareil',
+    path: 'essai-enregistrement',
+    component: lazy(() => import('./essai-enregistrement')),
+    enabled: true,
+  },
+  {
     id: 'heures',
     label: 'Déclaration des heures',
     icon: 'Clock',

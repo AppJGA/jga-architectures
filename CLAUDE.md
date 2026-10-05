@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 660 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
+npm test         # 671 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
 npx eslint src   # ~73 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -243,6 +243,18 @@ création avec reprise de la visite précédente) et `useCompteRendu` (un CR).
   « refusée par la base », Réessayer / Abandonner) mais **reste appliquée à
   l'écran**. Hors ligne : ni création de CR, ni émission, ni PDF, et pas de
   ré-annotation d'une photo déjà envoyée.
+
+- **Visite enregistrée** (en cours ; conception
+  `docs/superpowers/specs/2026-10-05-visite-enregistree-ia-design.md`, plan
+  du lot 0 dans `docs/superpowers/plans/`) : `enregistrement/` — logique pure
+  (`enregistrementLogique.js`, testée : format, durées, bilan, tranches),
+  moteur (`enregistreur.js` : un `MediaRecorder` relancé à chaque morceau,
+  chaque morceau est un fichier complet ; tranches d'une seconde au fil de
+  l'eau), rangement local (`audioLocal.js`, base IndexedDB à part
+  `jga-audio` : une page fermée par Safari ne perd qu'une seconde, le morceau
+  interrompu se recolle au retour). Lot 0 : l'outil « Essai
+  d'enregistrement » mesure ce que tiennent Safari et Chrome sur le terrain ;
+  rien ne quitte l'appareil. Chrome produit ≈ 800 Ko d'AAC par minute.
 
 ## Suivi financier d'étude
 

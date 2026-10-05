@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useContext } from 'react'
+import { useState, useEffect, useRef, useContext, useMemo } from 'react'
 import { Users, Search, Plus, Camera, MapPin, MessageSquare, Pencil, MoreHorizontal, WifiOff, AlertTriangle, X, LogOut, Lock, TrendingUp, RefreshCw } from 'lucide-react'
 import { IconeFtm } from '../../../shared/icones/IconesAffaire'
 import { FILTRES_VISITE, filtreVisite, groupesVisite, compteursVisite } from './visiteLogique'
@@ -11,6 +11,11 @@ import { usePhotosRemarque, PhotosContexte } from './usePhotosRemarque'
 import { PhotosDeRemarque } from './PhotosRemarque'
 import { usePlansCr } from './PlansContexte'
 import { ftmDeRemarque, resumeFtm } from '../ftm/lienFtm'
+import { useAuth } from '../../../core/auth/useAuth'
+import { useEnregistrementVisite } from './enregistrement/useEnregistrementVisite'
+import { BoutonRobot } from './enregistrement/BoutonRobot'
+import { PanneauEnregistrements } from './enregistrement/PanneauEnregistrements'
+import { vocabulaireAffaire } from './enregistrement/transcriptionLogique'
 
 // ─── Mode Visite ─────────────────────────────────────────────────────────────
 //
@@ -294,6 +299,15 @@ export function ModeVisite({ cr, sections, presences, setPresence, lots: lotsAff
   const { contributeur } = acces
   const { ajouterPhotos } = useContext(PhotosContexte)
   useEcranAllume()
+  const { estAgence } = useAuth()
+
+  // Robot : enregistrer la réunion pendant qu'on note (agence seule)
+  const vocabulaire = useMemo(
+    () => vocabulaireAffaire({ lots: lotsAffaire ?? [], interlocuteurs: interlocuteurs ?? [], zones }),
+    [lotsAffaire, interlocuteurs, zones],
+  )
+  const robot = useEnregistrementVisite({ crId: cr.id, affaireId: cr.affaire_id, vocabulaire, actif: estAgence })
+  const peutEnregistrer = robot.disponible && !lectureSeule && cr.statut !== 'emis'
 
   const lots = lotsAffaire ?? []
   const contexteDestinataires = { lots, interlocuteurs: interlocuteurs ?? [] }
@@ -384,6 +398,9 @@ export function ModeVisite({ cr, sections, presences, setPresence, lots: lotsAff
           </div>
           <span style={{ fontSize: 13, color: '#B8412C', fontWeight: 600 }}>{compteurs.aTraiter} à traiter</span>
           {compteurs.enRetard > 0 && <span style={{ fontSize: 13, color: 'white', background: '#B8412C', fontWeight: 600, borderRadius: 3, padding: '3px 8px' }}>{compteurs.enRetard} en retard</span>}
+          {(peutEnregistrer || (robot.disponible && robot.etat !== 'pret')) && (
+            <BoutonRobot robot={robot} onOuvrirPanneau={() => setPanneau({ type: 'enregistrements' })} />
+          )}
           <button type="button" onClick={() => setPanneau({ type: 'presences' })} style={bouton()}>
             <Users size={17} /> Présences
           </button>
@@ -516,6 +533,15 @@ export function ModeVisite({ cr, sections, presences, setPresence, lots: lotsAff
         />
       )}
 
+      {panneau?.type === 'enregistrements' && (
+        <PanneauEnregistrements
+          robot={robot} peutEnregistrer={peutEnregistrer}
+          crId={cr.id} affaireId={cr.affaire_id} vocabulaire={vocabulaire}
+          version={robot.version} attente={robot.attente} erreur={robot.erreur}
+          onTranscrire={robot.transcrire} lectureSeule={lectureSeule}
+          onFermer={() => setPanneau(null)}
+        />
+      )}
       {panneau?.type === 'presences' && (
         <PanneauPresences presences={presences} setPresence={setPresence} lectureSeule={lectureSeule} onFermer={() => setPanneau(null)} signalerErreur={signalerErreur} />
       )}

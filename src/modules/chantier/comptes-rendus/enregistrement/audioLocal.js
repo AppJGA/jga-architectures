@@ -76,9 +76,13 @@ export async function recupererMorceaux(enregistrementId) {
   const recuperes = []
   for (const g of regrouperTranches(tranches).filter((x) => !complets.has(x.rang))) {
     const blob = new Blob(g.tranches.map((t) => t.blob), { type: g.type })
+    // Une visite range aussi le CR, l'affaire et le début de l'enregistrement
+    // sur chaque tranche : le morceau recollé doit partir à la transcription
+    const { crId, affaireId, debutEnregistrement } = g.tranches[0]
     const morceau = {
       id: crypto.randomUUID(), enregistrementId, rang: g.rang, debut: g.debut,
       duree_s: g.duree_s, type: g.type, taille: blob.size, blob, recupere: true,
+      ...(crId ? { crId, affaireId, debutEnregistrement } : {}),
     }
     await rangerMorceau(morceau)
     recuperes.push(morceau)
@@ -104,4 +108,29 @@ export async function effacerEnregistrement(enregistrementId) {
     const lignes = await parEnregistrement(magasin, enregistrementId)
     if (lignes.length) await transaction(magasin, 'readwrite', (m) => { for (const x of lignes) m.delete(x.id) })
   }
+}
+
+// ─── Visite : morceaux d'un compte rendu ─────────────────────────────────────
+
+/** Morceaux de ce CR encore à transcrire, dans l'ordre d'enregistrement. */
+export async function morceauxEnAttente(crId) {
+  const tous = await transaction(MORCEAUX, 'readonly', (m) => m.getAll())
+  return (tous ?? [])
+    .filter((x) => x.crId === crId)
+    .sort((a, b) => (a.debutEnregistrement ?? '').localeCompare(b.debutEnregistrement ?? '') || a.rang - b.rang)
+}
+
+/** Enregistrements de ce CR qui ont des tranches orphelines (page fermée en plein enregistrement). */
+export async function enregistrementsInterrompus(crId) {
+  const tranches = await transaction(TRANCHES, 'readonly', (m) => m.getAll())
+  return [...new Set((tranches ?? []).filter((t) => t.crId === crId).map((t) => t.enregistrementId))]
+}
+
+export function effacerMorceau(id) {
+  return transaction(MORCEAUX, 'readwrite', (m) => { m.delete(id) }).then(() => undefined)
+}
+
+/** Un morceau que la transcription a refusé : on le garde, avec ses échecs comptés. */
+export function marquerEchec(morceau) {
+  return transaction(MORCEAUX, 'readwrite', (m) => { m.put({ ...morceau, echecs: (morceau.echecs ?? 0) + 1 }) }).then(() => undefined)
 }

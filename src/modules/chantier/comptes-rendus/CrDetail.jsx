@@ -1,9 +1,12 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import {
   ArrowLeft, ArrowRight, Send, FileDown, ChevronRight, Users, ClipboardList, MessageSquare,
-  Zap, LayoutDashboard, Lock, RotateCcw, AlertTriangle, X, Smartphone, TrendingUp, ScrollText,
+  Zap, LayoutDashboard, Lock, RotateCcw, AlertTriangle, X, Smartphone, TrendingUp, ScrollText, Bot,
 } from 'lucide-react'
 import { IconePlans } from '../../../shared/icones/IconesAffaire'
+import { useEnregistrementsDisponibles } from './enregistrement/useEnregistrementVisite'
+import { ListeEnregistrements } from './enregistrement/PanneauEnregistrements'
+import { vocabulaireAffaire } from './enregistrement/transcriptionLogique'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { useCompteRendu } from '../../../shared/hooks/useCompteRendu'
 import { useAuth } from '../../../core/auth/useAuth'
@@ -99,6 +102,14 @@ const VUES = [
     icon: TrendingUp,
     couleur: '#B8862C',
     fondClair: 'rgba(184,134,44,0.10)',
+  },
+  {
+    id: 'enregistrements',
+    label: 'Enregistrements de la réunion',
+    description: 'Transcriptions du robot\net fichiers importés',
+    icon: Bot,
+    couleur: '#B8412C',
+    fondClair: 'rgba(184,65,44,0.10)',
   },
   {
     id: 'export',
@@ -262,7 +273,7 @@ function TuileVue({ vue, titre, sousTitre, onClick }) {
   )
 }
 
-function CrAccueil({ cr, affaire, presences, sections, onNavigate, onOuvrirSection, onEmettre, onVisite, peutModifier, nbPlans, nbPastilles, avancement, nbPartiesGeneralites }) {
+function CrAccueil({ cr, affaire, presences, sections, onNavigate, onOuvrirSection, onEmettre, onVisite, peutModifier, nbPlans, nbPastilles, avancement, nbPartiesGeneralites, enregistrements }) {
   const [survolEditeur, setSurvolEditeur] = useState(false)
   const dateLabel = cr.date_reunion
     ? new Date(cr.date_reunion + 'T00:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })
@@ -284,6 +295,7 @@ function CrAccueil({ cr, affaire, presences, sections, onNavigate, onOuvrirSecti
   const vuePlans = VUES.find(v => v.id === 'plans')
   const vueAvancement = VUES.find(v => v.id === 'avancement')
   const vueGeneralites = VUES.find(v => v.id === 'generalites')
+  const vueEnregistrements = VUES.find(v => v.id === 'enregistrements')
 
   return (
     <div>
@@ -483,6 +495,14 @@ function CrAccueil({ cr, affaire, presences, sections, onNavigate, onOuvrirSecti
           sousTitre={avancement ? `${avancement.realise}% réalisé · prévu ${avancement.prevu}%` : 'Planning non renseigné'}
           onClick={() => onNavigate('avancement')}
         />
+        {enregistrements && (
+          <TuileVue
+            vue={vueEnregistrements}
+            titre="Enregistrements"
+            sousTitre="Transcriptions de la réunion"
+            onClick={() => onNavigate('enregistrements')}
+          />
+        )}
         <TuileVue
           vue={vueExport}
           titre="Exporter le PDF"
@@ -564,6 +584,7 @@ function messageErreur(err) {
 
 export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffaire = false }) {
   const { user, estAgence } = useAuth()
+  const enregistrementsVisibles = useEnregistrementsDisponibles(estAgence)
   const [activeView, setActiveView] = useState(null)
   const { interlocuteurs } = useAffaireInterlocuteurs(affaire?.id)
   const [lotEntreprises, setLotEntreprises] = useState([])
@@ -908,6 +929,7 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
           nbPastilles={pastilles.length}
           avancement={resumeAvancement}
           nbPartiesGeneralites={generalitesCr.parties.length}
+          enregistrements={enregistrementsVisibles}
         />
       )}
 
@@ -1003,6 +1025,14 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
           onPoser={(remarqueId, position) => placerPastille(remarqueId, position).catch(err => { signalerErreur(err); throw err })}
           onRetirer={(remarqueId) => enleverPastille(remarqueId).catch(err => { signalerErreur(err); throw err })}
           onFermer={() => setPlacement(null)}
+        />
+      )}
+
+      {activeView === 'enregistrements' && enregistrementsVisibles && (
+        <ListeEnregistrements
+          crId={cr.id} affaireId={affaire?.id ?? cr.affaire_id}
+          vocabulaire={vocabulaireAffaire({ lots: lotsAffaire ?? [], interlocuteurs: interlocuteurs ?? [], zones })}
+          lectureSeule={lectureSeuleAffaire}
         />
       )}
 

@@ -280,7 +280,7 @@ function TuileVue({ vue, titre, sousTitre, onClick }) {
   )
 }
 
-function CrAccueil({ cr, affaire, presences, sections, onNavigate, onOuvrirSection, onEmettre, onVisite, peutModifier, nbPlans, nbPastilles, avancement, nbPartiesGeneralites, enregistrements }) {
+function CrAccueil({ cr, affaire, presences, sections, onNavigate, onEmettre, onVisite, peutModifier, nbPlans, nbPastilles, avancement, nbPartiesGeneralites, enregistrements }) {
   const [survolEditeur, setSurvolEditeur] = useState(false)
   const dateLabel = cr.date_reunion
     ? new Date(cr.date_reunion + 'T00:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })
@@ -427,47 +427,6 @@ function CrAccueil({ cr, affaire, presences, sections, onNavigate, onOuvrirSecti
           )}
         </div>
 
-        {sections.length > 0 && (
-          <div style={{ borderTop: '0.5px solid rgba(0,0,0,0.08)', paddingTop: 14 }}>
-            <p style={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: '#C9C4C0', marginBottom: 8 }}>
-              Sections — accès direct
-            </p>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              {sections.map((s, i) => {
-                const rems = remarquesDeSection(s)
-                // Une section « chaude » a au moins un point à faire
-                const chaude = rems.some(r => infosStatut(r).famille === 'rouge')
-                return (
-                  <button
-                    key={s.id}
-                    onClick={() => onOuvrirSection(s.id)}
-                    style={{
-                      display: 'inline-flex', alignItems: 'center', gap: 8,
-                      padding: '7px 12px', borderRadius: 2, cursor: 'pointer',
-                      border: '0.5px solid rgba(0,0,0,0.10)', background: 'white',
-                      fontSize: 12, color: '#374151',
-                      transition: 'border-color 0.15s, background 0.15s',
-                    }}
-                    onMouseEnter={e => { e.currentTarget.style.borderColor = '#2A8A4E'; e.currentTarget.style.background = 'rgba(42,138,78,0.06)' }}
-                    onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(0,0,0,0.10)'; e.currentTarget.style.background = 'white' }}
-                  >
-                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: '#C9C4C0' }}>
-                      {String(i + 1).padStart(2, '0')}
-                    </span>
-                    {s.titre}
-                    <span style={{
-                      fontSize: 10, fontWeight: 500, borderRadius: 3, padding: '1px 6px',
-                      color: chaude ? '#B8412C' : '#9C9591',
-                      background: chaude ? 'rgba(184,65,44,0.10)' : '#F1EFE8',
-                    }}>
-                      {rems.length}
-                    </span>
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Les autres vues */}
@@ -533,7 +492,6 @@ function defilerVers(idAncre, essais = 2, block = 'start') {
     else if (essais > 0) defilerVers(idAncre, essais - 1, block)
   })
 }
-const defilerVersSection = (sectionId) => defilerVers(`cr-section-${sectionId}`)
 
 // ─── Bandeaux ─────────────────────────────────────────────────────────────────
 
@@ -938,7 +896,6 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
           presences={presences}
           sections={sections}
           onNavigate={setActiveView}
-          onOuvrirSection={(id) => { setActiveView('remarques'); defilerVersSection(id) }}
           onEmettre={demanderEmission}
           onVisite={() => setVisite(true)}
           peutModifier={!lectureSeuleAffaire}

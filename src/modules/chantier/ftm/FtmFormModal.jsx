@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { payloadFtm } from './payloadFtm'
+import { payloadFtm, erreurFtm, sensMontant } from './payloadFtm'
 import { X } from 'lucide-react'
 
 const ORIGINE_OPTIONS = [
@@ -42,6 +42,7 @@ function emptyForm() {
     incidence_delai_valeur: '',
     incidence_delai_unite: 'jours',
     montant_travaux_ht: '',
+    sens_montant: 'plus',
     montant_honoraires_ht: '',
     decision: 'en_attente',
     date_decision: '',
@@ -103,7 +104,7 @@ function FormRow({ label, children }) {
   )
 }
 
-export function FtmFormModal({ open, onClose, ftm, lots = [], affaire, onSave, onSaveAndExport }) {
+export function FtmFormModal({ open, onClose, ftm, lots = [], lotParDefaut = null, affaire, onSave, onSaveAndExport }) {
   const [form, setForm] = useState(emptyForm())
   const [saving, setSaving] = useState(false)
   const [erreur, setErreur] = useState(null)
@@ -124,15 +125,17 @@ export function FtmFormModal({ open, onClose, ftm, lots = [], affaire, onSave, o
         impact_reglementaire: ftm.impact_reglementaire ?? null,
         incidence_delai_valeur: ftm.incidence_delai_valeur ?? '',
         incidence_delai_unite: ftm.incidence_delai_unite ?? 'jours',
-        montant_travaux_ht: ftm.montant_travaux_ht ?? '',
+        // Saisi sans signe : le sens dit s'il s'ajoute au marché ou s'en retire
+        montant_travaux_ht: ftm.montant_travaux_ht != null ? Math.abs(ftm.montant_travaux_ht) : '',
+        sens_montant: sensMontant(ftm.montant_travaux_ht),
         montant_honoraires_ht: ftm.montant_honoraires_ht ?? '',
         decision: ftm.decision ?? 'en_attente',
         date_decision: ftm.date_decision ?? '',
       })
     } else {
-      setForm(emptyForm())
+      setForm({ ...emptyForm(), lot_id: lotParDefaut ?? '' })
     }
-  }, [open, ftm])
+  }, [open, ftm, lotParDefaut])
 
   if (!open) return null
 
@@ -145,6 +148,8 @@ export function FtmFormModal({ open, onClose, ftm, lots = [], affaire, onSave, o
   const buildPayload = () => payloadFtm(form)
 
   const handleSubmit = async (withExport) => {
+    const bloquant = erreurFtm(form)
+    if (bloquant) { setErreur(bloquant); return }
     setSaving(true)
     setErreur(null)
     try {
@@ -241,15 +246,16 @@ export function FtmFormModal({ open, onClose, ftm, lots = [], affaire, onSave, o
                 </div>
               </div>
               <div>
-                <label style={labelStyle}>Lot concerné</label>
+                <label style={labelStyle}>Lot concerné *</label>
                 <select
                   value={form.lot_id}
-                  onChange={e => set('lot_id', e.target.value)}
-                  style={{ ...inputStyle }}
+                  onChange={e => { set('lot_id', e.target.value); setErreur(null) }}
+                  aria-invalid={!form.lot_id && !!erreur}
+                  style={{ ...inputStyle, ...(!form.lot_id && erreur ? { border: '1px solid #B8412C' } : {}) }}
                 >
-                  <option value="">— Aucun lot spécifique —</option>
+                  <option value="">— Choisir le lot —</option>
                   {lots.map(l => (
-                    <option key={l.id} value={l.id}>{l.nom}</option>
+                    <option key={l.id} value={l.id}>{l.numero != null ? `Lot ${l.numero} — ${l.nom}` : l.nom}</option>
                   ))}
                 </select>
               </div>
@@ -370,17 +376,43 @@ export function FtmFormModal({ open, onClose, ftm, lots = [], affaire, onSave, o
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 4 }}>
               <div>
-                <label style={labelStyle}>Travaux supplémentaires HT (€)</label>
+                <label style={labelStyle}>Montant des travaux HT (€)</label>
+                {/* Le sens est choisi, pas tapé : il décide si le suivi
+                    financier du lot monte ou descend */}
+                <div role="radiogroup" aria-label="Sens du montant" style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+                  {[
+                    { id: 'plus', libelle: '+ Plus-value', couleur: '#2A8A4E' },
+                    { id: 'moins', libelle: '− Moins-value', couleur: '#B8412C' },
+                  ].map(o => {
+                    const actif = form.sens_montant === o.id
+                    return (
+                      <button key={o.id} type="button" role="radio" aria-checked={actif}
+                        onClick={() => set('sens_montant', o.id)}
+                        style={{
+                          flex: 1, padding: '6px 8px', borderRadius: 2, fontSize: 11, cursor: 'pointer',
+                          fontWeight: actif ? 600 : 400,
+                          border: `1.5px solid ${actif ? o.couleur : '#d1d5db'}`,
+                          background: actif ? o.couleur + '15' : 'white',
+                          color: actif ? o.couleur : '#5E5854',
+                        }}>
+                        {o.libelle}
+                      </button>
+                    )
+                  })}
+                </div>
                 <input
                   type="number"
+                  min={0}
                   value={form.montant_travaux_ht}
-                  onChange={e => set('montant_travaux_ht', e.target.value)}
+                  onChange={e => set('montant_travaux_ht', e.target.value.replace('-', ''))}
                   placeholder="0.00"
                   style={inputStyle}
                 />
                 {travHTNum !== 0 && (
-                  <p style={{ fontSize: 10, color: '#9C9591', marginTop: 3 }}>
-                    ≈ {new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' }).format(travHTNum * tva)} TTC
+                  <p style={{ fontSize: 10, color: form.sens_montant === 'moins' ? '#B8412C' : '#2A8A4E', marginTop: 3 }}>
+                    {form.sens_montant === 'moins' ? '−' : '+'}{new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' }).format(Math.abs(travHTNum))} HT
+                    {' '}≈ {form.sens_montant === 'moins' ? '−' : '+'}{new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' }).format(Math.abs(travHTNum) * tva)} TTC
+                    {' '}au suivi financier du lot
                   </p>
                 )}
               </div>

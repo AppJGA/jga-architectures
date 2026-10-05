@@ -641,7 +641,7 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
 
   const naviguer = useNavigate()
   const affaireId = affaire?.id
-  const ouvrirFtm = useCallback((ftm) => naviguer(`/affaires/${affaireId}/ftm?ftm=${ftm.id}`), [naviguer, affaireId])
+  const ouvrirFtm = useCallback((ftm) => naviguer(`/affaires/${affaireId}/financier-chantier?ftm=${ftm.id}`), [naviguer, affaireId])
 
   const plansCr = usePlans(affaire?.id)
 

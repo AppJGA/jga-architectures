@@ -813,6 +813,12 @@ function PhaseSection({ phase, affaire, stats, affaireId, navigate, rangBase }) 
                         Aléas {stats.financierAleasPct.toFixed(1)}% du marché
                       </div>
                     )}
+                    {/* Les FTM n'ont plus de tuile : elles vivent dans le suivi financier */}
+                    {stats.ftmTotal > 0 && (
+                      <p style={{ fontSize: 11, color: '#5E5854', marginTop: 6 }}>
+                        {stats.ftmTotal} FTM · {stats.ftmEnAttente} en attente
+                      </p>
+                    )}
                   </>
                 )
               )}
@@ -928,32 +934,7 @@ function PhaseSection({ phase, affaire, stats, affaireId, navigate, rangBase }) 
                 )
               )}
 
-              {isChantier && mod.id === 'ftm' && mod.enabled && (
-                stats.ftmTotal === 0 ? (
-                  <p style={{ fontSize: 12, color: 'var(--jga-beige)' }}>Aucune FTM enregistrée</p>
-                ) : (
-                  <>
-                    <p style={{ fontSize: 22, fontWeight: 500, color: '#1F1B17', marginBottom: 2 }}>
-                      {stats.ftmTotal}
-                    </p>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: stats.ftmMontantAccepte !== 0 ? 6 : 0 }}>
-                      <p style={{ fontSize: 12, color: 'var(--jga-beige)' }}>
-                        {stats.ftmAccepte} acceptée{stats.ftmAccepte !== 1 ? 's' : ''} · {stats.ftmEnAttente} en attente
-                      </p>
-                    </div>
-                    {stats.ftmMontantAccepte !== 0 && (
-                      <span style={{
-                        fontSize: 11, fontWeight: 500,
-                        color: stats.ftmMontantAccepte >= 0 ? '#2A8A4E' : '#B8412C',
-                      }}>
-                        {stats.ftmMontantAccepte > 0 ? '+' : '−'}{new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(Math.abs(stats.ftmMontantAccepte))} HT accepté
-                      </span>
-                    )}
-                  </>
-                )
-              )}
-
-              {!['lots-entreprises', 'comptes-rendus', 'financier-chantier', 'planning-chantier', 'planning-etude', 'financier-etude', 'todo', 'ftm'].includes(mod.id) && !mod.enabled && (
+              {!['lots-entreprises', 'comptes-rendus', 'financier-chantier', 'planning-chantier', 'planning-etude', 'financier-etude', 'todo'].includes(mod.id) && !mod.enabled && (
                 <p style={{ fontSize: 12, color: 'var(--jga-beige)' }}>En cours de développement</p>
               )}
             </ModuleTile>

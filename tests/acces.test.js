@@ -10,8 +10,12 @@ import {
 } from '../src/modules/chantier/comptes-rendus/crLogique.js'
 
 describe('modules visibles selon le type de compte', () => {
-  test('un compte agence voit tout le manifeste', () => {
-    assert.deepEqual(phasesPour(true), phases)
+  test('un compte agence voit tout le manifeste, sauf les modules hors menu', () => {
+    const vus = phasesPour(true).flatMap(p => p.modules.map(m => m.id))
+    const attendus = phases.flatMap(p => p.modules).filter(m => !m.horsMenu).map(m => m.id)
+    assert.deepEqual(vus, attendus)
+    assert.ok(!vus.includes('ftm'), 'les FTM s’ouvrent depuis le suivi financier')
+    assert.ok(vus.includes('financier-chantier'))
   })
 
   test('un intervenant extérieur ne voit que les visites de chantier', () => {

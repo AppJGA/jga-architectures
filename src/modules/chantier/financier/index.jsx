@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { Plus, Pencil, Trash2, Printer, X, AlertTriangle } from 'lucide-react'
 import { IconeFinancierChantier, IconeFtm } from '../../../shared/icones/IconesAffaire'
 import { useSuiviFinancier } from '../../../shared/hooks/useSuiviFinancier'
@@ -8,6 +8,9 @@ import { useFtm } from '../../../shared/hooks/useFtm'
 import { supabase } from '../../../core/supabase/client'
 import { AffaireFormModal } from '../../../dashboard/AffaireFormModal'
 import { FtmFormModal } from '../ftm/FtmFormModal'
+import { generateFtmPdf } from '../ftm/generateFtmPdf'
+import { referenceFtm } from '../ftm/ligneFinanciereLogique'
+import { ModaleConfirmation } from '../../../shared/components/ModaleConfirmation'
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
@@ -447,10 +450,16 @@ function LigneRow({ ligne, filter, onEdit, onDelete, onOpenFtm }) {
       <div style={{ flex: C.pct }} />
       <div style={{ flex: C.ttc }} />
       <div style={{ flex: C.act, display: 'flex', justifyContent: 'flex-end', gap: 4, opacity: hovered ? 1 : 0, transition: 'opacity 0.1s' }}>
-        <button onClick={() => onEdit(ligne)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--jga-beige)', padding: 2, borderRadius: 3 }}>
+        {/* La ligne d'une FTM se modifie et se supprime par sa fiche : la
+            toucher directement la désaccorderait de la fiche */}
+        <button onClick={() => (ligne.ftm_id ? onOpenFtm(ligne.ftm_id) : onEdit(ligne))}
+          title={ligne.ftm_id ? 'Modifier la fiche' : 'Modifier la ligne'}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--jga-beige)', padding: 2, borderRadius: 3 }}>
           <Pencil size={12} />
         </button>
-        <button onClick={() => onDelete(ligne.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#B8412C', padding: 2, borderRadius: 3 }}>
+        <button onClick={() => onDelete(ligne)}
+          title={ligne.ftm_id ? 'Supprimer la fiche' : 'Supprimer la ligne'}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#B8412C', padding: 2, borderRadius: 3 }}>
           <Trash2 size={12} />
         </button>
       </div>
@@ -602,7 +611,7 @@ export default function FinancierChantierModule() {
   const { affaire, loading: affaireLoading } = useAffaire(affaireId)
   const { tableau, loading: tableauLoading, addLigne, updateLigne, deleteLigne, refetch: refetchFinancier } = useSuiviFinancier(affaireId, affaire)
   const { lots, totaux } = tableau
-  const { ftms, updateFtm } = useFtm(affaireId)
+  const { ftms, createFtm, updateFtm, deleteFtm } = useFtm(affaireId)
   const loading = affaireLoading || tableauLoading
 
   const [filter, setFilter] = useState('all')
@@ -610,8 +619,17 @@ export default function FinancierChantierModule() {
   const [editingLigne, setEditingLigne] = useState(null)
   const [defaultLotId, setDefaultLotId] = useState(null)
   const [editAffaireOpen, setEditAffaireOpen] = useState(false)
+  // Fiche ouverte : son id, 'nouvelle', ou celle demandée par l'adresse
+  // (?ftm=… depuis une remarque de CR ou une réserve d'OPR). L'adresse est lue
+  // à chaque rendu : la fiche n'est connue qu'une fois les FTM chargées.
+  const [params, setParams] = useSearchParams()
   const [ftmEditId, setFtmEditId] = useState(null)
-  const ftmToEdit = ftms?.find(f => f.id === ftmEditId) ?? null
+  const ftmOuverteId = ftmEditId ?? params.get('ftm')
+  const ftmToEdit = ftmOuverteId && ftmOuverteId !== 'nouvelle' ? ftms?.find(f => f.id === ftmOuverteId) ?? null : null
+  const ftmFenetre = ftmOuverteId === 'nouvelle' || !!ftmToEdit
+  const [ftmASupprimer, setFtmASupprimer] = useState(null)
+  const [erreurSuppression, setErreurSuppression] = useState(null)
+  const lotsReels = lots.filter(l => !l.sansLot)
 
   const tva = affaire?.taux_tva ?? 1.20
   const seuilPct = affaire?.seuil_aleas_pct ?? 5
@@ -628,9 +646,13 @@ export default function FinancierChantierModule() {
     setModalOpen(true)
   }
 
-  const handleDelete = async (id) => {
+  const handleDelete = async (ligne) => {
+    if (ligne.ftm_id) {
+      const fiche = ftms.find(f => f.id === ligne.ftm_id)
+      if (fiche) { setFtmASupprimer(fiche); return }
+    }
     if (!window.confirm('Supprimer cette ligne ?')) return
-    await deleteLigne(id)
+    await deleteLigne(ligne.id)
   }
 
   const handleSave = async (data) => {
@@ -648,10 +670,32 @@ export default function FinancierChantierModule() {
 
   const handleOpenFtm = (ftmId) => setFtmEditId(ftmId)
 
-  const handleSaveFtm = async (data) => {
-    await updateFtm(ftmEditId, data)
+  const fermerFtm = () => {
     setFtmEditId(null)
+    if (params.get('ftm')) setParams(p => { const q = new URLSearchParams(p); q.delete('ftm'); return q }, { replace: true })
+  }
+
+  // La fiche et sa ligne s'écrivent ensemble (useFtm) ; le tableau est relu
+  // pour que le lot monte ou descende aussitôt
+  const enregistrerFtm = async (data) => {
+    const fiche = ftmToEdit ? await updateFtm(ftmToEdit.id, data) : await createFtm(data)
     await refetchFinancier()
+    return fiche
+  }
+  const enregistrerEtExporterFtm = async (data) => {
+    const fiche = await enregistrerFtm(data)
+    if (fiche && affaire) generateFtmPdf(fiche, affaire, { autoPrint: true })
+  }
+
+  const supprimerFtm = async () => {
+    try {
+      await deleteFtm(ftmASupprimer.id)
+      setFtmASupprimer(null)
+      await refetchFinancier()
+    } catch (err) {
+      console.error(err)
+      setErreurSuppression(err?.message ?? 'La fiche n’a pas pu être supprimée.')
+    }
   }
 
   if (loading) {
@@ -765,12 +809,26 @@ export default function FinancierChantierModule() {
               onClick={() => handleAdd(null)}
               style={{
                 display: 'flex', alignItems: 'center', gap: 5,
-                padding: '6px 14px', borderRadius: 2,
-                border: 'none', backgroundColor: '#2A8A4E',
-                color: 'white', fontSize: 12, fontWeight: 500, cursor: 'pointer',
+                padding: '6px 12px', borderRadius: 2,
+                border: '0.5px solid rgba(42,138,78,0.5)', backgroundColor: 'white',
+                color: '#2A8A4E', fontSize: 12, fontWeight: 500, cursor: 'pointer',
               }}
             >
               <Plus size={13} /> Ajouter une ligne
+            </button>
+            <button
+              onClick={() => setFtmEditId('nouvelle')}
+              disabled={lotsReels.length === 0}
+              title={lotsReels.length === 0 ? 'Configurez d’abord les lots dans Entreprises & Lots' : undefined}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '6px 14px', borderRadius: 2,
+                border: 'none', backgroundColor: '#E8602C',
+                color: 'white', fontSize: 12, fontWeight: 500,
+                cursor: lotsReels.length === 0 ? 'default' : 'pointer', opacity: lotsReels.length === 0 ? 0.5 : 1,
+              }}
+            >
+              <IconeFtm size={16} /> Éditer une fiche de travaux modificatifs
             </button>
           </div>
         </div>
@@ -826,15 +884,38 @@ export default function FinancierChantierModule() {
         />
       )}
 
-      {ftmEditId && (
+      {ftmFenetre && (
         <FtmFormModal
-          open={!!ftmEditId}
+          open
           ftm={ftmToEdit}
           affaire={affaire}
-          lots={lots}
-          onClose={() => setFtmEditId(null)}
-          onSave={handleSaveFtm}
-          onSaveAndExport={handleSaveFtm}
+          lots={lotsReels}
+          onClose={fermerFtm}
+          onSave={enregistrerFtm}
+          onSaveAndExport={enregistrerEtExporterFtm}
+        />
+      )}
+
+      {ftmASupprimer && (
+        <ModaleConfirmation
+          danger
+          titre={`Supprimer la fiche ${referenceFtm(ftmASupprimer.numero)} ?`}
+          texte="La fiche et sa ligne du suivi financier seront retirées ensemble. Cette suppression est définitive."
+          details={
+            <>
+              <p style={{ margin: 0, fontWeight: 500 }}>{ftmASupprimer.description || 'Travaux modificatifs'}</p>
+              <p style={{ margin: '4px 0 0', fontSize: 12, color: '#5E5854' }}>
+                {[
+                  lotsReels.find(l => l.id === ftmASupprimer.lot_id)?.nom,
+                  ftmASupprimer.montant_travaux_ht ? `${ftmASupprimer.montant_travaux_ht > 0 ? '+' : ''}${euro(ftmASupprimer.montant_travaux_ht)} HT` : 'Montant non renseigné',
+                ].filter(Boolean).join(' · ')}
+              </p>
+              {erreurSuppression && <p role="alert" style={{ margin: '8px 0 0', fontSize: 12, color: '#B8412C' }}>{erreurSuppression}</p>}
+            </>
+          }
+          libelle="Supprimer la fiche"
+          onConfirmer={supprimerFtm}
+          onAnnuler={() => { setFtmASupprimer(null); setErreurSuppression(null) }}
         />
       )}
     </>

@@ -113,7 +113,7 @@ function buildFtmHtml(ftm, affaire, { autoPrint = true } = {}) {
     <li>Incidence sur le délai : <strong>${incidenceDelai}</strong></li>
     <li>Incidence financière estimée :
       <ul class="sub">
-        <li>Travaux supplémentaires : <strong>${fmtMontant(ftm.montant_travaux_ht)}</strong></li>
+        <li>${Number(ftm.montant_travaux_ht) < 0 ? 'Moins-value' : 'Plus-value'} sur les travaux : <strong>${fmtMontant(ftm.montant_travaux_ht)}</strong></li>
         <li>Honoraires MOE supplémentaires : <strong>${fmtMontant(ftm.montant_honoraires_ht)}</strong></li>
       </ul>
     </li>

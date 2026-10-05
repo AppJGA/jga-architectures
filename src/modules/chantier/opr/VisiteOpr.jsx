@@ -352,7 +352,7 @@ export function VisiteOpr({ visite, affaire, opr, plansCr, lectureSeuleAffaire, 
     setConfirmation(null)
   }
 
-  const ouvrirFtm = (ftm) => naviguer(`/affaires/${affaire?.id}/ftm?ftm=${ftm.id}`)
+  const ouvrirFtm = (ftm) => naviguer(`/affaires/${affaire?.id}/financier-chantier?ftm=${ftm.id}`)
   const creerFtm = async (reserve) => {
     try {
       const fiche = await opr.creerFtmPourReserve(reserve, visite)

@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 722 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
+npm test         # 726 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -300,7 +300,7 @@ création avec reprise de la visite précédente) et `useCompteRendu` (un CR).
   déjà liée garde son étiquette, qui ouvre la fiche. La
   fiche garde son origine (`source_type`, `source_suivi_id`,
   `source_reserve_id`, `source_libelle`) ; le lien se relit des deux côtés par
-  `ftm/lienFtm.js` et s'ouvre par `/affaires/:id/ftm?ftm=<id>`. Supprimer la
+  `ftm/lienFtm.js` et s'ouvre par `/affaires/:id/financier-chantier?ftm=<id>`. Supprimer la
   remarque ou la réserve ne supprime pas la fiche : elle engage l'argent.
 - **Avancement des lots** (migration 049, `avancementLogique.js`) : aucune
   saisie parallèle — les chiffres sont lus dans le planning chantier
@@ -382,9 +382,19 @@ même champ que la fiche de l'affaire, donc toujours identique des deux côtés.
 
 ## Fiches de travaux modificatifs (FTM)
 
-`src/modules/chantier/ftm/`, données par `useFtm`. Une fiche naît du module
-lui-même, d'une remarque de compte rendu ou d'une réserve d'OPR
-(`creerDepuis.js`) — **dans tous les cas elle a sa ligne dans le suivi
+`src/modules/chantier/ftm/`, données par `useFtm`. **Plus d'onglet ni de
+tuile** (`horsMenu` du manifeste, filtré par `phasesPour`) : les fiches se
+créent, s'ouvrent et se suppriment **depuis le suivi financier du chantier**
+(bouton « Éditer une fiche de travaux modificatifs », étiquette `FTM-012`,
+crayon et corbeille de sa ligne — la ligne d'une fiche ne se modifie jamais
+directement, elle se désaccorderait de la fiche). L'ancienne adresse
+`/ftm?ftm=<id>` redirige vers `/financier-chantier?ftm=<id>`, qui ouvre la
+fiche ; les liens des remarques et réserves y vont directement. La tuile du
+suivi financier porte le résumé des FTM. Une fiche est **toujours rattachée
+à un lot** (`erreurFtm`) et son montant se saisit sans signe, avec un sens
+plus-value / moins-value (`sens_montant`, retiré par `payloadFtm` avant la
+base). Une fiche naît du suivi financier, d'une remarque de compte rendu ou
+d'une réserve d'OPR (`creerDepuis.js`) — **dans tous les cas elle a sa ligne dans le suivi
 financier** : `ligneFinanciereLogique.js` en décide la forme (référence
 `FTM-012`, catégorie tirée de l'origine, statut tiré de la décision, montant
 signé), `ligneFinanciere.js` l'écrit et referme le lien des deux côtés

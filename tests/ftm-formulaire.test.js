@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict'
 import { test, describe } from 'node:test'
 
-import { payloadFtm } from '../src/modules/chantier/ftm/payloadFtm.js'
+import { payloadFtm, erreurFtm, sensMontant } from '../src/modules/chantier/ftm/payloadFtm.js'
 
 const vide = {
   origine: 'mo', lot_id: '', date_emission: '2026-09-16', reference_chantier: '',
@@ -64,5 +64,28 @@ describe('fiche remplie', () => {
     assert.equal(p.type_demande, 'modification')
     assert.equal(p.decision, 'accepte')
     assert.equal(p.date_decision, '2026-09-20')
+  })
+})
+
+describe('plus-value ou moins-value, sur un lot', () => {
+  test('le sens choisi donne le signe, quel que soit le signe tapé', () => {
+    assert.equal(payloadFtm({ ...vide, montant_travaux_ht: '1500', sens_montant: 'moins' }).montant_travaux_ht, -1500)
+    assert.equal(payloadFtm({ ...vide, montant_travaux_ht: '-1500', sens_montant: 'plus' }).montant_travaux_ht, 1500)
+    assert.equal(payloadFtm({ ...vide, montant_travaux_ht: '', sens_montant: 'moins' }).montant_travaux_ht, null)
+  })
+
+  test('le sens ne part pas en base', () => {
+    assert.ok(!('sens_montant' in payloadFtm({ ...vide, sens_montant: 'plus' })))
+  })
+
+  test('le sens se relit d’un montant enregistré', () => {
+    assert.equal(sensMontant(-200), 'moins')
+    assert.equal(sensMontant(200), 'plus')
+    assert.equal(sensMontant(null), 'plus')
+  })
+
+  test('une fiche sans lot ne s’enregistre pas', () => {
+    assert.match(erreurFtm(vide), /lot/)
+    assert.equal(erreurFtm({ ...vide, lot_id: 'l1' }), null)
   })
 })

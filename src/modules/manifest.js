@@ -80,6 +80,10 @@ export const phases = [
         component: lazy(() => import('./chantier/ftm')),
         enabled: true,
         description: 'Travaux modificatifs en cours de chantier',
+        // Les fiches vivent dans le suivi financier (une FTM, c'est toujours
+        // de l'argent) : plus d'entrée au menu ni de tuile. L'adresse reste,
+        // pour les anciens liens, et renvoie au suivi financier.
+        horsMenu: true,
       },
       {
         id: 'planning-chantier',
@@ -116,8 +120,7 @@ export function getAllModules() {
  * fait que ne pas montrer de portes fermées.
  */
 export function phasesPour(estAgence = true) {
-  if (estAgence) return phases
   return phases
-    .map((p) => ({ ...p, modules: p.modules.filter((m) => m.exterieur) }))
+    .map((p) => ({ ...p, modules: p.modules.filter((m) => !m.horsMenu && (estAgence || m.exterieur)) }))
     .filter((p) => p.modules.length > 0)
 }

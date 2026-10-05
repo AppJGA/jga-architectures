@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import {
-  ArrowLeft, ArrowRight, Send, FileDown, ChevronRight,
-  Users, ClipboardList, MessageSquare, Zap, LayoutDashboard,
-  Lock, RotateCcw, AlertTriangle, X, Map as IconePlan, Smartphone, TrendingUp, ScrollText,
+  ArrowLeft, ArrowRight, Send, FileDown, ChevronRight, Users, ClipboardList, MessageSquare,
+  Zap, LayoutDashboard, Lock, RotateCcw, AlertTriangle, X, Smartphone, TrendingUp, ScrollText,
 } from 'lucide-react'
+import { IconePlans } from '../../../shared/icones/IconesAffaire'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { useCompteRendu } from '../../../shared/hooks/useCompteRendu'
 import { useAuth } from '../../../core/auth/useAuth'
@@ -88,7 +88,7 @@ const VUES = [
     id: 'plans',
     label: 'Plans',
     description: 'Plans de l’affaire\net pastilles',
-    icon: IconePlan,
+    icon: IconePlans,
     couleur: '#6B4E9B',
     fondClair: 'rgba(107,78,155,0.10)',
   },

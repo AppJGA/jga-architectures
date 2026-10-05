@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
-import { Plus, Eye, Printer, Pencil, Trash2, FilePen } from 'lucide-react'
+import { Plus, Eye, Printer, Pencil, Trash2 } from 'lucide-react'
+import { IconeFtm } from '../../../shared/icones/IconesAffaire'
 import { useAffaire } from '../../../shared/hooks/useAffaires'
 import { useFtm } from '../../../shared/hooks/useFtm'
 import { supabase } from '../../../core/supabase/client'
@@ -235,7 +236,7 @@ export default function FtmModule() {
         marginBottom: 20,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <FilePen size={18} style={{ color: '#2A8A4E' }} />
+          <IconeFtm size={22} style={{ color: '#2A8A4E' }} />
           <h2 style={{ fontSize: 15, fontWeight: 600, color: '#1F1B17', margin: 0 }}>
             Fiches de travaux modificatifs
           </h2>
@@ -322,7 +323,7 @@ export default function FtmModule() {
             border: '0.5px dashed rgba(0,0,0,0.15)',
             gap: 10,
           }}>
-            <FilePen size={28} style={{ color: '#d1d5db' }} />
+            <IconeFtm size={28} style={{ color: '#d1d5db' }} />
             <p style={{ fontSize: 13, color: '#9C9591', margin: 0 }}>Aucune FTM pour ce chantier</p>
             <button
               onClick={handleNew}

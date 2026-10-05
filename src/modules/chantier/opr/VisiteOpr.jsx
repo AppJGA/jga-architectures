@@ -2,8 +2,9 @@ import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, Users, Send, RotateCcw, Lock, Plus, Camera, MapPin, Pencil, MoreHorizontal,
-  FileDown, Eye, Archive, Download, Mail, AlertTriangle, X, FileSignature, FilePen,
+  FileDown, Eye, Archive, Download, Mail, AlertTriangle, X, FileSignature,
 } from 'lucide-react'
+import { IconeFtm } from '../../../shared/icones/IconesAffaire'
 import { CrContexte } from '../comptes-rendus/CrContexte'
 import { PhotosContexte, usePhotosRemarque } from '../comptes-rendus/usePhotosRemarque'
 import { PhotosDeRemarque } from '../comptes-rendus/PhotosRemarque'
@@ -72,7 +73,7 @@ function CarteReserve({ reserve, visite, lectureSeule, pastille, planNom, opr, o
         <span style={{ flex: 1 }} />
         {ftm && (
           <button type="button" onClick={() => ouvrirFtm(ftm)} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 500, borderRadius: 3, padding: '2px 8px', color: resumeFtm(ftm).couleur, background: resumeFtm(ftm).fond }}>
-            <FilePen size={12} /> {resumeFtm(ftm).texte}
+            <IconeFtm size={14} /> {resumeFtm(ftm).texte}
           </button>
         )}
         <span style={{ fontSize: 12, fontWeight: 600, color: statutJour.couleur, background: `${statutJour.couleur}1A`, borderRadius: 3, padding: '3px 10px' }}>{statutJour.libelle}</span>
@@ -118,7 +119,7 @@ function CarteReserve({ reserve, visite, lectureSeule, pastille, planNom, opr, o
           </label>
           <button type="button" onClick={onPlan} style={bouton('white', pastille ? '#6B4E9B' : '#1F1B17')}><MapPin size={17} /> Plan</button>
           {!ftm && (
-            <button type="button" onClick={() => onFtm(reserve)} title="Créer une fiche de travaux modificatifs" style={bouton()}><FilePen size={17} /> FTM</button>
+            <button type="button" onClick={() => onFtm(reserve)} title="Créer une fiche de travaux modificatifs" style={bouton()}><IconeFtm size={17} /> FTM</button>
           )}
           {reserve.nouvelle && (
             <button type="button" onClick={() => onPanneau({ type: 'reserve', reserve })} aria-label="Modifier" style={{ ...bouton(), padding: '0 12px' }}><Pencil size={17} /></button>

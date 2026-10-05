@@ -4,10 +4,10 @@ import { creerRemarqueAdressee, champsModification } from './rangerRemarque'
 import { PanneauRemarque, PanneauSuite } from './PanneauxVisite'
 import { PhotosContexte } from './usePhotosRemarque'
 import {
-  Plus, Pencil, ChevronDown, ChevronUp, ChevronRight, X,
-  GripVertical, MessageSquarePlus, ToggleLeft, ToggleRight, MessageSquare,
-  Search, History, CheckSquare, MapPin, FilePen, UserPen,
+  Plus, Pencil, ChevronDown, ChevronUp, ChevronRight, X, GripVertical, MessageSquarePlus,
+  ToggleLeft, ToggleRight, MessageSquare, Search, History, CheckSquare, MapPin, UserPen,
 } from 'lucide-react'
+import { IconeFtm } from '../../../shared/icones/IconesAffaire'
 import { CATEGORIE_META } from '../../../shared/hooks/useAffaireInterlocuteurs'
 import {
   dateDuJour, STATUTS, FAMILLES_STATUT, STATUT_PAR_DEFAUT, statutNormalise, infosStatut,
@@ -539,7 +539,7 @@ function RemarqueRow({ rem, idx, total, crDate, lots, interlocuteurs, zones, sec
               title="Ouvrir la fiche de travaux modificatifs"
               style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 5, marginRight: 8, padding: '2px 7px', borderRadius: 3, border: 'none', cursor: 'pointer', fontSize: 11, color: resumeFtm(ftm).couleur, background: resumeFtm(ftm).fond }}
             >
-              <FilePen size={11} /> {resumeFtm(ftm).texte}
+              <IconeFtm size={14} /> {resumeFtm(ftm).texte}
             </button>
           )}
           {zoneLibelle && (

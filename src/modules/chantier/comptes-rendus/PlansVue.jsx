@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { Upload, Pencil, RefreshCw, ArrowRight, X, Map as IconePlan } from 'lucide-react'
+import { Upload, Pencil, RefreshCw, ArrowRight, X } from 'lucide-react'
+import { IconePlans } from '../../../shared/icones/IconesAffaire'
 import { useCr } from './CrContexte'
 import { BoutonSupprimer } from './BoutonSupprimer'
 import { ImportPlan } from './ImportPlan'
@@ -22,7 +23,7 @@ function CartePlan({ plan, version, nbPastilles, liens, peutGerer, onOuvrir, onV
       <button type="button" onClick={onOuvrir} style={{ padding: 0, border: 'none', background: '#F1EFE8', cursor: 'pointer', aspectRatio: '4 / 3', overflow: 'hidden' }}>
         {version && liens.get(version.chemin_apercu)
           ? <img src={liens.get(version.chemin_apercu)} alt={plan.nom} style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block', background: 'white' }} />
-          : <IconePlan size={28} color="#C9C4C0" />}
+          : <IconePlans size={28} color="#C9C4C0" />}
       </button>
       <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 4 }}>
         {renommage !== null ? (

@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
-  Building2, Plus, MoreHorizontal, Phone, Mail,
-  Pencil, X, Check, Search,
+  Plus, MoreHorizontal, Phone, Mail, Pencil, X, Check, Search,
 } from 'lucide-react'
+import { IconeEntreprisesLots } from '../../../shared/icones/IconesAffaire'
 import { useLotsEntreprises, useEntreprises } from '../../../shared/hooks/useLotsEntreprises'
 import { supabase } from '../../../core/supabase/client'
 
@@ -522,7 +522,7 @@ function LotsSidebar({ lots, selectedLotId, menuLotId, onSelect, onOpenMenu, onA
       <div style={{ flex: 1, overflowY: 'auto', padding: 12 }}>
         {lots.length === 0 ? (
           <div style={{ textAlign: 'center', paddingTop: 40 }}>
-            <Building2 size={28} style={{ color: '#D1C9C4', marginBottom: 8 }} />
+            <IconeEntreprisesLots size={28} style={{ color: '#D1C9C4', marginBottom: 8 }} />
             <p style={{ fontSize: 12, color: 'var(--jga-beige)' }}>Aucun lot créé</p>
             <p style={{ fontSize: 11, color: '#9C9591', marginTop: 3 }}>Ajoutez les lots du marché</p>
           </div>
@@ -610,7 +610,7 @@ function LotDetail({ lot, onEditLot, onAssign, onEditInterlocuteur }) {
             border: '1px dashed rgba(99,153,34,0.3)', borderRadius: 2,
             padding: '28px 16px', textAlign: 'center', backgroundColor: '#F9FBF6',
           }}>
-            <Building2 size={28} style={{ color: '#C5D9A8', marginBottom: 10 }} />
+            <IconeEntreprisesLots size={28} style={{ color: '#C5D9A8', marginBottom: 10 }} />
             <p style={{ fontSize: 13, color: '#5E5854', marginBottom: 14 }}>Aucune entreprise assignée à ce lot</p>
             <button
               onClick={onAssign}
@@ -829,7 +829,7 @@ export default function LotsEntreprisesModule() {
               alignItems: 'center', justifyContent: 'center',
               backgroundColor: '#FAF7F2', color: '#9C9591',
             }}>
-              <Building2 size={48} style={{ marginBottom: 12, opacity: 0.25 }} />
+              <IconeEntreprisesLots size={48} style={{ marginBottom: 12, opacity: 0.25 }} />
               <p style={{ fontSize: 13 }}>Sélectionnez un lot pour voir son détail</p>
             </div>
           ) : (

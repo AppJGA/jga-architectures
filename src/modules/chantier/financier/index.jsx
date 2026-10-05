@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Plus, Pencil, Trash2, Printer, TrendingUp, X, AlertTriangle, FilePen } from 'lucide-react'
+import { Plus, Pencil, Trash2, Printer, X, AlertTriangle } from 'lucide-react'
+import { IconeFinancierChantier, IconeFtm } from '../../../shared/icones/IconesAffaire'
 import { useSuiviFinancier } from '../../../shared/hooks/useSuiviFinancier'
 import { useAffaire } from '../../../shared/hooks/useAffaires'
 import { useFtm } from '../../../shared/hooks/useFtm'
@@ -427,7 +428,7 @@ function LigneRow({ ligne, filter, onEdit, onDelete, onOpenFtm }) {
               e.currentTarget.style.borderColor = 'rgba(0,0,0,0.12)'
             }}
           >
-            <FilePen size={11} />
+            <IconeFtm size={14} />
             {ligne.ftm_numero != null && `FTM-${String(ligne.ftm_numero).padStart(3, '0')}`}
           </button>
         )}
@@ -780,7 +781,7 @@ export default function FinancierChantierModule() {
           <div style={{ flex: 1, overflowY: 'auto', padding: '12px 6px' }}>
             {lots.length === 0 ? (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 200, color: '#9C9591' }}>
-                <TrendingUp size={36} style={{ marginBottom: 10, opacity: 0.3 }} />
+                <IconeFinancierChantier size={36} style={{ marginBottom: 10, opacity: 0.3 }} />
                 <p style={{ fontSize: 13 }}>Aucun lot — configurez d'abord les lots dans Entreprises &amp; Lots</p>
               </div>
             ) : (

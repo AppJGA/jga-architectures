@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Send, Mail, Copy, Check, Users, Building2 } from 'lucide-react'
+import { Send, Mail, Copy, Check, Users } from 'lucide-react'
+import { IconeEntreprisesLots } from '../../../shared/icones/IconesAffaire'
 import { useCr } from './CrContexte'
 import {
   participantsAvecEmail, selectionParDefaut, entreprisesDiffusion, dateExpiration, texteEmail, lienMailto,
@@ -148,7 +149,7 @@ export function DiffusionDocument({ cleDocument, presences, lots, archiveEmissio
     <div>
       <div style={{ display: 'flex', borderBottom: '0.5px solid rgba(0,0,0,0.08)', marginBottom: 12 }}>
         <button type="button" onClick={() => setMode('tous')} style={onglet(mode === 'tous')}><Users size={14} /> Un e-mail à tous</button>
-        <button type="button" onClick={() => setMode('entreprise')} style={onglet(mode === 'entreprise')}><Building2 size={14} /> Un e-mail par entreprise</button>
+        <button type="button" onClick={() => setMode('entreprise')} style={onglet(mode === 'entreprise')}><IconeEntreprisesLots size={16} /> Un e-mail par entreprise</button>
       </div>
 
       {mode === 'tous' && (

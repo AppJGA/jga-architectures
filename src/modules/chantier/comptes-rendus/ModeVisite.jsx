@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useContext } from 'react'
-import { Users, Search, Plus, Camera, MapPin, MessageSquare, Pencil, MoreHorizontal, WifiOff, AlertTriangle, X, LogOut, Lock, FilePen, TrendingUp, RefreshCw } from 'lucide-react'
+import { Users, Search, Plus, Camera, MapPin, MessageSquare, Pencil, MoreHorizontal, WifiOff, AlertTriangle, X, LogOut, Lock, TrendingUp, RefreshCw } from 'lucide-react'
+import { IconeFtm } from '../../../shared/icones/IconesAffaire'
 import { FILTRES_VISITE, filtreVisite, groupesVisite, compteursVisite } from './visiteLogique'
 import { STATUTS, infosStatut, estEnRetard, libelleZone, peutModifierRemarque, auteurExterieur, miseEnForme, COULEUR_SURLIGNE } from './crLogique'
 import { useCr } from './CrContexte'
@@ -114,7 +115,7 @@ function CarteRemarque({ rem, cr, lots, interlocuteurs, zones, ftms, ouvrirFtm, 
         {signature && <span style={{ fontSize: 12, fontWeight: 500, color: '#6B4E9B', background: 'rgba(107,78,155,0.10)', borderRadius: 3, padding: '2px 8px' }}>{signature}</span>}
         {ftm && (
           <button type="button" onClick={() => ouvrirFtm(ftm)} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 500, borderRadius: 3, padding: '2px 8px', color: resumeFtm(ftm).couleur, background: resumeFtm(ftm).fond }}>
-            <FilePen size={12} /> {resumeFtm(ftm).texte}
+            <IconeFtm size={14} /> {resumeFtm(ftm).texte}
           </button>
         )}
         <span style={{ flex: 1 }} />

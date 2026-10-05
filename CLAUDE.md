@@ -57,6 +57,12 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
   ailleurs met l'orange en repli (`var(--affaire-accent, …)`). La phase se
   change aussi depuis l'en-tête (`ChoixPhase`), même champ que la fiche ;
   `PHASES_AFFAIRE` est la liste commune.
+- **Icônes de l'affaire** (`src/shared/icones/IconesAffaire.jsx`) : dessins
+  de l'agence (tableau de bord, chaque module, plans, documents), en
+  composants qui s'emploient comme lucide (`size`, `color`). Le manifeste
+  garde ses noms lucide ; `ICON_MAP` d'`AffairePage` les traduit. Détaillées :
+  pas en dessous de ~14 px (18 dans la colonne, 22 sur les tuiles). Un masque
+  par instance (`useId`), sinon deux icônes identiques partagent un `id`.
 - **Contacts de l'affaire** : carte « Contacts » de la vue d'ensemble
   (`ContactsAffaire.jsx`, agence seule), fiches calculées par
   `annuaireLogique.js` — interlocuteurs (`affaire_interlocuteurs`, les mêmes

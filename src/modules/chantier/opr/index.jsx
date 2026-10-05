@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
-import { ClipboardCheck, Plus, RefreshCw, Search, AlertTriangle, X } from 'lucide-react'
+import { Plus, RefreshCw, Search, AlertTriangle, X } from 'lucide-react'
+import { IconeOpr } from '../../../shared/icones/IconesAffaire'
 import { useAffaire } from '../../../shared/hooks/useAffaires'
 import { usePlans } from '../comptes-rendus/usePlans'
 import { dateDuJour } from '../comptes-rendus/crLogique'
@@ -190,7 +191,7 @@ export default function OprModule({ lectureSeule = false }) {
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap', marginBottom: 16 }}>
         <div>
           <h2 style={{ fontFamily: "'Archivo', sans-serif", fontSize: 19, fontWeight: 500, margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
-            <ClipboardCheck size={20} color="#2A8A4E" /> OPR et réserves
+            <IconeOpr size={22} color="#2A8A4E" /> OPR et réserves
           </h2>
           <p style={{ fontSize: 12, color: '#9C9591', marginTop: 3 }}>
             {opr.visites.length} visite{opr.visites.length > 1 ? 's' : ''} · {opr.reserves.length} réserve{opr.reserves.length > 1 ? 's' : ''} · {ouvertes} ouverte{ouvertes > 1 ? 's' : ''}

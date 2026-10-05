@@ -1,10 +1,6 @@
 import { Suspense, useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import {
-  ArrowLeft, ClipboardList, ClipboardCheck, Calendar, CalendarRange,
-  BarChart2, TrendingUp, CheckSquare, FilePen, Building2, Pencil, FileText, ChevronRight,
-  LayoutDashboard, Eye, ChevronDown, Check,
-} from 'lucide-react'
+import { ArrowLeft, CheckSquare, Pencil, ChevronRight, Eye, ChevronDown, Check } from 'lucide-react'
 import { useAffaire } from '../shared/hooks/useAffaires'
 import { useAffaireCollaborateurs } from '../shared/hooks/useAffaireCollaborateurs'
 import { useAuth } from '../core/auth/useAuth'
@@ -18,12 +14,24 @@ import { ContactsAffaire } from './ContactsAffaire'
 import { supabase } from '../core/supabase/client'
 import { infosStatut } from '../modules/chantier/comptes-rendus/crLogique'
 import { dernierePhaseRenseignee, nomPhase } from '../modules/etude/financier/phases'
+import {
+  IconeTableauDeBord, IconePlanningEtude, IconeFinancierEtude, IconeEntreprisesLots, IconeVisitesChantier,
+  IconeOpr, IconeFtm, IconePlanningChantier, IconeFinancierChantier, IconeDocuments,
+} from '../shared/icones/IconesAffaire'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+// Noms du manifeste → icônes de l'agence (la to-do list n'en a pas)
 const ICON_MAP = {
-  ClipboardList, ClipboardCheck, Calendar, CalendarRange,
-  BarChart2, TrendingUp, CheckSquare, FilePen, Building2,
+  Calendar: IconePlanningEtude,
+  BarChart2: IconeFinancierEtude,
+  CheckSquare,
+  Building2: IconeEntreprisesLots,
+  ClipboardList: IconeVisitesChantier,
+  ClipboardCheck: IconeOpr,
+  FilePen: IconeFtm,
+  CalendarRange: IconePlanningChantier,
+  TrendingUp: IconeFinancierChantier,
 }
 
 
@@ -498,7 +506,7 @@ function ModuleItem({ mod, phaseColor, affaireId, isActive }) {
         opacity: disabled ? 0.45 : 1,
       }}
     >
-      {Icon && <Icon size={15} strokeWidth={1.25} style={{ flexShrink: 0 }} />}
+      {Icon && <Icon size={18} strokeWidth={1.25} style={{ flexShrink: 0 }} />}
       <span style={{ flex: 1 }}>{mod.label}</span>
     </button>
   )
@@ -553,7 +561,7 @@ function ModulesSidebar({ affaireId, moduleId }) {
         onMouseEnter={e => { if (moduleId) e.currentTarget.style.backgroundColor = 'var(--affaire-accent-survol)' }}
         onMouseLeave={e => { if (moduleId) e.currentTarget.style.backgroundColor = 'var(--affaire-accent-clair)' }}
       >
-        <LayoutDashboard size={14} strokeWidth={1.5} />
+        <IconeTableauDeBord size={18} />
         Tableau de bord
       </button>
 
@@ -627,7 +635,7 @@ function ModulesSidebar({ affaireId, moduleId }) {
         fontSize: 12, color: '#5E5854',
         opacity: 0.4, cursor: 'default',
       }}>
-        <FileText size={15} strokeWidth={1.25} style={{ flexShrink: 0 }} />
+        <IconeDocuments size={18} />
         <span>Documents · bientôt</span>
       </div>
     </aside>
@@ -685,7 +693,7 @@ function ModuleTile({ icon: Icon, label, phaseColor, active, children, onClick, 
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Icon size={18} strokeWidth={1.25} style={{ color: iconColor }} />
+            <Icon size={22} strokeWidth={1.25} style={{ color: iconColor }} />
             <span style={{ fontSize: 13, fontWeight: 500, color: active ? '#1F1B17' : '#9C9591' }}>
               {label}
             </span>

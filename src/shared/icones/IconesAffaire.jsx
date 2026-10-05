@@ -151,3 +151,8 @@ export function IconeBoiteOutils(props) {
 export function IconeCarnet(props) {
   return <Icone {...props}><rect x="12" y="6" width="38" height="52" rx="4"/><path d="M8 16h8M8 27h8M8 38h8M8 49h8"/><path d="M50 12h3a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-3M50 26h3a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-3M50 40h3a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-3"/><circle cx="31" cy="24" r="6"/><path d="M20 44a11 11 0 0 1 22 0"/><path d="M23 50h16"/></Icone>
 }
+
+// Accueil
+export function IconeAccueil(props) {
+  return <Icone {...props}><path d="M4 29L32 6l28 23"/><path d="M10 24.5V56h44V24.5"/><path d="M26 56V41a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v15"/><path d="M44 15.9V9h6v11.8"/></Icone>
+}

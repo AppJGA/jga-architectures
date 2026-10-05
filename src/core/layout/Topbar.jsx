@@ -1,13 +1,13 @@
 import { useState, useEffect, useContext } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { Bell, House } from 'lucide-react'
+import { Bell } from 'lucide-react'
 import { RetourPage } from '../../shared/components/RetourPage'
-import { IconePortail, IconeBoiteOutils, IconeTableauDeBord, IconeVisitesChantier, IconeOpr } from '../../shared/icones/IconesAffaire'
+import { IconeAccueil, IconePortail, IconeBoiteOutils, IconeTableauDeBord, IconeVisitesChantier, IconeOpr } from '../../shared/icones/IconesAffaire'
 import { retourParDefaut } from './retourLogique'
 import { RetourContexte } from './retourContexte'
 
 const ICONES_RETOUR = {
-  accueil: House, portail: IconePortail, outils: IconeBoiteOutils,
+  accueil: IconeAccueil, portail: IconePortail, outils: IconeBoiteOutils,
   tableau: IconeTableauDeBord, visites: IconeVisitesChantier, opr: IconeOpr,
 }
 import { useAuth } from '../auth/useAuth'

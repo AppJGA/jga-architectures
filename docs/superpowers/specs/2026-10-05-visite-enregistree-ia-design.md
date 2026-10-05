@@ -12,7 +12,13 @@ grandeur : moins de 0,50 € pour une visite d'une heure).
 
 ## 1. Ce que voit l'utilisateur
 
-### Enregistrer (mode Visite, iPad)
+### Enregistrer (mode Visite)
+
+**Chrome autant que Safari** : plusieurs collaborateurs, dont Victor, ouvrent
+l'app dans Google Chrome. Le robot fonctionne dans les deux, sur iPad comme à
+l'ordinateur (et dans Edge). Sur iPad, Chrome repose sur le même moteur que
+Safari (règle d'Apple) : mêmes possibilités, mêmes limites. Le format audio
+est choisi selon le navigateur (§ 5).
 
 - Un bouton **robot** dans la barre du mode Visite. Un appui : l'iPad demande
   le micro (la première fois), puis l'enregistrement démarre.
@@ -51,9 +57,14 @@ enregistre même écran verrouillé, est ensuite transcrit d'un seul tenant
 
 ### Valider
 
-- Une proposition est **en surbrillance** (fond jaune pâle, étiquette robot
-  « Proposée — à valider »), avec l'extrait de la réunion d'où elle vient
-  (« … le carreleur doit reprendre les joints de la salle de bain… »).
+- Une proposition est **mise en surbrillance, pas surlignée** (choix de
+  Victor) : c'est toute la carte de la remarque qui ressort — bordure et halo
+  d'une couleur réservée à l'IA (bleu), fond à peine teinté, pastille robot
+  « Proposée — à valider » — et non son texte passé au marqueur. Cela évite
+  aussi toute confusion avec la mise en forme « surligné » (jaune) qu'une
+  remarque peut porter (migration 056). L'extrait de la réunion d'où elle
+  vient est affiché dessous (« … le carreleur doit reprendre les joints de la
+  salle de bain… »).
 - Trois actions : **Valider**, **Modifier** (ouvre le panneau habituel ;
   enregistrer vaut validation), **Écarter** (la supprime).
 - Un bandeau en tête du CR compte ce qui reste (« 7 propositions à valider »)
@@ -76,9 +87,14 @@ enregistre même écran verrouillé, est ensuite transcrit d'un seul tenant
   la remarque d'origine » — **la clôture ne s'applique qu'à la validation**.
 - **Rien de ce qui est déjà noté** : les remarques saisies à la main pendant
   la visite lui sont données, elle ne les répète pas.
-- Un destinataire qu'elle ne sait pas identifier est laissé vide : la
-  proposition ne se valide qu'une fois le destinataire choisi (une remarque de
-  l'agence a toujours un destinataire).
+- **Destinataire incertain** : l'IA note la remarque **sans lot ni
+  interlocuteur** plutôt que de deviner. Elle se range dans le groupe
+  « À attribuer » de la partie VII (entreprises) — celui qui existe déjà pour
+  les remarques sans destinataire — ou de la partie VI si la réunion la
+  rattache clairement à l'équipe. Le collaborateur lui attribue ensuite son
+  destinataire ; Valider demande de le choisir à ce moment-là (une remarque
+  de l'agence a toujours un destinataire), et la remarque rejoint alors son
+  groupe.
 - Mise en forme (gras…), photos, pastilles : jamais proposées par l'IA.
 
 ## 2. Les services d'IA
@@ -92,9 +108,12 @@ Repli prévu si la transcription déçoit sur le bruit d'un chantier :
 ElevenLabs Scribe (≈ deux fois le prix). Le reste ne change pas : la
 transcription est isolée derrière une seule fonction serveur.
 
-Deux comptes à ouvrir (Mistral, Anthropic), avec un **plafond de dépense
+Deux comptes d'API, avec un **plafond de dépense
 mensuel réglé chez chacun** (par exemple 10 €) : une erreur ne peut pas coûter
-plus que ce plafond. Les clés vivent dans les variables d'environnement de
+plus que ce plafond. Le compte Anthropic est **le compte personnel de
+Victor** sur la console d'API d'Anthropic, distinct de l'abonnement Claude
+servant au développement : la consommation y est facturée à part. Le compte
+Mistral est à ouvrir. Les clés vivent dans les variables d'environnement de
 Vercel (`MISTRAL_API_KEY`, `ANTHROPIC_API_KEY`), **jamais en `VITE_`** (elles
 seraient lisibles dans le code livré au navigateur), jamais dans le dépôt
 (public) ni dans une conversation.
@@ -130,7 +149,7 @@ plusieurs : interruption, fichier importé).
 - `id` (décidé sur l'appareil, comme les lignes de visite hors ligne),
   `cr_id`, `affaire_id`, `created_by`, `debut`, `duree_s`, `origine`
   (`micro` / `fichier`), `statut` (`enregistrement` / `transcription` /
-  `pret` / `analyse` / `erreur`).
+  `pret` / `analyse` / `erreur`), `format` (`audio/mp4`, `audio/webm`).
 - `segments` jsonb : `[{ rang, duree_s, texte, transcrit_le }]` — le texte
   seulement, **jamais l'audio**.
 - `analyse_le`, `cout_estime` (jetons, minutes), `erreur`.
@@ -173,15 +192,20 @@ les colonnes, le bouton robot ne s'affiche pas.
 
 ### Sur l'iPad
 
-- Enregistrement par `MediaRecorder` (AAC, mono, ~32 kbit/s ≈ 15 Mo l'heure),
-  **coupé en morceaux de 5 minutes** : chaque morceau est un fichier complet,
+- Enregistrement par `MediaRecorder`, mono, ~32 kbit/s (≈ 15 Mo l'heure).
+  Format selon le navigateur, par `MediaRecorder.isTypeSupported` : AAC
+  (`audio/mp4`) quand il est disponible — Safari, Chrome sur iPad, Chrome
+  récent ailleurs — sinon Opus (`audio/webm`), le format natif de Chrome. Le
+  type réel est envoyé avec chaque morceau ; Voxtral accepte les deux (à
+  confirmer au lot 0). L'enregistrement est **coupé en morceaux de 5
+  minutes** : chaque morceau est un fichier complet,
   rangé aussitôt dans IndexedDB (nouveau magasin `audio` de `baseLocale.js`).
   Une coupure ne perd que le morceau en cours.
 - Chaque morceau terminé part à la transcription dès qu'il y a du réseau,
   **pendant la visite** : à l'arrêt, il ne reste presque rien à transcrire.
   Un morceau transcrit est effacé de l'iPad.
-- Verrou d'écran (`navigator.wakeLock`), repris à chaque retour au premier
-  plan. Niveau sonore par un `AnalyserNode`. Animation du point rouge dans
+- Verrou d'écran (`navigator.wakeLock`, Safari ≥ 16.4 et Chrome), repris à
+  chaque retour au premier plan. Niveau sonore par un `AnalyserNode`. Animation du point rouge dans
   `index.css` (règle des animations du dépôt).
 - Détection d'interruption : fin de piste, erreur de l'enregistreur, page
   masquée → bandeau « Reprendre ».
@@ -254,7 +278,8 @@ Chaque lot est livré seul et utilisable.
 
 0. **Essai sur l'iPad (une demi-journée, rien de livré)** : une page d'essai
    qui enregistre par morceaux. Victor la teste sur chantier : écran
-   verrouillé, photo prise, app installée et Safari, une heure entière. On
+   verrouillé, photo prise, app installée et navigateur, une heure entière —
+   **dans Safari et dans Chrome**, sur l'iPad et à l'ordinateur. On
    décide ensuite si le micro dans l'app tient, ou si le Dictaphone devient
    la voie principale.
 1. **Enregistrer et transcrire** : bouton robot, indicateur, morceaux,
@@ -270,7 +295,7 @@ dépense, clés dans Vercel (Victor, guidé pas à pas).
 
 ## 8. Points ouverts
 
-- Le comportement réel de Safari (lot 0) décide de la part entre micro de
+- Le comportement réel de Safari et de Chrome (lot 0) décide de la part entre micro de
   l'app et Dictaphone.
 - Durée maximale d'une fonction Vercel sur l'offre de l'agence : à vérifier
   avant le lot 2 (sinon analyse par tranches dès le départ).

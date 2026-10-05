@@ -261,12 +261,12 @@ function TuileVue({ vue, titre, sousTitre, onClick }) {
       }}
     >
       <div style={{
-        width: 40, height: 40, borderRadius: '50%', flexShrink: 0,
+        width: 52, height: 52, borderRadius: '50%', flexShrink: 0,
         background: vue.fondClair,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}>
         {/* Les icônes de l'agence sont plus détaillées que celles de lucide : un cran plus grand */}
-        <vue.icon size={22} color={vue.couleur} strokeWidth={1.5} />
+        <vue.icon size={32} color={vue.couleur} strokeWidth={1.25} />
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <p style={{ fontSize: 13, fontWeight: 500, color: '#1F1B17' }}>{titre}</p>
@@ -364,11 +364,11 @@ function CrAccueil({ cr, affaire, presences, sections, onNavigate, onOuvrirSecti
       }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap', marginBottom: 20 }}>
           <div style={{
-            width: 48, height: 48, borderRadius: '50%', flexShrink: 0,
+            width: 56, height: 56, borderRadius: '50%', flexShrink: 0,
             background: 'rgba(42,138,78,0.12)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
-            <MessageSquare size={24} color="#2A8A4E" strokeWidth={1.5} />
+            <MessageSquare size={28} color="#2A8A4E" strokeWidth={1.5} />
           </div>
           <div style={{ flex: 1, minWidth: 200 }}>
             <h3 style={{ fontFamily: "'Archivo', sans-serif", fontSize: 18, fontWeight: 500, color: '#1F1B17' }}>

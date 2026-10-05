@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useContext, useMemo } from 'react'
-import { Users, Search, Plus, Camera, MapPin, MessageSquare, Pencil, MoreHorizontal, WifiOff, AlertTriangle, X, LogOut, Lock, TrendingUp, RefreshCw } from 'lucide-react'
-import { IconeFtm } from '../../../shared/icones/IconesAffaire'
+import { Search, Plus, Camera, MapPin, MessageSquare, Pencil, MoreHorizontal, WifiOff, AlertTriangle, X, LogOut, Lock, RefreshCw } from 'lucide-react'
+import { IconeFtm, IconeAvancement, IconePresence } from '../../../shared/icones/IconesAffaire'
 import { FILTRES_VISITE, filtreVisite, groupesVisite, compteursVisite } from './visiteLogique'
 import { STATUTS, infosStatut, estEnRetard, libelleZone, peutModifierRemarque, auteurExterieur, miseEnForme, COULEUR_SURLIGNE } from './crLogique'
 import { useCr } from './CrContexte'
@@ -448,10 +448,10 @@ export function ModeVisite({ cr, affaire = null, sections, presences, setPresenc
             <BoutonRobot robot={robot} onOuvrirPanneau={() => setPanneau({ type: 'enregistrements' })} />
           )}
           <button type="button" onClick={() => setPanneau({ type: 'presences' })} style={bouton()}>
-            <Users size={17} /> Présences
+            <IconePresence size={22} /> Présences
           </button>
           <button type="button" onClick={() => setPanneau({ type: 'avancement' })} style={bouton()}>
-            <TrendingUp size={17} /> Avancement
+            <IconeAvancement size={22} /> Avancement
           </button>
           <button type="button" onClick={onTerminer} style={bouton('#1F1B17', 'white')}>
             <LogOut size={17} /> Terminer

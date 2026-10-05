@@ -1,10 +1,10 @@
 import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  ArrowLeft, Users, Send, RotateCcw, Lock, Plus, Camera, MapPin, Pencil, MoreHorizontal,
+  ArrowLeft, Send, RotateCcw, Lock, Plus, Camera, MapPin, Pencil, MoreHorizontal,
   FileDown, Eye, Archive, Download, Mail, AlertTriangle, X, FileSignature,
 } from 'lucide-react'
-import { IconeFtm } from '../../../shared/icones/IconesAffaire'
+import { IconeFtm, IconePresence } from '../../../shared/icones/IconesAffaire'
 import { CrContexte } from '../comptes-rendus/CrContexte'
 import { PhotosContexte, usePhotosRemarque } from '../comptes-rendus/usePhotosRemarque'
 import { PhotosDeRemarque } from '../comptes-rendus/PhotosRemarque'
@@ -372,7 +372,7 @@ export function VisiteOpr({ visite, affaire, opr, plansCr, lectureSeuleAffaire, 
               <p style={{ fontSize: 18, fontWeight: 600, color: '#1F1B17' }}>{type.libelle === 'OPR' ? 'OPR' : 'Levée des réserves'} n°{visite.numero}</p>
               <p style={{ fontSize: 13, color: '#9C9591' }}>{jour(visite.date_visite, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} · {lotsVisite.length} lot{lotsVisite.length > 1 ? 's' : ''}</p>
             </div>
-            <button type="button" onClick={() => setPanneau({ type: 'presences' })} style={bouton()}><Users size={16} /> Présences</button>
+            <button type="button" onClick={() => setPanneau({ type: 'presences' })} style={bouton()}><IconePresence size={20} /> Présences</button>
             {!lectureSeuleAffaire && visite.statut !== 'emis' && <button type="button" onClick={() => setConfirmation('emettre')} style={bouton('#2A8A4E', 'white')}><Send size={16} /> Émettre</button>}
             {!lectureSeuleAffaire && visite.statut !== 'emis' && (
               <BoutonSupprimer libelle taille={14} onConfirm={() => opr.supprimerVisite(visite).then(onRetour).catch(signalerErreur)} style={{ minHeight: 44, padding: '0 12px', fontSize: 13 }} />

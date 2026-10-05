@@ -101,3 +101,14 @@ export function IconeTodo(props) {
 export function IconeRobot(props) {
   return <Icone {...props}><path d="M14 25a18 14 0 0 1 36 0"/><path d="M8 25h48"/><path d="M28 14v7M36 14v7"/><rect x="13" y="30" width="38" height="26" rx="5"/><circle cx="24" cy="41" r="3.5"/><circle cx="40" cy="41" r="3.5"/><rect x="24" y="47" width="16" height="5" rx="1.5"/><path d="M29.3 47v5M34.7 47v5"/><path d="M13 38H8v10h5M51 38h5v10h-5"/></Icone>
 }
+
+// Avancement (des lots)
+export function IconeAvancement(props) {
+  return <Icone {...props}><path d="M32 7a25 25 0 1 1-23.8 32.7"/><path d="M8.2 39.7A25 25 0 0 1 32 7" strokeDasharray="0 5.5"/><circle cx="8.2" cy="39.7" r="3" fill="currentColor" stroke="none"/><path d="M21 33a11 10 0 0 1 22 0"/><path d="M17 33h30"/><path d="M29 24.5v5M35 24.5v5"/><circle cx="27" cy="42" r="2.3"/><circle cx="37" cy="49" r="2.3"/><path d="M37.5 40.5l-11 10"/></Icone>
+}
+
+// Présence (des entreprises aux réunions)
+export function IconePresence(props) {
+  const masque = useMasque()
+  return <Icone {...props}><defs><mask id={masque}><rect width="64" height="64" fill="#fff" stroke="none"/><circle cx="50" cy="50" r="14" fill="#000" stroke="none"/></mask></defs><g mask={`url(#${masque})`}><path d="M14 20a12 10 0 0 1 24 0"/><path d="M10 20h32"/><path d="M23 11.5v4.5M29 11.5v4.5"/><path d="M17 20a9 9 0 0 0 18 0"/><path d="M4 60v-6a22 22 0 0 1 44 0v6"/></g><circle cx="50" cy="50" r="10"/><path d="M45.5 50l3.2 3.2 6-6.4"/></Icone>
+}

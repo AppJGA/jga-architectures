@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import {
-  ArrowLeft, ArrowRight, Send, FileDown, ChevronRight, Users, ClipboardList, MessageSquare,
-  Zap, LayoutDashboard, Lock, RotateCcw, AlertTriangle, X, Smartphone, TrendingUp, ScrollText,
+  ArrowLeft, ArrowRight, Send, FileDown, ChevronRight, ClipboardList, MessageSquare,
+  Zap, LayoutDashboard, Lock, RotateCcw, AlertTriangle, X, Smartphone, ScrollText,
 } from 'lucide-react'
-import { IconePlans, IconeRobot } from '../../../shared/icones/IconesAffaire'
+import { IconePlans, IconeRobot, IconeAvancement, IconePresence } from '../../../shared/icones/IconesAffaire'
 import { useEnregistrementsDisponibles } from './enregistrement/useEnregistrementVisite'
 import { ListeEnregistrements } from './enregistrement/PanneauEnregistrements'
 import { vocabulaireAffaire } from './enregistrement/transcriptionLogique'
@@ -70,7 +70,7 @@ const VUES = [
     id: 'presences',
     label: 'Présences et convocations',
     description: 'Interlocuteurs et entreprises,\nprésences P/R/A/E',
-    icon: Users,
+    icon: IconePresence,
     couleur: '#1B3A5C',
     fondClair: 'rgba(27,58,92,0.10)',
   },
@@ -102,7 +102,7 @@ const VUES = [
     id: 'avancement',
     label: 'Avancement des lots',
     description: 'Lu dans le planning chantier,\nfigé à l’émission',
-    icon: TrendingUp,
+    icon: IconeAvancement,
     couleur: '#B8862C',
     fondClair: 'rgba(184,134,44,0.10)',
   },
@@ -261,11 +261,12 @@ function TuileVue({ vue, titre, sousTitre, onClick }) {
       }}
     >
       <div style={{
-        width: 34, height: 34, borderRadius: '50%', flexShrink: 0,
+        width: 40, height: 40, borderRadius: '50%', flexShrink: 0,
         background: vue.fondClair,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}>
-        <vue.icon size={17} color={vue.couleur} strokeWidth={1.5} />
+        {/* Les icônes de l'agence sont plus détaillées que celles de lucide : un cran plus grand */}
+        <vue.icon size={22} color={vue.couleur} strokeWidth={1.5} />
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <p style={{ fontSize: 13, fontWeight: 500, color: '#1F1B17' }}>{titre}</p>

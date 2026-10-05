@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 678 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
+npm test         # 689 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
 npx eslint src   # ~73 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -79,7 +79,7 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
   anglais d'Outlook (marque UTF-8) — l'Outlook classique ne retient que le
   premier contact d'un .vcf. Une icône par fiche donne la carte seule. La
   note de chaque contact porte l'affaire et le rôle.
-- **Base** : `supabase/migrations/`, numérotées, 57 fichiers, **passées à la
+- **Base** : `supabase/migrations/`, numérotées, 58 fichiers, **passées à la
   main** dans le SQL Editor de Supabase : un code qui dépend d'une nouvelle
   colonne doit tolérer son absence tant que la migration n'est pas faite. La photo de
   couverture d'une affaire est `affaires.photo_url` (migration 014, bucket
@@ -271,6 +271,21 @@ création avec reprise de la visite précédente) et `useCompteRendu` (un CR).
     Mistral), effacé ensuite. Vue « Enregistrements » du CR au bureau.
     Agence seule partout. Clé `MISTRAL_API_KEY` : variable Vercel, jamais
     `VITE_`.
+  - **Lot 2** (migration 058) : « Proposer les remarques » (panneau du robot,
+    vue Enregistrements) envoie le contexte à `api/analyser-visite.js`
+    (fonction **Edge**, réponse en flux ; consignes et schéma fixés côté
+    serveur depuis `analyseIaLogique.js` ; Claude `claude-sonnet-5-5`, clé
+    `ANTHROPIC_API_KEY`, compte personnel de Victor). L'IA ne voit que des
+    références courtes (L1, I2, Z1, R41). Les propositions sont des lignes
+    `cr_remarques` créées par les chemins habituels avec **`a_valider`** :
+    surbrillance bleue (`styleProposition`, pas le jaune « surligné »),
+    extrait entendu, Valider / Modifier / Écarter ; **modifier vaut
+    validation** ; sans destinataire → « À attribuer », « Choisir et
+    valider ». Une suite qui clôt son origine (`ia_clore_origine`) ne la
+    clôt qu'à la validation. **La base refuse l'émission** tant qu'il en
+    reste (déclencheur `comptes_rendus_propositions`) ; la reprise ne les
+    emporte pas ; l'aperçu PDF les signale. `analyse_le` : pas d'analyse
+    en double.
 
 ## Suivi financier d'étude
 

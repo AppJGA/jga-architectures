@@ -4,6 +4,7 @@ import {
   Plus, Pencil, GitBranch, Flag, Ban, SlidersHorizontal,
   Download, ChevronDown, FileText, TableProperties, RefreshCw, Undo2, Redo2,
   FolderInput,
+  Lock,
 } from 'lucide-react'
 
 const BTN = {
@@ -29,6 +30,7 @@ export function GanttEtudeToolbar({
   onOpenJalons, onOpenImport, onToggleConnections, showConnections,
   showOptionsPanel, onToggleOptionsPanel,
   notionEnabled, notionConnected, onToggleNotion,
+  lectureSeule = false,
 }) {
   // Dropdown rendu via portail : la toolbar a overflowX: 'auto', ce qui force
   // le rognage vertical — un menu en position absolute y serait coupé.
@@ -48,6 +50,13 @@ export function GanttEtudeToolbar({
       overflowX: 'auto', flexWrap: 'nowrap', flexShrink: 0,
     }} data-print="hidden">
 
+      {/* En lecture seule (affaire dont on n'est pas collaborateur), seuls
+          l'export et l'affichage restent : tout le reste modifierait */}
+      {lectureSeule ? (
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: '#92400E', background: '#FEF3C7', padding: '4px 10px', borderRadius: 2, flexShrink: 0 }}>
+          <Lock size={12} /> Lecture seule
+        </span>
+      ) : (<>
       {/* Annuler / rétablir — mêmes commandes que le planning chantier */}
       <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
         {[
@@ -109,10 +118,11 @@ export function GanttEtudeToolbar({
       </div>
 
       <div style={SEPARATOR} />
+      </>)}
 
       {/* Données du planning */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-        <button
+        {!lectureSeule && <button
           onClick={onOpenPeriodes}
           style={{
             ...BTN,
@@ -126,13 +136,13 @@ export function GanttEtudeToolbar({
         >
           <Ban size={13} />
           {periodes.length > 0 ? `${periodes.length} période(s)` : 'Périodes'}
-        </button>
+        </button>}
 
-        <button style={{ ...BTN, whiteSpace: 'nowrap' }} onClick={onOpenJalons}>
+        {!lectureSeule && <button style={{ ...BTN, whiteSpace: 'nowrap' }} onClick={onOpenJalons}>
           <Flag size={13} /> Jalons
-        </button>
+        </button>}
 
-        {onOpenImport && (
+        {onOpenImport && !lectureSeule && (
           <button
             style={{ ...BTN, whiteSpace: 'nowrap' }}
             onClick={onOpenImport}

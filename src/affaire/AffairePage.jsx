@@ -1,6 +1,6 @@
 import { Suspense, useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Pencil, ChevronRight, Eye, ChevronDown, Check } from 'lucide-react'
+import { Pencil, ChevronRight, Eye, ChevronDown, Check, Lock } from 'lucide-react'
 import { useAffaire } from '../shared/hooks/useAffaires'
 import { useAffaireCollaborateurs } from '../shared/hooks/useAffaireCollaborateurs'
 import { useAuth } from '../core/auth/useAuth'
@@ -13,7 +13,7 @@ import { PHASES_AFFAIRE, periodeAffaire, libellePhase, variablesPhase, phasesDuT
 
 import { AffaireFormModal } from '../dashboard/AffaireFormModal'
 import { ContactsAffaire } from './ContactsAffaire'
-import { supabase } from '../core/supabase/client'
+import { supabase, verrouillerEcritures, deverrouillerEcritures, surEcritureRefusee } from '../core/supabase/client'
 import { infosStatut } from '../modules/chantier/comptes-rendus/crLogique'
 import { dernierePhaseRenseignee, nomPhase } from '../modules/etude/financier/phases'
 import {
@@ -1066,6 +1066,42 @@ export function AffairePage() {
     refetch: refetchCollabs,
   } = useAffaireCollaborateurs(affaireId)
 
+  // Lecture seule : on se promène, on ne modifie rien. Un intervenant
+  // extérieur n'est pas visé — il écrit ses propres observations, ses droits
+  // sont tenus par la base (migration 052).
+  const { estAgence: compteAgence } = useAuth()
+  const verrouillee = !collabLoading && !canEdit && compteAgence
+  useEffect(() => {
+    if (!verrouillee) return undefined
+    verrouillerEcritures('Lecture seule : vous ne faites pas partie des collaborateurs de cette affaire.')
+    return () => deverrouillerEcritures()
+  }, [verrouillee])
+
+  // Un clic qui aurait modifié l'affaire le dit. Seulement juste après un
+  // geste : une écriture automatique au chargement (recalage des jalons…)
+  // est refusée sans bruit.
+  const [refusVisible, setRefusVisible] = useState(false)
+  useEffect(() => {
+    if (!verrouillee) return undefined
+    let dernierGeste = 0
+    const geste = () => { dernierGeste = Date.now() }
+    window.addEventListener('pointerdown', geste, true)
+    window.addEventListener('keydown', geste, true)
+    let minuterie = null
+    const desabonner = surEcritureRefusee(() => {
+      if (Date.now() - dernierGeste > 3000) return
+      setRefusVisible(true)
+      clearTimeout(minuterie)
+      minuterie = setTimeout(() => setRefusVisible(false), 4000)
+    })
+    return () => {
+      desabonner()
+      clearTimeout(minuterie)
+      window.removeEventListener('pointerdown', geste, true)
+      window.removeEventListener('keydown', geste, true)
+    }
+  }, [verrouillee])
+
   const handleSelfAssign = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
@@ -1189,6 +1225,16 @@ export function AffairePage() {
           </main>
         </div>
       </div>
+      {refusVisible && (
+        <div role="alert" style={{
+          position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', zIndex: 500,
+          display: 'flex', alignItems: 'center', gap: 8, maxWidth: 'calc(100vw - 32px)',
+          background: '#1F1B17', color: 'white', fontSize: 13, padding: '10px 16px', borderRadius: 3,
+          boxShadow: '0 8px 24px rgba(0,0,0,0.25)',
+        }}>
+          <Lock size={14} /> Lecture seule : vous ne faites pas partie des collaborateurs de cette affaire. Rien n’a été modifié.
+        </div>
+      )}
 
       {editOpen && (
         <AffaireFormModal

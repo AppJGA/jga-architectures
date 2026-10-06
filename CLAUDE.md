@@ -120,7 +120,7 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
   anglais d'Outlook (marque UTF-8) — l'Outlook classique ne retient que le
   premier contact d'un .vcf. Une icône par fiche donne la carte seule. La
   note de chaque contact porte l'affaire et le rôle.
-- **Base** : `supabase/migrations/`, numérotées, 59 fichiers, **passées à la
+- **Base** : `supabase/migrations/`, numérotées, 60 fichiers, **passées à la
   main** dans le SQL Editor de Supabase : un code qui dépend d'une nouvelle
   colonne doit tolérer son absence tant que la migration n'est pas faite. La photo de
   couverture d'une affaire est `affaires.photo_url` (migration 014, bucket
@@ -502,6 +502,35 @@ plus seulement à l'écran.
 - Vérification : `pgtest/test050.mjs` (hors dépôt) rejoue la migration deux
   fois puis interroge la base sous l'identité d'un extérieur et d'un compte
   agence.
+
+**Lecture seule d'une affaire dont on n'est pas collaborateur (migration
+060)** : on se promène partout, on ne modifie rien. Trois étages, à garder
+ensemble :
+
+- **Base** : `peut_modifier_affaire(id)` = compte agence ET (propriétaire ou
+  collaborateur de l'affaire, ou affaire sans collaborateur) — la même règle
+  que `canEdit`. Posée en règles **restrictives** d'écriture (insert, update,
+  delete) sur toutes les tables d'une affaire et sur le stockage rangé par
+  affaire : elles s'ajoutent aux règles existantes (ET) sans toucher la
+  lecture ; un extérieur garde ses propres règles. **Toute nouvelle table
+  d'une affaire s'ajoute à la liste de la migration 060** (nouvelle
+  migration qui rejoue le même bloc). Vérifiée par
+  `scratchpad/pgtest/test060.mjs` (PGlite, 20 contrôles, hors dépôt).
+- **Client** : `verrouillerEcritures` (`core/supabase/client.js`), posé par
+  `AffairePage` pour un compte agence sans droit : tout `insert`, `update`,
+  `upsert`, `delete` et dépôt de fichier rend `{ error: LECTURE_SEULE }` sans
+  rien envoyer — les écrans traitent déjà l'erreur (le planning recharge).
+  Un geste refusé affiche « Lecture seule… Rien n'a été modifié »
+  (seulement juste après un geste : les écritures automatiques au
+  chargement sont refusées sans bruit).
+- **Écran** : chaque module reçoit `lectureSeule`. Boutons de modification
+  masqués (barres d'outils des plannings, suivi financier, lots, fiche FTM
+  consultable sans enregistrer) ; là où l'édition est partout (gestes des
+  plannings, suivi financier d'étude), `ZoneConsultation` arrête clics,
+  saisie et glissers ; `data-consultation="libre"` garde un élément actif
+  (panneau Affichage). Piège : en développement, un fichier modifié est
+  servi avec `?t=…` — un test qui importe `/src/…` sans ce suffixe obtient
+  une autre copie du module (verrou non posé).
 
 **Lot 2 fait (migration 051 + écran)** :
 

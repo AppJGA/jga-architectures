@@ -4,6 +4,7 @@ import { Plus, Pencil, Trash2, X, GripVertical } from 'lucide-react'
 import { useAffaire } from '../../../shared/hooks/useAffaires'
 import { useSuiviFinancierEtude } from '../../../shared/hooks/useSuiviFinancierEtude'
 import { reordonner } from '../../../shared/hooks/ordreZones'
+import { ZoneConsultation } from '../../../shared/components/ZoneConsultation'
 import {
   construirePhases, estRenseignee, prochainCodePhase, prochainOrdre, phaseDuMemeNom,
   dernierePhaseRenseignee, nomPhase, SUGGESTIONS_PHASES,
@@ -1173,7 +1174,9 @@ function Spinner() {
 
 // ─── Module principal ─────────────────────────────────────────────────────────
 
-export default function FinancierEtudeModule() {
+// En lecture seule (affaire dont on n'est pas collaborateur), la page se lit :
+// la zone de consultation arrête tout geste qui modifierait.
+export default function FinancierEtudeModule({ lectureSeule = false }) {
   const { affaireId } = useParams()
   const { affaire, loading: affaireLoading, updateAffaire } = useAffaire(affaireId)
 
@@ -1238,7 +1241,7 @@ export default function FinancierEtudeModule() {
   }
 
   return (
-    <>
+    <ZoneConsultation actif={lectureSeule}>
       <style>{`@keyframes jga-spin { to { transform: rotate(360deg); } }`}</style>
 
       {/* ── Bandeau enveloppe ── */}
@@ -1343,6 +1346,6 @@ export default function FinancierEtudeModule() {
         onSave={upsertEstimation}
         onDelete={deleteEstimation}
       />
-    </>
+    </ZoneConsultation>
   )
 }

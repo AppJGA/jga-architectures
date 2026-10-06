@@ -432,12 +432,12 @@ function LotCard({ lot, isSelected, menuOpen, onSelect, onOpenMenu, onEdit, onDe
           </span>
           <p style={{ fontSize: 13, fontWeight: 500, color: '#1F1B17', lineHeight: 1.3, marginTop: 1 }}>{lot.nom}</p>
         </div>
-        <button
+        {onOpenMenu && <button
           onClick={e => { e.stopPropagation(); onOpenMenu() }}
           style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--jga-beige)', padding: '2px 2px', flexShrink: 0, borderRadius: 3 }}
         >
           <MoreHorizontal size={14} />
-        </button>
+        </button>}
       </div>
 
       <div style={{ marginTop: 6 }}>
@@ -505,7 +505,7 @@ function LotsSidebar({ lots, selectedLotId, menuLotId, onSelect, onOpenMenu, onA
       <div style={{ padding: '16px 16px 12px', borderBottom: '0.5px solid rgba(0,0,0,0.06)', flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <span style={{ fontSize: 13, fontWeight: 500, color: '#1F1B17' }}>Lots du chantier</span>
-          <button
+          {onAddLot && <button
             onClick={onAddLot}
             style={{
               display: 'flex', alignItems: 'center', gap: 4,
@@ -515,7 +515,7 @@ function LotsSidebar({ lots, selectedLotId, menuLotId, onSelect, onOpenMenu, onA
             }}
           >
             <Plus size={11} /> Ajouter
-          </button>
+          </button>}
         </div>
       </div>
 
@@ -533,7 +533,7 @@ function LotsSidebar({ lots, selectedLotId, menuLotId, onSelect, onOpenMenu, onA
             isSelected={selectedLotId === lot.id}
             menuOpen={menuLotId === lot.id}
             onSelect={() => onSelect(lot.id)}
-            onOpenMenu={() => onOpenMenu(lot.id)}
+            onOpenMenu={onOpenMenu ? () => onOpenMenu(lot.id) : undefined}
             onEdit={() => onEditLot(lot)}
             onDelete={() => onDeleteLot(lot.id)}
           />
@@ -578,7 +578,7 @@ function LotDetail({ lot, onEditLot, onAssign, onEditInterlocuteur }) {
             </p>
             <h2 style={{ fontSize: 18, fontWeight: 500, color: '#1F1B17' }}>{lot.nom}</h2>
           </div>
-          <button
+          {onEditLot && <button
             onClick={onEditLot}
             style={{
               display: 'inline-flex', alignItems: 'center', gap: 5,
@@ -588,7 +588,7 @@ function LotDetail({ lot, onEditLot, onAssign, onEditInterlocuteur }) {
             }}
           >
             <Pencil size={10} /> Modifier
-          </button>
+          </button>}
         </div>
       </div>
 
@@ -598,7 +598,7 @@ function LotDetail({ lot, onEditLot, onAssign, onEditInterlocuteur }) {
           <p style={{ fontSize: 10, fontWeight: 500, color: '#9C9591', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
             Entreprise attributaire
           </p>
-          {lot.entreprise_id && (
+          {lot.entreprise_id && onAssign && (
             <button onClick={onAssign} style={{ fontSize: 11, color: '#2A8A4E', background: 'none', border: 'none', cursor: 'pointer' }}>
               Changer
             </button>
@@ -612,7 +612,7 @@ function LotDetail({ lot, onEditLot, onAssign, onEditInterlocuteur }) {
           }}>
             <IconeEntreprisesLots size={28} style={{ color: '#C5D9A8', marginBottom: 10 }} />
             <p style={{ fontSize: 13, color: '#5E5854', marginBottom: 14 }}>Aucune entreprise assignée à ce lot</p>
-            <button
+            {onAssign && <button
               onClick={onAssign}
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 6,
@@ -621,7 +621,7 @@ function LotDetail({ lot, onEditLot, onAssign, onEditInterlocuteur }) {
               }}
             >
               <Plus size={13} /> Assigner une entreprise
-            </button>
+            </button>}
           </div>
         ) : (
           <>
@@ -668,7 +668,7 @@ function LotDetail({ lot, onEditLot, onAssign, onEditInterlocuteur }) {
           <p style={{ fontSize: 10, fontWeight: 500, color: '#9C9591', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
             Interlocuteur
           </p>
-          {lot.interlocuteur_id && (
+          {lot.interlocuteur_id && onEditInterlocuteur && (
             <button onClick={onEditInterlocuteur} style={{ fontSize: 11, color: '#2A8A4E', background: 'none', border: 'none', cursor: 'pointer' }}>
               Modifier
             </button>
@@ -682,7 +682,7 @@ function LotDetail({ lot, onEditLot, onAssign, onEditInterlocuteur }) {
         ) : !lot.interlocuteur_id ? (
           <div>
             <p style={{ fontSize: 12, color: '#5E5854', marginBottom: 10 }}>Aucun interlocuteur renseigné</p>
-            <button
+            {onEditInterlocuteur && <button
               onClick={onEditInterlocuteur}
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 6,
@@ -692,7 +692,7 @@ function LotDetail({ lot, onEditLot, onAssign, onEditInterlocuteur }) {
               }}
             >
               <Plus size={11} /> Ajouter un interlocuteur
-            </button>
+            </button>}
           </div>
         ) : (
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
@@ -730,7 +730,9 @@ function LotDetail({ lot, onEditLot, onAssign, onEditInterlocuteur }) {
 }
 
 // ─── Module principal ─────────────────────────────────────────────────────────
-export default function LotsEntreprisesModule() {
+// En lecture seule (affaire dont on n'est pas collaborateur), le détail des
+// lots se consulte, mais aucun bouton de modification n'est proposé.
+export default function LotsEntreprisesModule({ lectureSeule = false }) {
   const { affaireId } = useParams()
   const { lots, loading, createLot, updateLot, deleteLot, assignerEntreprise, refetch } = useLotsEntreprises(affaireId)
   const { entreprises, createEntreprise } = useEntreprises()
@@ -816,8 +818,8 @@ export default function LotsEntreprisesModule() {
           selectedLotId={selectedLotId}
           menuLotId={menuLotId}
           onSelect={setSelectedLotId}
-          onOpenMenu={setMenuLotId}
-          onAddLot={() => { setEditingLot(null); setLotFormOpen(true) }}
+          onOpenMenu={lectureSeule ? undefined : setMenuLotId}
+          onAddLot={lectureSeule ? undefined : () => { setEditingLot(null); setLotFormOpen(true) }}
           onEditLot={handleEditLot}
           onDeleteLot={handleDeleteLot}
         />
@@ -835,9 +837,9 @@ export default function LotsEntreprisesModule() {
           ) : (
             <LotDetail
               lot={selectedLot}
-              onEditLot={() => handleEditLot(selectedLot)}
-              onAssign={() => setAssignModalOpen(true)}
-              onEditInterlocuteur={() => setInterlocuteurModalOpen(true)}
+              onEditLot={lectureSeule ? undefined : () => handleEditLot(selectedLot)}
+              onAssign={lectureSeule ? undefined : () => setAssignModalOpen(true)}
+              onEditInterlocuteur={lectureSeule ? undefined : () => setInterlocuteurModalOpen(true)}
             />
           )}
         </div>

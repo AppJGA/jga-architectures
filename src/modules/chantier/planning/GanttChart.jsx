@@ -26,6 +26,7 @@ import { usePlanningDependances } from '../../../shared/hooks/usePlanningDependa
 import { usePeriodesBloquees } from '../../../shared/hooks/usePeriodesBloquees'
 import { GanttToolbar } from './GanttToolbar'
 import { GanttSidebar } from './GanttSidebar'
+import { ZoneConsultation } from '../../../shared/components/ZoneConsultation'
 import { GanttTimeline, HEADER_HEIGHT } from './GanttTimeline'
 import { TacheEditModal } from './TacheEditModal'
 import { LotsColorModal } from './LotsColorModal'
@@ -77,7 +78,7 @@ const DAY_WIDTH_MAX = 100
 const ZOOM_LEVEL_MIN = 0.1
 const ZOOM_LEVEL_MAX = 4
 
-export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', affaire = {}, onModifierAffaire }) {
+export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', affaire = {}, onModifierAffaire, lectureSeule = false }) {
   const [tasks, setTasks] = useState([])
   const [lots, setLots] = useState([])
   const [dayWidth, setDayWidth] = useState(DEFAULT_DAY_WIDTH)
@@ -1295,9 +1296,12 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
           onSetDrawMode={setDrawMode}
           showOptionsPanel={showOptionsPanel}
           onToggleOptionsPanel={() => setShowOptionsPanel((v) => !v)}
+          lectureSeule={lectureSeule}
         />
       </div>
 
+      {/* Lecture seule : ni geste sur les barres, ni saisie dans la liste */}
+      <ZoneConsultation actif={lectureSeule}>
       <div id="gantt-print-root" style={{ display: 'flex', flex: 1, overflow: 'hidden', position: 'relative' }}>
         <div
           ref={sidebarRef}
@@ -1399,8 +1403,9 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
         )}
 
         {/* Panneau latéral d'options — glisse depuis la droite par-dessus la
-            timeline (le conteneur #gantt-print-root est déjà position: relative) */}
-        <div style={{
+            timeline (le conteneur #gantt-print-root est déjà position: relative).
+            Affichage seulement : il reste actif en lecture seule. */}
+        <div data-consultation="libre" style={{
           position: 'absolute', top: 0, right: 0, bottom: 0, width: 280,
           backgroundColor: 'white',
           borderLeft: '0.5px solid #E9E2D6',
@@ -1674,6 +1679,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
           </div>
         </div>
       </div>
+      </ZoneConsultation>
 
       <div data-print="hidden" style={{
         display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 16,

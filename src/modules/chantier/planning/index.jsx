@@ -2,7 +2,7 @@ import { useParams } from 'react-router-dom'
 import { GanttChart } from './GanttChart'
 import { useAffaire } from '../../../shared/hooks/useAffaires'
 
-export default function PlanningChantierModule() {
+export default function PlanningChantierModule({ lectureSeule = false }) {
   const { affaireId } = useParams()
   const { affaire, updateAffaire } = useAffaire(affaireId)
   return (
@@ -12,6 +12,7 @@ export default function PlanningChantierModule() {
       affaireTitre={affaire?.nom ?? ''}
       affaire={affaire ?? {}}
       onModifierAffaire={updateAffaire}
+      lectureSeule={lectureSeule}
     />
   )
 }

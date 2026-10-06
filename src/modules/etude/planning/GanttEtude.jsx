@@ -31,6 +31,7 @@ import { ExportEtudeModal } from './ExportEtudeModal'
 import { PeriodesBloqueesModal } from '../../chantier/planning/PeriodesBloqueesModal'
 import { exportPlanningEtudeExcel } from './exportPlanningEtudeExcel'
 import { Toast } from '../../../shared/components/Toast'
+import { ZoneConsultation } from '../../../shared/components/ZoneConsultation'
 
 // Densité des lignes du planning
 const ROW_HEIGHT_OPTIONS = [
@@ -45,7 +46,7 @@ const SEM_WIDTH_MIN = 4
 const SEM_WIDTH_MAX = 120
 const SEM_WIDTH_DEFAUT = 40
 
-export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', affaire = {} }) {
+export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', affaire = {}, lectureSeule = false }) {
   const { phases: hookPhases, jalons, setJalons, loading, error, addPhase, deletePhase, refetch } = usePlanningEtude(affaireId)
 
   // ── Segments (une phase peut réapparaître à d'autres périodes) ────────────────
@@ -892,6 +893,7 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
           </div>
         )}
         <GanttEtudeToolbar
+          lectureSeule={lectureSeule}
           canUndo={canUndo}
           canRedo={canRedo}
           onUndo={handleUndo}
@@ -917,6 +919,8 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
         />
       </div>
 
+      {/* Lecture seule : ni geste sur les barres, ni saisie dans la liste */}
+      <ZoneConsultation actif={lectureSeule}>
       <div id="gantt-etude-print-root" style={{ display: 'flex', flex: 1, overflow: 'hidden', position: 'relative' }}>
         {/* Sidebar */}
         <div
@@ -1006,8 +1010,8 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
         {/* ── Panneau latéral d'options ─────────────────────────────────────
             Glisse depuis la droite par-dessus la timeline, comme le planning
             chantier. Le planning d'étude n'a qu'une granularité (la semaine) :
-            le panneau ne contient donc que le zoom. */}
-        <div style={{
+            le panneau ne contient donc que le zoom (actif en lecture seule). */}
+        <div data-consultation="libre" style={{
           position: 'absolute', top: 0, right: 0, bottom: 0, width: 280,
           backgroundColor: 'white',
           borderLeft: '0.5px solid #E9E2D6',
@@ -1134,6 +1138,7 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
           </div>
         </div>
       </div>
+      </ZoneConsultation>
 
       {/* ── Légende ── */}
       <div data-print="hidden" style={{

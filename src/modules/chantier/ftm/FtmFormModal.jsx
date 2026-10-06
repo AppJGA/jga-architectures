@@ -104,7 +104,7 @@ function FormRow({ label, children }) {
   )
 }
 
-export function FtmFormModal({ open, onClose, ftm, lots = [], lotParDefaut = null, affaire, onSave, onSaveAndExport }) {
+export function FtmFormModal({ open, onClose, ftm, lots = [], lotParDefaut = null, affaire, onSave, onSaveAndExport, lectureSeule = false }) {
   const [form, setForm] = useState(emptyForm())
   const [saving, setSaving] = useState(false)
   const [erreur, setErreur] = useState(null)
@@ -208,8 +208,8 @@ export function FtmFormModal({ open, onClose, ftm, lots = [], lotParDefaut = nul
           </button>
         </div>
 
-        {/* Scrollable body */}
-        <div style={{ overflowY: 'auto', flex: 1 }}>
+        {/* Scrollable body — en lecture seule, la fiche se lit sans se modifier */}
+        <fieldset disabled={lectureSeule} style={{ border: 'none', margin: 0, padding: 0, minWidth: 0, overflowY: 'auto', flex: 1 }}>
           {/* Section interne */}
           <div style={{ padding: '16px 20px', backgroundColor: '#FAF7F2', borderBottom: '0.5px solid rgba(0,0,0,0.1)' }}>
             <p style={{ fontSize: 10, fontWeight: 600, color: '#9C9591', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 12 }}>
@@ -480,7 +480,7 @@ export function FtmFormModal({ open, onClose, ftm, lots = [], lotParDefaut = nul
               </FormRow>
             </div>
           </div>
-        </div>
+        </fieldset>
 
         {/* Footer */}
         <div style={{
@@ -504,9 +504,9 @@ export function FtmFormModal({ open, onClose, ftm, lots = [], lotParDefaut = nul
               fontSize: 12, color: '#5E5854', cursor: 'pointer',
             }}
           >
-            Annuler
+            {lectureSeule ? 'Fermer' : 'Annuler'}
           </button>
-          <button
+          {!lectureSeule && <button
             onClick={() => handleSubmit(false)}
             disabled={saving}
             style={{
@@ -517,8 +517,8 @@ export function FtmFormModal({ open, onClose, ftm, lots = [], lotParDefaut = nul
             }}
           >
             {saving ? 'Enregistrement…' : 'Enregistrer'}
-          </button>
-          <button
+          </button>}
+          {!lectureSeule && <button
             onClick={() => handleSubmit(true)}
             disabled={saving}
             style={{
@@ -529,7 +529,7 @@ export function FtmFormModal({ open, onClose, ftm, lots = [], lotParDefaut = nul
             }}
           >
             Enregistrer et exporter PDF
-          </button>
+          </button>}
         </div>
       </div>
     </div>

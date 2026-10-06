@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import {
   Plus, Pencil, GitBranch, Flag, Ban, SlidersHorizontal,
   Download, ChevronDown, FileText, TableProperties, Undo2, Redo2, CalendarClock,
-  FolderInput,
+  FolderInput, Lock,
 } from 'lucide-react'
 
 const BTN = {
@@ -21,6 +21,7 @@ export function GanttToolbar({
   showOptionsPanel, onToggleOptionsPanel,
   drawMode = false, onSetDrawMode,
   canUndo = false, canRedo = false, onUndo, onRedo, labelUndo, labelRedo,
+  lectureSeule = false,
 }) {
   // Dropdowns rendus via portail (document.body) : la toolbar a overflowX: 'auto',
   // ce qui force implicitement overflowY à cliper (règle CSS : dès qu'un axe
@@ -40,6 +41,13 @@ export function GanttToolbar({
       overflowX: 'auto', flexWrap: 'nowrap', flexShrink: 0,
     }} data-print="hidden">
 
+      {/* En lecture seule (affaire dont on n'est pas collaborateur), seuls
+          l'export et l'affichage restent : tout le reste modifierait */}
+      {lectureSeule ? (
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: '#92400E', background: '#FEF3C7', padding: '4px 10px', borderRadius: 2, flexShrink: 0 }}>
+          <Lock size={12} /> Lecture seule
+        </span>
+      ) : (<>
       {/* Annuler / rétablir */}
       <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
         {[
@@ -66,10 +74,11 @@ export function GanttToolbar({
       </div>
 
       <div style={SEPARATOR} />
+      </>)}
 
       {/* Actions principales */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-        <div ref={createGroupRef} style={{ display: 'flex', alignItems: 'stretch', flexShrink: 0 }}>
+        {!lectureSeule && <div ref={createGroupRef} style={{ display: 'flex', alignItems: 'stretch', flexShrink: 0 }}>
           {/* Bouton principal — hors mode dessin : ouvre la modale. En mode
               dessin : le reclic désactive le mode (le dessin se fait dans
               la timeline, ce bouton ne sert alors qu'à en sortir). */}
@@ -103,10 +112,10 @@ export function GanttToolbar({
           >
             <ChevronDown size={11} />
           </button>
-        </div>
+        </div>}
         {/* Périodes — accent rouge seulement si au moins une période bloque
             réellement les tâches ; gris si toutes sont informatives. */}
-        {(() => {
+        {!lectureSeule && (() => {
           const nbBloquantes = periodes.filter((p) => p.est_bloquante !== false).length
           const accent = nbBloquantes > 0
           return (
@@ -167,15 +176,15 @@ export function GanttToolbar({
           <GitBranch size={14} />
           Dépendances
         </button>
-        <button style={BTN} onClick={onOpenJalons}>
+        {!lectureSeule && <button style={BTN} onClick={onOpenJalons}>
           <Flag size={13} /> Jalons
-        </button>
-        {onOpenDecalage && (
+        </button>}
+        {onOpenDecalage && !lectureSeule && (
           <button style={BTN} onClick={onOpenDecalage} title="Reporter ou avancer tout le planning">
             <CalendarClock size={13} /> Décaler
           </button>
         )}
-        {onOpenImport && (
+        {onOpenImport && !lectureSeule && (
           <button style={BTN} onClick={onOpenImport} title="Reprendre le planning d’une autre affaire">
             <FolderInput size={13} /> Importer
           </button>

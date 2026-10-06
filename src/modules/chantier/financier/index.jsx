@@ -449,7 +449,7 @@ function LigneRow({ ligne, filter, onEdit, onDelete, onOpenFtm }) {
       <div style={{ flex: C.ht }} />
       <div style={{ flex: C.pct }} />
       <div style={{ flex: C.ttc }} />
-      <div style={{ flex: C.act, display: 'flex', justifyContent: 'flex-end', gap: 4, opacity: hovered ? 1 : 0, transition: 'opacity 0.1s' }}>
+      <div style={{ flex: C.act, display: 'flex', justifyContent: 'flex-end', gap: 4, opacity: hovered ? 1 : 0, transition: 'opacity 0.1s', visibility: onDelete ? 'visible' : 'hidden' }}>
         {/* La ligne d'une FTM se modifie et se supprime par sa fiche : la
             toucher directement la désaccorderait de la fiche */}
         <button onClick={() => (ligne.ftm_id ? onOpenFtm(ligne.ftm_id) : onEdit(ligne))}
@@ -495,7 +495,7 @@ function LotSection({ lot, filter, onAdd, onEdit, onDelete, onOpenFtm, affaireId
               Marché non renseigné — configurer dans Entreprises &amp; Lots →
             </button>
           )}
-          {!lot.sansLot && <button
+          {!lot.sansLot && onAdd && <button
             onClick={() => onAdd(lot.id)}
             style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#2A8A4E', padding: 2, borderRadius: 3 }}
             title="Ajouter une ligne"
@@ -527,13 +527,13 @@ function LotSection({ lot, filter, onAdd, onEdit, onDelete, onOpenFtm, affaireId
         <Cel flex={C.pct} right muted>base</Cel>
         <Cel flex={C.ttc} right muted>{euro(lot.marche_base_ttc)}</Cel>
         <div style={{ flex: C.act, display: 'flex', justifyContent: 'flex-end' }}>
-          <button
+          {onAdd && <button
             onClick={() => onAdd(lot.id)}
             style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#2A8A4E', padding: 2, borderRadius: 3 }}
             title="Ajouter une ligne"
           >
             <Plus size={14} />
-          </button>
+          </button>}
         </div>
       </Row>
 
@@ -605,7 +605,9 @@ function TotalsRow({ totaux }) {
 
 // ─── Module principal ─────────────────────────────────────────────────────────
 
-export default function FinancierChantierModule() {
+// En lecture seule (affaire dont on n'est pas collaborateur) : le tableau et
+// les fiches se consultent, aucun bouton ne modifie.
+export default function FinancierChantierModule({ lectureSeule = false }) {
   const { affaireId } = useParams()
   const navigate = useNavigate()
   const { affaire, loading: affaireLoading } = useAffaire(affaireId)
@@ -746,12 +748,12 @@ export default function FinancierChantierModule() {
           <span style={{ fontSize: 11, color: '#9C9591' }}>Seuil aléas contractuels :</span>
           <span style={{ fontSize: 11, fontWeight: 500, color: '#1F1B17' }}>{seuilPct} %</span>
           <div style={{ flex: 1 }} />
-          <button
+          {!lectureSeule && <button
             onClick={() => setEditAffaireOpen(true)}
             style={{ fontSize: 11, color: 'var(--jga-orange)', background: 'none', border: 'none', cursor: 'pointer' }}
           >
             Modifier →
-          </button>
+          </button>}
         </div>
 
         {/* Alerte aléas */}
@@ -794,6 +796,7 @@ export default function FinancierChantierModule() {
 
           {/* Actions */}
           <div style={{ display: 'flex', gap: 8 }}>
+            {/* L'export reste ; ajouter une ligne ou une fiche, non */}
             <button
               onClick={handlePrint}
               style={{
@@ -805,6 +808,7 @@ export default function FinancierChantierModule() {
             >
               <Printer size={13} /> Exporter
             </button>
+            {!lectureSeule && <>
             <button
               onClick={() => handleAdd(null)}
               style={{
@@ -830,6 +834,7 @@ export default function FinancierChantierModule() {
             >
               <IconeFtm size={16} /> Éditer une fiche de travaux modificatifs
             </button>
+            </>}
           </div>
         </div>
 
@@ -848,9 +853,9 @@ export default function FinancierChantierModule() {
                   key={lot.id}
                   lot={lot}
                   filter={filter}
-                  onAdd={handleAdd}
-                  onEdit={handleEdit}
-                  onDelete={handleDelete}
+                  onAdd={lectureSeule ? undefined : handleAdd}
+                  onEdit={lectureSeule ? undefined : handleEdit}
+                  onDelete={lectureSeule ? undefined : handleDelete}
                   onOpenFtm={handleOpenFtm}
                   affaireId={affaireId}
                   navigate={navigate}
@@ -893,6 +898,7 @@ export default function FinancierChantierModule() {
           onClose={fermerFtm}
           onSave={enregistrerFtm}
           onSaveAndExport={enregistrerEtExporterFtm}
+          lectureSeule={lectureSeule}
         />
       )}
 

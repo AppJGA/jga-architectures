@@ -51,6 +51,15 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
   l'OPR. Une page aux vues internes l'impose par `useRetourPage`
   (`retourContexte.js`) : les pages d'un CR → Tableau de bord de la visite.
   Toute nouvelle page reçoit son retour là, jamais dans la page.
+  **Dans une affaire, titre et retour sont échangés**, à la demande de
+  l'agence (on cherche la flèche sous le titre) : `AffairePage` envoie code,
+  nom et maître d'ouvrage au bandeau du haut (`useTitreBandeau`), et le
+  retour s'affiche dans la barre de l'affaire, dessous (`RetourCourant`,
+  même calcul que le bandeau). Hors affaire, le bandeau garde le retour.
+- **Titre des modules** : `AffairePage` pose en tête de chaque module son
+  icône et son nom tels qu'au menu (`TitreModule`). Un module n'écrit pas
+  son propre titre, seulement ce qui le précise (compteurs, actions) ; un
+  module plein écran remplit la boîte laissée sous le titre.
 - **Modules d'affaire** : déclarés dans `src/modules/manifest.js` — deux phases
   (`etude`, `chantier`), chaque module a `enabled`, `path`, `icon`, un
   `component` en `lazy()`. Les tuiles du tableau de bord et la sidebar de

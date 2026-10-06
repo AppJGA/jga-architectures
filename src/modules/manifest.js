@@ -26,6 +26,15 @@ export const phases = [
         description: 'Honoraires, avenants, enveloppe prévisionnelle',
       },
       {
+        id: 'pieces-ecrites',
+        label: 'Pièces écrites',
+        icon: 'FileText',
+        path: 'pieces-ecrites',
+        component: lazy(() => import('./etude/pieces-ecrites')),
+        enabled: true,
+        description: 'CCTP découpés en articles, cherchables au bureau et en visite',
+      },
+      {
         id: 'todo',
         label: 'To-do list',
         icon: 'CheckSquare',

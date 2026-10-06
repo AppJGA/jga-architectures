@@ -6,7 +6,7 @@ import { test, describe } from 'node:test'
 
 import {
   lignesDePage, retirerBruit, decouperArticles, lireLot, lireIndice, lirePiece,
-  chercherArticles, extrait,
+  chercherArticles, extrait, proposerLot, numeroLibre, titrePiece,
 } from '../src/modules/etude/pieces-ecrites/piecesLogique.js'
 
 // Une page faite de lignes { texte, taille }
@@ -130,9 +130,34 @@ describe('recherche', () => {
     assert.deepEqual(chercherArticles(articles, ' '), [])
   })
 
+  test('le texte entier garde ses retours à la ligne', () => {
+    const t = 'Ligne une.\nLigne deux, cloisons.'
+    assert.equal(extrait(t, ['cloisons'], t.length + 1).map((m) => m.texte).join(''), t)
+  })
+
   test('extrait surligné autour du premier mot', () => {
     const morceaux = extrait('Début du texte. Plafond suspendu, cloisons non porteuses. Fin.', ['cloisons'], 30)
     assert.ok(morceaux.some((m) => m.surligne && m.texte === 'cloisons'))
     assert.ok(morceaux.map((m) => m.texte).join('').length <= 40)
+  })
+})
+
+describe('lot proposé à l’import', () => {
+  const lots = [{ id: 'l1', numero: 7, nom: 'Métallerie' }, { id: 'l2', numero: 2, nom: 'Gros oeuvre' }]
+
+  test('même nom, aux accents et ligatures près, ou l’un contenant l’autre : rattacher', () => {
+    assert.deepEqual(proposerLot({ numero: 7, nom: 'Metallerie - serrurerie' }, lots), { mode: 'rattacher', lotId: 'l1' })
+    assert.deepEqual(proposerLot({ numero: 3, nom: 'Gros œuvre' }, lots), { mode: 'rattacher', lotId: 'l2' })
+  })
+
+  test('sinon créer, sur un numéro libre', () => {
+    assert.deepEqual(proposerLot({ numero: 7, nom: 'Peinture' }, lots), { mode: 'creer', numero: 8, nom: 'Peinture' })
+    assert.deepEqual(proposerLot(null, lots), { mode: 'creer', numero: 1, nom: '' })
+    assert.equal(numeroLibre(170, lots), 170)
+  })
+
+  test('titre de la pièce', () => {
+    assert.equal(titrePiece(7, 'Métallerie'), 'Lot 07 – Métallerie')
+    assert.equal(titrePiece(null, ''), 'CCTP')
   })
 })

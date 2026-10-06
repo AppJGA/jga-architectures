@@ -34,6 +34,7 @@ const ICON_MAP = {
   FilePen: IconeFtm,
   CalendarRange: IconePlanningChantier,
   TrendingUp: IconeFinancierChantier,
+  FileText: IconeDocuments,
 }
 
 

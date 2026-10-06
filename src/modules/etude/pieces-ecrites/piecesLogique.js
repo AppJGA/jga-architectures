@@ -7,6 +7,8 @@
 // IA : des règles, réglées sur des CCTP réels gardés hors du dépôt (public).
 // Pur (tests/pieces-ecrites.test.js, textes inventés).
 
+import { cleNom } from '../../chantier/planning/importPlanning'
+
 // ─── Normalisation ───────────────────────────────────────────────────────────
 
 // Une lettre à la fois, pour garder la correspondance des positions (extrait)
@@ -247,6 +249,37 @@ export function lirePiece({ pages = [], nomFichier = '' }) {
   }
 }
 
+// ─── Lot proposé à l'import ──────────────────────────────────────────────────
+
+/** Le premier numéro de lot libre à partir de `voulu` (unique par affaire). */
+export function numeroLibre(voulu, lots = []) {
+  const pris = new Set(lots.map((l) => Number(l.numero)))
+  let n = Number(voulu) > 0 ? Number(voulu) : 1
+  while (pris.has(n)) n++
+  return n
+}
+
+/**
+ * Rattacher au lot existant dont le nom correspond (sans majuscules, accents
+ * ni ligatures, l'un pouvant contenir l'autre : « Métallerie » et « Métallerie
+ * - serrurerie »), sinon créer le lot lu, sur un numéro libre.
+ * @returns { mode: 'rattacher', lotId } | { mode: 'creer', numero, nom }
+ */
+export function proposerLot(lotLu, lots = []) {
+  const nom = cleNom(lotLu?.nom)
+  if (nom) {
+    const meme = lots.find((l) => cleNom(l.nom) === nom)
+      ?? lots.find((l) => { const n = cleNom(l.nom); return n.length >= 4 && (nom.includes(n) || n.includes(nom)) })
+    if (meme) return { mode: 'rattacher', lotId: meme.id }
+  }
+  return { mode: 'creer', numero: numeroLibre(lotLu?.numero ?? 1, lots), nom: lotLu?.nom ?? '' }
+}
+
+/** « Lot 07 – Métallerie – serrurerie » */
+export function titrePiece(numero, nom) {
+  return [numero != null && numero !== '' ? `Lot ${String(numero).padStart(2, '0')}` : null, nom].filter(Boolean).join(' – ') || 'CCTP'
+}
+
 // ─── 5. Recherche ────────────────────────────────────────────────────────────
 
 /** Les mots d'une recherche, sans accents ni majuscules (2 caractères au moins). */
@@ -286,7 +319,9 @@ export function chercherArticles(articles = [], requete = '', { lotId = null } =
  * @returns [{ texte, surligne }]
  */
 export function extrait(texte = '', mots = [], largeur = 160) {
-  const source = String(texte ?? '').replace(/\s+/g, ' ')
+  // Le texte entier garde ses retours à la ligne ; un passage tient sur une ligne
+  const brut = String(texte ?? '')
+  const source = largeur >= brut.length ? brut : brut.replace(/\s+/g, ' ')
   // Texte normalisé et, pour chaque caractère normalisé, sa position d'origine
   let norm = ''
   const origine = []

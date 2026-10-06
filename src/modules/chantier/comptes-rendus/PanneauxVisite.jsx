@@ -1,5 +1,5 @@
 import { useState, useEffect, useContext } from 'react'
-import { X, Camera, Images } from 'lucide-react'
+import { X, Camera, Images, Pencil } from 'lucide-react'
 import { CATEGORIE_META } from '../../../shared/hooks/useAffaireInterlocuteurs'
 import { STATUTS, FAMILLES_STATUT, STATUT_PAR_DEFAUT, statutNormalise, affichagePresence, infosStatut, peutModifierRemarque, miseEnForme, champsMiseEnForme, COULEUR_SURLIGNE } from './crLogique'
 import { useCr } from './CrContexte'
@@ -305,6 +305,44 @@ export function PanneauRemarque({ remarque, cr, lots, interlocuteurs, zones = []
   )
 }
 
+// Correction d'une suite déjà écrite, dans le panneau de sa remarque
+function EditionSuite({ sr, cr, occupe, signalerErreur, onEnregistrer, onAnnuler }) {
+  const [texte, setTexte] = useState(sr.description ?? '')
+  const [statut, setStatut] = useState(infosStatut(sr).code)
+  const [echeance, setEcheance] = useState(sr.date_echeance ?? '')
+  const propre = normaliserTexte(texte)
+  const enregistrer = () => {
+    if (!propre) return
+    onEnregistrer({ description: propre, statut, est_clos: PAR_CODE.get(statut).clos, date_echeance: echeance || null })
+  }
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+        <textarea autoFocus value={texte} onChange={e => setTexte(e.target.value)} rows={2} aria-label="Texte de la suite"
+          style={{ ...CHAMP, padding: '10px 12px', minHeight: 72, resize: 'vertical', fontFamily: 'inherit' }} />
+        <BoutonDictee onTexte={t => setTexte(x => ajouterDictee(x, t))} onErreur={m => signalerErreur(new Error(m))} />
+      </div>
+      <div style={{ display: 'flex' }}>
+        <MenuStatut id={`visite-statut-suite-${sr.id}`} label="Statut de la suite" valeur={statut} onChange={setStatut} />
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+        <span style={{ ...LABEL, margin: 0 }}>Pour le</span>
+        <button type="button" onClick={() => setEcheance('')} style={puce(!echeance)}>Aucune</button>
+        <button type="button" onClick={() => setEcheance(echeanceRapide(cr.date_reunion, 1))} style={puce(echeance === echeanceRapide(cr.date_reunion, 1))}>+1 sem.</button>
+        <button type="button" onClick={() => setEcheance(echeanceRapide(cr.date_reunion, 2))} style={puce(echeance === echeanceRapide(cr.date_reunion, 2))}>+2 sem.</button>
+        <input type="date" value={echeance} onChange={e => setEcheance(e.target.value)} aria-label="Échéance de la suite" style={{ ...CHAMP, width: 170 }} />
+      </div>
+      <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+        <button type="button" onClick={onAnnuler} disabled={occupe} style={{ ...puce(false), borderRadius: 3 }}>Annuler</button>
+        <button type="button" onClick={enregistrer} disabled={occupe || !propre}
+          style={{ ...puce(true, '#E8602C'), borderRadius: 3, padding: '0 22px', opacity: occupe || !propre ? 0.6 : 1 }}>
+          {occupe ? 'Enregistrement…' : 'Enregistrer la suite'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ─── Suites d'une remarque (▶) ──────────────────────────────────────────────
 //
 // Toucher une remarque ouvre ce panneau : la suite s'écrit en un geste, avec
@@ -340,11 +378,23 @@ export function PanneauSuite({ remarque, cr, lectureSeule, acces, ops, onModifie
   const changerStatutSuite = (sr, code) =>
     ops.updateRemarque(sr.id, { statut: code, est_clos: PAR_CODE.get(code).clos }).catch(() => {})
 
+  // Une suite déjà écrite se corrige sur place (texte, statut, échéance) ;
+  // par la file, comme le reste : sans réseau aussi
+  const [enEdition, setEnEdition] = useState(null) // id de la suite
+  const enregistrerSuite = async (sr, champs) => {
+    setOccupe(true)
+    try {
+      await ops.updateRemarque(sr.id, champs)
+      setEnEdition(null)
+    } catch { /* signalé dans le bandeau */ }
+    setOccupe(false)
+  }
+
   return (
     <Panneau
       titre={`Suite de la remarque${remarque.numero != null ? ` n°${remarque.numero}` : ''}`}
       onFermer={onFermer} occupe={occupe}
-      pied={!lectureSeule && (
+      pied={!lectureSeule && !enEdition && (
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
           <button type="button" onClick={onFermer} disabled={occupe} style={{ ...puce(false), borderRadius: 3 }}>Annuler</button>
           <button type="button" onClick={ajouter} disabled={occupe || !normaliserTexte(texte)}
@@ -373,6 +423,14 @@ export function PanneauSuite({ remarque, cr, lectureSeule, acces, ops, onModifie
         <ul style={{ listStyle: 'none', margin: 0, padding: 0, background: 'white', border: '0.5px solid rgba(0,0,0,0.08)' }}>
           {suites.map(sr => {
             const st = infosStatut(sr)
+            const corrigeable = !lectureSeule && peutModifierRemarque(sr, acces) && !sr.a_valider
+            if (enEdition === sr.id) return (
+              <li key={sr.id} style={{ padding: '10px 12px', borderBottom: '0.5px solid rgba(0,0,0,0.05)', background: '#FFFBF7' }}>
+                <p style={{ ...LABEL, marginBottom: 8 }}>Modifier la suite du {sr.date_note ? new Date(sr.date_note + 'T00:00:00').toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' }) : '—'}</p>
+                <EditionSuite sr={sr} cr={cr} occupe={occupe} signalerErreur={signalerErreur}
+                  onEnregistrer={(champs) => enregistrerSuite(sr, champs)} onAnnuler={() => setEnEdition(null)} />
+              </li>
+            )
             return (
               <li key={sr.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderBottom: '0.5px solid rgba(0,0,0,0.05)' }}>
                 <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: '#9C9591', minWidth: 52 }}>
@@ -387,13 +445,20 @@ export function PanneauSuite({ remarque, cr, lectureSeule, acces, ops, onModifie
                     {STATUTS.map(x => <option key={x.code} value={x.code}>{x.libelle}</option>)}
                   </select>
                 )}
+                {corrigeable && (
+                  <button type="button" onClick={() => setEnEdition(sr.id)} disabled={occupe} aria-label="Modifier cette suite" title="Modifier cette suite"
+                    style={{ width: 44, height: 44, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '0.5px solid rgba(0,0,0,0.15)', borderRadius: 3, background: 'white', color: '#1F1B17', cursor: 'pointer' }}>
+                    <Pencil size={17} />
+                  </button>
+                )}
               </li>
             )
           })}
         </ul>
       )}
 
-      {!lectureSeule && (
+      {/* Une correction à la fois : la nouvelle suite revient ensuite */}
+      {!lectureSeule && !enEdition && (
         <>
           <div>
             <label style={LABEL} htmlFor="visite-suite">Nouvelle suite</label>

@@ -353,6 +353,19 @@ function SousRemarqueRow({ sr, onDelete, onStatut, onEdit }) {
   const acces = useCr()
   const lectureSeule = !peutModifierRemarque(sr, acces)
   const st = infosStatut(sr)
+  // Correction sur place d'une suite déjà écrite
+  const [edition, setEdition] = useState(null) // { description, date_echeance }
+  const [enregistrement, setEnregistrement] = useState(false)
+  const enregistrer = async () => {
+    const description = edition.description.trim()
+    if (!description) return
+    setEnregistrement(true)
+    try {
+      await onEdit(sr.id, { description, date_echeance: edition.date_echeance || null })
+      setEdition(null)
+    } catch { /* signalé dans le bandeau */ }
+    setEnregistrement(false)
+  }
   const fmtD = (d) => d ? new Date(d + 'T00:00:00').toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' }) : '—'
   // Suite proposée par l'IA (migration 058)
   if (sr.a_valider) return (
@@ -364,6 +377,28 @@ function SousRemarqueRow({ sr, onDelete, onStatut, onEdit }) {
       </div>
       <ExtraitProposition rem={sr} petit />
       {!lectureSeule && <BoutonsProposition rem={sr} petit ops={{ updateRemarque: onEdit, deleteRemarque: onDelete }} />}
+    </div>
+  )
+  if (edition) return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '6px 0', borderBottom: '0.5px solid rgba(0,0,0,0.05)' }}>
+      <textarea autoFocus value={edition.description} rows={2} aria-label="Texte de la suite"
+        onChange={e => setEdition(x => ({ ...x, description: e.target.value }))}
+        onKeyDown={e => { if (e.key === 'Escape') setEdition(null); if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) enregistrer() }}
+        style={{ width: '100%', fontSize: 12, padding: '6px 8px', border: '0.5px solid rgba(0,0,0,0.2)', borderRadius: 3, resize: 'vertical', fontFamily: 'inherit', boxSizing: 'border-box' }} />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 11, color: '#5E5854' }}>
+        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+          Pour le
+          <input type="date" value={edition.date_echeance} data-compact onChange={e => setEdition(x => ({ ...x, date_echeance: e.target.value }))}
+            style={{ fontSize: 11, padding: '2px 4px', border: '0.5px solid rgba(0,0,0,0.2)', borderRadius: 3, minHeight: 0 }} />
+        </label>
+        <span style={{ flex: 1 }} />
+        <button type="button" onClick={() => setEdition(null)} disabled={enregistrement}
+          style={{ fontSize: 11, padding: '3px 10px', border: '0.5px solid rgba(0,0,0,0.15)', borderRadius: 3, background: 'white', cursor: 'pointer' }}>Annuler</button>
+        <button type="button" onClick={enregistrer} disabled={enregistrement || !edition.description.trim()}
+          style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', border: 'none', borderRadius: 3, background: '#E8602C', color: 'white', cursor: 'pointer', opacity: enregistrement || !edition.description.trim() ? 0.6 : 1 }}>
+          {enregistrement ? 'Enregistrement…' : 'Enregistrer'}
+        </button>
+      </div>
     </div>
   )
   return (
@@ -387,6 +422,11 @@ function SousRemarqueRow({ sr, onDelete, onStatut, onEdit }) {
       )}
       {!lectureSeule && (
         <div className="sous-remarque-actions" style={{ display: 'flex', gap: 3, opacity: 0, transition: 'opacity 0.15s', flexShrink: 0 }}>
+          <button type="button" onClick={() => setEdition({ description: sr.description ?? '', date_echeance: sr.date_echeance ?? '' })}
+            aria-label="Modifier cette suite" title="Modifier cette suite"
+            style={{ display: 'inline-flex', padding: 2, background: 'none', border: 'none', cursor: 'pointer', color: '#5E5854' }}>
+            <Pencil size={11} />
+          </button>
           <BoutonSupprimer taille={11} onConfirm={() => onDelete(sr.id)} style={{ padding: 2 }} />
         </div>
       )}

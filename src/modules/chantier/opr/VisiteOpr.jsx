@@ -43,7 +43,8 @@ function jour(d, options = { day: 'numeric', month: 'long', year: 'numeric' }) {
 
 function messageErreur(err) {
   const brut = err?.message ?? String(err)
-  if (/Failed to fetch|NetworkError/i.test(brut)) return 'Connexion au serveur impossible : vérifiez la connexion internet et réessayez.'
+  // « no-response » : la mémoire hors ligne n'avait pas la réponse (Safari)
+  if (/Failed to fetch|NetworkError|Load failed|no-response|respondWith/i.test(brut)) return 'Pas de réseau : cette action demande une connexion internet. Réessayez une fois connecté.'
   return brut
 }
 

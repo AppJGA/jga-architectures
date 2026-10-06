@@ -24,5 +24,5 @@ export function echecDeReseau(erreur, enLigne = true) {
   if (!enLigne) return true
   if (!erreur) return false
   if (erreur.name === 'AuthRetryableFetchError' || (erreur.__isAuthError && erreur.status === 0)) return true
-  return /fetch|network|réseau|Load failed/i.test(String(erreur.message ?? ''))
+  return /fetch|network|réseau|Load failed|no-response/i.test(String(erreur.message ?? ''))
 }

@@ -20,7 +20,7 @@ function verifier(error) {
 export function erreurReseau(err) {
   if (typeof navigator !== 'undefined' && navigator.onLine === false) return true
   const message = String(err?.message ?? '')
-  return err?.name === 'TypeError' || /fetch|network|réseau|Load failed/i.test(message)
+  return err?.name === 'TypeError' || /fetch|network|réseau|Load failed|no-response/i.test(message)
 }
 
 async function envoyerPhotoEnAttente(op) {

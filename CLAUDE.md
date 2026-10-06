@@ -863,6 +863,14 @@ ligne », plus haut).
   tient les écrans à jour. Témoin dans le bandeau du haut (`TemoinEnvoi`,
   `temoinFile`) et ligne par visite sur le tableau de bord
   (`resumeParVisite`, testés) ; un refus mène à la visite.
+- **Rien d'automatique ne doit crier sans réseau.** À l'ouverture d'un CR,
+  la mise à jour de la feuille de présence (`syncPresences`) et la lecture
+  des lots attendent le réseau en silence (relance sur `online`) : elle
+  affichait « Non enregistré. TypeError: FetchEvent.respondWith… no-response »
+  — message du service worker sans copie gardée (Safari), désormais reconnu
+  comme coupure (`erreurReseau`, `messageErreur` : « Pas de réseau »).
+  Encore hors file : pointer l'avancement d'une tâche écrit directement
+  dans `planning` (demande le réseau).
 - **Écran** : `BandeauHorsLigne` (dans `AppShell`) dit « Hors ligne » et la
   date de la dernière réponse reçue du réseau (`derniereSynchro`, notée par
   le `fetch` du client). Portail sans copie : message au lieu de « 0

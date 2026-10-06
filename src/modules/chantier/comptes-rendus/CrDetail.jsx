@@ -46,6 +46,7 @@ import { ModaleConfirmation } from '../../../shared/components/ModaleConfirmatio
 import { ModaleEmission } from './ModaleEmission'
 import { AvancementLots } from './AvancementLots'
 import { garderImages } from './horsLigne/images'
+import { erreurReseau } from './horsLigne/envoi'
 import { avancementParLot, avancementGlobal, lignesAvancement } from './avancementLogique'
 
 // ─── Vues disponibles ─────────────────────────────────────────────────────────
@@ -492,7 +493,8 @@ function BandeauErreur({ message, onFermer }) {
 // Confirmation d'émission ou de réouverture
 function messageErreur(err) {
   const brut = err?.message ?? String(err)
-  if (/Failed to fetch|NetworkError/i.test(brut)) return 'Connexion au serveur impossible : vérifiez la connexion internet et réessayez.'
+  // « no-response » : la mémoire hors ligne n'avait pas la réponse (Safari)
+  if (/Failed to fetch|NetworkError|Load failed|no-response|respondWith/i.test(brut)) return 'Pas de réseau : cette action demande une connexion internet. Réessayez une fois connecté.'
   return brut
 }
 
@@ -523,7 +525,8 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
       .select('id, lot_id, lots(*), entreprises(id, raison_sociale), interlocuteurs:interlocuteur_id(prenom, nom, telephone, email)')
       .eq('affaire_id', affaire.id)
       .then(({ data, error }) => {
-        if (error) signalerErreur(error)
+        // Sans réseau, la liste gardée sur l'appareil (ou rien) : pas d'alerte
+        if (error && !erreurReseau(error)) signalerErreur(error)
         else setLotEntreprises(data ?? [])
       })
   }, [affaire?.id, signalerErreur])
@@ -568,11 +571,22 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
   )
 
   // Feuille de présence complétée à l'ouverture (rien sur un CR émis, ni pour
-  // qui consulte sans droit de modification)
+  // qui consulte sans droit de modification). Elle interroge la base : sans
+  // réseau, elle attend son retour au lieu d'afficher une erreur — la visite
+  // emportée a déjà sa feuille.
   useEffect(() => {
-    if (syncDone.current || lectureSeuleAffaire) return
-    syncDone.current = true
-    syncPresences().catch(signalerErreur)
+    if (lectureSeuleAffaire) return undefined
+    const lancer = () => {
+      if (syncDone.current || navigator.onLine === false) return
+      syncDone.current = true
+      syncPresences().catch((err) => {
+        if (erreurReseau(err)) { syncDone.current = false; return }
+        signalerErreur(err)
+      })
+    }
+    lancer()
+    window.addEventListener('online', lancer)
+    return () => window.removeEventListener('online', lancer)
   }, [crId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Chaque écriture signale son échec dans le bandeau, puis relaie l'erreur :

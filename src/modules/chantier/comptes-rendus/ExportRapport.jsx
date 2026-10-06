@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { FileText, Eye, Archive, Download, Mail } from 'lucide-react'
+import { FileText, Eye, Archive, Download, Mail, Trash2 } from 'lucide-react'
 import { useCr } from './CrContexte'
 import { NettoyageStockage } from './NettoyageStockage'
 import { formatOctets, niveauEspace, LIMITE_STOCKAGE } from './photosLogique'
@@ -9,6 +9,7 @@ import { lienArchive } from './rapportStockage'
 import { DiffusionCr } from './DiffusionCr'
 import { IconeExportPdf, IconeEmission } from '../../../shared/icones/IconesAffaire'
 import { libelleNumeroLot } from '../../../shared/lots/numeroLot'
+import { ModaleConfirmation } from '../../../shared/components/ModaleConfirmation'
 
 // ─── Écran « Exporter le CR » ────────────────────────────────────────────────
 // Réglages du rapport, aperçu et téléchargement du PDF, archives des émissions,
@@ -56,6 +57,15 @@ function Choix({ titre, valeur, options, onChange }) {
   )
 }
 
+function BoutonSupprimer({ onClick }) {
+  return (
+    <button type="button" onClick={onClick} aria-label="Supprimer ce PDF" title="Supprimer ce PDF du stockage"
+      style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, padding: 0, border: '0.5px solid rgba(0,0,0,0.15)', background: 'white', borderRadius: 2, cursor: 'pointer', color: '#B8412C' }}>
+      <Trash2 size={13} />
+    </button>
+  )
+}
+
 function fmtHorodatage(iso) {
   const d = new Date(iso)
   return `${d.toLocaleDateString('fr-FR')} à ${d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`
@@ -63,10 +73,15 @@ function fmtHorodatage(iso) {
 
 export function ExportRapport({
   cr, affaire, sections, presences, convocations, lotEntreprises, lots: lotsAffaire = null, generalites = null, interlocuteurs, zones = [], avancement = [], profils = [], photos, liensPhotos, pastilles, plansCr,
-  espace, peutGerer, onEspaceChange, archives: toutesArchives, onArchiverMaintenant, onPreparerVersion, signataire, onEmettre,
+  espace, peutGerer, onEspaceChange, archives: toutesArchives, onArchiverMaintenant, onPreparerVersion, onSupprimerArchive, signataire, onEmettre,
 }) {
   // Archives d'émission ; les versions par entreprise servent à la diffusion
   const archives = toutesArchives === null ? null : (toutesArchives ?? []).filter(a => !a.destinataire)
+  const versionsEntreprises = (toutesArchives ?? []).filter(a => a.destinataire)
+  const [aSupprimer, setASupprimer] = useState(null)
+  // La dernière émission, pas la première ligne : une fois celle-ci supprimée,
+  // une version précédente ne doit pas passer pour l'émission en cours
+  const estEmissionCourante = (a) => !cr.date_emission || new Date(a.emis_le).getTime() === new Date(cr.date_emission).getTime()
   const { signalerErreur } = useCr()
   const [reglages, setReglagesBruts] = useState(() => lireReglagesRapport(affaire?.id))
   const [enCours, setEnCours] = useState(null) // 'apercu' | 'telecharger' | 'archiver'
@@ -173,17 +188,54 @@ export function ExportRapport({
             <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
               {archives.map((a, i) => (
                 <li key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0', borderTop: i ? '0.5px solid rgba(0,0,0,0.06)' : 'none', fontSize: 12 }}>
-                  <span style={{ flex: 1, color: i === 0 ? '#1F1B17' : '#9C9591' }}>
-                    {i === 0 ? 'Émis' : 'Version précédente, émise'} le {fmtHorodatage(a.emis_le)} · {formatOctets(a.taille_octets)}
+                  <span style={{ flex: 1, color: estEmissionCourante(a) ? '#1F1B17' : '#9C9591' }}>
+                    {estEmissionCourante(a) ? 'Émis' : 'Version précédente, émise'} le {fmtHorodatage(a.emis_le)} · {formatOctets(a.taille_octets)}
                   </span>
                   <button type="button" onClick={() => ouvrirArchive(a)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 10px', fontSize: 12, border: '0.5px solid rgba(0,0,0,0.15)', background: 'white', borderRadius: 2, cursor: 'pointer' }}>
                     <Download size={13} /> Télécharger
                   </button>
+                  {peutGerer && onSupprimerArchive && <BoutonSupprimer onClick={() => setASupprimer(a)} />}
                 </li>
               ))}
             </ul>
           )}
+          {versionsEntreprises.length > 0 && (
+            <details style={{ marginTop: 10, fontSize: 12 }}>
+              <summary style={{ cursor: 'pointer', color: '#5E5854' }}>
+                Versions préparées pour les entreprises · {versionsEntreprises.length} PDF · {formatOctets(versionsEntreprises.reduce((t, a) => t + (a.taille_octets ?? 0), 0))}
+              </summary>
+              <ul style={{ listStyle: 'none', margin: '6px 0 0', padding: 0 }}>
+                {versionsEntreprises.map(a => (
+                  <li key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0', borderTop: '0.5px solid rgba(0,0,0,0.06)' }}>
+                    <span style={{ flex: 1, color: '#5E5854' }}>
+                      {a.version_pour ?? 'Version par entreprise'} · {fmtHorodatage(a.emis_le)} · {formatOctets(a.taille_octets)}
+                    </span>
+                    <button type="button" onClick={() => ouvrirArchive(a)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 10px', fontSize: 12, border: '0.5px solid rgba(0,0,0,0.15)', background: 'white', borderRadius: 2, cursor: 'pointer' }}>
+                      <Download size={13} /> Télécharger
+                    </button>
+                    {peutGerer && onSupprimerArchive && <BoutonSupprimer onClick={() => setASupprimer(a)} />}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
         </div>
+      )}
+
+      {aSupprimer && (
+        <ModaleConfirmation
+          danger
+          titre="Supprimer ce PDF archivé ?"
+          texte={aSupprimer.destinataire
+            ? 'Le PDF est retiré du stockage. Le lien envoyé à cette entreprise ne fonctionnera plus ; un nouvel envoi refabriquera le PDF.'
+            : 'Le PDF est retiré du stockage. Les liens déjà envoyés par e-mail vers ce PDF ne fonctionneront plus. Le compte rendu lui-même ne change pas, et son PDF pourra être réarchivé.'}
+          libelle="Supprimer"
+          onConfirmer={async () => {
+            try { await onSupprimerArchive(aSupprimer) } catch (err) { signalerErreur(err) }
+            setASupprimer(null)
+          }}
+          onAnnuler={() => setASupprimer(null)}
+        />
       )}
 
       {cr.statut === 'emis' && archives !== null && peutGerer && (

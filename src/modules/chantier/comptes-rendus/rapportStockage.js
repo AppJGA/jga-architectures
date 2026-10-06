@@ -35,6 +35,20 @@ export async function archiverPdf({ affaireId, crId, blob, reglages, emisLe, des
   return data
 }
 
+/**
+ * Retire une archive : la ligne d'abord, puis le fichier. Un fichier resté
+ * sans ligne est rattrapé par « Nettoyer le stockage » ; l'inverse laisserait
+ * une archive affichée qui ne s'ouvre plus. Un e-mail déjà envoyé perd son lien.
+ */
+export async function supprimerArchive(archive) {
+  const { data, error } = await supabase.from('cr_archives').delete().eq('id', archive.id).select('id')
+  if (error) throw error
+  // Un refus des règles d'accès ne lève pas d'erreur : rien n'est supprimé
+  if (!data?.length) throw new Error('Suppression refusée : vous ne pouvez pas modifier cette affaire.')
+  const { error: erreurFichier } = await supabase.storage.from(BUCKET_ARCHIVES).remove([archive.chemin])
+  if (erreurFichier) console.warn('Archive : fichier non retiré, à nettoyer', erreurFichier)
+}
+
 // Lien de téléchargement : 10 minutes pour l'écran, 30 jours pour un e-mail
 export async function lienArchive(chemin, dureeSecondes = 600) {
   const { data, error } = await supabase.storage.from(BUCKET_ARCHIVES).createSignedUrl(chemin, dureeSecondes)

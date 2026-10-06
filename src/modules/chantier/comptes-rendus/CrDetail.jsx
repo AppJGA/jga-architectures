@@ -27,7 +27,7 @@ import { useAffaireCollaborateurs } from '../../../shared/hooks/useAffaireCollab
 import { ExportRapport } from './ExportRapport'
 import { lireReglagesRapport } from './rapportReglages'
 import { genererPdfCr, libelleVersion } from './genererRapport'
-import { archivesDuCr, archiverPdf } from './rapportStockage'
+import { archivesDuCr, archiverPdf, supprimerArchive } from './rapportStockage'
 import { compterPresents, FAMILLES_STATUT, infosStatut, estEnRetard } from './crLogique'
 import { CrContexte } from './CrContexte'
 import { PhotosContexte } from './usePhotosRemarque'
@@ -997,6 +997,11 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
           archives={archives}
           onArchiverMaintenant={(reglages) => archiver({ ...reglages, destinataire: '' }, cr, cr.date_emission ?? new Date().toISOString())}
           onPreparerVersion={preparerVersion}
+          onSupprimerArchive={async (archive) => {
+            await supprimerArchive(archive)
+            setVersionArchives(v => v + 1)
+            setVersionEspace(v => v + 1)
+          }}
           signataire={[cr.profiles?.prenom, cr.profiles?.nom].filter(Boolean).join(' ') || null}
         />
       )}

@@ -303,7 +303,11 @@ création avec reprise de la visite précédente) et `useCompteRendu` (un CR).
   préparées par `imagesRapport.js`. Roboto n'a pas certains symboles (▶, ✓) :
   s'en tenir aux caractères latins courants. À l'émission, le PDF est archivé
   (`cr_archives`, stockage privé `cr-archives`, migration 043) ; un échec
-  d'archive n'empêche pas l'émission.
+  d'archive n'empêche pas l'émission. Chaque PDF archivé (émission,
+  version précédente, version par entreprise) se **supprime** depuis la page
+  d'export (`supprimerArchive`, `rapportStockage.js`) : ligne d'abord, puis
+  fichier — un fichier resté seul est rattrapé par « Nettoyer le stockage ».
+  « Émis » désigne l'archive datée de `cr.date_emission`, pas la première.
   **Règle de l'agence : pas d'export d'un brouillon** — la page « Exporter
   le PDF » (`ExportRapport`) ne propose Télécharger que pour un CR émis ; un
   brouillon garde ses réglages (ils servent au PDF archivé à l'émission),

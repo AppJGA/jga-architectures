@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useContext, useMemo } from 'react'
-import { Search, Plus, Camera, MapPin, MessageSquare, Pencil, MoreHorizontal, WifiOff, AlertTriangle, X, LogOut, Lock, RefreshCw } from 'lucide-react'
+import { Search, Plus, Camera, MapPin, MessageSquare, Pencil, MoreHorizontal, WifiOff, AlertTriangle, X, LogOut, Lock, RefreshCw, CornerDownRight } from 'lucide-react'
 import { IconeFtm, IconeAvancement, IconePresence } from '../../../shared/icones/IconesAffaire'
 import { FILTRES_VISITE, filtreVisite, groupesVisite, compteursVisite } from './visiteLogique'
 import { STATUTS, infosStatut, estEnRetard, libelleZone, peutModifierRemarque, auteurExterieur, miseEnForme, COULEUR_SURLIGNE } from './crLogique'
@@ -159,8 +159,10 @@ function CarteRemarque({ rem, cr, lots, interlocuteurs, zones, ftms, ouvrirFtm, 
         {rem.description}
       </p>
       {proposee && <ExtraitProposition rem={rem} />}
+      {/* Les suites sous leur remarque, décalées vers la droite : on lit d'un
+          coup d'œil ce qui a été noté depuis, sans ouvrir la remarque */}
       {suivis.length > 0 && (
-        <ul style={{ listStyle: 'none', margin: '6px 0 0', padding: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <ul aria-label="Suites" style={{ listStyle: 'none', margin: '10px 0 0 22px', padding: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
           {suivis.map(sr => {
             const st = infosStatut(sr)
             if (sr.a_valider) return (
@@ -177,10 +179,17 @@ function CarteRemarque({ rem, cr, lots, interlocuteurs, zones, ftms, ouvrirFtm, 
             )
             return (
               <li key={sr.id} onClick={() => onPanneau({ type: 'suivi', remarque: rem })}
-                style={{ display: 'flex', gap: 8, alignItems: 'baseline', fontSize: 14, paddingLeft: 10, cursor: 'pointer' }}>
-                <span style={{ color: '#9C9591', fontSize: 12, whiteSpace: 'nowrap' }}>▶ {fmtJour(sr.date_note)}</span>
-                <span style={{ flex: 1, color: st.clos ? '#9CA3AF' : '#1F1B17', textDecoration: st.clos ? 'line-through' : 'none' }}>{sr.description}</span>
-                <span style={{ fontSize: 12, fontWeight: 600, color: st.couleur, whiteSpace: 'nowrap' }}>{st.libelle}</span>
+                style={{ display: 'flex', gap: 8, padding: '8px 12px', background: '#FAF7F2', borderLeft: `3px solid ${st.couleur}`, borderRadius: 2, cursor: 'pointer' }}>
+                <CornerDownRight size={16} color="#9C9591" style={{ flexShrink: 0, marginTop: 2 }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', fontSize: 12, color: '#9C9591' }}>
+                    <span>Suite du {fmtJour(sr.date_note)}</span>
+                    <span style={{ flex: 1 }} />
+                    {sr.date_echeance && <span style={{ color: estEnRetard(sr, cr.date_reunion) ? '#B8412C' : '#5E5854' }}>Pour le {fmtJour(sr.date_echeance)}</span>}
+                    <span style={{ fontWeight: 600, color: st.couleur, background: st.fond, borderRadius: 3, padding: '2px 8px' }}>{st.libelle}</span>
+                  </div>
+                  <p style={{ margin: '3px 0 0', fontSize: 15, lineHeight: 1.4, color: st.clos ? '#9CA3AF' : '#1F1B17', textDecoration: st.clos ? 'line-through' : 'none' }}>{sr.description}</p>
+                </div>
               </li>
             )
           })}

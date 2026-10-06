@@ -9,7 +9,7 @@ import { BoutonDictee } from './BoutonDictee'
 import { AnnotationPhoto } from './AnnotationPhoto'
 import { compresserPhoto } from './compressionPhoto'
 import { PhotosContexte } from './usePhotosRemarque'
-import { avancementParLot, avancementGlobal, infosEcart, lignesAvancement } from './avancementLogique'
+import { avancementParLot, avancementGlobal, infosEcart, lignesAvancement, bornerAvancement } from './avancementLogique'
 import { MentionConvocation, CompteurConvoquesAbsents, FOND_ABSENT, ROUGE_ABSENT } from './MentionConvocation'
 import { convocationDe, estConvoqueAbsent, convoquesAbsents } from './convocationLogique'
 
@@ -563,17 +563,10 @@ export function PanneauAvancement({ cr, planning, onModifierTache, lectureSeule,
                             {t.nom}
                             <span style={{ marginLeft: 8, fontWeight: 600 }}>{t.avancement ?? 0} %</span>
                           </p>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                            {lectureSeule || l.gele ? null : PALIERS.map(v => (
-                              <button key={v} type="button" onClick={() => pointer(t, v)} aria-pressed={(t.avancement ?? 0) === v}
-                                style={{ minWidth: 56, minHeight: 44, borderRadius: 3, fontSize: 14, fontWeight: 600, cursor: 'pointer',
-                                  border: (t.avancement ?? 0) === v ? 'none' : '1px solid rgba(0,0,0,0.15)',
-                                  background: (t.avancement ?? 0) === v ? '#E8602C' : 'white',
-                                  color: (t.avancement ?? 0) === v ? 'white' : '#5E5854' }}>
-                                {v}%
-                              </button>
-                            ))}
-                          </div>
+                          {!(lectureSeule || l.gele) && (
+                            // Remonté quand l'avancement enregistré change : le curseur repart de lui
+                            <ReglageAvancement key={t.avancement ?? 0} valeur={t.avancement ?? 0} onValider={(v) => pointer(t, v)} />
+                          )}
                         </div>
                       ))}
                     </div>
@@ -590,3 +583,54 @@ export function PanneauAvancement({ cr, planning, onModifierTache, lectureSeule,
 
 // Paliers de pointage : sur le chantier, l'avancement se dit au quart
 const PALIERS = [0, 25, 50, 75, 100]
+
+// Raccourcis (paliers), curseur à glisser et champ à taper. Rien ne part
+// pendant le glissement : la valeur s'enregistre au lâcher, ou à la
+// validation du champ — une écriture par geste, même sans réseau.
+function ReglageAvancement({ valeur, onValider }) {
+  const [brouillon, setBrouillon] = useState(valeur)
+  const [saisie, setSaisie] = useState(String(valeur))
+  const valider = (v) => {
+    const b = bornerAvancement(v)
+    if (b == null) { setSaisie(String(brouillon)); return }
+    setBrouillon(b)
+    setSaisie(String(b))
+    if (b !== valeur) onValider(b)
+  }
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <input
+          type="range" min={0} max={100} step={1} value={brouillon}
+          aria-label="Avancement de la tâche"
+          onChange={(e) => { setBrouillon(Number(e.target.value)); setSaisie(e.target.value) }}
+          onPointerUp={(e) => valider(e.currentTarget.value)}
+          onTouchEnd={(e) => valider(e.currentTarget.value)}
+          onKeyUp={(e) => valider(e.currentTarget.value)}
+          style={{ flex: 1, minWidth: 0, height: 44, accentColor: '#E8602C', cursor: 'pointer' }}
+        />
+        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 15, fontWeight: 600, color: '#1F1B17' }}>
+          <input
+            type="text" inputMode="numeric" value={saisie} aria-label="Avancement en pourcentage"
+            onChange={(e) => setSaisie(e.target.value.replace(/[^\d,.]/g, '').slice(0, 5))}
+            onBlur={(e) => valider(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
+            style={{ width: 64, height: 44, minHeight: 0, boxSizing: 'border-box', textAlign: 'right', fontSize: 16, fontWeight: 600, border: '1px solid rgba(0,0,0,0.15)', borderRadius: 3, padding: '0 8px' }}
+          />
+          %
+        </label>
+      </div>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        {PALIERS.map((v) => (
+          <button key={v} type="button" onClick={() => valider(v)} aria-pressed={brouillon === v}
+            style={{ minWidth: 52, minHeight: 40, borderRadius: 3, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+              border: brouillon === v ? 'none' : '1px solid rgba(0,0,0,0.15)',
+              background: brouillon === v ? '#E8602C' : 'white',
+              color: brouillon === v ? 'white' : '#5E5854' }}>
+            {v}%
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}

@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 772 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
+npm test         # 773 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -342,7 +342,10 @@ création avec reprise de la visite précédente) et `useCompteRendu` (un CR).
   saisie parallèle — les chiffres sont lus dans le planning chantier
   (`planning.avancement`), pondérés par la durée des tâches, et comparés à ce
   que le planning prévoyait pour la date de la réunion. Pointer une tâche
-  depuis le CR ou le mode Visite écrit dans `planning`. À l'émission,
+  depuis le CR ou le mode Visite écrit dans `planning`. En mode Visite : un
+  curseur, un champ « % » et les paliers 0/25/50/75/100 (`ReglageAvancement`,
+  `bornerAvancement`) ; rien ne part pendant le glissement, une écriture au
+  lâcher ou à la validation du champ. À l'émission,
   l'instantané est recopié dans `comptes_rendus.avancement_lots` : le planning
   continue d'avancer, le CR garde les chiffres du jour.
 - **Visite hors ligne** (`horsLigne/`, aucune migration) : ouvrir le mode Visite

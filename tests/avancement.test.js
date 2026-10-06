@@ -8,7 +8,7 @@ import { test, describe } from 'node:test'
 
 import {
   partPrevue, avancementParLot, avancementGlobal, infosEcart,
-  instantaneAvancement, lignesAvancement,
+  instantaneAvancement, lignesAvancement, bornerAvancement,
 } from '../src/modules/chantier/comptes-rendus/avancementLogique.js'
 import { blocAvancement, definitionPdf, REGLAGES_DEFAUT } from '../src/modules/chantier/comptes-rendus/rapportLogique.js'
 
@@ -211,4 +211,13 @@ describe('tableau d’avancement du PDF', () => {
     assert.match(texteDe(avec.content), /AVANCEMENT DES LOTS/)
     assert.doesNotMatch(texteDe(sans.content), /AVANCEMENT DES LOTS/)
   })
+})
+
+test('un avancement glissé ou tapé : entier de 0 à 100', () => {
+  assert.equal(bornerAvancement('37'), 37)
+  assert.equal(bornerAvancement('42,6'), 43)
+  assert.equal(bornerAvancement(140), 100)
+  assert.equal(bornerAvancement(-5), 0)
+  assert.equal(bornerAvancement(''), null)
+  assert.equal(bornerAvancement('abc'), null)
 })

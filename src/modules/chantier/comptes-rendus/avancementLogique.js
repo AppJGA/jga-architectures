@@ -80,6 +80,14 @@ export function avancementParLot(taches, lots = [], { date, periodes = [] } = {}
 }
 
 /** Avancement de l'opération entière, pondéré par les durées des lots. */
+/** Un pourcentage saisi ou glissé, ramené à un entier de 0 à 100 ; null si illisible. */
+export function bornerAvancement(valeur) {
+  if (valeur === '' || valeur == null) return null
+  const n = Number(String(valeur).replace(',', '.'))
+  if (!Number.isFinite(n)) return null
+  return Math.max(0, Math.min(100, Math.round(n)))
+}
+
 export function avancementGlobal(lignes) {
   const jours = (lignes ?? []).reduce((s, l) => s + l.jours, 0)
   if (!jours) return { realise: 0, prevu: 0, ecart: 0, jours: 0 }

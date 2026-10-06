@@ -1,11 +1,13 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Send, Mail, Copy, Check, Users } from 'lucide-react'
+import { Send, Mail, Copy, Check, Users, Download } from 'lucide-react'
 import { IconeEntreprisesLots } from '../../../shared/icones/IconesAffaire'
 import { useCr } from './CrContexte'
 import {
   participantsAvecEmail, selectionParDefaut, entreprisesDiffusion, dateExpiration, texteEmail, lienMailto,
-  texteACopier, MAILTO_MAX, DUREE_LIEN_JOURS,
+  texteACopier, MAILTO_MAX, DUREE_LIEN_JOURS, fichierOutlook, nomFichierOutlook,
 } from './diffusionLogique'
+import { telechargerBlob } from './genererRapport'
+import { nomFichierCr } from './rapportLogique'
 import { lienArchive, diffusionsDuCr, noterDiffusion } from './rapportStockage'
 
 /** Diffusion d'un compte rendu */
@@ -15,6 +17,7 @@ export function DiffusionCr({ cr, affaire, presences, lots, archives, onPreparer
       cleDocument={cr.id} presences={presences} lots={lots}
       archiveEmission={(archives ?? []).find(a => !a.destinataire)}
       optionGenerales
+      nomFichier={(versionPour) => nomFichierCr(cr, affaire, versionPour)}
       texte={(options) => texteEmail({ cr, affaire, signataire, ...options })}
       preparerVersion={onPreparerVersion}
       chargerDiffusions={() => diffusionsDuCr(cr.id)}
@@ -24,18 +27,21 @@ export function DiffusionCr({ cr, affaire, presences, lots, archives, onPreparer
 }
 
 // ─── Diffuser le compte rendu par la messagerie ──────────────────────────────
-// « Préparer » fabrique le lien de téléchargement (30 jours), puis « Ouvrir
-// l'e-mail » ouvre la messagerie de l'utilisateur, texte et adresses remplis.
-// Deux clics : ouverte automatiquement après une attente, la messagerie serait
-// bloquée par certains navigateurs.
+// « Préparer » fabrique le lien de téléchargement (30 jours) et le texte.
+// Puis « Ouvrir dans Outlook » (boîte pro de l'agence) télécharge l'e-mail
+// prêt (.emltpl : destinataires, objet, texte) et le PDF à y glisser — voir
+// `fichierOutlook`. « Autre messagerie » garde le lien mailto. Deux clics :
+// ouverte automatiquement après une attente, la messagerie serait bloquée.
 
 function fmtHorodatage(iso) {
   const d = new Date(iso)
   return `${d.toLocaleDateString('fr-FR')} à ${d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`
 }
 
-function BoutonsEmail({ adresses, copieCachee, objet, corps, onOuvert }) {
+function BoutonsEmail({ adresses, copieCachee, objet, corps, pdf, onOuvert }) {
+  const { signalerErreur } = useCr()
   const [copie, setCopie] = useState(false)
+  const [outlook, setOutlook] = useState(null) // null | 'envoi' | 'fait'
   const lien = lienMailto({ adresses, copieCachee, objet, corps })
   const tropLong = lien.length > MAILTO_MAX
   const copier = async () => {
@@ -46,18 +52,50 @@ function BoutonsEmail({ adresses, copieCachee, objet, corps, onOuvert }) {
       onOuvert()
     } catch { /* presse-papiers refusé : le texte reste sélectionnable à l'écran */ }
   }
+  // L'e-mail d'abord, pendant le clic ; le PDF suit, le temps de le récupérer
+  const ouvrirOutlook = async () => {
+    const nomPdf = pdf?.nomFichier ?? 'Compte rendu.pdf'
+    telechargerBlob(new Blob([fichierOutlook({ adresses, copieCachee, objet, corps })], { type: 'application/vnd.ms-outlook' }), nomFichierOutlook(nomPdf))
+    setOutlook('envoi')
+    onOuvert()
+    try {
+      const reponse = await fetch(await lienArchive(pdf.chemin))
+      if (!reponse.ok) throw new Error(`PDF introuvable (${reponse.status})`)
+      telechargerBlob(await reponse.blob(), nomPdf)
+      setOutlook('fait')
+    } catch (err) {
+      setOutlook(null)
+      signalerErreur(err)
+    }
+  }
   const style = (principal) => ({
     display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', minHeight: 36, borderRadius: 2, fontSize: 12, fontWeight: 500,
     cursor: 'pointer', textDecoration: 'none', border: principal ? 'none' : '0.5px solid rgba(0,0,0,0.15)',
     background: principal ? '#2A8A4E' : 'white', color: principal ? 'white' : '#1F1B17',
   })
   return (
-    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-      <a href={lien} onClick={onOuvert} style={style(!tropLong)}><Mail size={14} /> Ouvrir l’e-mail</a>
-      <button type="button" onClick={copier} style={style(tropLong)}>
-        {copie ? <Check size={14} /> : <Copy size={14} />} {copie ? 'Copié' : 'Copier le texte et les adresses'}
-      </button>
-      {tropLong && <span style={{ fontSize: 11, color: '#B8412C' }}>E-mail long : certaines messageries le tronquent, préférez la copie.</span>}
+    <div>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        {pdf?.chemin && (
+          <button type="button" onClick={ouvrirOutlook} disabled={outlook === 'envoi'} style={{ ...style(true), opacity: outlook === 'envoi' ? 0.6 : 1 }}>
+            <Mail size={14} /> {outlook === 'envoi' ? 'Préparation…' : 'Ouvrir dans Outlook'}
+          </button>
+        )}
+        <a href={lien} onClick={onOuvert} style={style(false)}>Autre messagerie</a>
+        <button type="button" onClick={copier} style={style(false)}>
+          {copie ? <Check size={14} /> : <Copy size={14} />} {copie ? 'Copié' : 'Copier le texte et les adresses'}
+        </button>
+      </div>
+      {outlook === 'fait' && (
+        <p role="status" style={{ display: 'flex', gap: 6, alignItems: 'flex-start', margin: '8px 0 0', padding: '8px 10px', fontSize: 12, lineHeight: 1.5, color: '#1F1B17', background: '#EEF6F1', border: '0.5px solid #B7DCC4' }}>
+          <Download size={14} color="#2A8A4E" style={{ flexShrink: 0, marginTop: 2 }} />
+          <span>
+            Deux fichiers sont téléchargés. <strong>Ouvrez l’e-mail</strong> (« {nomFichierOutlook(pdf.nomFichier ?? 'Compte rendu.pdf')} ») : Outlook l’affiche prêt, destinataires, objet et texte remplis.
+            Puis <strong>glissez-y le PDF</strong> (ou « Joindre un fichier »), et envoyez.
+          </span>
+        </p>
+      )}
+      {tropLong && <p style={{ margin: '6px 0 0', fontSize: 11, color: '#B8412C' }}>E-mail long : par une autre messagerie, il peut être tronqué ; préférez Outlook ou la copie.</p>}
     </div>
   )
 }
@@ -70,7 +108,7 @@ function BoutonsEmail({ adresses, copieCachee, objet, corps, onOuvert }) {
  * @param chargerDiffusions () → lignes, ou null si la table manque
  * @param noter (ligne) → enregistre un e-mail préparé
  */
-export function DiffusionDocument({ cleDocument, presences, lots, archiveEmission, optionGenerales = false, texte, preparerVersion, chargerDiffusions, noter: noterLigne }) {
+export function DiffusionDocument({ cleDocument, presences, lots, archiveEmission, optionGenerales = false, nomFichier = () => 'Document.pdf', texte, preparerVersion, chargerDiffusions, noter: noterLigne }) {
   const { signalerErreur } = useCr()
   const participants = useMemo(() => participantsAvecEmail(presences), [presences])
   const entreprises = useMemo(() => entreprisesDiffusion(presences, lots), [presences, lots])
@@ -108,7 +146,7 @@ export function DiffusionDocument({ cleDocument, presences, lots, archiveEmissio
     setEnCours('tous')
     try {
       const lien = await lienMail(archiveEmission.chemin)
-      setEmailTous({ ...texte({ lien, expiration }), archiveId: archiveEmission.id })
+      setEmailTous({ ...texte({ lien, expiration }), archiveId: archiveEmission.id, pdf: { chemin: archiveEmission.chemin, nomFichier: nomFichier(null) } })
     } catch (err) { signalerErreur(err) }
     setEnCours(null)
   }
@@ -118,7 +156,7 @@ export function DiffusionDocument({ cleDocument, presences, lots, archiveEmissio
     try {
       const archive = await preparerVersion(e.destinataire, inclureGenerales)
       const lien = await lienMail(archive.chemin)
-      setEmailsLots(m => ({ ...m, [e.destinataire]: { ...texte({ versionPour: e.libelle, lien, expiration }), archiveId: archive.id } }))
+      setEmailsLots(m => ({ ...m, [e.destinataire]: { ...texte({ versionPour: e.libelle, lien, expiration }), archiveId: archive.id, pdf: { chemin: archive.chemin, nomFichier: nomFichier(e.libelle) } } }))
     } catch (err) { signalerErreur(err) }
     setEnCours(null)
   }
@@ -196,7 +234,7 @@ export function DiffusionDocument({ cleDocument, presences, lots, archiveEmissio
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   <input value={emailTous.objet} onChange={e => setEmailTous(m => ({ ...m, objet: e.target.value }))} aria-label="Objet" style={champ} />
                   <textarea value={emailTous.corps} onChange={e => setEmailTous(m => ({ ...m, corps: e.target.value }))} aria-label="Texte de l’e-mail" rows={11} style={{ ...champ, resize: 'vertical', lineHeight: 1.45 }} />
-                  <BoutonsEmail adresses={adresses} copieCachee={copieCachee} objet={emailTous.objet} corps={emailTous.corps}
+                  <BoutonsEmail adresses={adresses} copieCachee={copieCachee} objet={emailTous.objet} corps={emailTous.corps} pdf={emailTous.pdf}
                     onOuvert={() => noter({ archive_id: emailTous.archiveId, mode: 'tous', libelle: 'À tous', adresses, objet: emailTous.objet })} />
                 </div>
               )}
@@ -238,7 +276,7 @@ export function DiffusionDocument({ cleDocument, presences, lots, archiveEmissio
                   </div>
                   {pret && (
                     <div style={{ marginTop: 8 }}>
-                      <BoutonsEmail adresses={e.adresses} copieCachee={false} objet={pret.objet} corps={pret.corps}
+                      <BoutonsEmail adresses={e.adresses} copieCachee={false} objet={pret.objet} corps={pret.corps} pdf={pret.pdf}
                         onOuvert={() => noter({ archive_id: pret.archiveId, mode: 'entreprise', destinataire: e.destinataire, libelle: e.libelle, adresses: e.adresses, objet: pret.objet })} />
                     </div>
                   )}

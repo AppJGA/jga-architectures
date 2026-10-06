@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 785 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
+npm test         # 789 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -334,9 +334,16 @@ création avec reprise de la visite précédente) et `useCompteRendu` (un CR).
   quand même ». Seules les propositions de l'IA bloquent (la base refuse,
   migration 058) : le bouton mène alors à elles.
 - **Diffusion** (`DiffusionCr.jsx`, migration 044) : pas de serveur d'envoi.
-  L'e-mail s'ouvre dans la messagerie de l'utilisateur (lien `mailto:`) avec
-  un lien signé de 30 jours vers le PDF archivé — un mailto ne peut pas porter
-  de pièce jointe. Les versions par entreprise sont des archives avec
+  Boîte pro de l'agence : **Microsoft 365, nouvel Outlook pour Mac** ; sur le
+  Mac de Victor, les liens `mailto:` ouvrent Chrome (Gmail), pas Outlook.
+  D'où « Ouvrir dans Outlook » : télécharge un modèle `.emltpl`
+  (`fichierOutlook`, testé : destinataires ou Cci, objet, texte HTML) qui
+  ouvre toujours Outlook sur un e-mail modifiable, **et le PDF à côté** — le
+  nouvel Outlook ignore les pièces jointes d'un modèle et ouvre un `.eml` en
+  lecture seule (essayé le 2026-10-06). Le texte dit « ci-joint » et garde un
+  lien signé de 30 jours vers le PDF archivé. « Autre messagerie » = mailto.
+  Pour joindre le PDF d'office, il faudrait créer le brouillon par Microsoft
+  Graph (inscription d'une application dans l'administration Microsoft 365). Les versions par entreprise sont des archives avec
   `destinataire` renseigné, réutilisées pour la même émission ; seules celles
   sans destinataire sont listées comme archives d'émission. `cr_diffusions`
   note les e-mails préparés, pas envoyés.

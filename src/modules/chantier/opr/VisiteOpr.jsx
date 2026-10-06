@@ -21,7 +21,7 @@ import { formatOctets } from '../comptes-rendus/photosLogique'
 import {
   TYPES_VISITE, STATUTS_RESERVE, groupesVisiteOpr, infosStatutReserve, reserveEnRetard, peutSupprimerReserve, libelleLot, libelleZone,
 } from './oprLogique'
-import { statutPourVisite, REGLAGES_OPR_DEFAUT } from './rapportOprLogique'
+import { statutPourVisite, REGLAGES_OPR_DEFAUT, nomFichierOpr } from './rapportOprLogique'
 import { genererPdfOpr } from './genererRapportOpr'
 import { PanneauReserve } from './PanneauReserve'
 import { ProcesVerbaux } from './ProcesVerbaux'
@@ -247,11 +247,12 @@ function DocumentVisite({ visite, affaire, opr, plansCr, lectureSeuleAffaire, si
       {visite.statut === 'emis' && archiveEmission && !lectureSeuleAffaire && (
         <div style={carte}>
           <p style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 14, fontWeight: 500, marginBottom: 4 }}><Mail size={15} color="#E8602C" /> Diffuser</p>
-          <p style={{ fontSize: 12, color: '#9C9591', marginBottom: 10 }}>L’e-mail s’ouvre dans votre messagerie avec un lien vers le PDF, valable 30 jours. Chaque entreprise peut recevoir la liste de ses seules réserves.</p>
+          <p style={{ fontSize: 12, color: '#9C9591', marginBottom: 10 }}>« Ouvrir dans Outlook » prépare l’e-mail (destinataires, objet, texte) et télécharge le PDF à y joindre ; le texte porte aussi un lien de téléchargement valable 30 jours. Chaque entreprise peut recevoir la liste de ses seules réserves.</p>
           <DiffusionDocument
             cleDocument={visite.id} presences={presences}
             lots={opr.lots.filter(l => entreprisesDiffusion(presences, opr.lots).some(e => e.destinataire === `lot:${l.id}`))}
             archiveEmission={archiveEmission}
+            nomFichier={(versionPour) => nomFichierOpr(visite, affaire, versionPour)}
             texte={(o) => texteEmailDocument({
               intitule: visite.type === 'levee' ? 'Levée des réserves' : 'OPR',
               designation: visite.type === 'levee' ? 'le compte rendu de la visite de levée des réserves' : 'le compte rendu des opérations préalables à la réception',

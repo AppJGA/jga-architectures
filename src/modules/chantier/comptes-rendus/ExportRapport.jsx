@@ -269,7 +269,7 @@ export function ExportRapport({
             <Mail size={15} color="#E8602C" /> Diffuser
           </p>
           <p style={{ fontSize: 11, color: '#9C9591', marginBottom: 10 }}>
-            L’e-mail s’ouvre dans votre messagerie avec un lien vers le PDF, valable 30 jours.
+            « Ouvrir dans Outlook » prépare l’e-mail (destinataires, objet, texte) et télécharge le PDF à y joindre ; le texte porte aussi un lien de téléchargement valable 30 jours.
           </p>
           <DiffusionCr cr={cr} affaire={affaire} presences={presences} lots={lots} archives={toutesArchives}
             onPreparerVersion={onPreparerVersion} signataire={signataire} />

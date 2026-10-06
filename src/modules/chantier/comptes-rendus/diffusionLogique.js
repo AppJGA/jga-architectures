@@ -92,9 +92,11 @@ export function texteEmailDocument({ intitule, designation, numero, date, affair
   const lignes = [
     'Bonjour,',
     '',
-    `Veuillez trouver ${designation} n°${num}${dateTexte}${affaire?.nom ? ` (${affaire.nom})` : ''}${versionPour ? `, version pour ${versionPour}` : ''} :`,
+    // Le PDF part en pièce jointe (Outlook) ; le lien reste pour qui ne
+    // reçoit pas les pièces jointes, ou par une autre messagerie
+    `Veuillez trouver ci-joint ${designation} n°${num}${dateTexte}${affaire?.nom ? ` (${affaire.nom})` : ''}${versionPour ? `, version pour ${versionPour}` : ''}.`,
+    `Il est aussi téléchargeable jusqu'au ${expiration.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })} :`,
     lien,
-    `Lien valable jusqu'au ${expiration.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}.`,
     ...(prochaine ? ['', prochaine] : []),
     '',
     'Cordialement,',
@@ -128,4 +130,52 @@ export function lienMailto({ adresses, copieCachee = false, objet, corps }) {
 // Texte à coller dans la messagerie quand le lien mailto serait trop long
 export function texteACopier({ adresses, copieCachee, objet, corps }) {
   return `${copieCachee ? 'Cci' : 'À'} : ${(adresses ?? []).join(', ')}\nObjet : ${objet}\n\n${corps}`
+}
+
+// ─── Fichier e-mail pour Outlook ─────────────────────────────────────────────
+//
+// Un mailto ouvre la messagerie « par défaut » du Mac (Chrome et Gmail chez
+// l'agence) et ne porte pas de pièce jointe. Un modèle Outlook (.emltpl) ouvre
+// toujours Outlook, sur un e-mail modifiable : destinataires, objet, texte
+// mis en forme. Essayé le 2026-10-06 sur le nouvel Outlook pour Mac : il
+// ignore les pièces jointes d'un modèle (et un .eml s'ouvre en lecture
+// seule) — le PDF se télécharge donc à côté, à glisser dans l'e-mail.
+
+const echapper = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+
+/** Texte de l'e-mail en HTML : paragraphes, retours à la ligne, liens cliquables */
+export function corpsHtml(corps) {
+  const paragraphes = String(corps ?? '').split(/\n{2,}/).map((p) => p
+    .split('\n')
+    .map((ligne) => echapper(ligne).replace(/https?:\/\/[^\s<]+/g, (url) => `<a href="${url}">${url}</a>`))
+    .join('<br>'))
+  return `<html><head><meta charset="utf-8"></head><body style="font-family: Aptos, Calibri, Arial, sans-serif; font-size: 11pt">${paragraphes.map((p) => `<p>${p}</p>`).join('')}</body></html>`
+}
+
+// Base64 d'un texte UTF-8, en lignes de 76 caractères (norme MIME)
+function base64Utf8(texte) {
+  const octets = new TextEncoder().encode(texte)
+  let binaire = ''
+  for (const o of octets) binaire += String.fromCharCode(o)
+  return btoa(binaire).replace(/.{1,76}/g, '$&\r\n').trimEnd()
+}
+
+/** Modèle d'e-mail Outlook (.emltpl), au format MIME */
+export function fichierOutlook({ adresses, copieCachee = false, objet, corps }) {
+  const liste = (adresses ?? []).join(', ')
+  return [
+    ...(liste ? [`${copieCachee ? 'Bcc' : 'To'}: ${liste}`] : []),
+    `Subject: =?UTF-8?B?${base64Utf8(objet ?? '').replace(/\r\n/g, '')}?=`,
+    'MIME-Version: 1.0',
+    'Content-Type: text/html; charset=UTF-8',
+    'Content-Transfer-Encoding: base64',
+    '',
+    base64Utf8(corpsHtml(corps)),
+    '',
+  ].join('\r\n')
+}
+
+/** Nom du fichier e-mail, d'après celui du PDF */
+export function nomFichierOutlook(nomPdf) {
+  return `${String(nomPdf ?? 'E-mail').replace(/\.pdf$/i, '')}.emltpl`
 }

@@ -6,7 +6,7 @@ import assert from 'node:assert/strict'
 import { test, describe } from 'node:test'
 
 import {
-  participantsAvecEmail, selectionParDefaut, entreprisesDiffusion, dateExpiration, texteEmail, texteEmailDocument, lienMailto, texteACopier, MAILTO_MAX,
+  participantsAvecEmail, selectionParDefaut, entreprisesDiffusion, dateExpiration, texteEmail, texteEmailDocument, lienMailto, texteACopier, MAILTO_MAX, fichierOutlook, corpsHtml, nomFichierOutlook,
 } from '../src/modules/chantier/comptes-rendus/diffusionLogique.js'
 
 const presences = [
@@ -49,9 +49,8 @@ describe('texteEmail', () => {
   test('objet, version, lien, expiration, prochaine réunion, signature', () => {
     const { objet, corps } = texteEmail({ cr, affaire: { nom: 'Groupe scolaire' }, versionPour: 'Lot 2 — Gros œuvre', lien: 'https://x/y', expiration: new Date('2026-10-15T12:00:00Z'), signataire: 'Victor Guyon' })
     assert.equal(objet, 'Compte rendu de réunion n°05 — Groupe scolaire — 15/09/2026')
-    assert.ok(corps.includes('réunion de chantier n°05 du 15 septembre 2026 (Groupe scolaire), version pour Lot 2 — Gros œuvre :'))
-    assert.ok(corps.includes('\nhttps://x/y\n'))
-    assert.ok(corps.includes("Lien valable jusqu'au 15 octobre 2026."))
+    assert.ok(corps.includes('Veuillez trouver ci-joint le compte rendu de la réunion de chantier n°05 du 15 septembre 2026 (Groupe scolaire), version pour Lot 2 — Gros œuvre.'))
+    assert.ok(corps.includes("Il est aussi téléchargeable jusqu'au 15 octobre 2026 :\nhttps://x/y\n"))
     assert.ok(corps.includes('Prochaine réunion : mardi 22 septembre 2026 à 9 h.'))
     assert.ok(corps.endsWith('Victor Guyon — JGA Architectures'))
   })
@@ -84,5 +83,31 @@ test('texteACopier', () => {
 test('texteEmailDocument : autre document (OPR)', () => {
   const { objet, corps } = texteEmailDocument({ intitule: 'OPR', designation: 'le compte rendu des opérations préalables à la réception', numero: 1, date: '2026-09-15', affaire: { nom: 'GS' }, versionPour: 'Lot 5 — Serrurerie', lien: 'L', expiration: new Date('2026-10-15') })
   assert.equal(objet, 'OPR n°01 — GS — 15/09/2026')
-  assert.ok(corps.includes('Veuillez trouver le compte rendu des opérations préalables à la réception n°01 du 15 septembre 2026 (GS), version pour Lot 5 — Serrurerie :'))
+  assert.ok(corps.includes('Veuillez trouver ci-joint le compte rendu des opérations préalables à la réception n°01 du 15 septembre 2026 (GS), version pour Lot 5 — Serrurerie.'))
+})
+
+describe('fichier e-mail pour Outlook', () => {
+  const decoder = (b64) => new TextDecoder().decode(Uint8Array.from(atob(b64.replace(/\s/g, '')), (c) => c.charCodeAt(0)))
+
+  test('destinataires, objet accentué et texte en HTML', () => {
+    const f = fichierOutlook({ adresses: ['a@b.fr', 'c@d.fr'], objet: 'Compte rendu n°05 — Église', corps: 'Bonjour,\n\nCi-joint.\nLien : https://x/y?a=1&b=2' })
+    const [entete, corps] = f.split('\r\n\r\n')
+    assert.ok(entete.includes('To: a@b.fr, c@d.fr'))
+    const sujet = entete.match(/Subject: =\?UTF-8\?B\?(.+)\?=/)[1]
+    assert.equal(decoder(sujet), 'Compte rendu n°05 — Église')
+    const html = decoder(corps)
+    assert.ok(html.includes('<p>Bonjour,</p><p>Ci-joint.<br>Lien : <a href="https://x/y?a=1&amp;b=2">https://x/y?a=1&amp;b=2</a></p>'))
+    assert.ok(!f.includes('\n') || f.split('\n').every((l, i, t) => i === t.length - 1 || l.endsWith('\r')), 'fins de ligne CRLF')
+  })
+  test('copie cachée', () => {
+    const f = fichierOutlook({ adresses: ['a@b.fr'], copieCachee: true, objet: 'O', corps: 'C' })
+    assert.ok(f.startsWith('Bcc: a@b.fr\r\n'))
+    assert.ok(!f.includes('To:'))
+  })
+  test('le texte est échappé', () => {
+    assert.ok(corpsHtml('<script>').includes('&lt;script&gt;'))
+  })
+  test('nom du fichier d’après le PDF', () => {
+    assert.equal(nomFichierOutlook('CR05 – Groupe scolaire – 2026-09-15.pdf'), 'CR05 – Groupe scolaire – 2026-09-15.emltpl')
+  })
 })

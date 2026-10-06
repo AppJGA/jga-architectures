@@ -8,7 +8,7 @@ import { supabase } from '../../../../core/supabase/client'
 import { BUCKET_PHOTOS } from '../photosStockage'
 import { poserPastille } from '../plansStockage'
 import { TYPES } from './fileLogique'
-import { MAGASINS, lire, effacer } from './baseLocale'
+import { MAGASINS, lire, ecrire, effacer } from './baseLocale'
 
 const DOUBLON = '23505'
 
@@ -42,6 +42,52 @@ async function envoyerPhotoEnAttente(op) {
   await effacer(MAGASINS.fichiers, cleFichier).catch(() => {})
 }
 
+export const CLE_RENUMEROTEES = 'jga.visites-renumerotees'
+
+// Le numéro d'une visite démarrée sans réseau a été pris entre-temps : la
+// visite emportée suit, et l'écran le dira (BandeauVisite)
+async function noterRenumerotation(cr, numero) {
+  const gardee = await lire(MAGASINS.visites, cr.id).catch(() => null)
+  if (gardee?.donnees?.cr) await ecrire(MAGASINS.visites, { ...gardee, donnees: { ...gardee.donnees, cr: { ...gardee.donnees.cr, numero } } }).catch(() => {})
+  try {
+    const liste = JSON.parse(localStorage.getItem(CLE_RENUMEROTEES) ?? '[]')
+    liste.push({ crId: cr.id, affaireId: cr.affaire_id, avant: cr.numero, apres: numero, le: Date.now() })
+    localStorage.setItem(CLE_RENUMEROTEES, JSON.stringify(liste))
+  } catch { /* navigation privée */ }
+}
+
+/**
+ * Une visite démarrée sans réseau : la visite d'abord, puis sa reprise,
+ * chaque niveau après celui qu'il référence (comme en ligne). Rejouée, elle
+ * réécrit les mêmes lignes (doublons = succès). Un numéro pris entre-temps
+ * par une autre visite : le suivant libre.
+ */
+async function envoyerCreationCr(op) {
+  const { cr, reprise } = op.charge
+  let numero = cr.numero
+  for (let essai = 0; ; essai++) {
+    const { error } = await supabase.from('comptes_rendus').insert({ ...cr, numero })
+    if (!error) break
+    if (error.code !== DOUBLON) throw error
+    const { data: existe, error: e1 } = await supabase.from('comptes_rendus').select('id').eq('id', cr.id).maybeSingle()
+    if (e1) throw e1
+    if (existe) { numero = cr.numero; break } // envoi rejoué : déjà créée
+    if (essai >= 4) throw new Error('Impossible d’attribuer un numéro à la visite démarrée sans réseau.')
+    const { data: derniere, error: e2 } = await supabase.from('comptes_rendus')
+      .select('numero').eq('affaire_id', cr.affaire_id).order('numero', { ascending: false }).limit(1).maybeSingle()
+    if (e2) throw e2
+    numero = (derniere?.numero ?? numero) + 1
+  }
+  if (numero !== cr.numero) await noterRenumerotation(cr, numero)
+  for (const [table, lignes] of [
+    ['cr_sections', reprise.sections], ['cr_sous_sections', reprise.sousSections],
+    ['cr_remarques', reprise.remarques], ['cr_remarques', reprise.sousRemarques],
+    ['cr_photos', reprise.photos], ['cr_pastilles', reprise.pastilles], ['cr_presences', reprise.presences],
+  ]) {
+    if (lignes?.length) verifier((await supabase.from(table).insert(lignes)).error)
+  }
+}
+
 /**
  * Rejoue une opération de la file sur la base. Lève l'erreur telle quelle :
  * l'appelant décide de réessayer (réseau) ou de mettre de côté (refus).
@@ -49,6 +95,10 @@ async function envoyerPhotoEnAttente(op) {
 export async function envoyerOperation(op) {
   const c = op.charge
   switch (op.type) {
+    case TYPES.crCreer:
+      await envoyerCreationCr(op)
+      return
+
     case TYPES.sectionCreer:
       verifier((await supabase.from('cr_sections').insert({ ...c.section, cr_id: op.crId })).error)
       return

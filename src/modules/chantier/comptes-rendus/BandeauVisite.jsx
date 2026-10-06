@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ChevronRight, AlertTriangle, CheckCircle2, Download, CloudUpload, RefreshCw } from 'lucide-react'
 import { IconeTablette } from '../../../shared/icones/IconesAffaire'
@@ -8,6 +8,10 @@ import { useEnLigne } from '../../../core/layout/enLigne'
 import { useFileGlobale } from './horsLigne/useFileGlobale'
 import { etatPreparation } from './horsLigne/preparationLogique'
 import { lirePreparation, preparerChantier } from './horsLigne/preparation'
+import { CLE_RENUMEROTEES } from './horsLigne/envoi'
+import { EVENEMENT_FILE } from './horsLigne/synchro'
+
+const lireRenumerotees = () => { try { return JSON.parse(localStorage.getItem(CLE_RENUMEROTEES) ?? '[]') } catch { return [] } }
 
 // ─── Accès direct à la visite, depuis la page de l'affaire ───────────────────
 //
@@ -24,6 +28,19 @@ export function BandeauVisite({ affaireId, lectureSeule = false }) {
   const { lignes } = useFileGlobale()
   const [preparation, setPreparation] = useState(() => lirePreparation(affaireId))
   const [avancement, setAvancement] = useState(null) // { index, total, libelle }
+  // Visites démarrées sans réseau qui ont dû changer de numéro à l'envoi
+  const [renumerotees, setRenumerotees] = useState(lireRenumerotees)
+  useEffect(() => {
+    const relire = () => setRenumerotees(lireRenumerotees())
+    window.addEventListener(EVENEMENT_FILE, relire)
+    return () => window.removeEventListener(EVENEMENT_FILE, relire)
+  }, [])
+  const avisNumeros = renumerotees.filter((r) => r.affaireId === affaireId)
+  const lireAvis = () => {
+    const restants = lireRenumerotees().filter((r) => r.affaireId !== affaireId)
+    try { localStorage.setItem(CLE_RENUMEROTEES, JSON.stringify(restants)) } catch { /* navigation privée */ }
+    setRenumerotees(restants)
+  }
 
   if (loading) return null
   const choix = actionVisite(comptesRendus)
@@ -124,6 +141,18 @@ export function BandeauVisite({ affaireId, lectureSeule = false }) {
 
       {/* Sans réseau sur le chantier : ce qui est gardé, ce qui attend l'envoi */}
       <div style={{ flexBasis: '100%', display: 'flex', flexDirection: 'column', gap: 8, borderTop: '0.5px solid rgba(0,0,0,0.08)', paddingTop: 12 }}>
+        {avisNumeros.map((r) => (
+          <p key={r.crId} role="status" style={{ display: 'flex', alignItems: 'center', gap: 8, margin: 0, padding: '8px 10px', fontSize: 12, lineHeight: 1.45, color: '#7C2D12', background: '#FFF7ED', border: '0.5px solid #FDBA74' }}>
+            <AlertTriangle size={15} style={{ flexShrink: 0 }} />
+            <span style={{ flex: 1 }}>
+              La visite démarrée sans réseau est devenue la <strong>n°{String(r.apres).padStart(2, '0')}</strong> : une visite n°{String(r.avant).padStart(2, '0')} avait été créée entre-temps. Vérifiez qu’il n’y en a pas une de trop.
+            </span>
+            <button type="button" onClick={lireAvis}
+              style={{ flexShrink: 0, minHeight: 32, padding: '0 12px', border: '0.5px solid #FDBA74', borderRadius: 3, background: 'white', color: 'inherit', fontSize: 12, cursor: 'pointer' }}>
+              Compris
+            </button>
+          </p>
+        ))}
         {enAttente.map((l) => (
           <p key={l.crId} role="status" style={{ display: 'flex', alignItems: 'center', gap: 8, margin: 0, fontSize: 12, color: l.echecs > 0 ? '#B8412C' : '#1B3A5C' }}>
             <CloudUpload size={15} style={{ flexShrink: 0 }} />

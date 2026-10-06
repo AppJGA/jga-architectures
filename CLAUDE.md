@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 806 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
+npm test         # 811 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -387,7 +387,7 @@ création avec reprise de la visite précédente) et `useCompteRendu` (un CR).
   lieu : l'écran affiche « n° en attente », `fileLogique.js` recalcule
   `est_clos`. Une opération refusée trois fois est mise de côté (bandeau
   « refusée par la base », Réessayer / Abandonner) mais **reste appliquée à
-  l'écran**. Hors ligne : ni création de CR, ni émission, ni PDF, et pas de
+  l'écran**. Hors ligne : ni émission, ni PDF, et pas de
   ré-annotation d'une photo déjà envoyée.
 
 - **Visite enregistrée** (conception
@@ -871,6 +871,24 @@ ligne », plus haut).
   comme coupure (`erreurReseau`, `messageErreur` : « Pas de réseau »).
   L'avancement d'une tâche pointé en visite passe par la file
   (`tache.avancement`, écrit dans `planning` à l'envoi).
+- **Démarrer une visite sans réseau** (`horsLigne/creationLogique.js`,
+  testé) : `createCR` (bouton « Démarrer », « Nouvelle visite ») crée la
+  visite **sur l'appareil** si le réseau manque (ou ne répond pas) : id
+  décidé sur l'appareil, numéro = plus grand connu + 1, reprise de la visite
+  précédente **emportée** par les mêmes règles (`preparerReprise`), ses
+  participants à pointer (`presencesReprises`, copies `copie_*` comprises).
+  Sans visite précédente emportée : refus, avec renvoi vers « Préparer pour
+  le chantier ». La création est **la première opération de sa file**
+  (`cr.creer`, `envoyerCreationCr`) : la visite, puis sa reprise niveau par
+  niveau, puis le reste de la file. Doublon `23505` : la visite existe déjà
+  (envoi rejoué) ou son **numéro a été pris** — elle prend alors le suivant
+  libre, l'instantané suit et un avis s'affiche sur le tableau de bord
+  (`jga.visites-renumerotees`). Tant que la création attend, la visite se lit
+  sur l'appareil (`fetchAll`), la feuille de présence ne se complète pas, et
+  toute écriture passe derrière la file (`executerOperation` : l'ordre de
+  création est l'ordre d'envoi, même en ligne). La liste des visites inclut
+  les visites en attente (`visitesEnAttente`), sinon « Démarrer » en
+  créerait une seconde. Mode Visite : « n° provisoire ».
 - **Écran** : `BandeauHorsLigne` (dans `AppShell`) dit « Hors ligne » et la
   date de la dernière réponse reçue du réseau (`derniereSynchro`, notée par
   le `fetch` du client). Portail sans copie : message au lieu de « 0

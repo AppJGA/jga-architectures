@@ -3,13 +3,14 @@ import { supabase } from '../../core/supabase/client'
 import { copiePresence, copieAJour } from '../../modules/chantier/comptes-rendus/crLogique'
 import { sectionsAMettreEnPlace } from '../../modules/chantier/comptes-rendus/remarquesLogique'
 import { avancementParLot, instantaneAvancement } from '../../modules/chantier/comptes-rendus/avancementLogique'
+import { arbreSections } from '../../modules/chantier/comptes-rendus/horsLigne/creationLogique'
 import {
   photosDuCr, envoyerPhoto, nettoyerFichiers, BUCKET_PHOTOS,
 } from '../../modules/chantier/comptes-rendus/photosStockage'
 import { pastillesDuCr, retirerPastille } from '../../modules/chantier/comptes-rendus/plansStockage'
 import { useLiensSignes } from '../../modules/chantier/comptes-rendus/useLiensSignes'
 import { useHorsLigne } from '../../modules/chantier/comptes-rendus/horsLigne/useHorsLigne'
-import { TYPES, creerOperation, appliquerOperation, etatAvecFile } from '../../modules/chantier/comptes-rendus/horsLigne/fileLogique'
+import { TYPES, creerOperation, appliquerOperation, etatAvecFile, aEnvoyer } from '../../modules/chantier/comptes-rendus/horsLigne/fileLogique'
 import { envoyerOperation, erreurReseau } from '../../modules/chantier/comptes-rendus/horsLigne/envoi'
 import { MAGASINS, ecrire as ecrireLocal } from '../../modules/chantier/comptes-rendus/horsLigne/baseLocale'
 import { cheminsPhoto } from '../../modules/chantier/comptes-rendus/photosLogique'
@@ -39,55 +40,6 @@ function verifierTout(resultats) {
 // la saisie.
 function colonneAbsente(error) {
   return error?.code === 'PGRST204' || error?.code === '42703'
-}
-
-function buildTree(sections, sousSections, remarques) {
-  // Séparer remarques principales (sans parent) des sous-remarques
-  const principales = remarques.filter(r => !r.parent_id)
-  const sousRems    = remarques.filter(r => !!r.parent_id)
-
-  const sousRemsByParent = {}
-  for (const sr of sousRems) {
-    if (!sousRemsByParent[sr.parent_id]) sousRemsByParent[sr.parent_id] = []
-    sousRemsByParent[sr.parent_id].push(sr)
-  }
-
-  const withSousRems = (remList) =>
-    remList.sort((a, b) => a.ordre - b.ordre).map(r => ({
-      ...r,
-      sous_remarques: (sousRemsByParent[r.id] ?? [])
-        .sort((a, b) => new Date(a.date_note || '1970') - new Date(b.date_note || '1970')),
-    }))
-
-  // Grouper par sous-section ou par section directe
-  const subRemBySSId  = {}
-  const dirRemBySecId = {}
-  for (const r of principales) {
-    if (r.sous_section_id) {
-      if (!subRemBySSId[r.sous_section_id]) subRemBySSId[r.sous_section_id] = []
-      subRemBySSId[r.sous_section_id].push(r)
-    } else if (r.section_id) {
-      if (!dirRemBySecId[r.section_id]) dirRemBySecId[r.section_id] = []
-      dirRemBySecId[r.section_id].push(r)
-    }
-  }
-
-  const ssMap = {}
-  for (const ss of sousSections) {
-    if (!ssMap[ss.section_id]) ssMap[ss.section_id] = []
-    ssMap[ss.section_id].push({
-      ...ss,
-      remarques: withSousRems(subRemBySSId[ss.id] ?? []),
-    })
-  }
-
-  return sections
-    .sort((a, b) => a.ordre - b.ordre)
-    .map(s => ({
-      ...s,
-      sousSections:    (ssMap[s.id] ?? []).sort((a, b) => a.ordre - b.ordre),
-      directRemarques: withSousRems(dirRemBySecId[s.id] ?? []),
-    }))
 }
 
 export function useCompteRendu(crId, affaireId) {
@@ -123,7 +75,7 @@ export function useCompteRendu(crId, affaireId) {
   // que dépendent le chargement et les écritures.
   const {
     enfiler: enfilerOperation, instantane: instantaneLocal,
-    relireFile, preparer: preparerHorsLigne,
+    relireFile, preparer: preparerHorsLigne, envoyerFile,
   } = horsLigne
 
   // Une modification de visite s'affiche tout de suite, puis part — ou attend
@@ -198,7 +150,7 @@ export function useCompteRendu(crId, affaireId) {
 
     setErreurChargement(null)
     setCr(crData)
-    setSections(buildTree(secData ?? [], ssData ?? [], remData ?? []))
+    setSections(arbreSections(secData ?? [], ssData ?? [], remData ?? []))
     setPresences(presData ?? [])
     setProfiles(profData ?? [])
     setPhotos(photosCr)
@@ -209,7 +161,7 @@ export function useCompteRendu(crId, affaireId) {
     dejaCharge.current = true
     setLoading(false)
     return {
-      cr: crData, sections: buildTree(secData ?? [], ssData ?? [], remData ?? []),
+      cr: crData, sections: arbreSections(secData ?? [], ssData ?? [], remData ?? []),
       presences: presData ?? [], profiles: profData ?? [], photos: photosCr, pastilles: pastillesCr,
       zones: zonesAffaire, ftms: ftmsAffaire, planning: { taches, lots: lotsAffaire, periodes },
     }
@@ -241,6 +193,9 @@ export function useCompteRendu(crId, affaireId) {
   // les modifications encore en file restent visibles par-dessus.
   const fetchAll = useCallback(async () => {
     if (!crId) return
+    // Visite démarrée sans réseau, pas encore créée en base : l'appareil fait
+    // foi jusqu'à l'envoi de sa création
+    if ((await relireFile()).some((o) => o.type === TYPES.crCreer) && await chargerHorsLigne()) return
     try {
       const charge = await chargerEnLigne()
       if (!charge) return
@@ -259,6 +214,14 @@ export function useCompteRendu(crId, affaireId) {
       if (!repris) throw err
     }
   }, [crId, chargerEnLigne, chargerHorsLigne, relireFile, preparerHorsLigne])
+
+  // Sa création envoyée, la visite se relit depuis la base (numéros définitifs)
+  const creationEnAttente = horsLigne.file.some((o) => o.type === TYPES.crCreer)
+  const etaitEnAttente = useRef(creationEnAttente)
+  useEffect(() => {
+    if (etaitEnAttente.current && !creationEnAttente) fetchAll().catch(() => {})
+    etaitEnAttente.current = creationEnAttente
+  }, [creationEnAttente, fetchAll])
 
   useEffect(() => {
     dejaCharge.current = false
@@ -290,6 +253,8 @@ export function useCompteRendu(crId, affaireId) {
   // rendu émis : sa feuille de présence est figée, et la base le refuserait.
   const syncPresences = useCallback(async () => {
     if (!affaireId || !crId) return
+    // Visite démarrée sans réseau, pas encore en base : rien à compléter encore
+    if ((await relireFile()).some((o) => o.type === TYPES.crCreer)) return
     const [
       { data: crStatut, error: e0 },
       { data: interlos, error: e1 },
@@ -328,7 +293,7 @@ export function useCompteRendu(crId, affaireId) {
     if (echec) throw echec.error
 
     await fetchAll()
-  }, [affaireId, crId, fetchAll])
+  }, [affaireId, crId, fetchAll, relireFile])
 
   // ── Émission ─────────────────────────────────────────────────────────────────
   // Émis, le compte rendu est verrouillé (en base aussi, migration 037). La
@@ -391,6 +356,13 @@ export function useCompteRendu(crId, affaireId) {
       await enfilerOperation(op)
       return op
     }
+    // Des modifications attendent encore (la visite elle-même, peut-être) :
+    // celle-ci passe derrière elles, l'ordre de création est l'ordre d'envoi
+    if (aEnvoyer(await relireFile()).length > 0) {
+      await enfilerOperation(op)
+      envoyerFile().catch(() => {})
+      return op
+    }
     try {
       await envoyerOperation(op)
       await fetchAll()
@@ -403,7 +375,7 @@ export function useCompteRendu(crId, affaireId) {
       throw err
     }
     return op
-  }, [crId, appliquerLocalement, enfilerOperation, fetchAll])
+  }, [crId, appliquerLocalement, enfilerOperation, fetchAll, relireFile, envoyerFile])
 
   // Pointage d'une tâche depuis le compte rendu : c'est bien le planning qui
   // est écrit, il n'y a pas de second avancement. Par la file, comme les

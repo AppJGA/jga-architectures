@@ -29,6 +29,9 @@ export const TYPES = {
   pastillePoser: 'pastille.poser',
   // L'avancement pointé en visite s'écrit dans le planning chantier
   tacheAvancement: 'tache.avancement',
+  // Une visite démarrée sans réseau, avec sa reprise (creationLogique.js) :
+  // toujours la première opération de sa file
+  crCreer: 'cr.creer',
 }
 
 // Trois échecs d'affilée : l'opération est mise de côté et signalée, plutôt

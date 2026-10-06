@@ -1,9 +1,12 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { supabase } from '../../core/supabase/client'
 import { dateDuJour, compterPointsEnCours, preparerReprise } from '../../modules/chantier/comptes-rendus/crLogique'
 import { photosDuCr, nettoyerFichiers } from '../../modules/chantier/comptes-rendus/photosStockage'
 import { pastillesDuCr, plansDeLAffaire } from '../../modules/chantier/comptes-rendus/plansStockage'
 import { versionCourante } from '../../modules/chantier/comptes-rendus/plansLogique'
+import { erreurReseau } from '../../modules/chantier/comptes-rendus/horsLigne/envoi'
+import { creationHorsLigne, numeroHorsLigne } from '../../modules/chantier/comptes-rendus/horsLigne/creationLogique'
+import { visitesEnAttente, etatVisiteEmportee, garderVisiteCreee, EVENEMENT_FILE } from '../../modules/chantier/comptes-rendus/horsLigne/synchro'
 
 // Insère des lignes et fait remonter l'échec : Supabase ne lève pas d'exception
 async function inserer(table, lignes) {
@@ -52,8 +55,46 @@ export function useComptesRendus(affaireId) {
 
   useEffect(() => {
     dejaCharge.current = false
-    fetchAll().catch((err) => { console.error(err); setLoading(false) })
+    fetchAll().catch((err) => { if (!erreurReseau(err)) console.error(err); setLoading(false) })
   }, [fetchAll])
+
+  // Visites démarrées sans réseau, pas encore envoyées : elles figurent dans
+  // la liste (sinon « Démarrer » en créerait une seconde)
+  const [enAttente, setEnAttente] = useState([])
+  useEffect(() => {
+    if (!affaireId) return undefined
+    let abandon = false
+    const relire = () => visitesEnAttente(affaireId).then((v) => { if (!abandon) setEnAttente(v) }).catch(() => {})
+    relire()
+    window.addEventListener(EVENEMENT_FILE, relire)
+    return () => { abandon = true; window.removeEventListener(EVENEMENT_FILE, relire) }
+  }, [affaireId])
+  // Une visite envoyée entre-temps : la liste se relit (numéro définitif)
+  const nbEnAttente = enAttente.length
+  const precedentEnAttente = useRef(nbEnAttente)
+  useEffect(() => {
+    if (nbEnAttente < precedentEnAttente.current && navigator.onLine !== false) fetchAll().catch(() => {})
+    precedentEnAttente.current = nbEnAttente
+  }, [nbEnAttente, fetchAll])
+  const liste = useMemo(() => {
+    const connus = new Set(comptesRendus.map((c) => c.id))
+    return [...comptesRendus, ...enAttente.filter((c) => !connus.has(c.id))].sort((a, b) => b.numero - a.numero)
+  }, [comptesRendus, enAttente])
+
+  // Sans réseau : la visite est créée sur l'appareil, en reprenant la
+  // précédente emportée (creationLogique.js), et partira avec la file
+  const creerHorsLigne = useCallback(async () => {
+    const derniere = liste[0] ?? null
+    const precedente = derniere ? await etatVisiteEmportee(derniere.id) : null
+    if (derniere && !precedente) {
+      throw new Error(`Sans réseau, la nouvelle visite reprend la visite n°${String(derniere.numero).padStart(2, '0')}, qui n’est pas gardée sur cet appareil. Avant de partir, utilisez « Préparer pour le chantier » sur la page de l’affaire.`)
+    }
+    const creation = creationHorsLigne({
+      affaireId, precedente, numero: numeroHorsLigne(liste), date: dateDuJour(), nouvelId: () => crypto.randomUUID(),
+    })
+    await garderVisiteCreee(creation)
+    return { ...creation.cr, horsLigne: true }
+  }, [affaireId, liste])
 
   const nextNumero = useCallback(async () => {
     const { data, error } = await supabase
@@ -68,16 +109,23 @@ export function useComptesRendus(affaireId) {
   }, [affaireId])
 
   const createCR = useCallback(async (payload = {}) => {
+    if (navigator.onLine === false) return creerHorsLigne()
     // Deux personnes créant une visite au même moment calculent le même numéro :
     // la contrainte d'unicité refuse la seconde, qui réessaie avec le suivant.
     let cr = null
     for (let essai = 0; essai < 3 && !cr; essai++) {
-      const numero = await nextNumero()
+      let numero
+      try { numero = await nextNumero() } catch (err) {
+        // Réseau trop faible pour répondre : comme sans réseau
+        if (erreurReseau(err)) return creerHorsLigne()
+        throw err
+      }
       const { data, error } = await supabase
         .from('comptes_rendus')
         .insert({ affaire_id: affaireId, numero, date_reunion: dateDuJour(), statut: 'brouillon', ...payload })
         .select()
         .single()
+      if (error && erreurReseau(error)) return creerHorsLigne()
       if (error && error.code !== '23505') throw error
       cr = data
     }
@@ -135,7 +183,7 @@ export function useComptesRendus(affaireId) {
 
     await fetchAll()
     return cr
-  }, [affaireId, nextNumero, fetchAll])
+  }, [affaireId, nextNumero, fetchAll, creerHorsLigne])
 
   const updateCR = useCallback(async (id, payload) => {
     const { error } = await supabase.from('comptes_rendus').update(payload).eq('id', id)
@@ -151,5 +199,5 @@ export function useComptesRendus(affaireId) {
     await fetchAll()
   }, [fetchAll])
 
-  return { comptesRendus, loading, createCR, updateCR, deleteCR, refetch: fetchAll }
+  return { comptesRendus: liste, loading, createCR, updateCR, deleteCR, refetch: fetchAll }
 }

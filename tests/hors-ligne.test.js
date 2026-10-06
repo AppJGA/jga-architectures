@@ -252,3 +252,72 @@ test('avancement d’une tâche pointé sans réseau : appliqué au planning emp
   assert.deepEqual(etat.planning.taches.map((t) => t.avancement), [65, 0])
   assert.equal(instantane.planning.taches[0].avancement, 20, 'l’instantané n’est pas modifié')
 })
+
+describe('démarrer une visite sans réseau', async () => {
+  const { creationHorsLigne, aplatirSections, arbreSections, numeroHorsLigne, presencesReprises } = await import('../src/modules/chantier/comptes-rendus/horsLigne/creationLogique.js')
+  let n = 0
+  const nouvelId = () => `id${++n}`
+  // Visite n°3 émise, telle qu'emportée sur l'appareil
+  const precedente = {
+    cr: { id: 'cr3', numero: 3, statut: 'emis' },
+    sections: arbreSections(
+      [{ id: 's7', cr_id: 'cr3', numero_romain: 'VII', titre: 'ENTREPRISES', type_section: 'entreprises', ordre: 7 }],
+      [],
+      [
+        { id: 'r1', section_id: 's7', lot_id: 'l1', numero: 12, suivi_id: 'r1', description: 'Joint façade', statut: 'a_faire', ordre: 1 },
+        { id: 'r2', section_id: 's7', lot_id: 'l1', numero: 13, suivi_id: 'r2', description: 'Déjà fait', statut: 'fait', est_clos: true, cloture_reportee: true, ordre: 2 },
+        { id: 'r1s', parent_id: 'r1', description: 'Relancé', statut: 'a_faire' },
+      ],
+    ),
+    presences: [
+      { id: 'p1', cr_id: 'cr3', interlocuteur_id: 'i1', presence: 'p', convoque: true, copie_nom: 'Martin', affaire_interlocuteurs: { nom: 'Martin' } },
+      { id: 'p2', cr_id: 'cr3', lot_entreprise_id: 'le1', presence: 'a', convoque: false, copie_entreprise: 'Plomberie' },
+    ],
+    photos: [{ id: 'ph1', remarque_id: 'r1', chemin: 'a1/x.webp', chemin_miniature: 'a1/x-m.webp' }],
+    pastilles: [],
+    planning: { taches: [{ id: 't1', avancement: 40 }], lots: [], periodes: [] },
+  }
+
+  test('à plat puis en arbre : rien ne se perd', () => {
+    const plat = aplatirSections(precedente.sections)
+    assert.deepEqual(plat.sections.map((s) => s.id), ['s7'])
+    assert.deepEqual(plat.remarques.map((r) => r.id).sort(), ['r1', 'r1s', 'r2'])
+  })
+
+  test('la nouvelle visite reprend les remarques ouvertes, leurs suites et leurs photos', () => {
+    const { cr, reprise, instantane } = creationHorsLigne({ affaireId: 'a1', precedente, numero: 4, date: '2026-10-06', nouvelId })
+    assert.deepEqual({ ...cr, id: undefined }, { id: undefined, affaire_id: 'a1', numero: 4, date_reunion: '2026-10-06', statut: 'brouillon' })
+    assert.equal(reprise.sections.length, 1)
+    // r1 ouverte et r2 close une dernière fois (clôture reportée), comme en ligne
+    assert.ok(reprise.remarques.some((r) => r.description === 'Joint façade' && r.numero === 12 && r.suivi_id === 'r1'))
+    assert.equal(reprise.sousRemarques.length, 1)
+    assert.equal(reprise.photos[0].chemin, 'a1/x.webp', 'même fichier, nouvelle ligne')
+    assert.ok(reprise.photos.every((ph) => ph.cr_id === cr.id))
+    // L'écran montre la visite comme si elle avait été chargée
+    const remarqueEcran = instantane.sections[0].directRemarques.find((r) => r.description === 'Joint façade')
+    assert.equal(remarqueEcran.sous_remarques[0].description, 'Relancé')
+    assert.equal(instantane.planning.taches[0].avancement, 40)
+  })
+
+  test('les participants reviennent, à pointer, sans convocation', () => {
+    const { lignes, locales } = presencesReprises(precedente.presences, 'cr4', nouvelId)
+    assert.deepEqual(lignes.map((l) => [l.cr_id, l.interlocuteur_id, l.lot_entreprise_id, l.presence, l.convoque]), [
+      ['cr4', 'i1', null, 'na', false],
+      ['cr4', null, 'le1', 'na', false],
+    ])
+    assert.equal(lignes[0].copie_nom, 'Martin')
+    assert.ok(!('affaire_interlocuteurs' in lignes[0]), 'seulement les colonnes de la table')
+    assert.equal(locales[0].affaire_interlocuteurs.nom, 'Martin', 'la fiche jointe reste pour l’écran')
+  })
+
+  test('première visite : vide, sans erreur', () => {
+    const { reprise, instantane } = creationHorsLigne({ affaireId: 'a1', precedente: null, numero: 1, date: '2026-10-06', nouvelId })
+    assert.equal(reprise.remarques.length, 0)
+    assert.deepEqual(instantane.sections, [])
+  })
+
+  test('numéro : le suivant du plus grand connu', () => {
+    assert.equal(numeroHorsLigne([{ numero: 3 }, { numero: 7 }, { numero: 5 }]), 8)
+    assert.equal(numeroHorsLigne([]), 1)
+  })
+})

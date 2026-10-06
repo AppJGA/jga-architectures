@@ -449,7 +449,11 @@ export function ModeVisite({ cr, affaire = null, convocations = new Map(), secti
             </p>
             <p style={{ fontSize: 13, color: '#9C9591' }}>
               {dateLabel}
-              {horsLigne?.prepareLe && (
+              {horsLigne?.file?.some((o) => o.type === 'cr.creer') ? (
+                <span title="Le numéro est confirmé à l’envoi : si une autre visite l’a pris entre-temps, celle-ci prend le suivant" style={{ marginLeft: 8, color: '#C2410C' }}>
+                  · démarrée sans réseau, n° provisoire
+                </span>
+              ) : horsLigne?.prepareLe && (
                 <span title="La visite s’ouvrira même sans réseau" style={{ marginLeft: 8, color: '#2A8A4E' }}>
                   · emportée à {new Date(horsLigne.prepareLe).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
                 </span>

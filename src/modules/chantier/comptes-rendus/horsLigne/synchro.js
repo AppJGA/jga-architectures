@@ -11,8 +11,8 @@
 // promesses. Chaque envoi relit la file sous le verrou : une opération déjà
 // partie n'est pas renvoyée.
 
-import { MAGASINS, ecrire, effacer, tout, operationsDuCr, disponible } from './baseLocale'
-import { aEnvoyer, ESSAIS_MAX } from './fileLogique'
+import { MAGASINS, ecrire, effacer, lire, tout, operationsDuCr, disponible } from './baseLocale'
+import { aEnvoyer, ESSAIS_MAX, TYPES, etatAvecFile, creerOperation } from './fileLogique'
 import { envoyerOperation, erreurReseau } from './envoi'
 
 export const EVENEMENT_FILE = 'jga-file-hors-ligne'
@@ -95,4 +95,29 @@ export async function envoyerTout() {
     signalerFile()
   }
   return { envoyees }
+}
+
+// ─── Visites démarrées sans réseau ───────────────────────────────────────────
+
+/** Les visites d'une affaire créées sur l'appareil, pas encore envoyées */
+export async function visitesEnAttente(affaireId) {
+  const ops = await toutesOperations()
+  return ops
+    .filter((o) => o.type === TYPES.crCreer && o.charge?.cr?.affaire_id === affaireId)
+    .map((o) => ({ ...o.charge.cr, horsLigne: true, pointsEnCours: 0 }))
+}
+
+/** Une visite emportée, avec ses modifications en attente ; null si absente */
+export async function etatVisiteEmportee(crId) {
+  if (!disponible()) return null
+  const gardee = await lire(MAGASINS.visites, crId).catch(() => null)
+  if (!gardee?.donnees) return null
+  return etatAvecFile(gardee.donnees, await operationsDuCr(crId).catch(() => []))
+}
+
+/** Range la visite créée sur l'appareil : son instantané, puis sa création en file */
+export async function garderVisiteCreee({ cr, reprise, instantane }) {
+  await ecrire(MAGASINS.visites, { crId: cr.id, donnees: instantane, prepareLe: Date.now() })
+  await ecrire(MAGASINS.operations, creerOperation(TYPES.crCreer, { cr, reprise }, { crId: cr.id }))
+  signalerFile()
 }

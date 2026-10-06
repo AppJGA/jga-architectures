@@ -477,10 +477,8 @@ export default function ComptesRendusModule({ lectureSeule = false }) {
       {/* En-tête */}
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 18, flexWrap: 'wrap', gap: 14 }}>
         <div>
-          <h2 style={{ fontFamily: "'Archivo', sans-serif", fontSize: 19, fontWeight: 500, color: '#1F1B17', margin: 0 }}>
-            Visites de chantier
-          </h2>
-          <p style={{ fontSize: 12, color: '#9C9591', marginTop: 3 }}>
+          {/* Le titre du module est posé par la page de l'affaire */}
+          <p style={{ fontSize: 12, color: '#9C9591' }}>
             {comptesRendus.length} compte{comptesRendus.length > 1 ? 's' : ''} rendu{comptesRendus.length > 1 ? 's' : ''}
             {' · '}{emis} émis
             {brouillons > 0 && ` · ${brouillons} brouillon${brouillons > 1 ? 's' : ''}`}

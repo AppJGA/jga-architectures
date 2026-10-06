@@ -4,6 +4,8 @@ import { Pencil, ChevronRight, Eye, ChevronDown, Check } from 'lucide-react'
 import { useAffaire } from '../shared/hooks/useAffaires'
 import { useAffaireCollaborateurs } from '../shared/hooks/useAffaireCollaborateurs'
 import { useAuth } from '../core/auth/useAuth'
+import { useTitreBandeau } from '../core/layout/retourContexte'
+import { RetourCourant } from '../core/layout/RetourCourant'
 import { BandeauVisite } from '../modules/chantier/comptes-rendus/BandeauVisite'
 import { CollabModal } from './CollabModal'
 import { phasesPour, getAllModules } from '../modules/manifest'
@@ -181,6 +183,24 @@ function Spinner() {
 }
 
 // ─── Module renderer ──────────────────────────────────────────────────────────
+// Même en-tête pour tous les modules : icône et nom, tels qu'au menu. Un
+// module n'écrit plus son propre titre, seulement ce qui le précise
+// (compteurs, actions).
+function TitreModule({ mod, pleinePage }) {
+  const Icone = ICON_MAP[mod.icon]
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0,
+      padding: pleinePage ? '16px 24px 12px' : 0, marginBottom: pleinePage ? 0 : 16,
+    }}>
+      {Icone && <Icone size={28} color="var(--affaire-accent)" strokeWidth={1.25} />}
+      <h1 style={{ fontFamily: "'Archivo', sans-serif", fontSize: 20, fontWeight: 500, color: '#1F1B17', margin: 0 }}>
+        {mod.label}
+      </h1>
+    </div>
+  )
+}
+
 function ModuleRenderer({ mod, lectureSeule }) {
   const Comp = mod.component
   return <Suspense fallback={<Spinner />}><Comp lectureSeule={lectureSeule} /></Suspense>
@@ -326,29 +346,16 @@ function AffaireHeader({ affaire, onEdit, onChangerPhase, collaborateurs, canEdi
     <div style={{
       backgroundColor: 'white',
       borderBottom: '0.5px solid rgba(0,0,0,0.08)',
-      padding: '10px 24px',
+      padding: '2px 24px',
       display: 'flex',
       alignItems: 'center',
       gap: 12,
       flexShrink: 0,
     }}>
+      {/* Le titre de l'affaire est monté dans le bandeau du haut ; le retour
+          vient ici, juste dessous : c'est là qu'on le cherche */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 }}>
-        {/* Le retour au portail est dans le bandeau du haut */}
-        <div style={{ width: 3, height: 20, borderRadius: 2, backgroundColor: 'var(--affaire-accent)', flexShrink: 0 }} />
-
-        <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--jga-beige)', fontFamily: "'JetBrains Mono', monospace", letterSpacing: '0.04em', flexShrink: 0 }}>
-          {affaire.code_affaire}
-        </span>
-
-        <span style={{ fontSize: 15, fontWeight: 500, color: '#1F1B17', fontFamily: "'Archivo', sans-serif", whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {affaire.nom}
-        </span>
-
-        {affaire.moa_nom && (
-          <span style={{ fontSize: 12, color: 'var(--jga-beige)', flexShrink: 0 }}>
-            {affaire.moa_nom}
-          </span>
-        )}
+        <RetourCourant />
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
@@ -1074,6 +1081,10 @@ export function AffairePage() {
   }, [rawAffaire])
 
   const activeModule = getAllModules().find(m => m.path === moduleId) ?? null
+  useTitreBandeau(affaire ? {
+    code: affaire.code_affaire, nom: affaire.nom, detail: affaire.moa_nom,
+    couleur: variablesPhase(affaire.phase)['--affaire-accent'],
+  } : null)
 
   const fermerEdition = () => {
     setEditOpen(false)
@@ -1140,6 +1151,8 @@ export function AffairePage() {
                 décalages du calque annulent. */}
             {!activeModule && affaire.photo_url && <PhotoFond url={affaire.photo_url} />}
 
+            {activeModule && <TitreModule mod={activeModule} pleinePage={activeModule.layout === 'fullbleed'} />}
+
             {!collabLoading && !canEdit && (
               <div style={{
                 background: '#FEF3C7', border: '0.5px solid #D97706',
@@ -1161,7 +1174,11 @@ export function AffairePage() {
               </div>
             )}
             {activeModule
-              ? <ModuleRenderer mod={activeModule} lectureSeule={!collabLoading && !canEdit} />
+              // Sous le titre, le module garde toute la hauteur restante : un
+              // module plein écran (planning, suivi financier) remplit sa boîte
+              ? <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+                  <ModuleRenderer mod={activeModule} lectureSeule={!collabLoading && !canEdit} />
+                </div>
               : <AffaireOverview
                   affaire={affaire} stats={stats} affaireId={affaireId} canEdit={canEdit}
                   onEdit={() => setEditOpen(true)}

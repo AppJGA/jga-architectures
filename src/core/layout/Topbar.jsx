@@ -1,27 +1,17 @@
 import { useState, useEffect, useContext } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { Bell } from 'lucide-react'
-import { RetourPage } from '../../shared/components/RetourPage'
-import { IconeAccueil, IconePortail, IconeBoiteOutils, IconeTableauDeBord, IconeVisitesChantier, IconeOpr } from '../../shared/icones/IconesAffaire'
-import { retourParDefaut } from './retourLogique'
+import { RetourCourant } from './RetourCourant'
 import { RetourContexte } from './retourContexte'
-
-const ICONES_RETOUR = {
-  accueil: IconeAccueil, portail: IconePortail, outils: IconeBoiteOutils,
-  tableau: IconeTableauDeBord, visites: IconeVisitesChantier, opr: IconeOpr,
-}
 import { useAuth } from '../auth/useAuth'
 import { supabase } from '../supabase/client'
 
 export function Topbar() {
-  const location = useLocation()
   const { user, signOut } = useAuth()
   const navigate = useNavigate()
   const [profile, setProfile] = useState(null)
 
-  const { retour: retourImpose } = useContext(RetourContexte)
-  const parDefaut = retourParDefaut(location.pathname, location.search)
-  const retourAffiche = retourImpose ?? (parDefaut && { ...parDefaut, Icone: ICONES_RETOUR[parDefaut.icone] })
+  const { titre } = useContext(RetourContexte)
 
   useEffect(() => {
     if (!user) return
@@ -50,8 +40,8 @@ export function Topbar() {
         flexShrink: 0,
       }}
     >
-      {/* Le logo mène toujours à l'accueil ; à côté, le retour vers la page
-          qui menait ici (d'après l'adresse, ou imposé par la page) */}
+      {/* Le logo mène toujours à l'accueil ; à côté, le titre de la page
+          (une affaire) ou, à défaut, le retour vers la page qui menait ici */}
       <button
         onClick={() => navigate('/home')}
         title="Accueil"
@@ -63,9 +53,22 @@ export function Topbar() {
           style={{ height: 32, width: 'auto', objectFit: 'contain', flexShrink: 0, mixBlendMode: 'multiply' }}
         />
       </button>
-      {retourAffiche && (
+      {titre ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, borderLeft: '1px solid rgba(0,0,0,0.1)', paddingLeft: 12, minWidth: 0 }}>
+          {titre.couleur && <div style={{ width: 3, height: 20, borderRadius: 2, backgroundColor: titre.couleur, flexShrink: 0 }} />}
+          {titre.code && (
+            <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--jga-beige)', fontFamily: "'JetBrains Mono', monospace", letterSpacing: '0.04em', flexShrink: 0 }}>
+              {titre.code}
+            </span>
+          )}
+          <span style={{ fontSize: 15, fontWeight: 500, color: '#1F1B17', fontFamily: "'Archivo', sans-serif", whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {titre.nom}
+          </span>
+          {titre.detail && <span style={{ fontSize: 12, color: 'var(--jga-beige)', flexShrink: 0 }}>{titre.detail}</span>}
+        </div>
+      ) : (
         <div style={{ display: 'flex', alignItems: 'center', borderLeft: '1px solid rgba(0,0,0,0.1)', paddingLeft: 12, minWidth: 0 }}>
-          <RetourPage libelle={retourAffiche.libelle} Icone={retourAffiche.Icone} vers={retourAffiche.vers} onClick={retourAffiche.onClick} />
+          <RetourCourant />
         </div>
       )}
       <div style={{ flex: 1 }} />

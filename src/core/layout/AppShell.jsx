@@ -8,7 +8,9 @@ export function AppShell() {
   const location = useLocation()
   // Retour du bandeau imposé par la page affichée (sinon : d'après l'adresse)
   const [retour, definir] = useState(null)
-  const contexteRetour = useMemo(() => ({ retour, definir }), [retour])
+  // Titre imposé au bandeau (une affaire) : le retour passe alors sous lui
+  const [titre, definirTitre] = useState(null)
+  const contexteRetour = useMemo(() => ({ retour, definir, titre, definirTitre }), [retour, titre])
   const showSidebar =
     !location.pathname.startsWith('/dashboard') &&
     !location.pathname.startsWith('/affaires/') &&

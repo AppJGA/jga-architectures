@@ -6,7 +6,7 @@
 
 import { createContext, useContext, useEffect, useRef } from 'react'
 
-export const RetourContexte = createContext({ retour: null, definir: () => {} })
+export const RetourContexte = createContext({ retour: null, definir: () => {}, titre: null, definirTitre: () => {} })
 
 /**
  * @param retour { libelle, Icone, onClick } ou null (laisser le retour par défaut)
@@ -25,4 +25,25 @@ export function useRetourPage(retour) {
     definir({ libelle, Icone, onClick: () => action.current?.() })
     return () => definir(null)
   }, [actif, libelle, Icone, definir])
+}
+
+/**
+ * Titre de la page dans le bandeau du haut, à la place du retour. Une affaire
+ * y met son code et son nom ; le retour descend alors sous ce titre, dans la
+ * barre de l'affaire (`RetourCourant`) — on cherche la flèche sous le titre,
+ * pas au-dessus.
+ * @param titre { code, nom, detail, couleur } ou null
+ */
+export function useTitreBandeau(titre) {
+  const { definirTitre } = useContext(RetourContexte)
+  const actif = !!titre
+  const code = titre?.code ?? null
+  const nom = titre?.nom ?? null
+  const detail = titre?.detail ?? null
+  const couleur = titre?.couleur ?? null
+  useEffect(() => {
+    if (!actif || !definirTitre) return undefined
+    definirTitre({ code, nom, detail, couleur })
+    return () => definirTitre(null)
+  }, [actif, code, nom, detail, couleur, definirTitre])
 }

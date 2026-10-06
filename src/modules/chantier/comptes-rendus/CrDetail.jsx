@@ -1005,6 +1005,7 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
         <ModaleEmission
           cr={cr}
           presences={presences}
+          convocations={convocations}
           avancement={lignesAvancementCr}
           nbPropositions={aValider.length}
           onConfirmer={confirmer}

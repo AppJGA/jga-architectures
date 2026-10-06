@@ -43,7 +43,7 @@ function Ligne({ controle, onAller }) {
   )
 }
 
-export function ModaleEmission({ cr, presences, avancement, nbPropositions, onConfirmer, onAnnuler, onAller, onVoirPropositions }) {
+export function ModaleEmission({ cr, presences, convocations, avancement, nbPropositions, onConfirmer, onAnnuler, onAller, onVoirPropositions }) {
   // L'avancement figé par le CR précédent, pour savoir si le planning a bougé
   const [precedent, setPrecedent] = useState(undefined) // undefined = en cours de lecture
   useEffect(() => {
@@ -55,7 +55,7 @@ export function ModaleEmission({ cr, presences, avancement, nbPropositions, onCo
     return () => { annule = true }
   }, [cr.affaire_id, cr.numero])
 
-  const controles = controlesEmission({ cr, presences, avancement, precedent: precedent ?? null, nbPropositions })
+  const controles = controlesEmission({ cr, presences, convocations, avancement, precedent: precedent ?? null, nbPropositions })
   const bloque = controles.some((c) => c.bloquant)
 
   return (

@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 740 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
+npm test         # 743 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -298,7 +298,9 @@ création avec reprise de la visite précédente) et `useCompteRendu` (un CR).
   un « Aperçu du brouillon » pour relire, et un bouton « Émettre le CR ».
   L'émission et la diffusion fabriquent leur PDF elles-mêmes.
 - **Avant d'émettre, une liste de contrôle** (`ModaleEmission`, logique
-  `controleEmissionLogique.js`, testée) : présences toutes pointées,
+  `controleEmissionLogique.js`, testée) : présences des **convoqués**
+  pointées (un non-convoqué non pointé ne manque à rien : il n'a pas à
+  figurer absent ; sans convocation, un participant pointé suffit),
   prochaine visite (date et au moins un convoqué), avancement qui a bougé
   depuis le CR précédent (comparé à son `avancement_lots` figé ; première
   visite : un lot avancé suffit), propositions de l'IA relues. Vert et case

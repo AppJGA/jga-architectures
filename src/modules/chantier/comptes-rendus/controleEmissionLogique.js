@@ -1,7 +1,7 @@
 // ─── Avant d'émettre : la liste de contrôle ──────────────────────────────────
 //
 // Au clic sur « Émettre le CR », l'agence voit ce qui a été fait et ce qui
-// manque : présences pointées, prochaine visite (date et convocations),
+// manque : présences des convoqués pointées, prochaine visite (date et convocations),
 // avancement reporté depuis la visite précédente, propositions de l'IA
 // relues. Rien de cela n'empêche l'émission — sauf les propositions de l'IA :
 // la base refuse d'émettre tant qu'il en reste (migration 058), pour qu'une
@@ -9,6 +9,7 @@
 // Pur (tests/controle-emission.test.js).
 
 import { affichagePresence } from './crLogique'
+import { convocationDe } from './convocationLogique'
 
 const POINTEES = new Set(['p', 'r', 'a', 'e'])
 const pluriel = (n, mot) => `${n} ${mot}${n > 1 ? 's' : ''}`
@@ -18,25 +19,17 @@ const pluriel = (n, mot) => `${n} ${mot}${n > 1 ? 's' : ''}`
  * @param precedent { numero, avancement_lots } du CR d'avant, ou null
  * @returns [{ id, libelle, ok, detail, bloquant, vue }]
  */
-export function controlesEmission({ cr, presences = [], avancement = [], precedent = null, nbPropositions = 0 }) {
+export function controlesEmission({ cr, presences = [], convocations = new Map(), avancement = [], precedent = null, nbPropositions = 0 }) {
   const participants = presences.filter((p) => affichagePresence(p).type)
-  const nonPointes = participants.filter((p) => !POINTEES.has(p.presence)).length
   const convoques = participants.filter((p) => p.convoque).length
-
-  const presencesOk = participants.length > 0 && nonPointes === 0
+  const pointage = controlePresences(participants, convocations)
   const manqueProchaine = [
     !cr?.date_prochaine_reunion && 'date de la prochaine réunion à fixer',
     convoques === 0 && 'personne n’est convoqué',
   ].filter(Boolean)
 
   return [
-    {
-      id: 'presences', vue: 'presences', libelle: 'Présences pointées',
-      ok: presencesOk,
-      detail: participants.length === 0 ? 'Aucun participant'
-        : presencesOk ? pluriel(participants.length, 'participant')
-          : `${pluriel(nonPointes, 'participant')} sans pointage`,
-    },
+    { id: 'presences', vue: 'presences', libelle: 'Présences pointées', ...pointage },
     {
       id: 'convocations', vue: 'organisation', libelle: 'Prochaine visite et convocations',
       ok: manqueProchaine.length === 0,
@@ -51,6 +44,27 @@ export function controlesEmission({ cr, presences = [], avancement = [], precede
         : `${pluriel(nbPropositions, 'proposition')} à valider, modifier ou écarter avant d’émettre`,
     },
   ]
+}
+
+/**
+ * Seuls les convoqués de cette réunion (convocations du CR précédent) doivent
+ * être pointés : une entreprise qui n'était pas attendue n'a pas à figurer
+ * absente au CR, et ne pas la pointer ne manque à rien. Sans aucune
+ * convocation (première visite), il suffit qu'un participant soit pointé.
+ */
+export function controlePresences(participants = [], convocations = new Map()) {
+  if (participants.length === 0) return { ok: false, detail: 'Aucun participant' }
+  const attendus = participants.filter((p) => convocationDe(p, convocations))
+  if (attendus.length === 0) {
+    const pointes = participants.filter((p) => POINTEES.has(p.presence)).length
+    return pointes > 0
+      ? { ok: true, detail: `${pluriel(pointes, 'participant')} pointé${pointes > 1 ? 's' : ''}` }
+      : { ok: false, detail: 'Personne n’est pointé' }
+  }
+  const manquent = attendus.filter((p) => !POINTEES.has(p.presence)).length
+  return manquent === 0
+    ? { ok: true, detail: `${pluriel(attendus.length, 'convoqué')}, tous pointés` }
+    : { ok: false, detail: `${pluriel(manquent, 'convoqué')} sans pointage` }
 }
 
 /**

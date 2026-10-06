@@ -332,7 +332,7 @@ export function extrait(texte = '', mots = [], largeur = 160) {
   }
   const positions = mots.map((m) => norm.indexOf(m)).filter((p) => p >= 0)
   const premier = positions.length ? origine[Math.min(...positions)] : 0
-  let debut = Math.max(0, premier - Math.floor(largeur / 3))
+  let debut = largeur >= source.length ? 0 : Math.max(0, premier - Math.floor(largeur / 3))
   let fin = Math.min(source.length, debut + largeur)
   if (debut > 0) { const espace = source.indexOf(' ', debut); if (espace > -1 && espace < premier) debut = espace + 1 }
   if (fin < source.length) { const espace = source.lastIndexOf(' ', fin); if (espace > premier) fin = espace }

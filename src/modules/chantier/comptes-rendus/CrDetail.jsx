@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import {
-  ArrowRight, Send, ChevronRight, Lock, RotateCcw, Pencil,
+  ArrowRight, ChevronRight, Lock, RotateCcw, Pencil,
   AlertTriangle, X,
 } from 'lucide-react'
 import {
-  IconeVisitesChantier, IconeTablette, IconeOrdinateur, IconePlans, IconeRobot, IconeAvancement, IconePresence, IconeExportPdf, IconeGeneralites, IconeRemarques, IconeOrganisation,
+  IconeVisitesChantier, IconeTablette, IconeOrdinateur, IconeEmission, IconePlans, IconeRobot, IconeAvancement, IconePresence, IconeExportPdf, IconeGeneralites, IconeRemarques, IconeOrganisation,
 } from '../../../shared/icones/IconesAffaire'
 import { useEnregistrementsDisponibles } from './enregistrement/useEnregistrementVisite'
 import { ListeEnregistrements } from './enregistrement/PanneauEnregistrements'
@@ -259,7 +259,7 @@ function CrAccueil({ cr, affaire, presences, sections, onNavigate, onEmettre, on
             onMouseEnter={e => { e.currentTarget.style.borderColor = '#2A8A4E'; e.currentTarget.style.color = '#2A8A4E' }}
             onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(0,0,0,0.15)'; e.currentTarget.style.color = '#1F1B17' }}
           >
-            <Send size={13} /> Émettre le CR
+            <IconeEmission size={20} /> Émettre le CR
           </button>
         )}
       </div>
@@ -408,7 +408,7 @@ function BlocExport({ vue, emis, onClick }) {
           Exporter le PDF
         </h3>
         <p style={{ fontSize: 12, color: '#9C9591', marginTop: 3 }}>
-          {emis ? 'Le compte rendu émis : aperçu, téléchargement, archives' : 'L’aboutissement du compte rendu : aperçu, téléchargement, archive'}
+          {emis ? 'Le compte rendu émis : aperçu, téléchargement, archives' : 'Possible une fois le compte rendu émis — réglages du PDF dès maintenant'}
         </p>
       </div>
       <button
@@ -979,6 +979,7 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
       {activeView === 'export' && (
         <ExportRapport
           cr={cr}
+          onEmettre={!lectureSeuleAffaire && cr.statut !== 'emis' ? demanderEmission : undefined}
           sections={sections}
           presences={presences}
           convocations={convocations}

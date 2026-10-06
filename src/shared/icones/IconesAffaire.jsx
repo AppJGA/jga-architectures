@@ -153,6 +153,11 @@ export function IconeCarnet(props) {
 }
 
 // Accueil
+// Émettre un compte rendu (le document part)
+export function IconeEmission(props) {
+  return <Icone {...props}><path d="M6 32a3 3 0 0 1 3-3h15l8 8v20a3 3 0 0 1-3 3H9a3 3 0 0 1-3-3z"/><path d="M24 29v8h8"/><path d="M12 42h9M12 48h14M12 54h14"/><path d="M60 5L27 19l12 6 6 12z"/><path d="M60 5L39 25"/><path d="M39 25l-3 12 6-6"/><path d="M10 24C10 16 15 12.5 21.5 15.5" strokeDasharray="0 5"/></Icone>
+}
+
 // L'éditeur du CR, pensé pour l'ordinateur
 export function IconeOrdinateur(props) {
   return <Icone {...props}><path d="M10 45V14a4 4 0 0 1 4-4h36a4 4 0 0 1 4 4v31"/><rect x="15" y="15.5" width="34" height="24.5" rx="1.5"/><circle cx="32" cy="12.8" r="1" fill="currentColor" stroke="none"/><path d="M3 45h58v2.5a4.5 4.5 0 0 1-4.5 4.5h-49A4.5 4.5 0 0 1 3 47.5z"/><path d="M25 45v1.5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V45"/></Icone>

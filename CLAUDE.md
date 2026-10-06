@@ -82,7 +82,7 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
   de l'agence (tableau de bord, chaque module dont la to-do list, robot,
   avancement, présences, remarques, organisation, généralités et export
   PDF du CR, plans,
-  documents, tablette du mode Visite, ordinateur de l'éditeur), en
+  documents, tablette du mode Visite, ordinateur de l'éditeur, émission), en
   composants qui s'emploient comme lucide (`size`, `color`). Le manifeste
   garde ses noms lucide ; `ICON_MAP` d'`AffairePage` les traduit. Détaillées :
   pas en dessous de ~16 px (22 dans la colonne, 28 sur les tuiles, à la
@@ -292,6 +292,11 @@ création avec reprise de la visite précédente) et `useCompteRendu` (un CR).
   s'en tenir aux caractères latins courants. À l'émission, le PDF est archivé
   (`cr_archives`, stockage privé `cr-archives`, migration 043) ; un échec
   d'archive n'empêche pas l'émission.
+  **Règle de l'agence : pas d'export d'un brouillon** — la page « Exporter
+  le PDF » (`ExportRapport`) ne propose Télécharger / Aperçu que pour un CR
+  émis ; un brouillon garde ses réglages (ils servent au PDF archivé à
+  l'émission) et un bouton « Émettre le CR ». L'émission et la diffusion
+  fabriquent leur PDF elles-mêmes.
 - **Diffusion** (`DiffusionCr.jsx`, migration 044) : pas de serveur d'envoi.
   L'e-mail s'ouvre dans la messagerie de l'utilisateur (lien `mailto:`) avec
   un lien signé de 30 jours vers le PDF archivé — un mailto ne peut pas porter

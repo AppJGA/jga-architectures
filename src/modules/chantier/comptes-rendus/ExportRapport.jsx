@@ -7,7 +7,7 @@ import { lireReglagesRapport, ecrireReglagesRapport } from './rapportReglages'
 import { genererPdfCr, telechargerBlob } from './genererRapport'
 import { lienArchive } from './rapportStockage'
 import { DiffusionCr } from './DiffusionCr'
-import { IconeExportPdf } from '../../../shared/icones/IconesAffaire'
+import { IconeExportPdf, IconeEmission } from '../../../shared/icones/IconesAffaire'
 
 // ─── Écran « Exporter le CR » ────────────────────────────────────────────────
 // Réglages du rapport, aperçu et téléchargement du PDF, archives des émissions,
@@ -62,7 +62,7 @@ function fmtHorodatage(iso) {
 
 export function ExportRapport({
   cr, affaire, sections, presences, convocations, lotEntreprises, lots: lotsAffaire = null, generalites = null, interlocuteurs, zones = [], avancement = [], profils = [], photos, liensPhotos, pastilles, plansCr,
-  espace, peutGerer, onEspaceChange, archives: toutesArchives, onArchiverMaintenant, onPreparerVersion, signataire,
+  espace, peutGerer, onEspaceChange, archives: toutesArchives, onArchiverMaintenant, onPreparerVersion, signataire, onEmettre,
 }) {
   // Archives d'émission ; les versions par entreprise servent à la diffusion
   const archives = toutesArchives === null ? null : (toutesArchives ?? []).filter(a => !a.destinataire)
@@ -241,6 +241,21 @@ export function ExportRapport({
             )}
           </div>
         )}
+        {/* Règle de l'agence : un PDF ne sort que d'un CR émis — l'émission
+            fige le compte rendu et archive sa version officielle. Les réglages
+            ci-dessus servent déjà au PDF archivé à l'émission. */}
+        {cr.statut !== 'emis' ? (
+          <div style={{ display: 'flex', gap: 12, marginTop: 18, flexWrap: 'wrap', alignItems: 'center', padding: '12px 14px', background: '#FAF7F2', border: '0.5px solid rgba(0,0,0,0.08)' }}>
+            <p style={{ flex: '1 1 260px', margin: 0, fontSize: 13, color: '#5E5854', lineHeight: 1.5 }}>
+              Le PDF s’exporte une fois le compte rendu <strong>émis</strong> : l’émission fige son contenu et archive sa version officielle, celle qui se diffuse.
+            </p>
+            {onEmettre && (
+              <button type="button" onClick={onEmettre} style={bouton(true)}>
+                <IconeEmission size={20} /> Émettre le CR
+              </button>
+            )}
+          </div>
+        ) : (
         <div style={{ display: 'flex', gap: 10, marginTop: 18, flexWrap: 'wrap', alignItems: 'center' }}>
           <button type="button" onClick={telecharger} disabled={!!enCours} style={bouton(true)}>
             <IconeExportPdf size={20} /> {enCours === 'telecharger' ? 'Préparation…' : 'Télécharger le PDF'}
@@ -250,6 +265,7 @@ export function ExportRapport({
           </button>
           {enCours && enCours !== 'archiver' && <span style={{ fontSize: 11, color: '#9C9591' }}>Photos et plans en cours de préparation…</span>}
         </div>
+        )}
         {avertissements.length > 0 && (
           <p role="status" style={{ fontSize: 11, color: '#B8412C', marginTop: 10 }}>
             Éléments omis dans le PDF : {avertissements.join(' · ')}

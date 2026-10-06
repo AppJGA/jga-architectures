@@ -12,6 +12,7 @@ import { listerEnregistrements, ErreurTranscription } from './transcription'
 import { sectionDeLaPartie } from '../rangerRemarque'
 import { PARTIES_REMARQUES, champsDestinataire } from '../remarquesLogique'
 import { STATUTS } from '../crLogique'
+import { styleAgencePour } from './styleAgence'
 
 const MESSAGES = {
   'non-configuree': 'L’analyse n’est pas encore configurée (clé Anthropic à ajouter dans Vercel).',
@@ -72,8 +73,10 @@ export async function proposerRemarques({ cr, affaire, lots = [], interlocuteurs
     .map((e) => `[Enregistrement de ${heure(e.debut)}]\n${texteTranscription(e.segments)}`)
     .join('\n\n')
 
+  // La façon d'écrire de l'agence : son guide et des remarques de CR émis
+  const { guide, exemples } = await styleAgencePour({ affaireId: affaire?.id ?? cr.affaire_id, crId: cr.id, lots })
   const { contexte, references } = contexteAnalyse({
-    affaire, cr, transcription, lots, interlocuteurs, zones, remarques: remarquesDuCr(sections),
+    affaire, cr, transcription, lots, interlocuteurs, zones, remarques: remarquesDuCr(sections), exemples, guide,
   })
   const flux = await appelerAnalyse(contexte)
   const propositions = lirePropositions(flux.json, references)

@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 726 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
+npm test         # 733 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -120,7 +120,7 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
   anglais d'Outlook (marque UTF-8) — l'Outlook classique ne retient que le
   premier contact d'un .vcf. Une icône par fiche donne la carte seule. La
   note de chaque contact porte l'affaire et le rôle.
-- **Base** : `supabase/migrations/`, numérotées, 58 fichiers, **passées à la
+- **Base** : `supabase/migrations/`, numérotées, 59 fichiers, **passées à la
   main** dans le SQL Editor de Supabase : un code qui dépend d'une nouvelle
   colonne doit tolérer son absence tant que la migration n'est pas faite. La photo de
   couverture d'une affaire est `affaires.photo_url` (migration 014, bucket
@@ -376,6 +376,20 @@ création avec reprise de la visite précédente) et `useCompteRendu` (un CR).
     reste (déclencheur `comptes_rendus_propositions`) ; la reprise ne les
     emporte pas ; l'aperçu PDF les signale. `analyse_le` : pas d'analyse
     en double.
+  - **Lot 3** (migration 059, `agence_reglages`) : la façon d'écrire de
+    l'agence. Un **guide de rédaction** (`GUIDE_PAR_DEFAUT` de
+    `styleAgenceLogique.js`, tiré le 2026-10-06 de 9 CR de l'agence, 5
+    chantiers, plusieurs rédacteurs ; **aucun nom réel** : le dépôt est
+    public, les CR sources restent hors du dépôt) que l'agence réécrit par
+    « Guide de rédaction de l'IA » (vue Enregistrements, `ModaleGuideRedaction`)
+    ; enregistré vide ou identique au guide de départ, il y revient. Et
+    **40 exemples** pris dans les remarques des CR émis (`choisirExemples`,
+    testé : même affaire d'abord, 15 au plus, puis mêmes lots par le nom, puis
+    le reste ; ni extérieur, ni proposition à valider, une remarque suivie
+    comptée une fois). Les deux partent avec chaque analyse
+    (`styleAgencePour`, dans `proposerRemarques`) ; un échec de lecture
+    n'empêche jamais l'analyse. Les consignes disent d'imiter le ton des
+    exemples sans jamais en reprendre le contenu.
 
 ## Suivi financier d'étude
 

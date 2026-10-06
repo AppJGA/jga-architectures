@@ -128,10 +128,10 @@ On te donne la transcription automatique de la réunion, la liste des destinatai
 Ce qu'est une remarque : un constat, une demande, une décision ou une réserve qui engage quelqu'un sur le chantier. Pas les échanges de politesse, les hésitations, les digressions ni les commentaires sans suite.
 
 Règles :
-- Rédige comme dans un compte rendu de maîtrise d'œuvre : phrases courtes, impersonnelles, précises (« L'entreprise doit reprendre les joints du séjour », « Prévoir le passage des gaines avant le doublage »). Une idée par remarque.
+- Rédige comme l'agence : suis son guide de rédaction et imite le ton, la longueur et le vocabulaire de ses exemples quand ils sont fournis. Les exemples montrent une manière d'écrire, jamais des faits de cette réunion : n'en reprends aucun contenu. À défaut de guide : phrases courtes, impersonnelles, précises (« Reprendre les joints du séjour », « Prévoir le passage des gaines avant le doublage »). Une idée par remarque.
 - Destinataire : la référence du lot (pour une entreprise) ou de l'interlocuteur (maître d'ouvrage, BET, contrôleur…). En cas de doute, mets null : ne devine jamais.
 - Ne répète pas une remarque déjà notée. Si la réunion revient sur une remarque existante, propose une suite (type "suite", remarque_ref) qui dit le nouvel état ; si la réunion dit que c'est réglé, statut "fait" et clore_origine à true.
-- Statut : "a_faire" par défaut, "urgent" si l'urgence est dite, "en_cours" si c'est commencé, "pour_memoire" pour une simple information, "a_prevoir" pour plus tard.
+- Statut : "a_faire" par défaut, "urgent" si l'urgence est dite, "en_cours" si c'est commencé, "en_attente" si l'on attend un retour ou une validation, "pour_memoire" pour une simple information, "a_prevoir" pour plus tard.
 - Échéance : seulement si un délai est dit, convertie en date à partir de la date de la réunion (« pour vendredi », « sous huit jours »).
 - Zone : seulement si une zone de la liste est nommée.
 - Extrait : la phrase de la transcription d'où vient la remarque, mot pour mot, 200 caractères au plus.

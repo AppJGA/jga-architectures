@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Upload, Trash2, ChevronDown, ChevronUp, Mic, FileAudio, RefreshCw } from 'lucide-react'
+import { Upload, Trash2, ChevronDown, ChevronUp, Mic, FileAudio, RefreshCw, BookOpen } from 'lucide-react'
 import { dureeLisible } from './enregistrementLogique'
 import { texteTranscription, resumeEnregistrement } from './transcriptionLogique'
 import { listerEnregistrements, supprimerEnregistrement, importerFichier, messageTranscription } from './transcription'
@@ -7,6 +7,7 @@ import { messageAnalyse } from './propositions'
 import { COULEUR_IA } from './styleProposition'
 import { Panneau } from '../PanneauxVisite'
 import { IconeRobot } from '../../../../shared/icones/IconesAffaire'
+import { ModaleGuideRedaction } from './ModaleGuideRedaction'
 
 // ─── Enregistrements d'un compte rendu ───────────────────────────────────────
 //
@@ -76,6 +77,7 @@ export function ListeEnregistrements({ crId, affaireId, vocabulaire = [], versio
   const [erreurLocale, setErreurLocale] = useState(null)
   const [import_, setImport] = useState(null) // null | 'envoi'
   const [rafraichir, setRafraichir] = useState(0)
+  const [guideOuvert, setGuideOuvert] = useState(false)
   const champFichier = useRef(null)
 
   useEffect(() => {
@@ -181,6 +183,17 @@ export function ListeEnregistrements({ crId, affaireId, vocabulaire = [], versio
             onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; importer(f) }} />
         </div>
       )}
+      {onProposer && !lectureSeule && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <button type="button" onClick={() => setGuideOuvert(true)} style={bouton('white', COULEUR_IA, COULEUR_IA)}>
+            <BookOpen size={15} /> Guide de rédaction de l’IA
+          </button>
+          <span style={{ fontSize: 12, color: '#9C9591', flex: '1 1 200px' }}>
+            La façon d’écrire de l’agence que l’IA imite : à relire et ajuster.
+          </span>
+        </div>
+      )}
+      {guideOuvert && <ModaleGuideRedaction onFermer={() => setGuideOuvert(false)} />}
     </div>
   )
 }

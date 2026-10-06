@@ -63,6 +63,44 @@ export function resumeFile(operations) {
   }
 }
 
+/**
+ * Ce qui attend sur l'appareil, visite par visite : de quoi dire « 3
+ * modifications de la visite n°03 » et mener à elle. L'affaire et le numéro
+ * viennent de la visite emportée.
+ * @param visites [{ crId, donnees: { cr } }] (magasin « visites »)
+ */
+export function resumeParVisite(operations, visites = []) {
+  const parCr = new Map()
+  for (const op of operations ?? []) {
+    const ligne = parCr.get(op.crId) ?? { crId: op.crId, enAttente: 0, echecs: 0, photos: 0, depuis: op.creeLe }
+    if (estEnEchec(op)) ligne.echecs++
+    else ligne.enAttente++
+    if (op.type === TYPES.photoAjouter) ligne.photos++
+    ligne.depuis = Math.min(ligne.depuis, op.creeLe)
+    parCr.set(op.crId, ligne)
+  }
+  const crs = new Map((visites ?? []).map((v) => [v.crId, v.donnees?.cr ?? null]))
+  return [...parCr.values()]
+    .map((l) => ({ ...l, affaireId: crs.get(l.crId)?.affaire_id ?? null, numero: crs.get(l.crId)?.numero ?? null }))
+    .sort((a, b) => a.depuis - b.depuis)
+}
+
+/** Le témoin du bandeau du haut : rien, en attente, ou refusé */
+export function temoinFile(lignes, { enLigne, envoiEnCours }) {
+  const enAttente = (lignes ?? []).reduce((t, l) => t + l.enAttente, 0)
+  const echecs = (lignes ?? []).reduce((t, l) => t + l.echecs, 0)
+  if (enAttente === 0 && echecs === 0) return null
+  if (echecs > 0) {
+    return { etat: 'refus', libelle: `${echecs} modification${echecs > 1 ? 's' : ''} refusée${echecs > 1 ? 's' : ''} par la base`, cible: (lignes ?? []).find((l) => l.echecs > 0) }
+  }
+  const pluriel = enAttente > 1 ? 's' : ''
+  return {
+    etat: envoiEnCours && enLigne ? 'envoi' : 'attente',
+    libelle: envoiEnCours && enLigne ? 'Envoi des modifications…' : `${enAttente} modification${pluriel} en attente d’envoi`,
+    cible: (lignes ?? [])[0],
+  }
+}
+
 // ─── Application d'une opération à l'état affiché ────────────────────────────
 
 function remarqueLocale(champs, { id, crId, affaireId, parentId = null, sectionId = null, sousSectionId = null, ordre = 0 }) {

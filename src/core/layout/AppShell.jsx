@@ -4,9 +4,12 @@ import { RetourContexte } from './retourContexte'
 import { Sidebar } from './Sidebar'
 import { Topbar } from './Topbar'
 import { BandeauHorsLigne } from './BandeauHorsLigne'
+import { useMoteurSynchro } from '../../modules/chantier/comptes-rendus/horsLigne/useFileGlobale'
 
 export function AppShell() {
   const location = useLocation()
+  // Les modifications faites sans réseau partent d'elles-mêmes, sur toute page
+  useMoteurSynchro()
   // Retour du bandeau imposé par la page affichée (sinon : d'après l'adresse)
   const [retour, definir] = useState(null)
   // Titre imposé au bandeau (une affaire) : le retour passe alors sous lui

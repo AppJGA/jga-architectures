@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { MAGASINS, lire, ecrire, effacer, operationsDuCr, disponible } from './baseLocale'
-import { aEnvoyer, resumeFile, ESSAIS_MAX } from './fileLogique'
-import { envoyerOperation, erreurReseau } from './envoi'
+import { resumeFile } from './fileLogique'
+import { envoyerFileDuCr, signalerFile, EVENEMENT_FILE } from './synchro'
 
 // ─── File d'attente d'un compte rendu, côté écran ────────────────────────────
 //
@@ -37,10 +37,18 @@ export function useHorsLigne(crId) {
     lire(MAGASINS.visites, crId).then(v => setPrepareLe(v?.prepareLe ?? null)).catch(() => {})
   }, [crId])
 
+  // La file peut aussi partir d'ailleurs (envoi de toute l'app, synchro.js)
+  useEffect(() => {
+    const relire = () => { relireFile().catch(() => {}) }
+    window.addEventListener(EVENEMENT_FILE, relire)
+    return () => window.removeEventListener(EVENEMENT_FILE, relire)
+  }, [relireFile])
+
   /** Range une opération déjà construite dans la file. */
   const enfiler = useCallback(async (op) => {
     await ecrire(MAGASINS.operations, op)
     setFile(f => [...f, op])
+    signalerFile()
     return op
   }, [])
 
@@ -53,21 +61,9 @@ export function useHorsLigne(crId) {
     if (!crId || envoiLance.current) return { envoyees: 0, restantes: 0 }
     envoiLance.current = true
     setEnvoiEnCours(true)
-    let envoyees = 0
+    let envoyees
     try {
-      const ops = aEnvoyer(await operationsDuCr(crId).catch(() => []))
-      for (const op of ops) {
-        try {
-          await envoyerOperation(op)
-          await effacer(MAGASINS.operations, op.id)
-          envoyees++
-        } catch (err) {
-          if (erreurReseau(err)) break // le réseau est reparti : on reprendra
-          const essais = (op.essais ?? 0) + 1
-          await ecrire(MAGASINS.operations, { ...op, essais, erreur: err?.message ?? String(err) })
-          if (essais < ESSAIS_MAX) break // la suite dépend peut-être de celle-ci
-        }
-      }
+      envoyees = (await envoyerFileDuCr(crId)).envoyees
     } finally {
       envoiLance.current = false
       setEnvoiEnCours(false)
@@ -110,6 +106,7 @@ export function useHorsLigne(crId) {
   const abandonner = useCallback(async (opId) => {
     await effacer(MAGASINS.operations, opId)
     await relireFile()
+    signalerFile()
   }, [relireFile])
 
   // Objet stable : `useCompteRendu` s'en sert dans des `useCallback`, et un

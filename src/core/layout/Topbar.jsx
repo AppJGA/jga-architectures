@@ -2,6 +2,7 @@ import { useState, useEffect, useContext } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Bell } from 'lucide-react'
 import { RetourCourant } from './RetourCourant'
+import { TemoinEnvoi } from './TemoinEnvoi'
 import { RetourContexte } from './retourContexte'
 import { useAuth } from '../auth/useAuth'
 import { supabase } from '../supabase/client'
@@ -75,6 +76,7 @@ export function Topbar() {
 
       {/* Actions à droite */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <TemoinEnvoi />
         <button
           style={{
             display: 'flex', alignItems: 'center', gap: 6,

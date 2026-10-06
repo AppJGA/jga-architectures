@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 798 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
+npm test         # 805 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -842,6 +842,27 @@ ligne », plus haut).
   `auth.getUser()` part sur le réseau. `useAuth().user` (sur l'appareil).
   Piège vu : `useAffaireCollaborateurs` le demandait, et sans réseau l'affaire
   pouvait passer en lecture seule en pleine visite.
+- **« Préparer pour le chantier »** (bloc « Visite de chantier » du tableau
+  de bord, `BandeauVisite`) : ouvre une à une, dans un **cadre caché**, les
+  vraies pages utiles sans réseau (`etapesPreparation` : liste des visites,
+  la visite en cours — sinon la dernière — **en mode Visite**, ce qui
+  l'emporte avec photos et plans, lots, planning chantier, pièces écrites,
+  dont la copie de recherche est attendue). Recopier leurs requêtes ici les
+  aurait désaccordées des pages. Une page est finie quand plus rien ne part
+  depuis 2,5 s (`pageCalme`) ; la visite est vérifiée dans IndexedDB.
+  Résultat sur l'appareil (`jga.preparation.<affaire>`) : prête, ancienne
+  (plus de 24 h), incomplète (`etatPreparation`, testé). ~17 s sur une
+  petite affaire.
+- **Envoi des modifications sans rouvrir la visite** (`horsLigne/synchro.js`)
+  : la file de **toutes** les visites part à l'ouverture de l'app, au retour
+  du réseau, au retour au premier plan et chaque minute s'il reste quelque
+  chose (`useMoteurSynchro`, dans `AppShell`, jamais dans le cadre caché).
+  Un seul envoi à la fois, même entre fenêtres (Web Locks), et la file est
+  relue sous le verrou : rien ne part deux fois. La visite ouverte passe par
+  le même envoi (`envoyerFileDuCr`) ; l'événement `jga-file-hors-ligne`
+  tient les écrans à jour. Témoin dans le bandeau du haut (`TemoinEnvoi`,
+  `temoinFile`) et ligne par visite sur le tableau de bord
+  (`resumeParVisite`, testés) ; un refus mène à la visite.
 - **Écran** : `BandeauHorsLigne` (dans `AppShell`) dit « Hors ligne » et la
   date de la dernière réponse reçue du réseau (`derniereSynchro`, notée par
   le `fetch` du client). Portail sans copie : message au lieu de « 0

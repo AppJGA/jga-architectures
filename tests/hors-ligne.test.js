@@ -9,6 +9,7 @@ import { test, describe } from 'node:test'
 import {
   TYPES, ESSAIS_MAX, ALERTE_PHOTOS, creerOperation, estEnEchec, aEnvoyer,
   resumeFile, appliquerOperation, etatAvecFile,
+  resumeParVisite, temoinFile,
 } from '../src/modules/chantier/comptes-rendus/horsLigne/fileLogique.js'
 
 const CR = 'cr-1'
@@ -179,5 +180,67 @@ describe('état affiché au retour dans l’application', () => {
 
   test('sans file, l’instantané est rendu tel quel', () => {
     assert.deepEqual(etatAvecFile(instantane(), []), instantane())
+  })
+})
+
+describe('ce qui attend sur l’appareil, visite par visite', () => {
+  const ops = [
+    { id: '1', crId: 'cr3', type: 'remarque.creer', creeLe: 20, essais: 0 },
+    { id: '2', crId: 'cr3', type: 'photo.ajouter', creeLe: 30, essais: 0 },
+    { id: '3', crId: 'cr2', type: 'remarque.modifier', creeLe: 10, essais: 3 },
+  ]
+  const visites = [
+    { crId: 'cr3', donnees: { cr: { affaire_id: 'a1', numero: 3 } } },
+    { crId: 'cr2', donnees: { cr: { affaire_id: 'a2', numero: 2 } } },
+  ]
+
+  test('une ligne par visite, la plus ancienne d’abord, avec affaire et numéro', () => {
+    const lignes = resumeParVisite(ops, visites)
+    assert.deepEqual(lignes.map((l) => [l.crId, l.affaireId, l.numero, l.enAttente, l.echecs, l.photos]), [
+      ['cr2', 'a2', 2, 0, 1, 0],
+      ['cr3', 'a1', 3, 2, 0, 1],
+    ])
+  })
+  test('visite non emportée : affaire inconnue, rien ne casse', () => {
+    assert.equal(resumeParVisite([ops[0]], [])[0].affaireId, null)
+  })
+  test('témoin : rien, en attente, envoi, refus', () => {
+    assert.equal(temoinFile([], { enLigne: true }), null)
+    const attente = resumeParVisite(ops.slice(0, 2), visites)
+    assert.equal(temoinFile(attente, { enLigne: false, envoiEnCours: false }).libelle, '2 modifications en attente d’envoi')
+    assert.equal(temoinFile(attente, { enLigne: true, envoiEnCours: true }).etat, 'envoi')
+    const refus = temoinFile(resumeParVisite(ops, visites), { enLigne: true })
+    assert.equal(refus.etat, 'refus')
+    assert.equal(refus.cible.crId, 'cr2')
+  })
+})
+
+describe('préparer pour le chantier', async () => {
+  const { etapesPreparation, etatPreparation, pageCalme, FRAICHEUR_MS } = await import('../src/modules/chantier/comptes-rendus/horsLigne/preparationLogique.js')
+
+  test('les pages utiles, la visite en mode Visite', () => {
+    const etapes = etapesPreparation('a1', 'cr3')
+    assert.deepEqual(etapes.map((e) => e.cle), ['visites', 'visite', 'lots', 'planning', 'cctp'])
+    assert.equal(etapes[1].chemin, '/affaires/a1/comptes-rendus?cr=cr3&visite=1')
+    assert.ok(etapes[1].visite)
+  })
+  test('sans visite, pas d’étape « visite »', () => {
+    assert.ok(!etapesPreparation('a1', null).some((e) => e.cle === 'visite'))
+  })
+  test('état : jamais, prête, ancienne, incomplète', () => {
+    const maintenant = new Date('2026-10-06T16:00:00+02:00').getTime()
+    assert.equal(etatPreparation(null, maintenant).etat, 'jamais')
+    const pret = etatPreparation({ le: new Date('2026-10-06T08:12:00+02:00').getTime(), numero: 3, echecs: [] }, maintenant)
+    assert.equal(pret.etat, 'pret')
+    assert.equal(pret.libelle, 'Prête pour le chantier · préparée aujourd’hui à 08 h 12 · visite n°03')
+    const hier = etatPreparation({ le: maintenant - FRAICHEUR_MS - 60_000, echecs: [] }, maintenant)
+    assert.equal(hier.etat, 'ancien')
+    assert.match(hier.libelle, /^Préparée hier à .* — à mettre à jour avant de partir$/)
+    assert.equal(etatPreparation({ le: maintenant - 1000, echecs: ['Planning chantier'] }, maintenant).etat, 'incomplet')
+  })
+  test('une page est chargée quand plus rien ne part', () => {
+    assert.equal(pageCalme({ requetes: 12, depuisChangement: 2600, depuisOuverture: 4000 }), true)
+    assert.equal(pageCalme({ requetes: 12, depuisChangement: 800, depuisOuverture: 4000 }), false)
+    assert.equal(pageCalme({ requetes: 0, depuisChangement: 9000, depuisOuverture: 9000 }), false)
   })
 })

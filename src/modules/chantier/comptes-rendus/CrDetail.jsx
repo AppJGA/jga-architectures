@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import {
   ArrowRight, Send, ChevronRight, Lock, RotateCcw, Pencil,
-  AlertTriangle, X, Smartphone,
+  AlertTriangle, X,
 } from 'lucide-react'
 import {
-  IconeVisitesChantier, IconePlans, IconeRobot, IconeAvancement, IconePresence, IconeExportPdf, IconeGeneralites, IconeRemarques, IconeOrganisation,
+  IconeVisitesChantier, IconeTablette, IconePlans, IconeRobot, IconeAvancement, IconePresence, IconeExportPdf, IconeGeneralites, IconeRemarques, IconeOrganisation,
 } from '../../../shared/icones/IconesAffaire'
 import { useEnregistrementsDisponibles } from './enregistrement/useEnregistrementVisite'
 import { ListeEnregistrements } from './enregistrement/PanneauEnregistrements'
@@ -243,7 +243,7 @@ function CrAccueil({ cr, affaire, presences, sections, onNavigate, onEmettre, on
             boxShadow: '0 6px 16px -8px rgba(232,96,44,0.8)',
           }}
         >
-          <Smartphone size={15} />
+          <IconeTablette size={20} />
           {cr.statut !== 'emis' && peutModifier ? 'Démarrer la visite' : 'Mode visite'}
         </button>
         {/* Émis : la réouverture se fait depuis le bandeau au-dessus */}

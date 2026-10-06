@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Smartphone, ChevronRight, AlertTriangle } from 'lucide-react'
+import { ChevronRight, AlertTriangle } from 'lucide-react'
+import { IconeTablette } from '../../../shared/icones/IconesAffaire'
 import { useComptesRendus } from '../../../shared/hooks/useComptesRendus'
 import { actionVisite, cheminVisite, estTactile } from './accesVisite'
 
@@ -81,7 +82,7 @@ export function BandeauVisite({ affaireId, lectureSeule = false }) {
             opacity: enCours ? 0.7 : 1,
           }}
         >
-          <Smartphone size={18} />
+          <IconeTablette size={22} />
           {enCours ? 'Création…' : (choix.action === 'reprendre' ? 'Reprendre' : 'Démarrer')}
         </button>
       )}

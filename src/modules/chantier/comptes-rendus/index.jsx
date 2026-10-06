@@ -1,12 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
-import { Plus, Trash2, Users, LayoutList, LayoutGrid, CalendarPlus, ArrowRight, AlertTriangle, X, Lock, Smartphone } from 'lucide-react'
+import { Plus, Trash2, Users, LayoutList, LayoutGrid, CalendarPlus, ArrowRight, AlertTriangle, X, Lock } from 'lucide-react'
 import { useAffaire } from '../../../shared/hooks/useAffaires'
 import { useComptesRendus } from '../../../shared/hooks/useComptesRendus'
 import { InterlocuteursModal } from './InterlocuteursModal'
 import { GeneralitesModal } from './GeneralitesModal'
 import { CrDetail } from './CrDetail'
-import { IconeGeneralites } from '../../../shared/icones/IconesAffaire'
+import { IconeGeneralites, IconeTablette } from '../../../shared/icones/IconesAffaire'
 
 function fmtDate(d) {
   if (!d) return '—'
@@ -356,7 +356,7 @@ function CarteVisiteEnCours({ cr, onVisite, onEditeur }) {
           boxShadow: '0 10px 24px -12px rgba(232,96,44,0.9)',
         }}
       >
-        <Smartphone size={18} /> Ouvrir la visite
+        <IconeTablette size={22} /> Ouvrir la visite
       </button>
       <button
         type="button" onClick={onEditeur}

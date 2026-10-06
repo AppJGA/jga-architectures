@@ -82,7 +82,7 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
   de l'agence (tableau de bord, chaque module dont la to-do list, robot,
   avancement, présences, remarques, organisation, généralités et export
   PDF du CR, plans,
-  documents), en
+  documents, tablette du mode Visite), en
   composants qui s'emploient comme lucide (`size`, `color`). Le manifeste
   garde ses noms lucide ; `ICON_MAP` d'`AffairePage` les traduit. Détaillées :
   pas en dessous de ~16 px (22 dans la colonne, 28 sur les tuiles, à la

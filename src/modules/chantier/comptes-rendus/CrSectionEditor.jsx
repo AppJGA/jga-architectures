@@ -10,9 +10,9 @@ import { peutGlisser } from './glisserLogique'
 import { PhotosContexte } from './usePhotosRemarque'
 import {
   Plus, Pencil, ChevronDown, ChevronUp, ChevronRight, X, GripVertical, MessageSquarePlus,
-  ToggleLeft, ToggleRight, MessageSquare, Search, History, CheckSquare, MapPin, UserPen,
+  ToggleLeft, ToggleRight, Search, History, CheckSquare, MapPin, UserPen,
 } from 'lucide-react'
-import { IconeFtm } from '../../../shared/icones/IconesAffaire'
+import { IconeFtm, IconeSuite } from '../../../shared/icones/IconesAffaire'
 import { CATEGORIE_META } from '../../../shared/hooks/useAffaireInterlocuteurs'
 import {
   dateDuJour, STATUTS, FAMILLES_STATUT, STATUT_PAR_DEFAUT, statutNormalise, infosStatut,
@@ -635,10 +635,10 @@ function RemarqueRow({ rem, idx, total, crDate, lots, interlocuteurs, zones, sec
           )}
           {onAddSousRemarque && (
             <button onClick={() => (onOuvrirSuite ? onOuvrirSuite(rem) : setAddingSuivi(a => !a))} data-compact
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 2, padding: '2px 5px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 10, color: addingSuivi ? '#E8602C' : '#9C9591' }}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 5px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 10, color: addingSuivi ? '#E8602C' : '#9C9591' }}
               title="Ajouter une suite"
             >
-              <MessageSquare size={11} />+ Suite
+              <IconeSuite size={16} />+ Suite
             </button>
           )}
         </div>}

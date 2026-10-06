@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useContext, useMemo } from 'react'
-import { Search, Plus, Camera, MapPin, MessageSquare, Pencil, MoreHorizontal, WifiOff, AlertTriangle, X, LogOut, Lock, RefreshCw, CornerDownRight } from 'lucide-react'
-import { IconeFtm, IconeAvancement, IconePresence } from '../../../shared/icones/IconesAffaire'
+import { Search, Plus, Camera, MapPin, Pencil, MoreHorizontal, WifiOff, AlertTriangle, X, LogOut, Lock, RefreshCw, CornerDownRight } from 'lucide-react'
+import { IconeFtm, IconeAvancement, IconePresence, IconeSuite } from '../../../shared/icones/IconesAffaire'
 import { FILTRES_VISITE, filtreVisite, groupesVisite, compteursVisite } from './visiteLogique'
 import { STATUTS, infosStatut, estEnRetard, libelleZone, peutModifierRemarque, auteurExterieur, miseEnForme, COULEUR_SURLIGNE } from './crLogique'
 import { useCr } from './CrContexte'
@@ -246,7 +246,7 @@ function CarteRemarque({ rem, cr, lots, interlocuteurs, zones, ftms, ouvrirFtm, 
         )}
         {(!lectureSeuleCr || suivis.length > 0) && (
           <button type="button" onClick={() => onPanneau({ type: 'suivi', remarque: rem })} style={bouton()}>
-            <MessageSquare size={17} /> Suite{suivis.length > 0 ? ` (${suivis.length})` : ''}
+            <IconeSuite size={20} /> Suite{suivis.length > 0 ? ` (${suivis.length})` : ''}
           </button>
         )}
         {!lectureSeule && (

@@ -168,6 +168,11 @@ export function IconeTablette(props) {
   return <Icone {...props}><rect x="10" y="4" width="44" height="56" rx="6"/><rect x="15.5" y="10.5" width="33" height="43" rx="2"/><circle cx="32" cy="7.2" r="1.2" fill="currentColor" stroke="none"/><path d="M28 57h8"/></Icone>
 }
 
+// Suite d'une remarque : la bulle, et la flèche qui revient dessous
+export function IconeSuite(props) {
+  return <Icone {...props}><path d="M11 6h42a4 4 0 0 1 4 4v20a4 4 0 0 1-4 4h-3v7l-8-7H11a4 4 0 0 1-4-4V10a4 4 0 0 1 4-4z"/><path d="M15 15h34M15 23h20"/><path d="M50 41v6a6 6 0 0 1-6 6H22"/><path d="M27.5 47.5L22 53l5.5 5.5"/></Icone>
+}
+
 export function IconeAccueil(props) {
   return <Icone {...props}><path d="M4 29L32 6l28 23"/><path d="M10 24.5V56h44V24.5"/><path d="M26 56V41a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v15"/><path d="M44 15.9V9h6v11.8"/></Icone>
 }

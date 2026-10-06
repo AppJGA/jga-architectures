@@ -367,7 +367,7 @@ function CarteVisiteEnCours({ cr, onVisite, onEditeur }) {
           fontSize: 14, cursor: 'pointer',
         }}
       >
-        <IconeOrdinateur size={22} /> Éditeur
+        <IconeOrdinateur size={22} /> Paramètres du chantier
       </button>
     </div>
   )

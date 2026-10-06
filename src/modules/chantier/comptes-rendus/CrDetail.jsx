@@ -244,7 +244,7 @@ function CrAccueil({ cr, affaire, presences, sections, onNavigate, onEmettre, on
           }}
         >
           <IconeTablette size={20} />
-          {cr.statut !== 'emis' && peutModifier ? 'Démarrer la visite' : 'Mode visite'}
+          Ouvrir la visite
         </button>
         {/* Émis : la réouverture se fait depuis le bandeau au-dessus */}
         {peutModifier && cr.statut !== 'emis' && (
@@ -289,23 +289,21 @@ function CrAccueil({ cr, affaire, presences, sections, onNavigate, onEmettre, on
                 : `${toutesRemarques.length} remarque${toutesRemarques.length > 1 ? 's' : ''} réparties en ${sections.length} section${sections.length > 1 ? 's' : ''}`}
             </p>
           </div>
+          {/* Même allure que la porte de l'éditeur dans la liste des visites :
+              la visite (tablette) reste l'action mise en avant */}
           <button
             onClick={() => onNavigate('remarques')}
             onMouseEnter={() => setSurvolEditeur(true)}
             onMouseLeave={() => setSurvolEditeur(false)}
             style={{
               display: 'inline-flex', alignItems: 'center', gap: 8, flexShrink: 0,
-              padding: '10px 20px', borderRadius: 2, border: 'none',
-              backgroundColor: survolEditeur ? '#227341' : '#2A8A4E', color: 'white',
-              fontSize: 13, fontWeight: 600, cursor: 'pointer',
-              boxShadow: '0 6px 16px -8px rgba(42,138,78,0.7)',
-              transform: survolEditeur ? 'translateY(-2px)' : 'none',
-              transition: 'transform 0.18s cubic-bezier(0.22,1,0.36,1), background 0.18s ease',
+              minHeight: 44, padding: '0 18px', borderRadius: 3,
+              border: `0.5px solid ${survolEditeur ? '#1F1B17' : 'rgba(0,0,0,0.15)'}`,
+              background: 'white', color: '#1F1B17', fontSize: 14, cursor: 'pointer',
+              transition: 'border-color 0.15s ease',
             }}
           >
-            <IconeOrdinateur size={20} />
-            {cr.statut === 'emis' || !peutModifier ? 'Consulter' : "Ouvrir l'éditeur"}
-            <ArrowRight size={15} strokeWidth={1.8} />
+            <IconeOrdinateur size={22} /> Éditeur des remarques
           </button>
         </div>
 

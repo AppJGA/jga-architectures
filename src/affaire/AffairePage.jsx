@@ -20,7 +20,7 @@ import {
   IconeTableauDeBord, IconePlanningEtude, IconeFinancierEtude, IconeEntreprisesLots, IconeVisitesChantier,
   IconeOpr, IconeFtm, IconePlanningChantier, IconeFinancierChantier, IconeDocuments, IconeTodo,
 } from '../shared/icones/IconesAffaire'
-import { montantsAffaire, tvaAffaire, htDe } from '../shared/montants'
+import { montantsAffaire, tvaAffaire, htDe, formatEuros } from '../shared/montants'
 import { MontantHT } from '../shared/components/MontantHT'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -42,7 +42,7 @@ const ICON_MAP = {
 
 function formatEuro(v) {
   if (!v) return null
-  return new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(v)
+  return formatEuros(v)
 }
 
 function fmtDate(d) {

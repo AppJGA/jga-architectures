@@ -1,11 +1,11 @@
-import { ttcDe } from '../montants'
+import { ttcDe, formatEuros } from '../montants'
 
 // ─── Un montant : le HT en avant, le TTC en petit ────────────────────────────
 //
 // C'est le HT qui prime dans les études de l'agence. `taille` : celle du HT ;
 // le TTC suit en plus petit et plus pâle, à côté (`enLigne`) ou dessous.
 
-const euro = (n) => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(n)
+const euro = formatEuros
 
 export function MontantHT({ ht, tva = 1.2, taille = 14, couleur = '#1F1B17', enLigne = false, poids = 500 }) {
   if (ht == null || ht === '' || !Number.isFinite(Number(ht))) return <span style={{ color: '#9C9591' }}>—</span>

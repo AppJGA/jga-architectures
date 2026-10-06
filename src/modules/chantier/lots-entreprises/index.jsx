@@ -7,7 +7,7 @@ import { IconeEntreprisesLots } from '../../../shared/icones/IconesAffaire'
 import { useLotsEntreprises, useEntreprises } from '../../../shared/hooks/useLotsEntreprises'
 import { supabase } from '../../../core/supabase/client'
 import { numeroLot, lireNumeroSaisi } from '../../../shared/lots/numeroLot'
-import { ttcDe, tvaAffaire } from '../../../shared/montants'
+import { ttcDe, tvaAffaire, formatEuros } from '../../../shared/montants'
 import { useAffaire } from '../../../shared/hooks/useAffaires'
 
 const LOT_SUGGESTIONS = [
@@ -24,7 +24,7 @@ const FONCTION_SUGGESTIONS = [
 
 function formatEuro(v) {
   if (!v && v !== 0) return null
-  return new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(v)
+  return formatEuros(v)
 }
 
 function fmtDate(d) {
@@ -307,7 +307,7 @@ function EntrepriseAssignModal({ lot, entreprises, createEntreprise, tva = 1.2, 
         <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 10, marginBottom: 10 }}>
           <div>
             <label style={LABEL}>Montant HT (€)</label>
-            <input type="number" value={marche.montant_marche_ht}
+            <input type="number" step="0.01" value={marche.montant_marche_ht}
               onChange={e => setMarche(f => ({ ...f, montant_marche_ht: e.target.value }))}
               placeholder="0" style={INPUT} />
             {marche.montant_marche_ht !== '' && ttcDe(marche.montant_marche_ht, tva) != null && (

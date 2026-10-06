@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { tvaAffaire, htDe, ttcDe, montantsAffaire, erreurColonnesHT, sansColonnesHT } from '../src/shared/montants.js'
+import { tvaAffaire, htDe, ttcDe, montantsAffaire, erreurColonnesHT, sansColonnesHT, formatEuros } from '../src/shared/montants.js'
 
 test('taux de TVA de l’affaire, 20 % par défaut', () => {
   assert.equal(tvaAffaire({ taux_tva: 1.1 }), 1.1)
@@ -33,4 +33,13 @@ test('sans la migration : on réessaie sans les colonnes HT', () => {
   assert.equal(erreurColonnesHT({ message: "Could not find the 'enveloppe_ht' column" }), true)
   assert.equal(erreurColonnesHT({ message: 'autre' }), false)
   assert.deepEqual(sansColonnesHT({ nom: 'x', enveloppe_ht: 1, enveloppe_ttc: 1.2 }), { nom: 'x', enveloppe_ttc: 1.2 })
+})
+
+test('un montant s’affiche au centime près quand il en a', () => {
+  const nbsp = (t) => t.replace(/[\u202f\u00a0]/g, ' ')
+  assert.equal(nbsp(formatEuros(414685)), '414 685 €')
+  assert.equal(nbsp(formatEuros('414685.5')), '414 685,50 €')
+  assert.equal(nbsp(formatEuros(497622.0000001)), '497 622 €')
+  assert.equal(formatEuros(''), null)
+  assert.equal(formatEuros(null), null)
 })

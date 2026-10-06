@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 778 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
+npm test         # 779 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -494,6 +494,9 @@ la migration, le HT se recalcule depuis le TTC, et l'écriture est retentée
 sans les colonnes HT (`erreurColonnesHT` / `sansColonnesHT`). Les phases
 (`suivi_financier_etude`) et les marchés des lots gardent leurs colonnes
 HT / TTC ; le TTC d'un marché suit son HT au taux de l'affaire.
+Saisie **au centime** : tout champ de montant porte `step="0.01"` (un
+`step="100"` refusait 414 685 €) ; affichage par `formatEuros`, centimes
+montrés seulement quand il y en a.
 
 ## Fiches de travaux modificatifs (FTM)
 

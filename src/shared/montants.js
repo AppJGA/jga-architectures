@@ -8,6 +8,19 @@
 const arrondi = (n) => Math.round(n * 100) / 100
 const vide = (v) => v === null || v === undefined || v === ''
 
+/**
+ * Un montant en euros : au centime quand il en a (414 685,50 €), sans
+ * décimales sinon (414 685 €). null si rien.
+ */
+export function formatEuros(v) {
+  if (vide(v) || !Number.isFinite(Number(v))) return null
+  const n = arrondi(Number(v))
+  const decimales = Number.isInteger(n) ? 0 : 2
+  return new Intl.NumberFormat('fr-FR', {
+    style: 'currency', currency: 'EUR', minimumFractionDigits: decimales, maximumFractionDigits: decimales,
+  }).format(n)
+}
+
 /** Taux de TVA de l'affaire, multiplicateur (1,20 pour 20 %). */
 export function tvaAffaire(affaire) {
   const t = Number(affaire?.taux_tva)

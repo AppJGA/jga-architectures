@@ -6,7 +6,7 @@ import { InterlocuteursEditeur } from '../modules/chantier/comptes-rendus/Interl
 import { supabase } from '../core/supabase/client'
 import { useAuth } from '../core/auth/useAuth'
 import { compressImage, COVER_OPTIONS, TAILLE_MAX_OCTETS } from '../shared/utils/compressImage'
-import { htDe, ttcDe, tvaAffaire } from '../shared/montants'
+import { htDe, ttcDe, tvaAffaire, formatEuros } from '../shared/montants'
 
 // ─── Valeurs par défaut ────────────────────────────────────────────────────
 const DEFAULTS = {
@@ -102,7 +102,7 @@ function EquivalentTTC({ ht, tva }) {
   if (ttc == null) return null
   return (
     <p style={{ margin: '4px 0 0', fontSize: 11, color: '#9C9591' }}>
-      soit {new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(ttc)} TTC
+      soit {formatEuros(ttc)} TTC
     </p>
   )
 }
@@ -786,17 +786,17 @@ export function AffaireFormModal({ affaire = null, onSave, onClose, scrollToSect
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginBottom: 28 }}>
             <div style={grid2}>
               <Field label="Enveloppe globale initiale HT (€)">
-                <TextInput type="number" value={form.enveloppe_ht} onChange={setNum('enveloppe_ht')} placeholder="1 000 000" />
+                <TextInput type="number" step="0.01" value={form.enveloppe_ht} onChange={setNum('enveloppe_ht')} placeholder="1 000 000" />
                 <EquivalentTTC ht={form.enveloppe_ht} tva={form.taux_tva} />
               </Field>
               <Field label="dont Travaux HT (€)">
-                <TextInput type="number" value={form.montant_travaux_ht} onChange={setNum('montant_travaux_ht')} placeholder="800 000" />
+                <TextInput type="number" step="0.01" value={form.montant_travaux_ht} onChange={setNum('montant_travaux_ht')} placeholder="800 000" />
                 <EquivalentTTC ht={form.montant_travaux_ht} tva={form.taux_tva} />
               </Field>
             </div>
             <div style={grid2}>
               <Field label="dont Honoraires architecte HT (€)">
-                <TextInput type="number" value={form.honoraires_ht} onChange={setNum('honoraires_ht')} placeholder="70 000" />
+                <TextInput type="number" step="0.01" value={form.honoraires_ht} onChange={setNum('honoraires_ht')} placeholder="70 000" />
                 <EquivalentTTC ht={form.honoraires_ht} tva={form.taux_tva} />
               </Field>
               <Field label="Surface de plancher (m²)">

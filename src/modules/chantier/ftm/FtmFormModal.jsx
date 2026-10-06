@@ -404,6 +404,7 @@ export function FtmFormModal({ open, onClose, ftm, lots = [], lotParDefaut = nul
                 <input
                   type="number"
                   min={0}
+                  step="0.01"
                   value={form.montant_travaux_ht}
                   onChange={e => set('montant_travaux_ht', e.target.value.replace('-', ''))}
                   placeholder="0.00"
@@ -421,6 +422,7 @@ export function FtmFormModal({ open, onClose, ftm, lots = [], lotParDefaut = nul
                 <label style={labelStyle}>Honoraires MOE supplémentaires HT (€)</label>
                 <input
                   type="number"
+                  step="0.01"
                   value={form.montant_honoraires_ht}
                   onChange={e => set('montant_honoraires_ht', e.target.value)}
                   placeholder="0.00"

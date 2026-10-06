@@ -10,7 +10,7 @@ import {
   dernierePhaseRenseignee, nomPhase, SUGGESTIONS_PHASES,
 } from './phases'
 import { numeroLot, libelleNumeroLot } from '../../../shared/lots/numeroLot'
-import { htDe, ttcDe, tvaAffaire, montantsAffaire } from '../../../shared/montants'
+import { htDe, ttcDe, tvaAffaire, montantsAffaire, formatEuros } from '../../../shared/montants'
 import { MontantHT } from '../../../shared/components/MontantHT'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -21,9 +21,7 @@ const SHOW_EST_FOR = ['avp', 'pro', 'dce', 'chantier']
 
 function euro(v) {
   if (v == null || v === '') return '—'
-  return new Intl.NumberFormat('fr-FR', {
-    style: 'currency', currency: 'EUR', maximumFractionDigits: 0,
-  }).format(v)
+  return formatEuros(v) ?? '—'
 }
 
 // La liste des phases n'est plus figée : elle est construite à partir des
@@ -240,7 +238,7 @@ function PhaseFormModal({ open, onClose, existing, affaire, phases, onSave, onDe
               <label style={LABEL}>Enveloppe HT</label>
               <div style={{ position: 'relative' }}>
                 <input
-                  type="number" min={0} step="100"
+                  type="number" min={0} step="0.01"
                   value={form.enveloppe_ht}
                   onChange={e => handleEnvHt(e.target.value)}
                   placeholder="0"
@@ -261,7 +259,7 @@ function PhaseFormModal({ open, onClose, existing, affaire, phases, onSave, onDe
               <label style={LABEL}>Honoraires HT</label>
               <div style={{ position: 'relative' }}>
                 <input
-                  type="number" min={0} step="100"
+                  type="number" min={0} step="0.01"
                   value={form.honoraires_ht}
                   onChange={e => handleHonHt(e.target.value)}
                   placeholder="0"
@@ -519,7 +517,7 @@ function EstimationFormModal({ open, onClose, existing, affaire, phases, lotsExi
               <label style={LABEL}>Montant estimé HT</label>
               <div style={{ position: 'relative' }}>
                 <input
-                  type="number" min={0} step="100"
+                  type="number" min={0} step="0.01"
                   value={form.montant_estime_ht}
                   onChange={e => handleHtChange(e.target.value)}
                   placeholder="0"
@@ -697,7 +695,7 @@ function EnveloppeGlobale({ affaire, onModifier }) {
         <form onSubmit={(e) => { e.preventDefault(); valider() }}>
           <div style={{ position: 'relative' }}>
             <input
-              type="number" min={0} step="100" autoFocus
+              type="number" min={0} step="0.01" autoFocus
               value={brouillon}
               onChange={(e) => setBrouillon(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Escape') annuler() }}

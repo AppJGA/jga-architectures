@@ -12,6 +12,7 @@ import { generateFtmPdf } from '../ftm/generateFtmPdf'
 import { referenceFtm } from '../ftm/ligneFinanciereLogique'
 import { ModaleConfirmation } from '../../../shared/components/ModaleConfirmation'
 import { numeroLot, libelleNumeroLot } from '../../../shared/lots/numeroLot'
+import { formatEuros } from '../../../shared/montants'
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
@@ -49,7 +50,7 @@ const C = { des: 3, ent: 2, ale: 1.5, ada: 1.5, mo: 1.5, ht: 1.5, pct: 0.8, ttc:
 
 function euro(v) {
   if (v == null || v === 0) return null
-  return new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(v)
+  return formatEuros(v)
 }
 
 function pct(v) {
@@ -236,6 +237,7 @@ function LigneModal({ lots, editingLigne, defaultLotId, onSave, onClose, tva }) 
               <input
                 type="number"
                 min={0}
+                step="0.01"
                 value={absValue}
                 onChange={e => setAbsValue(e.target.value)}
                 placeholder="0"

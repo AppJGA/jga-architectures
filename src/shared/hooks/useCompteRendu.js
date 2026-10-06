@@ -140,6 +140,9 @@ export function useCompteRendu(crId, affaireId) {
       case TYPES.pastillePoser:
         setPastilles(prev => appliquerOperation({ pastilles: prev }, op).pastilles)
         break
+      case TYPES.tacheAvancement:
+        setPlanning(prev => appliquerOperation({ planning: prev }, op).planning)
+        break
       default:
         setSections(prev => appliquerOperation({ sections: prev }, op).sections)
     }
@@ -357,14 +360,6 @@ export function useCompteRendu(crId, affaireId) {
     await fetchAll()
   }, [crId, syncPresences, fetchAll, planning, cr?.date_reunion])
 
-  // Pointage d'une tâche depuis le compte rendu : c'est bien le planning qui
-  // est écrit, il n'y a pas de second avancement.
-  const modifierAvancementTache = useCallback(async (tacheId, valeur) => {
-    const pourcent = Math.max(0, Math.min(100, Math.round(Number(valeur) || 0)))
-    const { error } = await supabase.from('planning').update({ avancement: pourcent }).eq('id', tacheId)
-    if (error) throw error
-    setPlanning(p => ({ ...p, taches: p.taches.map(t => (t.id === tacheId ? { ...t, avancement: pourcent } : t)) }))
-  }, [])
 
   const rouvrir = useCallback(async () => {
     let { error } = await supabase.from('comptes_rendus')
@@ -409,6 +404,14 @@ export function useCompteRendu(crId, affaireId) {
     }
     return op
   }, [crId, appliquerLocalement, enfilerOperation, fetchAll])
+
+  // Pointage d'une tâche depuis le compte rendu : c'est bien le planning qui
+  // est écrit, il n'y a pas de second avancement. Par la file, comme les
+  // remarques : sans réseau, il attend sur l'appareil.
+  const modifierAvancementTache = useCallback(async (tacheId, valeur) => {
+    const avancement = Math.max(0, Math.min(100, Math.round(Number(valeur) || 0)))
+    await executerOperation(TYPES.tacheAvancement, { tacheId, avancement })
+  }, [executerOperation])
 
   const addSection = useCallback(async (payload) => {
     const maxOrdre = sections.reduce((m, s) => Math.max(m, s.ordre), -1)

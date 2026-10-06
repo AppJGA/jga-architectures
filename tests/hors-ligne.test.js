@@ -244,3 +244,11 @@ describe('préparer pour le chantier', async () => {
     assert.equal(pageCalme({ requetes: 0, depuisChangement: 9000, depuisOuverture: 9000 }), false)
   })
 })
+
+test('avancement d’une tâche pointé sans réseau : appliqué au planning emporté', () => {
+  const instantane = { sections: [], planning: { taches: [{ id: 't1', avancement: 20 }, { id: 't2', avancement: 0 }], lots: [], periodes: [] } }
+  const op = creerOperation(TYPES.tacheAvancement, { tacheId: 't1', avancement: 65 }, { crId: 'cr1' })
+  const etat = etatAvecFile(instantane, [op])
+  assert.deepEqual(etat.planning.taches.map((t) => t.avancement), [65, 0])
+  assert.equal(instantane.planning.taches[0].avancement, 20, 'l’instantané n’est pas modifié')
+})

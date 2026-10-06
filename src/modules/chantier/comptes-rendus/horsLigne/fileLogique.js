@@ -27,6 +27,8 @@ export const TYPES = {
   presenceDefinir: 'presence.definir',
   photoAjouter: 'photo.ajouter',
   pastillePoser: 'pastille.poser',
+  // L'avancement pointé en visite s'écrit dans le planning chantier
+  tacheAvancement: 'tache.avancement',
 }
 
 // Trois échecs d'affilée : l'opération est mise de côté et signalée, plutôt
@@ -191,6 +193,14 @@ export function appliquerOperation(etat, op) {
 
     case TYPES.photoAjouter:
       return { ...etat, photos: [...photos, { ...c.photo, cr_id: op.crId, remarque_id: c.remarqueId, ordre: c.ordre, locale: true }] }
+
+    case TYPES.tacheAvancement: {
+      const planning = etat?.planning ?? { taches: [], lots: [], periodes: [] }
+      return {
+        ...etat,
+        planning: { ...planning, taches: (planning.taches ?? []).map((t) => (t.id === c.tacheId ? { ...t, avancement: c.avancement } : t)) },
+      }
+    }
 
     case TYPES.pastillePoser:
       return {

@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 805 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
+npm test         # 806 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -869,8 +869,8 @@ ligne », plus haut).
   affichait « Non enregistré. TypeError: FetchEvent.respondWith… no-response »
   — message du service worker sans copie gardée (Safari), désormais reconnu
   comme coupure (`erreurReseau`, `messageErreur` : « Pas de réseau »).
-  Encore hors file : pointer l'avancement d'une tâche écrit directement
-  dans `planning` (demande le réseau).
+  L'avancement d'une tâche pointé en visite passe par la file
+  (`tache.avancement`, écrit dans `planning` à l'envoi).
 - **Écran** : `BandeauHorsLigne` (dans `AppShell`) dit « Hors ligne » et la
   date de la dernière réponse reçue du réseau (`derniereSynchro`, notée par
   le `fetch` du client). Portail sans copie : message au lieu de « 0

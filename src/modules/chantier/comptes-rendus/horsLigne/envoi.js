@@ -83,6 +83,12 @@ export async function envoyerOperation(op) {
       await envoyerPhotoEnAttente(op)
       return
 
+    case TYPES.tacheAvancement: {
+      const { error } = await supabase.from('planning').update({ avancement: c.avancement }).eq('id', c.tacheId)
+      if (error) throw error
+      return
+    }
+
     case TYPES.pastillePoser:
       await poserPastille({
         affaire_id: c.affaireId, cr_id: op.crId, remarque_id: c.remarqueId,

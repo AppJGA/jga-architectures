@@ -43,6 +43,7 @@ import { PlansVue } from './PlansVue'
 import { PlacementPlan } from './PlacementPlan'
 import { ModeVisite } from './ModeVisite'
 import { ModaleConfirmation } from '../../../shared/components/ModaleConfirmation'
+import { ModaleEmission } from './ModaleEmission'
 import { AvancementLots } from './AvancementLots'
 import { garderImages } from './horsLigne/images'
 import { avancementParLot, avancementGlobal, lignesAvancement } from './avancementLogique'
@@ -793,14 +794,9 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
     setActiveView('remarques')
     defilerVers(`cr-remarque-${p.parent_id ?? p.id}`, 4, 'center')
   }
-  const demanderEmission = () => {
-    if (aValider.length > 0) {
-      signalerErreur(new Error(`${aValider.length} remarque${aValider.length > 1 ? 's' : ''} proposée${aValider.length > 1 ? 's' : ''} par l’IA reste${aValider.length > 1 ? 'nt' : ''} à valider, modifier ou écarter avant d’émettre.`))
-      allerALaProposition()
-      return
-    }
-    setConfirmation('emettre')
-  }
+  // La liste de contrôle de la fenêtre dit ce qui manque, propositions de
+  // l'IA comprises (seul point qui bloque : la base refuserait)
+  const demanderEmission = () => setConfirmation('emettre')
 
   return (
     <CrContexte.Provider value={contexte}>
@@ -1006,13 +1002,15 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
       )}
 
       {confirmation === 'emettre' && (
-        <ModaleConfirmation
-          titre={`Émettre le compte rendu n°${cr.numero} ?`}
-          texte="Une fois émis, le compte rendu est verrouillé : présences, sections et remarques ne sont plus modifiables. Vous pourrez le rouvrir si une correction s’impose."
-          libelle="Émettre"
-          couleur="#2A8A4E"
+        <ModaleEmission
+          cr={cr}
+          presences={presences}
+          avancement={lignesAvancementCr}
+          nbPropositions={aValider.length}
           onConfirmer={confirmer}
           onAnnuler={() => setConfirmation(null)}
+          onAller={(vue) => { setConfirmation(null); setActiveView(vue) }}
+          onVoirPropositions={() => { setConfirmation(null); allerALaProposition() }}
         />
       )}
       {confirmation === 'rouvrir' && (

@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 733 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
+npm test         # 740 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -293,10 +293,18 @@ création avec reprise de la visite précédente) et `useCompteRendu` (un CR).
   (`cr_archives`, stockage privé `cr-archives`, migration 043) ; un échec
   d'archive n'empêche pas l'émission.
   **Règle de l'agence : pas d'export d'un brouillon** — la page « Exporter
-  le PDF » (`ExportRapport`) ne propose Télécharger / Aperçu que pour un CR
-  émis ; un brouillon garde ses réglages (ils servent au PDF archivé à
-  l'émission) et un bouton « Émettre le CR ». L'émission et la diffusion
-  fabriquent leur PDF elles-mêmes.
+  le PDF » (`ExportRapport`) ne propose Télécharger que pour un CR émis ; un
+  brouillon garde ses réglages (ils servent au PDF archivé à l'émission),
+  un « Aperçu du brouillon » pour relire, et un bouton « Émettre le CR ».
+  L'émission et la diffusion fabriquent leur PDF elles-mêmes.
+- **Avant d'émettre, une liste de contrôle** (`ModaleEmission`, logique
+  `controleEmissionLogique.js`, testée) : présences toutes pointées,
+  prochaine visite (date et au moins un convoqué), avancement qui a bougé
+  depuis le CR précédent (comparé à son `avancement_lots` figé ; première
+  visite : un lot avancé suffit), propositions de l'IA relues. Vert et case
+  cochée si fait, rouge avec « Ouvrir » sinon ; le bouton devient « Émettre
+  quand même ». Seules les propositions de l'IA bloquent (la base refuse,
+  migration 058) : le bouton mène alors à elles.
 - **Diffusion** (`DiffusionCr.jsx`, migration 044) : pas de serveur d'envoi.
   L'e-mail s'ouvre dans la messagerie de l'utilisateur (lien `mailto:`) avec
   un lien signé de 30 jours vers le PDF archivé — un mailto ne peut pas porter

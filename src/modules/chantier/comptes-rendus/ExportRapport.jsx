@@ -248,7 +248,12 @@ export function ExportRapport({
           <div style={{ display: 'flex', gap: 12, marginTop: 18, flexWrap: 'wrap', alignItems: 'center', padding: '12px 14px', background: '#FAF7F2', border: '0.5px solid rgba(0,0,0,0.08)' }}>
             <p style={{ flex: '1 1 260px', margin: 0, fontSize: 13, color: '#5E5854', lineHeight: 1.5 }}>
               Le PDF s’exporte une fois le compte rendu <strong>émis</strong> : l’émission fige son contenu et archive sa version officielle, celle qui se diffuse.
+              L’aperçu permet de relire le brouillon avant.
             </p>
+            {/* Relire avant d'émettre : à l'écran seulement, marqué « Brouillon » */}
+            <button type="button" onClick={apercu} disabled={!!enCours} style={bouton(false)}>
+              <Eye size={15} /> {enCours === 'apercu' ? 'Préparation…' : 'Aperçu du brouillon'}
+            </button>
             {onEmettre && (
               <button type="button" onClick={onEmettre} style={bouton(true)}>
                 <IconeEmission size={20} /> Émettre le CR

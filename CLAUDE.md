@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 779 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
+npm test         # 785 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -310,8 +310,18 @@ création avec reprise de la visite précédente) et `useCompteRendu` (un CR).
   « Émis » désigne l'archive datée de `cr.date_emission`, pas la première.
   **Règle de l'agence : pas d'export d'un brouillon** — la page « Exporter
   le PDF » (`ExportRapport`) ne propose Télécharger que pour un CR émis ; un
-  brouillon garde ses réglages (ils servent au PDF archivé à l'émission),
-  un « Aperçu du brouillon » pour relire, et un bouton « Émettre le CR ».
+  brouillon garde ses réglages (ils servent au PDF archivé à l'émission) et
+  un bouton « Émettre le CR ».
+  **Contenu par interrupteurs** (plus de modèle complet / synthèse) : page
+  de garde toujours (photo de l'affaire en option, `affaires.photo_url`
+  recadrée en bandeau par `bandeauPourPdf`), puis présences (coordonnées en
+  option), convocations (prochaine réunion + colonne « Convoqué », ou liste
+  `blocConvoques` sans les présences), avancement, généralités, remarques
+  (closes, photos, classement « Par lot » / « Par zone »), plans. Tout coché
+  par défaut (`REGLAGES_DEFAUT`) ; un ancien `modele` mémorisé est ignoré.
+  **Aperçu dans la page** (`ApercuPdf.jsx`, `apercuPdfRendu.js` : pdf.js
+  rend chaque page en image) : refait 450 ms après le dernier réglage,
+  anciennes pages pâlies pendant ce temps, « Agrandir » en plein écran.
   L'émission et la diffusion fabriquent leur PDF elles-mêmes.
 - **Avant d'émettre, une liste de contrôle** (`ModaleEmission`, logique
   `controleEmissionLogique.js`, testée) : présences des **convoqués**

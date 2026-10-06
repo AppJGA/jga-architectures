@@ -1,7 +1,7 @@
 // ─── Fabrication du PDF d'un compte rendu, dans le navigateur ────────────────
 
 import { definitionPdf, selectionnerSections, remarquesDesSections, nomFichierCr, reglagesEffectifs } from './rapportLogique'
-import { imagePourPdf, extraitPlanPourPdf, plancheAvecPastilles } from './imagesRapport'
+import { imagePourPdf, extraitPlanPourPdf, plancheAvecPastilles, bandeauPourPdf } from './imagesRapport'
 import { infosStatut } from './crLogique'
 import { libelleNumeroLot } from '../../../shared/lots/numeroLot'
 
@@ -108,8 +108,18 @@ export async function genererPdfCr({ cr, affaire, sections, presences, convocati
     elements: remarques.map((r) => ({ id: r.id, numero: r.numero, couleur: infosStatut(r).couleur })),
     photos: (photos ?? []).map((p) => ({ cle: p.remarque_id, chemin: p.chemin, legende: p.legende })),
     pastilles: (pastilles ?? []).map((p) => ({ cle: p.remarque_id, version_id: p.version_id, x: p.x, y: p.y })),
-    liensPhotos, plansCr, reglages,
+    liensPhotos, plansCr,
+    // Sans les remarques, ni leurs photos ni leurs extraits de plan
+    reglages: reglages.remarques ? reglages : {
+      ...reglages, photos: 'aucune', plans: ['planches', 'les_deux'].includes(reglages.plans) ? 'planches' : 'aucun',
+    },
   })
+  if (reglages.photoAffaire && affaire?.photo_url) {
+    try { images.photoAffaire = await bandeauPourPdf(affaire.photo_url) } catch (err) {
+      console.warn('PDF, photo de l’affaire non chargée :', err)
+      avertissements.push('photo de l’affaire non chargée')
+    }
+  }
 
   const versionPour = reglages.destinataire ? libelleVersion(reglages.destinataire, lots, interlocuteurs) : null
   const definition = definitionPdf({ cr, affaire, sections: choisies, presences, convocations, generalites, lots, interlocuteurs, zones, avancement, profils, reglages, versionPour, images })

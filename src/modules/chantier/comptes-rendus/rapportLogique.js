@@ -9,23 +9,32 @@ import { estPartieRemarques, groupesDestinataires, libelleLot } from './remarque
 import { normaliserGeneralites } from './generalitesLogique'
 import { estConvoqueAbsent, convocationDe, libelleConvoquesAbsents } from './convocationLogique'
 
+// Contenu du PDF, élément par élément (demande de l'agence, à la place de
+// l'ancien choix « complet / synthèse ») : la page de garde est toujours
+// imprimée, le reste se coche, tout coché par défaut.
 export const REGLAGES_DEFAUT = {
-  modele: 'complet',        // complet | synthese
+  photoAffaire: true,       // photo de l'affaire sur la page de garde
+  presences: true,
+  coordonnees: true,        // adresse, e-mail et téléphone des participants
+  convocations: true,       // prochaine réunion et convoqués
+  generalites: true,
+  remarques: true,
   closes: 'afficher',       // afficher | masquer
   destinataire: '',         // '' | lot:<id> | interlo:<id>
   inclureGenerales: true,   // version par destinataire : garder les remarques sans destinataire
   photos: 'petites',        // aucune | petites | grandes
   plans: 'les_deux',        // aucun | extraits | planches | les_deux
-  zones: 'non',             // non | grouper : regrouper les remarques par zone
+  zones: 'non',             // non (par lot) | grouper : regrouper les remarques par zone
   avancement: 'oui',        // oui | non : tableau d'avancement des lots
 }
 
 export const PIED_AGENCE = 'JGA Architectes • 69 rue de la République, 69002 Lyon • contact@jga-architectes.fr'
 
-// La synthèse garde des photos petites, quel que soit le réglage
+// Un réglage mémorisé avant les cases à cocher peut porter `modele` : il
+// n'a plus d'effet, le contenu se règle élément par élément
 export function reglagesEffectifs(reglages) {
   const r = { ...REGLAGES_DEFAUT, ...reglages }
-  if (r.modele === 'synthese' && r.photos === 'grandes') r.photos = 'petites'
+  delete r.modele
   return r
 }
 
@@ -49,14 +58,13 @@ export function selectionnerSections(sections, reglages) {
     if (r.destinataire.startsWith('interlo:')) return rem.interlocuteur_id === r.destinataire.slice(8)
     return true
   }
-  const preparer = (rem) => (r.modele === 'synthese' ? { ...rem, sous_remarques: [] } : rem)
   return (sections ?? [])
     .map((s) => ({
       ...s,
       sousSections: (s.sousSections ?? [])
-        .map((ss) => ({ ...ss, remarques: (ss.remarques ?? []).filter(garde).map(preparer) }))
+        .map((ss) => ({ ...ss, remarques: (ss.remarques ?? []).filter(garde) }))
         .filter((ss) => !filtre || ss.remarques.length > 0),
-      directRemarques: (s.directRemarques ?? []).filter(garde).map(preparer),
+      directRemarques: (s.directRemarques ?? []).filter(garde),
     }))
     .filter((s) => !filtre || s.sousSections.length > 0 || s.directRemarques.length > 0)
 }
@@ -269,7 +277,6 @@ const celluleContact = ({ v }) => ({ stack: [v.email, v.telephone].filter(Boolea
  */
 export function definitionPdf({ cr, affaire, sections, presences, convocations = new Map(), generalites = null, lots, interlocuteurs, zones = [], avancement = [], profils = [], reglages: brut, versionPour, images = {} }) {
   const reglages = reglagesEffectifs(brut)
-  const complet = reglages.modele === 'complet'
   const num = String(cr.numero).padStart(2, '0')
   const contexte = { lots, interlocuteurs, zones, profils, dateReference: cr.date_reunion, images, reglages }
   const prochaine = cr.date_prochaine_reunion
@@ -345,16 +352,21 @@ export function definitionPdf({ cr, affaire, sections, presences, convocations =
         sousTitre: cr.date_reunion ? jour(cr.date_reunion, { day: 'numeric', month: 'long', year: 'numeric' }) : 'Date non définie',
         emis: cr.statut === 'emis', dateEmission: cr.date_emission, versionPour,
       }),
+      // Page de garde : toujours imprimée
+      ...(reglages.photoAffaire && images.photoAffaire ? [{ image: images.photoAffaire, width: LARGEUR_UTILE, margin: [0, 0, 0, 8] }] : []),
       blocAffaire(affaire),
-      {
+      ...(reglages.convocations ? [{
         table: { widths: ['auto', '*'], body: [[{ text: 'PROCHAINE RÉUNION', bold: true, fontSize: 8, color: COULEUR.orange }, { text: prochaine, bold: true }]] },
         layout: { hLineWidth: () => 0, vLineWidth: () => 0, fillColor: () => '#FDEFE9', paddingLeft: () => 8, paddingTop: () => 5, paddingBottom: () => 5 },
         margin: [0, 0, 0, 6],
-      },
-      ...blocsPresences(presences, complet, convocations),
+      }] : []),
+      // Les convocations ont leur colonne dans la feuille de présence ; sans
+      // elle, une liste à part
+      ...(reglages.presences ? blocsPresences(presences, reglages.coordonnees, convocations, { colonneConvoque: reglages.convocations }) : []),
+      ...(reglages.convocations && !reglages.presences ? blocConvoques(presences) : []),
       ...(reglages.avancement === 'oui' ? blocAvancement(avancement) : []),
-      ...blocGeneralites(generalites),
-      ...(reglages.zones === 'grouper' ? contenuZones() : contenuSections),
+      ...(reglages.generalites ? blocGeneralites(generalites) : []),
+      ...(reglages.remarques ? (reglages.zones === 'grouper' ? contenuZones() : contenuSections) : []),
       ...blocPlanches(planches),
     ],
   }
@@ -454,7 +466,7 @@ export function blocAffaire(affaire) {
 }
 
 /** Feuille de présence : légende, interlocuteurs, entreprises (coordonnées si `complet`) */
-export function blocsPresences(presences, complet, convocations = new Map()) {
+export function blocsPresences(presences, complet, convocations = new Map(), { colonneConvoque = true } = {}) {
   const participants = (presences ?? []).map((p) => ({ p, v: affichagePresence(p), absentConvoque: estConvoqueAbsent(p, convocations) }))
   const interlos = participants.filter((l) => l.v.type === 'interlocuteur').sort((a, b) => a.v.ordre - b.v.ordre)
   const entreprises = participants.filter((l) => l.v.type === 'entreprise').sort((a, b) => (a.v.lotNumero ?? 99) - (b.v.lotNumero ?? 99))
@@ -467,14 +479,14 @@ export function blocsPresences(presences, complet, convocations = new Map()) {
       { titre: 'Email / Tél', largeur: 110, cellule: celluleContact },
     ] : []),
     { titre: 'Présence', largeur: 44, cellule: cellulePresence },
-    { titre: 'Convoqué', largeur: 50, cellule: celluleConvoque },
+    ...(colonneConvoque ? [{ titre: 'Convoqué', largeur: 50, cellule: celluleConvoque }] : []),
   ]
   const colonnesEntreprises = [
     { titre: 'Lot', largeur: 110, cellule: ({ v }) => ({ text: v.lotNom ? `Lot ${v.lotNumeroAffiche ?? ''} — ${v.lotNom}` : '—', fontSize: 8 }) },
     { titre: 'Entreprise', largeur: '*', cellule: ({ v }) => ({ stack: [{ text: v.entreprise ?? '—', bold: true, fontSize: 8 }, ...(v.contact ? [{ text: v.contact, fontSize: 7.5, color: COULEUR.gris }] : [])] }) },
     ...(complet ? [{ titre: 'Email / Tél', largeur: 120, cellule: celluleContact }] : []),
     { titre: 'Présence', largeur: 44, cellule: cellulePresence },
-    { titre: 'Convoqué', largeur: 50, cellule: celluleConvoque },
+    ...(colonneConvoque ? [{ titre: 'Convoqué', largeur: 50, cellule: celluleConvoque }] : []),
   ]
 
   return [
@@ -483,6 +495,19 @@ export function blocsPresences(presences, complet, convocations = new Map()) {
     ...tableauPresences('Personnes relatives au projet', interlos, colonnesInterlos),
     ...tableauPresences('Entreprises', entreprises, colonnesEntreprises),
   ]
+}
+
+/** Convoqués à la prochaine réunion, quand la feuille de présence n'est pas imprimée */
+export function blocConvoques(presences) {
+  const convoques = (presences ?? []).filter((p) => p.convoque).map((p) => ({ p, v: affichagePresence(p) }))
+  if (convoques.length === 0) return []
+  const nom = ({ v }) => (v.type === 'entreprise'
+    ? [v.entreprise ?? '—', v.lotNom ? `lot ${[v.lotNumeroAffiche, v.lotNom].filter((x) => x != null && x !== '').join(' ')}` : null].filter(Boolean).join(' — ')
+    : [v.nom || v.organisation || '—', v.organisation && v.nom !== v.organisation ? v.organisation : null].filter(Boolean).join(' — '))
+  return tableauPresences('Convoqués à la prochaine réunion', convoques, [
+    { titre: 'Participant', largeur: '*', cellule: (l) => ({ text: nom(l), fontSize: 8 }) },
+    { titre: 'Heure', largeur: 60, cellule: ({ p }) => ({ text: p.heure_convocation ? p.heure_convocation.slice(0, 5) : '—', fontSize: 8 }) },
+  ])
 }
 
 /** « 2 convoqués absents (convocation du CR n°2) : Plomberie Martin (lot 3), … » */

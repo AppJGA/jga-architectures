@@ -44,10 +44,18 @@ describe('selectionnerSections', () => {
   test('une remarque dont le destinataire a été supprimé n’est pas « générale »', () => {
     assert.ok(!ids(selectionnerSections(sections, { destinataire: 'lot:L2' })).includes('e'))
   })
-  test('synthèse : suivis retirés, photos grandes ramenées à petites', () => {
+  test('l’ancien choix « synthèse » n’a plus d’effet : suivis et grandes photos gardés', () => {
     const s = selectionnerSections(sections, { modele: 'synthese' })
-    assert.equal(remarquesDesSections(s)[0].sous_remarques.length, 0)
-    assert.equal(reglagesEffectifs({ modele: 'synthese', photos: 'grandes' }).photos, 'petites')
+    assert.equal(remarquesDesSections(s)[0].sous_remarques.length, 1)
+    const r = reglagesEffectifs({ modele: 'synthese', photos: 'grandes' })
+    assert.equal(r.photos, 'grandes')
+    assert.equal(r.modele, undefined)
+  })
+  test('par défaut, tout est coché', () => {
+    const r = reglagesEffectifs({})
+    for (const cle of ['photoAffaire', 'presences', 'coordonnees', 'convocations', 'generalites', 'remarques']) assert.equal(r[cle], true, cle)
+    assert.equal(r.avancement, 'oui')
+    assert.equal(r.plans, 'les_deux')
   })
 })
 
@@ -119,11 +127,45 @@ describe('definitionPdf', () => {
     assert.ok(!sans.includes('convoqué absent'))
   })
 
-  test('synthèse : ni coordonnées ni suivis', () => {
-    const def = definitionPdf({ ...base, sections: selectionnerSections(sections, { modele: 'synthese' }), reglages: { modele: 'synthese' } })
-    const t = textes(def.content).join(' | ')
-    assert.ok(!t.includes('a@lyon.fr'))
-    assert.ok(!t.includes('Échafaudage monté'))
+  describe('contenu coché ou non', () => {
+    const texte = (reglages, autres = {}) => textes(definitionPdf({ ...base, sections: selectionnerSections(sections, reglages), reglages, ...autres }).content).join(' | ')
+
+    test('page de garde toujours là, même tout décoché', () => {
+      const t = texte({ presences: false, convocations: false, generalites: false, remarques: false, avancement: 'non' })
+      for (const attendu of ['Réunion n°05', 'Groupe scolaire', 'GS-24']) assert.ok(t.includes(attendu), attendu)
+      for (const absent of ['PROCHAINE RÉUNION', 'Anne', 'Enduit à reprendre']) assert.ok(!t.includes(absent), absent)
+    })
+    test('photo de l’affaire sur la page de garde, si cochée', () => {
+      const images = { photoAffaire: 'data:image/jpeg;base64,PHOTO' }
+      const avec = JSON.stringify(definitionPdf({ ...base, sections: [], reglages: {}, images }).content)
+      const sans = JSON.stringify(definitionPdf({ ...base, sections: [], reglages: { photoAffaire: false }, images }).content)
+      assert.ok(avec.includes('PHOTO'))
+      assert.ok(!sans.includes('PHOTO'))
+    })
+    test('présences sans coordonnées', () => {
+      const t = texte({ coordonnees: false })
+      assert.ok(t.includes('Personnes relatives au projet'))
+      assert.ok(!t.includes('a@lyon.fr'))
+    })
+    test('sans convocations : ni prochaine réunion ni colonne « Convoqué »', () => {
+      const t = texte({ convocations: false })
+      assert.ok(!t.includes('PROCHAINE RÉUNION'))
+      assert.ok(!t.includes('Convoqué'))
+      assert.ok(!t.includes('Oui 09:00'))
+    })
+    test('convocations sans présences : la liste des convoqués à part', () => {
+      const t = texte({ presences: false })
+      assert.ok(t.includes('PROCHAINE RÉUNION'))
+      assert.ok(t.includes('Convoqués à la prochaine réunion'))
+      assert.ok(t.includes('09:00'))
+      assert.ok(!t.includes('Personnes relatives au projet'))
+    })
+    test('généralités et remarques se retirent', () => {
+      const generalites = { parties: [{ numero_romain: 'I', titre: 'Intervenants', paragraphes: [{ texte: 'Texte des généralités' }], rubriques: [] }] }
+      assert.ok(texte({}, { generalites }).includes('Texte des généralités'))
+      assert.ok(!texte({ generalites: false }, { generalites }).includes('Texte des généralités'))
+      assert.ok(!texte({ remarques: false }).includes('Enduit à reprendre'))
+    })
   })
 
   test('version par entreprise annoncée ; photos, extraits et planches selon les réglages', () => {

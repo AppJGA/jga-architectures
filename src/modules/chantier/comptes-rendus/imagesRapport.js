@@ -41,6 +41,24 @@ export function imagePourPdf(url, max = 1000, qualite = 0.72) {
   return cache.get(cle)
 }
 
+/**
+ * Photo de l'affaire en bandeau pour la page de garde : recadrée au centre
+ * à la proportion voulue (largeur / hauteur), pour ne pas manger la page.
+ */
+export async function bandeauPourPdf(url, proportion = 3, largeur = 1400) {
+  const image = await chargerImage(await blobDepuis(url))
+  const L = image.naturalWidth
+  const H = image.naturalHeight
+  const [sl, sh] = L / H > proportion ? [H * proportion, H] : [L, L / proportion]
+  const canvas = document.createElement('canvas')
+  canvas.width = largeur
+  canvas.height = Math.round(largeur / proportion)
+  const ctx = canvas.getContext('2d')
+  ctx.imageSmoothingQuality = 'high'
+  ctx.drawImage(image, (L - sl) / 2, (H - sh) / 2, sl, sh, 0, 0, canvas.width, canvas.height)
+  return enJpeg(canvas, 0.8)
+}
+
 function dessinerPastille(ctx, x, y, numero, couleur, rayon) {
   ctx.beginPath()
   ctx.arc(x, y, rayon, 0, Math.PI * 2)

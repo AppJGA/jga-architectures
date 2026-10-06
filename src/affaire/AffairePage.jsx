@@ -20,6 +20,8 @@ import {
   IconeTableauDeBord, IconePlanningEtude, IconeFinancierEtude, IconeEntreprisesLots, IconeVisitesChantier,
   IconeOpr, IconeFtm, IconePlanningChantier, IconeFinancierChantier, IconeDocuments, IconeTodo,
 } from '../shared/icones/IconesAffaire'
+import { montantsAffaire, tvaAffaire, htDe } from '../shared/montants'
+import { MontantHT } from '../shared/components/MontantHT'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -162,7 +164,8 @@ function useAffaireStats(affaireId) {
         etudeTotal,
         prochainJalonEtude,
         financierEtudeDernierePhase: derniereSfe ? nomPhase(derniereSfe) : null,
-        financierEtudeEnvActuelle: derniereSfe?.enveloppe_ttc ?? null,
+        // HT et TTC gardés tels quels : la tuile en tire le HT au taux de l'affaire
+        financierEtudeEnvActuelle: derniereSfe ? { ht: derniereSfe.enveloppe_ht ?? null, ttc: derniereSfe.enveloppe_ttc ?? null } : null,
       })
     })
   }, [affaireId])
@@ -437,7 +440,7 @@ function InfoBandeau({ affaire }) {
       : affaire.projet_commune),
     (affaire.cadastre_section || affaire.cadastre_parcelle) &&
       `${affaire.cadastre_section ?? ''}${affaire.cadastre_parcelle ? ' ' + affaire.cadastre_parcelle : ''}`,
-    affaire.enveloppe_ttc && formatEuro(affaire.enveloppe_ttc),
+    montantsAffaire(affaire).enveloppe != null && `${formatEuro(montantsAffaire(affaire).enveloppe)} HT`,
     affaire.surface_plancher && `${affaire.surface_plancher} m² SP`,
     affaire.date_livraison && `Livraison ${fmtDate(affaire.date_livraison)}`,
   ].filter(Boolean)
@@ -853,13 +856,10 @@ function PhaseSection({ phase, affaire, stats, affaireId, navigate, rangBase }) 
               )}
 
               {isEtude && mod.id === 'financier-etude' && mod.enabled && (
-                affaire.enveloppe_ttc ? (
+                montantsAffaire(affaire).enveloppe != null ? (
                   <>
-                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 4 }}>
-                      <p style={{ fontSize: 19, fontWeight: 500, color: '#1F1B17' }}>
-                        {formatEuro(affaire.enveloppe_ttc)}
-                      </p>
-                      <span style={{ fontSize: 12, color: '#5E5854' }}>TTC</span>
+                    <div style={{ marginBottom: 4 }}>
+                      <MontantHT ht={montantsAffaire(affaire).enveloppe} tva={tvaAffaire(affaire)} taille={19} />
                     </div>
                     {stats.financierEtudeDernierePhase ? (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
@@ -872,14 +872,16 @@ function PhaseSection({ phase, affaire, stats, affaireId, navigate, rangBase }) 
                         }}>
                           {stats.financierEtudeDernierePhase}
                         </span>
-                        {stats.financierEtudeEnvActuelle && stats.financierEtudeEnvActuelle !== affaire.enveloppe_ttc && (
-                          <span style={{
-                            fontSize: 11, fontWeight: 500,
-                            color: stats.financierEtudeEnvActuelle > affaire.enveloppe_ttc ? '#B8412C' : '#2A8A4E',
-                          }}>
-                            → {formatEuro(stats.financierEtudeEnvActuelle)}
-                          </span>
-                        )}
+                        {(() => {
+                          const actuelle = stats.financierEtudeEnvActuelle && htDe(stats.financierEtudeEnvActuelle.ht, stats.financierEtudeEnvActuelle.ttc, tvaAffaire(affaire))
+                          const initiale = montantsAffaire(affaire).enveloppe
+                          if (actuelle == null || actuelle === initiale) return null
+                          return (
+                            <span style={{ fontSize: 11, fontWeight: 500, color: actuelle > initiale ? '#B8412C' : '#2A8A4E' }}>
+                              → {formatEuro(actuelle)} HT
+                            </span>
+                          )
+                        })()}
                       </div>
                     ) : (
                       <p style={{ fontSize: 12, color: '#9C9591' }}>Aucune phase renseignée</p>
@@ -891,9 +893,9 @@ function PhaseSection({ phase, affaire, stats, affaireId, navigate, rangBase }) 
               )}
 
               {isEtude && mod.id === 'financier-etude' && !mod.enabled && (
-                affaire.enveloppe_ttc ? (
+                montantsAffaire(affaire).enveloppe != null ? (
                   <p style={{ fontSize: 13, fontWeight: 500, color: '#9C9591' }}>
-                    {formatEuro(affaire.enveloppe_ttc)}
+                    {formatEuro(montantsAffaire(affaire).enveloppe)} HT
                   </p>
                 ) : (
                   <p style={{ fontSize: 12, color: 'var(--jga-beige)' }}>Enveloppe non renseignée</p>
@@ -1025,7 +1027,8 @@ function AffaireOverview({ affaire, stats, affaireId, onEdit, onGererContacts, v
           <InfoField label="Section cadastrale" value={affaire.cadastre_section} />
           <InfoField label="Parcelle" value={affaire.cadastre_parcelle} />
           <InfoField label="Superficie terrain" value={affaire.surface_terrain ? `${affaire.surface_terrain} m²` : null} />
-          <InfoField label="Enveloppe globale initiale TTC" value={formatEuro(affaire.enveloppe_ttc)} />
+          <InfoField label="Enveloppe globale initiale" value={montantsAffaire(affaire).enveloppe != null
+            ? <MontantHT ht={montantsAffaire(affaire).enveloppe} tva={tvaAffaire(affaire)} taille={13} enLigne /> : null} />
           <InfoField label="Surface plancher" value={affaire.surface_plancher ? `${affaire.surface_plancher} m²` : null} />
           <InfoField label="Date de livraison" value={fmtDate(affaire.date_livraison)} />
         </div>

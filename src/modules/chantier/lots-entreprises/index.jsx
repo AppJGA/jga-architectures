@@ -7,6 +7,8 @@ import { IconeEntreprisesLots } from '../../../shared/icones/IconesAffaire'
 import { useLotsEntreprises, useEntreprises } from '../../../shared/hooks/useLotsEntreprises'
 import { supabase } from '../../../core/supabase/client'
 import { numeroLot, lireNumeroSaisi } from '../../../shared/lots/numeroLot'
+import { ttcDe, tvaAffaire } from '../../../shared/montants'
+import { useAffaire } from '../../../shared/hooks/useAffaires'
 
 const LOT_SUGGESTIONS = [
   'Gros œuvre', 'Charpente - Couverture', 'Étanchéité', 'Façades',
@@ -146,7 +148,7 @@ function LotFormModal({ lots, editingLot, onSave, onClose }) {
 }
 
 // ─── EntrepriseAssignModal ────────────────────────────────────────────────────
-function EntrepriseAssignModal({ lot, entreprises, createEntreprise, onSave, onClose }) {
+function EntrepriseAssignModal({ lot, entreprises, createEntreprise, tva = 1.2, onSave, onClose }) {
   const navigate = useNavigate()
   const [tab, setTab] = useState('existing')
   const [search, setSearch] = useState('')
@@ -170,11 +172,6 @@ function EntrepriseAssignModal({ lot, entreprises, createEntreprise, onSave, onC
     e.ville?.toLowerCase().includes(search.toLowerCase())
   )
 
-  const handleHtBlur = () => {
-    if (marche.montant_marche_ht && !marche.montant_marche_ttc) {
-      setMarche(f => ({ ...f, montant_marche_ttc: Math.round(Number(f.montant_marche_ht) * 1.20 * 100) / 100 }))
-    }
-  }
 
   const canSave = tab === 'existing' ? !!selectedE : !!newForm.raison_sociale.trim()
 
@@ -191,7 +188,8 @@ function EntrepriseAssignModal({ lot, entreprises, createEntreprise, onSave, onC
       entreprise_id,
       interlocuteur_id: lot.interlocuteur_id ?? null,
       montant_marche_ht: marche.montant_marche_ht ? Number(marche.montant_marche_ht) : null,
-      montant_marche_ttc: marche.montant_marche_ttc ? Number(marche.montant_marche_ttc) : null,
+      // Le HT se saisit, le TTC suit au taux de TVA de l'affaire
+      montant_marche_ttc: marche.montant_marche_ht ? ttcDe(marche.montant_marche_ht, tva) : null,
       date_notification: marche.date_notification || null,
       observations: marche.observations || null,
     })
@@ -306,18 +304,17 @@ function EntrepriseAssignModal({ lot, entreprises, createEntreprise, onSave, onC
         <p style={{ fontSize: 10, fontWeight: 500, color: 'var(--jga-beige)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 12 }}>
           Marché de base
         </p>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 10, marginBottom: 10 }}>
           <div>
             <label style={LABEL}>Montant HT (€)</label>
             <input type="number" value={marche.montant_marche_ht}
               onChange={e => setMarche(f => ({ ...f, montant_marche_ht: e.target.value }))}
-              onBlur={handleHtBlur} placeholder="0" style={INPUT} />
-          </div>
-          <div>
-            <label style={LABEL}>Montant TTC (€)</label>
-            <input type="number" value={marche.montant_marche_ttc}
-              onChange={e => setMarche(f => ({ ...f, montant_marche_ttc: e.target.value }))}
-              placeholder="Auto ×1,20" style={INPUT} />
+              placeholder="0" style={INPUT} />
+            {marche.montant_marche_ht !== '' && ttcDe(marche.montant_marche_ht, tva) != null && (
+              <p style={{ margin: '4px 0 0', fontSize: 11, color: '#9C9591' }}>
+                soit {formatEuro(ttcDe(marche.montant_marche_ht, tva))} TTC (TVA {Math.round((tva - 1) * 1000) / 10} %)
+              </p>
+            )}
           </div>
           <div>
             <label style={LABEL}>Date notification</label>
@@ -739,6 +736,8 @@ export default function LotsEntreprisesModule({ lectureSeule = false }) {
   const { affaireId } = useParams()
   const { lots, loading, createLot, updateLot, deleteLot, assignerEntreprise, refetch } = useLotsEntreprises(affaireId)
   const { entreprises, createEntreprise } = useEntreprises()
+  // Taux de TVA de l'affaire : le TTC d'un marché se déduit de son HT
+  const { affaire } = useAffaire(affaireId)
 
   const [selectedLotId, setSelectedLotId] = useState(null)
   const [lotFormOpen, setLotFormOpen] = useState(false)
@@ -860,6 +859,7 @@ export default function LotsEntreprisesModule({ lectureSeule = false }) {
       {assignModalOpen && selectedLot && (
         <EntrepriseAssignModal
           lot={selectedLot}
+          tva={tvaAffaire(affaire)}
           entreprises={entreprises}
           createEntreprise={createEntreprise}
           onSave={handleAssignSave}

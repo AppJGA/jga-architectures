@@ -10,6 +10,8 @@ import {
   dernierePhaseRenseignee, nomPhase, SUGGESTIONS_PHASES,
 } from './phases'
 import { numeroLot, libelleNumeroLot } from '../../../shared/lots/numeroLot'
+import { htDe, ttcDe, tvaAffaire, montantsAffaire } from '../../../shared/montants'
+import { MontantHT } from '../../../shared/components/MontantHT'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -125,10 +127,11 @@ function PhaseFormModal({ open, onClose, existing, affaire, phases, onSave, onDe
     if (existing) {
       setForm({
         nom:             nomPhase(existing),
+        // Saisie en HT ; une phase d'avant n'a parfois que son TTC
         enveloppe_ttc:   existing.enveloppe_ttc  ?? '',
-        enveloppe_ht:    existing.enveloppe_ht   ?? '',
+        enveloppe_ht:    htDe(existing.enveloppe_ht, existing.enveloppe_ttc, tva) ?? '',
         honoraires_ttc:  existing.honoraires_ttc ?? '',
-        honoraires_ht:   existing.honoraires_ht  ?? '',
+        honoraires_ht:   htDe(existing.honoraires_ht, existing.honoraires_ttc, tva) ?? '',
         motif_evolution: existing.motif_evolution ?? '',
         notes:           existing.notes ?? '',
       })
@@ -140,20 +143,21 @@ function PhaseFormModal({ open, onClose, existing, affaire, phases, onSave, onDe
         motif_evolution: '', notes: '',
       })
     }
-  }, [open, existing])
+  }, [open, existing, tva])
 
   if (!open || !form) return null
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
-  const handleEnvTtc = (v) => {
-    set('enveloppe_ttc', v)
-    set('enveloppe_ht', v !== '' ? (Number(v) / tva).toFixed(2) : '')
+  // Le HT se saisit, le TTC suit au taux de l'affaire
+  const handleEnvHt = (v) => {
+    set('enveloppe_ht', v)
+    set('enveloppe_ttc', ttcDe(v, tva) ?? '')
   }
 
-  const handleHonTtc = (v) => {
-    set('honoraires_ttc', v)
-    set('honoraires_ht', v !== '' ? (Number(v) / tva).toFixed(2) : '')
+  const handleHonHt = (v) => {
+    set('honoraires_ht', v)
+    set('honoraires_ttc', ttcDe(v, tva) ?? '')
   }
 
   const handleSubmit = async (e) => {
@@ -231,44 +235,44 @@ function PhaseFormModal({ open, onClose, existing, affaire, phases, onSave, onDe
               </datalist>
             </div>
 
-            {/* Enveloppe TTC */}
+            {/* Enveloppe HT */}
             <div>
-              <label style={LABEL}>Enveloppe TTC</label>
+              <label style={LABEL}>Enveloppe HT</label>
               <div style={{ position: 'relative' }}>
                 <input
                   type="number" min={0} step="100"
-                  value={form.enveloppe_ttc}
-                  onChange={e => handleEnvTtc(e.target.value)}
+                  value={form.enveloppe_ht}
+                  onChange={e => handleEnvHt(e.target.value)}
                   placeholder="0"
                   style={{ ...INPUT, paddingRight: 32 }}
                   onFocus={focusOn} onBlur={focusOff}
                 />
                 <span style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', fontSize: 11, color: '#9C9591', pointerEvents: 'none' }}>€</span>
               </div>
-              {form.enveloppe_ht !== '' && (
+              {form.enveloppe_ttc !== '' && (
                 <p style={{ fontSize: 11, color: '#9C9591', marginTop: 4 }}>
-                  ≈ {euro(Number(form.enveloppe_ht))} HT (TVA {tvaPct} %)
+                  soit {euro(Number(form.enveloppe_ttc))} TTC (TVA {tvaPct} %)
                 </p>
               )}
             </div>
 
-            {/* Honoraires TTC */}
+            {/* Honoraires HT */}
             <div>
-              <label style={LABEL}>Honoraires TTC</label>
+              <label style={LABEL}>Honoraires HT</label>
               <div style={{ position: 'relative' }}>
                 <input
                   type="number" min={0} step="100"
-                  value={form.honoraires_ttc}
-                  onChange={e => handleHonTtc(e.target.value)}
+                  value={form.honoraires_ht}
+                  onChange={e => handleHonHt(e.target.value)}
                   placeholder="0"
                   style={{ ...INPUT, paddingRight: 32 }}
                   onFocus={focusOn} onBlur={focusOff}
                 />
                 <span style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', fontSize: 11, color: '#9C9591', pointerEvents: 'none' }}>€</span>
               </div>
-              {form.honoraires_ht !== '' && (
+              {form.honoraires_ttc !== '' && (
                 <p style={{ fontSize: 11, color: '#9C9591', marginTop: 4 }}>
-                  ≈ {euro(Number(form.honoraires_ht))} HT
+                  soit {euro(Number(form.honoraires_ttc))} TTC
                 </p>
               )}
             </div>
@@ -583,10 +587,12 @@ function EstimationFormModal({ open, onClose, existing, affaire, phases, lotsExi
 // ─── Bandeau enveloppe ────────────────────────────────────────────────────────
 
 function EnveloppeBandeau({ affaire, suiviParPhase, onModifierEnveloppe }) {
-  const enveloppeInitiale = affaire?.enveloppe_ttc ?? null
+  // Tout en HT : c'est le HT qui prime dans les études de l'agence
+  const tva = tvaAffaire(affaire)
+  const enveloppeInitiale = montantsAffaire(affaire).enveloppe
   // Une phase seulement nommée (sans montant) ne fait pas l'enveloppe actuelle
   const derniere = dernierePhaseRenseignee(suiviParPhase)
-  const enveloppeActuelle = derniere?.enveloppe_ttc ?? enveloppeInitiale
+  const enveloppeActuelle = (derniere && htDe(derniere.enveloppe_ht, derniere.enveloppe_ttc, tva)) ?? enveloppeInitiale
   const evolution = enveloppeInitiale != null && enveloppeActuelle != null
     ? enveloppeActuelle - enveloppeInitiale
     : null
@@ -597,13 +603,13 @@ function EnveloppeBandeau({ affaire, suiviParPhase, onModifierEnveloppe }) {
   const cells = [
     {
       label: 'Enveloppe actuelle',
-      value: enveloppeActuelle ? euro(enveloppeActuelle) : null,
+      value: enveloppeActuelle ? <MontantHT ht={enveloppeActuelle} tva={tva} taille={19} /> : null,
       sub: derniere ? `Phase ${nomPhase(derniere)}` : (enveloppeInitiale ? 'Pas de suivi renseigné' : null),
     },
     {
       label: 'Évolution',
       value: evolution !== null
-        ? (evolution === 0 ? 'Stable' : `${evolution > 0 ? '+' : ''}${euro(evolution)}`)
+        ? (evolution === 0 ? 'Stable' : `${evolution > 0 ? '+' : ''}${euro(evolution)} HT`)
         : null,
       sub: evolutionPct !== null && evolution !== 0
         ? `${evolutionPct > 0 ? '+' : ''}${evolutionPct.toFixed(1)} %`
@@ -627,9 +633,9 @@ function EnveloppeBandeau({ affaire, suiviParPhase, onModifierEnveloppe }) {
           </p>
           {cell.value ? (
             <>
-              <p style={{ fontSize: 19, fontWeight: 500, color: cell.color ?? '#1F1B17', marginBottom: cell.sub ? 4 : 0 }}>
+              <div style={{ fontSize: 19, fontWeight: 500, color: cell.color ?? '#1F1B17', marginBottom: cell.sub ? 4 : 0 }}>
                 {cell.value}
-              </p>
+              </div>
               {cell.sub && <p style={{ fontSize: 11, color: '#9C9591' }}>{cell.sub}</p>}
             </>
           ) : (
@@ -643,12 +649,12 @@ function EnveloppeBandeau({ affaire, suiviParPhase, onModifierEnveloppe }) {
 
 // ─── Enveloppe globale initiale ───────────────────────────────────────────────
 //
-// C'est `affaires.enveloppe_ttc`, le montant « Enveloppe globale initiale TTC »
-// des informations de l'affaire : le modifier ici le modifie là-bas, et
-// inversement, puisqu'il n'y a qu'une seule valeur.
+// C'est l'enveloppe globale initiale des informations de l'affaire, saisie en
+// HT (`affaires.enveloppe_ht`, le TTC suit) : la modifier ici la modifie
+// là-bas, et inversement, puisqu'il n'y a qu'une seule valeur.
 function EnveloppeGlobale({ affaire, onModifier }) {
-  const tva = affaire?.taux_tva ?? 1.20
-  const valeur = affaire?.enveloppe_ttc ?? null
+  const tva = tvaAffaire(affaire)
+  const valeur = montantsAffaire(affaire).enveloppe
   const [brouillon, setBrouillon] = useState(null)
   const [enCours, setEnCours] = useState(false)
   const [erreur, setErreur] = useState(null)
@@ -702,7 +708,7 @@ function EnveloppeGlobale({ affaire, onModifier }) {
             <span style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', fontSize: 11, color: '#9C9591', pointerEvents: 'none' }}>€</span>
           </div>
           <p style={{ fontSize: 11, color: '#9C9591', margin: '4px 0 8px' }}>
-            TTC{String(brouillon).trim() !== '' && Number.isFinite(Number(brouillon)) ? ` · ≈ ${euro(Number(brouillon) / tva)} HT` : ''}
+            HT{String(brouillon).trim() !== '' && Number.isFinite(Number(brouillon)) ? ` · soit ${euro(ttcDe(brouillon, tva))} TTC` : ''}
           </p>
           <div style={{ display: 'flex', gap: 6 }}>
             <button type="submit" disabled={enCours} style={{
@@ -721,8 +727,8 @@ function EnveloppeGlobale({ affaire, onModifier }) {
         </form>
       ) : valeur != null ? (
         <>
-          <p style={{ fontSize: 19, fontWeight: 500, color: '#1F1B17', marginBottom: 4 }}>{euro(valeur)}</p>
-          <p style={{ fontSize: 11, color: '#9C9591' }}>TTC · aussi dans les informations de l’affaire</p>
+          <div style={{ marginBottom: 4 }}><MontantHT ht={valeur} tva={tva} taille={19} /></div>
+          <p style={{ fontSize: 11, color: '#9C9591' }}>Aussi dans les informations de l’affaire</p>
         </>
       ) : (
         <button
@@ -774,14 +780,14 @@ function EvoBadge({ current, reference }) {
 
 // ─── Phase card (renseignée) ──────────────────────────────────────────────────
 
-function PhaseCard({ phase, entry, prevEnveloppe, enveloppeInitiale, onEdit, onRenommer, dragProps }) {
+function PhaseCard({ phase, entry, prevEnveloppe, enveloppeInitiale, tva, onEdit, onRenommer, dragProps }) {
   const ref = prevEnveloppe ?? enveloppeInitiale
+  const enveloppeHt = htDe(entry.enveloppe_ht, entry.enveloppe_ttc, tva)
 
+  // Le HT en avant, le TTC en petit dessous
   const fields = [
-    { label: 'Enveloppe TTC', value: entry.enveloppe_ttc },
-    { label: 'Enveloppe HT',  value: entry.enveloppe_ht },
-    { label: 'Honoraires TTC', value: entry.honoraires_ttc },
-    { label: 'Honoraires HT',  value: entry.honoraires_ht },
+    { label: 'Enveloppe', value: enveloppeHt },
+    { label: 'Honoraires', value: htDe(entry.honoraires_ht, entry.honoraires_ttc, tva) },
   ].filter(f => f.value)
 
   return (
@@ -799,7 +805,7 @@ function PhaseCard({ phase, entry, prevEnveloppe, enveloppeInitiale, onEdit, onR
           }}>
             <NomEditable valeur={phase.label} onRenommer={onRenommer} />
           </span>
-          <EvoBadge current={entry.enveloppe_ttc} reference={ref} />
+          <EvoBadge current={enveloppeHt} reference={ref} />
         </div>
         <button
           onClick={() => onEdit(entry)}
@@ -821,7 +827,7 @@ function PhaseCard({ phase, entry, prevEnveloppe, enveloppeInitiale, onEdit, onR
               <p style={{ fontSize: 10, fontWeight: 500, color: '#9C9591', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 3 }}>
                 {f.label}
               </p>
-              <p style={{ fontSize: 14, fontWeight: 500, color: '#1F1B17' }}>{euro(f.value)}</p>
+              <MontantHT ht={f.value} tva={tva} taille={14} />
             </div>
           ))}
         </div>
@@ -898,7 +904,7 @@ function EmptyPhaseRow({ phase, onAdd, onRenommer, onSupprimer, dragProps }) {
 // ─── Phase timeline ───────────────────────────────────────────────────────────
 
 function PhaseTimeline({
-  phases, enveloppeInitiale, onAdd, onEdit, onRenommer, onSupprimer, onReordonner,
+  phases, enveloppeInitiale, tva = 1.2, onAdd, onEdit, onRenommer, onSupprimer, onReordonner,
 }) {
   // `armeId` : ligne rendue déplaçable par la pression sur sa poignée.
   // `draggedId` : ligne effectivement en cours de glissement. Les distinguer
@@ -963,11 +969,13 @@ function PhaseTimeline({
               <PhaseCard
                 phase={phase}
                 entry={phase.entry}
-                prevEnveloppe={
-                  phases.slice(0, i).reverse()
-                    .find(p => p.entry?.enveloppe_ttc != null)?.entry?.enveloppe_ttc ?? null
-                }
+                prevEnveloppe={(() => {
+                  const precedente = phases.slice(0, i).reverse()
+                    .find(p => p.entry?.enveloppe_ht != null || p.entry?.enveloppe_ttc != null)?.entry
+                  return precedente ? htDe(precedente.enveloppe_ht, precedente.enveloppe_ttc, tva) : null
+                })()}
                 enveloppeInitiale={enveloppeInitiale}
+                tva={tva}
                 onEdit={onEdit}
                 onRenommer={renommer}
                 dragProps={dragProps}
@@ -1250,7 +1258,7 @@ export default function FinancierEtudeModule({ lectureSeule = false }) {
       <EnveloppeBandeau
         affaire={affaire}
         suiviParPhase={suiviParPhase}
-        onModifierEnveloppe={(montant) => updateAffaire({ enveloppe_ttc: montant })}
+        onModifierEnveloppe={(montant) => updateAffaire({ enveloppe_ht: montant, enveloppe_ttc: ttcDe(montant, tvaAffaire(affaire)) })}
       />
 
       {/* ── Timeline des phases ── */}
@@ -1283,6 +1291,7 @@ export default function FinancierEtudeModule({ lectureSeule = false }) {
         <PhaseTimeline
           phases={phases}
           enveloppeInitiale={enveloppeInitiale}
+          tva={tvaAffaire(affaire)}
           onAdd={openAddPhase}
           onEdit={openEditPhase}
           onRenommer={handleRenommer}

@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '../../core/supabase/client'
 import { photosDeLAffaire, nettoyerFichiers } from '../../modules/chantier/comptes-rendus/photosStockage'
 import { useAuth } from '../../core/auth/useAuth'
+import { erreurColonnesHT, sansColonnesHT } from '../montants'
 
 // La table `affaires` porte des montants : un compte extérieur la lit par une
 // vue allégée (migration 051), qui ne montre ni enveloppe ni honoraires.
@@ -16,6 +17,7 @@ const AFFAIRE_FIELDS = [
   'viab_assainissement', 'viab_eaux_pluviales', 'viab_courants_faibles',
   'doc_cadastre', 'doc_geometre', 'doc_etude_sol', 'doc_servitudes',
   'enveloppe_ttc', 'montant_travaux_ttc', 'honoraires_ttc',
+  'enveloppe_ht', 'montant_travaux_ht', 'honoraires_ht',
   'surface_plancher', 'surface_habitable', 'surface_terrain', 'cos_autorise',
   'taux_tva', 'seuil_aleas_pct',
   'date_esq', 'date_avp', 'date_pro', 'date_dce',
@@ -106,11 +108,10 @@ export function useAffaires() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) throw new Error('Non authentifié')
 
-    const { data: newAffaire, error: affaireError } = await supabase
-      .from('affaires')
-      .insert([buildPayload(formData)])
-      .select()
-      .single()
+    const inserer = (payload) => supabase.from('affaires').insert([payload]).select().single()
+    let { data: newAffaire, error: affaireError } = await inserer(buildPayload(formData))
+    // Sans la migration 064, pas de colonnes HT : l'affaire part avec son TTC
+    if (erreurColonnesHT(affaireError)) ({ data: newAffaire, error: affaireError } = await inserer(sansColonnesHT(buildPayload(formData))))
     if (affaireError) throw affaireError
 
     const { error: collabError } = await supabase
@@ -136,10 +137,9 @@ export function useAffaires() {
         [{ affaire_id: id, user_id: user.id, role: 'proprietaire' }],
         { onConflict: 'affaire_id,user_id' }
       )
-    const { error } = await supabase
-      .from('affaires')
-      .update(buildPayload(formData))
-      .eq('id', id)
+    const ecrire = (payload) => supabase.from('affaires').update(payload).eq('id', id)
+    let { error } = await ecrire(buildPayload(formData))
+    if (erreurColonnesHT(error)) ({ error } = await ecrire(sansColonnesHT(buildPayload(formData))))
     if (error) throw error
     await refetch()
   }
@@ -194,7 +194,8 @@ export function useAffaire(id) {
   }, [id, refetch])
 
   const updateAffaire = useCallback(async (data) => {
-    const { error } = await supabase.from('affaires').update(data).eq('id', id)
+    let { error } = await supabase.from('affaires').update(data).eq('id', id)
+    if (erreurColonnesHT(error)) ({ error } = await supabase.from('affaires').update(sansColonnesHT(data)).eq('id', id))
     if (!error) await refetch()
     return { error }
   }, [id, refetch])

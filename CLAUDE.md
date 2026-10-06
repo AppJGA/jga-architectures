@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 773 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
+npm test         # 778 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -132,7 +132,7 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
   anglais d'Outlook (marque UTF-8) — l'Outlook classique ne retient que le
   premier contact d'un .vcf. Une icône par fiche donne la carte seule. La
   note de chaque contact porte l'affaire et le rôle.
-- **Base** : `supabase/migrations/`, numérotées, 63 fichiers, **passées à la
+- **Base** : `supabase/migrations/`, numérotées, 64 fichiers, **passées à la
   main** dans le SQL Editor de Supabase : un code qui dépend d'une nouvelle
   colonne doit tolérer son absence tant que la migration n'est pas faite. La photo de
   couverture d'une affaire est `affaires.photo_url` (migration 014, bucket
@@ -481,8 +481,19 @@ phase reçoit `perso_N`, son nom dans `nom_custom`) ; les anciennes lignes
 gardent `esq`, `avp`… dont le libellé sert de nom. Toujours afficher une phase
 par `nomPhase`, et prendre « la dernière phase » par `dernierePhaseRenseignee`
 (`phases.js`, testé) — la page de l'affaire aussi. L'**enveloppe globale
-initiale** se modifie en haut de la page : c'est `affaires.enveloppe_ttc`, le
+initiale** se modifie en haut de la page : c'est `affaires.enveloppe_ht`, le
 même champ que la fiche de l'affaire, donc toujours identique des deux côtés.
+
+**Montants : le HT prime** (demande de l'agence, migration 064). Partout dans
+l'affaire, le HT se saisit et s'affiche en grand, le TTC en petit dessous
+(`MontantHT.jsx`) ; le TTC se **déduit** au taux de l'affaire (`taux_tva`),
+jamais saisi. `affaires` porte `enveloppe_ht`, `montant_travaux_ht`,
+`honoraires_ht` à côté des `*_ttc`, toujours écrits ensemble. Lire un montant
+d'affaire par `montantsAffaire` / `htDe` (`shared/montants.js`, testé) : sans
+la migration, le HT se recalcule depuis le TTC, et l'écriture est retentée
+sans les colonnes HT (`erreurColonnesHT` / `sansColonnesHT`). Les phases
+(`suivi_financier_etude`) et les marchés des lots gardent leurs colonnes
+HT / TTC ; le TTC d'un marché suit son HT au taux de l'affaire.
 
 ## Fiches de travaux modificatifs (FTM)
 

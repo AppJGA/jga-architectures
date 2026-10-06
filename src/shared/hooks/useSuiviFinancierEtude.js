@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../../core/supabase/client'
+import { montantsAffaire } from '../montants'
 
 // Rang par défaut des cinq phases de référence, quand `ordre` n'a jamais été
 // renseigné (lignes créées avant la migration 036).
@@ -14,7 +15,8 @@ export function useSuiviFinancierEtude(affaireId, affaire) {
   const [marchesLots, setMarchesLots] = useState([])
   const [loading, setLoading] = useState(true)
 
-  const enveloppeInitiale = affaire?.enveloppe_ttc ?? null
+  // En HT : c'est le HT qui prime (montantsAffaire)
+  const enveloppeInitiale = montantsAffaire(affaire).enveloppe
 
   const fetchAll = useCallback(async () => {
     if (!affaireId) return

@@ -6,6 +6,7 @@ import { InterlocuteursEditeur } from '../modules/chantier/comptes-rendus/Interl
 import { supabase } from '../core/supabase/client'
 import { useAuth } from '../core/auth/useAuth'
 import { compressImage, COVER_OPTIONS, TAILLE_MAX_OCTETS } from '../shared/utils/compressImage'
+import { htDe, ttcDe, tvaAffaire } from '../shared/montants'
 
 // ─── Valeurs par défaut ────────────────────────────────────────────────────
 const DEFAULTS = {
@@ -17,7 +18,8 @@ const DEFAULTS = {
   viab_voirie: false, viab_electricite: false, viab_gaz: false,
   viab_assainissement: false, viab_eaux_pluviales: false, viab_courants_faibles: false,
   doc_cadastre: false, doc_geometre: false, doc_etude_sol: false, doc_servitudes: false,
-  enveloppe_ttc: '', montant_travaux_ttc: '', honoraires_ttc: '',
+  // Saisis en HT : c'est le HT qui prime à l'agence ; le TTC se calcule
+  enveloppe_ht: '', montant_travaux_ht: '', honoraires_ht: '',
   surface_plancher: '', surface_habitable: '', surface_terrain: '', cos_autorise: '',
   taux_tva: 1.20,
   seuil_aleas_pct: 5.00,
@@ -42,7 +44,7 @@ function detectTvaPreset(taux) {
 }
 
 const NUMERIC_FIELDS = [
-  'cadastre_superficie', 'enveloppe_ttc', 'montant_travaux_ttc', 'honoraires_ttc',
+  'cadastre_superficie', 'enveloppe_ht', 'montant_travaux_ht', 'honoraires_ht',
   'surface_plancher', 'surface_habitable', 'surface_terrain', 'cos_autorise',
 ]
 const DATE_FIELDS = [
@@ -50,10 +52,15 @@ const DATE_FIELDS = [
   'date_depot_pc', 'date_obtention_pc', 'date_demarrage_travaux', 'date_livraison',
 ]
 
+// Montant HT → son pendant TTC enregistré à côté
+const TTC_DE = { enveloppe_ht: 'enveloppe_ttc', montant_travaux_ht: 'montant_travaux_ttc', honoraires_ht: 'honoraires_ttc' }
+
 function initialForm(affaire) {
   if (!affaire) return { ...DEFAULTS }
   return Object.fromEntries(
     Object.keys(DEFAULTS).map(k => {
+      // Une affaire d'avant la migration 064 n'a que le TTC : son HT s'en déduit
+      if (TTC_DE[k]) return [k, htDe(affaire[k], affaire[TTC_DE[k]], tvaAffaire(affaire)) ?? '']
       const v = affaire[k]
       if (v === undefined) return [k, DEFAULTS[k]]
       // terrain_statut: keep null as-is (valid DB value)
@@ -64,6 +71,14 @@ function initialForm(affaire) {
       return [k, v]
     })
   )
+}
+
+/** Le TTC enregistré à côté de chaque montant HT saisi. */
+function avecTTC(donnees) {
+  const tva = tvaAffaire(donnees)
+  const resultat = { ...donnees }
+  for (const [ht, ttc] of Object.entries(TTC_DE)) resultat[ttc] = ttcDe(donnees[ht], tva)
+  return resultat
 }
 
 function cleanData(form) {
@@ -81,6 +96,16 @@ function cleanData(form) {
 }
 
 // ─── Composants de champ ──────────────────────────────────────────────────
+// Sous un montant HT, son TTC en petit, au taux de TVA choisi plus bas
+function EquivalentTTC({ ht, tva }) {
+  const ttc = ttcDe(ht, Number(tva) > 0 ? Number(tva) : 1.2)
+  if (ttc == null) return null
+  return (
+    <p style={{ margin: '4px 0 0', fontSize: 11, color: '#9C9591' }}>
+      soit {new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(ttc)} TTC
+    </p>
+  )
+}
 function Label({ children }) {
   return (
     <label style={{
@@ -419,7 +444,7 @@ export function AffaireFormModal({ affaire = null, onSave, onClose, scrollToSect
         const oldPhotoUrl = affaire?.photo_url ?? null
         finalPhotoUrl = await uploadPhoto(photoFile, folderId, oldPhotoUrl)
       }
-      await onSave({ ...cleanData(form), photo_url: finalPhotoUrl ?? null })
+      await onSave({ ...avecTTC(cleanData(form)), photo_url: finalPhotoUrl ?? null })
       onClose()
     } catch (err) {
       if (err.message?.includes('affaires_code_affaire_key')) {
@@ -760,16 +785,19 @@ export function AffaireFormModal({ affaire = null, onSave, onClose, scrollToSect
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginBottom: 28 }}>
             <div style={grid2}>
-              <Field label="Enveloppe globale initiale TTC (€)">
-                <TextInput type="number" value={form.enveloppe_ttc} onChange={setNum('enveloppe_ttc')} placeholder="1 200 000" />
+              <Field label="Enveloppe globale initiale HT (€)">
+                <TextInput type="number" value={form.enveloppe_ht} onChange={setNum('enveloppe_ht')} placeholder="1 000 000" />
+                <EquivalentTTC ht={form.enveloppe_ht} tva={form.taux_tva} />
               </Field>
-              <Field label="dont Travaux TTC (€)">
-                <TextInput type="number" value={form.montant_travaux_ttc} onChange={setNum('montant_travaux_ttc')} placeholder="950 000" />
+              <Field label="dont Travaux HT (€)">
+                <TextInput type="number" value={form.montant_travaux_ht} onChange={setNum('montant_travaux_ht')} placeholder="800 000" />
+                <EquivalentTTC ht={form.montant_travaux_ht} tva={form.taux_tva} />
               </Field>
             </div>
             <div style={grid2}>
-              <Field label="dont Honoraires architecte TTC (€)">
-                <TextInput type="number" value={form.honoraires_ttc} onChange={setNum('honoraires_ttc')} placeholder="85 000" />
+              <Field label="dont Honoraires architecte HT (€)">
+                <TextInput type="number" value={form.honoraires_ht} onChange={setNum('honoraires_ht')} placeholder="70 000" />
+                <EquivalentTTC ht={form.honoraires_ht} tva={form.taux_tva} />
               </Field>
               <Field label="Surface de plancher (m²)">
                 <TextInput type="number" value={form.surface_plancher} onChange={setNum('surface_plancher')} placeholder="1 800" />

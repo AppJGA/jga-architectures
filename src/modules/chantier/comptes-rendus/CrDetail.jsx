@@ -61,8 +61,8 @@ const VUES = [
   },
   {
     id: 'presences',
-    label: 'Présences et convocations',
-    description: 'Interlocuteurs et entreprises,\nprésences P/R/A/E',
+    label: 'Gérer les présences',
+    description: 'Pointage P/R/A/E, rappel des\nconvocations du CR précédent',
     icon: IconePresence,
     couleur: '#1B3A5C',
     fondClair: 'rgba(27,58,92,0.10)',

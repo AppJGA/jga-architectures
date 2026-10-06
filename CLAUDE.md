@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 743 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
+npm test         # 763 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -120,7 +120,7 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
   anglais d'Outlook (marque UTF-8) — l'Outlook classique ne retient que le
   premier contact d'un .vcf. Une icône par fiche donne la carte seule. La
   note de chaque contact porte l'affaire et le rôle.
-- **Base** : `supabase/migrations/`, numérotées, 60 fichiers, **passées à la
+- **Base** : `supabase/migrations/`, numérotées, 61 fichiers, **passées à la
   main** dans le SQL Editor de Supabase : un code qui dépend d'une nouvelle
   colonne doit tolérer son absence tant que la migration n'est pas faite. La photo de
   couverture d'une affaire est `affaires.photo_url` (migration 014, bucket
@@ -406,6 +406,43 @@ création avec reprise de la visite précédente) et `useCompteRendu` (un CR).
     n'empêche jamais l'analyse. Les consignes disent d'imiter le ton des
     exemples sans jamais en reprendre le contenu.
 
+## Pièces écrites (`src/modules/etude/pieces-ecrites/`)
+
+CCTP des bureaux d'études, importés en PDF, découpés en articles et
+cherchables — au bureau (module, partie Étude) et en visite (bouton « CCTP »
+du mode Visite, hors ligne). Conception :
+`docs/superpowers/specs/2026-10-06-pieces-ecrites-design.md`. **Aucune IA.**
+
+- **Lecture** (`piecesLogique.js`, pur, `tests/pieces-ecrites.test.js` sur
+  textes inventés — **aucun extrait réel de CCTP dans le dépôt**, public) :
+  `lignesDePage` remet les fragments pdf.js **de gauche à droite** (certains
+  PDF dessinent le numéro après le titre : « INSTALLATIONS DE CHANTIER5.1 ») ;
+  `retirerBruit` ôte en-têtes et pieds (même ligne, chiffres à part, **en haut
+  ou en bas** de plus de 40 % des pages — une ligne répétée au milieu reste) et
+  lignes de sommaire à points de conduite ; `decouperArticles` retient **la
+  plus longue suite logique de numéros** (`suitLogiquement` : trous tolérés,
+  2.4 → 3.1 admis), un titre suivi de texte comptant plus : le sommaire sans
+  points de conduite perd ainsi face au corps, et « 1 porte au RDC » ne
+  casse pas la suite ; moins de 3 articles → un par page. La couverture
+  (page 1) n'ouvre pas d'article. `lireLot` : la plus grande ligne « Lot 07 -
+  … », « Lot n°170 : … », « Lot N°080 … » de la couverture, nom continué à la
+  ligne suivante, sinon le nom du fichier. Réglé sur 7 CCTP réels de 5
+  affaires (gardés hors dépôt, `Desktop/PERSO/Exemples de CCTP`).
+- **Données** (migration 061, `piecesDonnees.js`) : `pieces_ecrites` (une par
+  lot : un nouvel import **remplace** l'ancien) et `pieces_articles` ; seul
+  le **texte** est gardé, pas le PDF. Agence seule, écriture des
+  collaborateurs (060). Copie sur l'appareil dans une base IndexedDB à part
+  (`jga-pieces`) : `piecesPourConsultation` lit la base et rafraîchit la
+  copie, ou lit la copie sans réseau.
+- **Import** (`ImportPieces.jsx`) : PDF lus sur l'appareil (`lecturePdf.js`,
+  pdf.js) ; `proposerLot` rattache au lot de même nom (`cleNom`, l'un pouvant
+  contenir l'autre) ou crée le lot lu sur un numéro libre ; tout reste
+  modifiable avant « Importer ».
+- **Recherche** (`chercherArticles`, `RecherchePieces.jsx`, commune au module
+  et au mode Visite) : tous les mots, sans accents, titre d'abord, groupée
+  par CCTP, `extrait` surligné (positions d'origine gardées malgré les
+  accents) ; l'article entier garde ses retours à la ligne.
+
 ## Suivi financier d'étude
 
 `src/modules/etude/financier/`, données par `useSuiviFinancierEtude`. Les
@@ -528,7 +565,7 @@ ensemble :
   delete) sur toutes les tables d'une affaire et sur le stockage rangé par
   affaire : elles s'ajoutent aux règles existantes (ET) sans toucher la
   lecture ; un extérieur garde ses propres règles. **Toute nouvelle table
-  d'une affaire s'ajoute à la liste de la migration 060** (nouvelle
+  d'une affaire reçoit les mêmes règles restrictives** (comme la 061) (nouvelle
   migration qui rejoue le même bloc). Vérifiée par
   `scratchpad/pgtest/test060.mjs` (PGlite, 20 contrôles, hors dépôt).
 - **Client** : `verrouillerEcritures` (`core/supabase/client.js`), posé par

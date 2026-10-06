@@ -4,7 +4,9 @@ import { IconeFtm, IconeAvancement, IconePresence } from '../../../shared/icones
 import { FILTRES_VISITE, filtreVisite, groupesVisite, compteursVisite } from './visiteLogique'
 import { STATUTS, infosStatut, estEnRetard, libelleZone, peutModifierRemarque, auteurExterieur, miseEnForme, COULEUR_SURLIGNE } from './crLogique'
 import { useCr } from './CrContexte'
-import { PanneauRemarque, PanneauSuite, PanneauPresences, PanneauStatuts, PanneauAvancement } from './PanneauxVisite'
+import { Panneau, PanneauRemarque, PanneauSuite, PanneauPresences, PanneauStatuts, PanneauAvancement } from './PanneauxVisite'
+import { piecesPourConsultation } from '../../etude/pieces-ecrites/piecesDonnees'
+import { RecherchePieces } from '../../etude/pieces-ecrites/RecherchePieces'
 import { libelleLot, nomInterlocuteur, numerosParties, champsDestinataire } from './remarquesLogique'
 import { creerRemarqueAdressee, champsModification } from './rangerRemarque'
 import { usePhotosRemarque, PhotosContexte } from './usePhotosRemarque'
@@ -338,6 +340,18 @@ export function ModeVisite({ cr, affaire = null, convocations = new Map(), secti
     [lotsAffaire, interlocuteurs, zones],
   )
   const robot = useEnregistrementVisite({ crId: cr.id, affaireId: cr.affaire_id, vocabulaire, actif: estAgence })
+
+  // Les CCTP de l'affaire, cherchables pendant la réunion : lus à l'ouverture
+  // (et gardés sur l'appareil), ou, sans réseau, depuis la copie gardée
+  const [pieces, setPieces] = useState(null)
+  useEffect(() => {
+    if (!estAgence) return undefined
+    let annule = false
+    piecesPourConsultation(cr.affaire_id)
+      .then((d) => { if (!annule && d.disponible) setPieces(d) })
+      .catch(() => {})
+    return () => { annule = true }
+  }, [cr.affaire_id, estAgence])
   const peutEnregistrer = robot.disponible && !lectureSeule && cr.statut !== 'emis'
   const aValider = propositionsAValider(sections)
 
@@ -446,6 +460,11 @@ export function ModeVisite({ cr, affaire = null, convocations = new Map(), secti
           {compteurs.enRetard > 0 && <span style={{ fontSize: 13, color: 'white', background: '#B8412C', fontWeight: 600, borderRadius: 3, padding: '3px 8px' }}>{compteurs.enRetard} en retard</span>}
           {(peutEnregistrer || (robot.disponible && robot.etat !== 'pret')) && (
             <BoutonRobot robot={robot} onOuvrirPanneau={() => setPanneau({ type: 'enregistrements' })} />
+          )}
+          {pieces?.pieces.length > 0 && (
+            <button type="button" onClick={() => setPanneau({ type: 'pieces' })} style={bouton()} title="Chercher dans les CCTP">
+              <Search size={18} /> CCTP
+            </button>
           )}
           <button type="button" onClick={() => setPanneau({ type: 'presences' })} style={bouton()}>
             <IconePresence size={22} /> Présences
@@ -596,6 +615,16 @@ export function ModeVisite({ cr, affaire = null, convocations = new Map(), secti
           onProposer={cr.statut !== 'emis' ? proposer : undefined}
           onFermer={() => setPanneau(null)}
         />
+      )}
+      {panneau?.type === 'pieces' && pieces && (
+        <Panneau titre="Pièces écrites" onFermer={() => setPanneau(null)}>
+          {pieces.horsLigne && (
+            <p style={{ margin: '0 0 10px', fontSize: 12, color: '#92400E' }}>
+              Sans réseau : copie gardée sur l’appareil{pieces.copieLe ? ` le ${new Date(pieces.copieLe).toLocaleDateString('fr-FR')}` : ''}.
+            </p>
+          )}
+          <RecherchePieces pieces={pieces.pieces} articles={pieces.articles} grand autoFocus />
+        </Panneau>
       )}
       {panneau?.type === 'presences' && (
         <PanneauPresences presences={presences} setPresence={setPresence} convocations={convocations} lectureSeule={lectureSeule} onFermer={() => setPanneau(null)} signalerErreur={signalerErreur} />

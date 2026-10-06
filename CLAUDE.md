@@ -336,7 +336,8 @@ création avec reprise de la visite précédente) et `useCompteRendu` (un CR).
 - **Visite enregistrée** (conception
   `docs/superpowers/specs/2026-10-05-visite-enregistree-ia-design.md`, plans
   des lots dans `docs/superpowers/plans/`) : dossier `enregistrement/`.
-  - **Lot 0** (outil « Essai d'enregistrement ») : moteur `enregistreur.js`
+  - **Lot 0** (essais faits ; l'outil « Essai d'enregistrement » de la boîte
+    à outils a été retiré le 2026-10-06) : moteur `enregistreur.js`
     (un `MediaRecorder` relancé à chaque morceau, chaque morceau est un
     fichier complet ; tranches d'une seconde au fil de l'eau ; reprise
     possible, bascule AAC ↔ Opus si l'encodeur échoue), rangement local

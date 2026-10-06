@@ -153,6 +153,11 @@ export function IconeCarnet(props) {
 }
 
 // Accueil
+// L'éditeur du CR, pensé pour l'ordinateur
+export function IconeOrdinateur(props) {
+  return <Icone {...props}><path d="M10 45V14a4 4 0 0 1 4-4h36a4 4 0 0 1 4 4v31"/><rect x="15" y="15.5" width="34" height="24.5" rx="1.5"/><circle cx="32" cy="12.8" r="1" fill="currentColor" stroke="none"/><path d="M3 45h58v2.5a4.5 4.5 0 0 1-4.5 4.5h-49A4.5 4.5 0 0 1 3 47.5z"/><path d="M25 45v1.5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V45"/></Icone>
+}
+
 // Le mode Visite, pensé pour la tablette
 export function IconeTablette(props) {
   return <Icone {...props}><rect x="10" y="4" width="44" height="56" rx="6"/><rect x="15.5" y="10.5" width="33" height="43" rx="2"/><circle cx="32" cy="7.2" r="1.2" fill="currentColor" stroke="none"/><path d="M28 57h8"/></Icone>

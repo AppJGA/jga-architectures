@@ -4,7 +4,7 @@ import {
   AlertTriangle, X,
 } from 'lucide-react'
 import {
-  IconeVisitesChantier, IconeTablette, IconePlans, IconeRobot, IconeAvancement, IconePresence, IconeExportPdf, IconeGeneralites, IconeRemarques, IconeOrganisation,
+  IconeVisitesChantier, IconeTablette, IconeOrdinateur, IconePlans, IconeRobot, IconeAvancement, IconePresence, IconeExportPdf, IconeGeneralites, IconeRemarques, IconeOrganisation,
 } from '../../../shared/icones/IconesAffaire'
 import { useEnregistrementsDisponibles } from './enregistrement/useEnregistrementVisite'
 import { ListeEnregistrements } from './enregistrement/PanneauEnregistrements'
@@ -303,6 +303,7 @@ function CrAccueil({ cr, affaire, presences, sections, onNavigate, onEmettre, on
               transition: 'transform 0.18s cubic-bezier(0.22,1,0.36,1), background 0.18s ease',
             }}
           >
+            <IconeOrdinateur size={20} />
             {cr.statut === 'emis' || !peutModifier ? 'Consulter' : "Ouvrir l'éditeur"}
             <ArrowRight size={15} strokeWidth={1.8} />
           </button>

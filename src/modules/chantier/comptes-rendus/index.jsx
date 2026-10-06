@@ -6,7 +6,7 @@ import { useComptesRendus } from '../../../shared/hooks/useComptesRendus'
 import { InterlocuteursModal } from './InterlocuteursModal'
 import { GeneralitesModal } from './GeneralitesModal'
 import { CrDetail } from './CrDetail'
-import { IconeGeneralites, IconeTablette } from '../../../shared/icones/IconesAffaire'
+import { IconeGeneralites, IconeTablette, IconeOrdinateur } from '../../../shared/icones/IconesAffaire'
 
 function fmtDate(d) {
   if (!d) return '—'
@@ -367,7 +367,7 @@ function CarteVisiteEnCours({ cr, onVisite, onEditeur }) {
           fontSize: 14, cursor: 'pointer',
         }}
       >
-        Éditeur
+        <IconeOrdinateur size={22} /> Éditeur
       </button>
     </div>
   )

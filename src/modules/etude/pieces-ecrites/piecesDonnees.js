@@ -16,7 +16,8 @@ const PAQUET = 200 // articles par insertion
 export async function listerPieces(affaireId) {
   const [{ data: pieces, error }, { data: articles, error: erreurArticles }] = await Promise.all([
     supabase.from('pieces_ecrites').select('*').eq('affaire_id', affaireId).order('lot_numero_lu', { nullsFirst: false }),
-    supabase.from('pieces_articles').select('id, piece_id, ordre, numero, niveau, titre, texte, page').eq('affaire_id', affaireId).order('ordre'),
+    // Toutes les colonnes : `styles` (migration 062) peut manquer encore
+    supabase.from('pieces_articles').select('*').eq('affaire_id', affaireId).order('ordre'),
   ])
   if (error?.code === 'PGRST205' || error?.code === '42P01') return { disponible: false, pieces: [], articles: [] }
   if (error) throw error
@@ -49,12 +50,17 @@ export async function enregistrerPiece({ affaireId, lotId, lu, nomFichier, titre
   }).select('id').single()
   if (error) throw error
 
-  const lignes = lu.articles.map((a) => ({
+  let lignes = lu.articles.map((a) => ({
     piece_id: piece.id, affaire_id: affaireId, ordre: a.ordre, numero: a.numero,
-    niveau: a.niveau, titre: a.titre, texte: a.texte, page: a.page,
+    niveau: a.niveau, titre: a.titre, texte: a.texte, page: a.page, styles: a.styles ?? [],
   }))
   for (let i = 0; i < lignes.length; i += PAQUET) {
-    const { error: erreur } = await supabase.from('pieces_articles').insert(lignes.slice(i, i + PAQUET))
+    let { error: erreur } = await supabase.from('pieces_articles').insert(lignes.slice(i, i + PAQUET))
+    // Sans la migration 062, pas de colonne `styles` : le texte part sans mise en forme
+    if (erreur && /styles/.test(erreur.message ?? '') && ['PGRST204', '42703'].includes(erreur.code)) {
+      lignes = lignes.map((l) => { const reste = { ...l }; delete reste.styles; return reste })
+      ;({ error: erreur } = await supabase.from('pieces_articles').insert(lignes.slice(i, i + PAQUET)))
+    }
     if (erreur) {
       await supabase.from('pieces_ecrites').delete().eq('id', piece.id)
       throw erreur

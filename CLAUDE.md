@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 763 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
+npm test         # 768 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -120,7 +120,7 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
   anglais d'Outlook (marque UTF-8) — l'Outlook classique ne retient que le
   premier contact d'un .vcf. Une icône par fiche donne la carte seule. La
   note de chaque contact porte l'affaire et le rôle.
-- **Base** : `supabase/migrations/`, numérotées, 61 fichiers, **passées à la
+- **Base** : `supabase/migrations/`, numérotées, 62 fichiers, **passées à la
   main** dans le SQL Editor de Supabase : un code qui dépend d'une nouvelle
   colonne doit tolérer son absence tant que la migration n'est pas faite. La photo de
   couverture d'une affaire est `affaires.photo_url` (migration 014, bucket
@@ -438,6 +438,19 @@ du mode Visite, hors ligne). Conception :
   pdf.js) ; `proposerLot` rattache au lot de même nom (`cleNom`, l'un pouvant
   contenir l'autre) ou crée le lot lu sur un numéro libre ; tout reste
   modifiable avant « Importer ».
+- **Mise en forme** (migration 062, colonne `pieces_articles.styles`,
+  `[[début, fin, code]]`, g / i / s combinables) : gardée **à part du
+  texte** pour ne pas gêner la recherche. Gras et italique d'après le **nom
+  de la police** (`styleDePolice` : « -Bold », « -Oblique » — les drapeaux de
+  pdf.js restent faux) ; souligné d'après les **traits** de la page
+  (`traitsHorizontaux` sur la liste d'opérations, matrice courante suivie ;
+  `fragmentSouligne` : trait juste sous la ligne de base, pas beaucoup plus
+  large que le texte — une bordure de tableau n'en est pas un). Les polices
+  anonymes (« CIDFont+F3 », CCTP de Coligny) ne disent pas leur gras : perdu.
+  `lignesDePage` suit les styles caractère par caractère pour réduire les
+  espaces sans décaler les plages ; `extrait` les combine au surlignage. Sans
+  la migration 062, l'import enregistre le texte seul. Un CCTP importé avant
+  doit être réimporté pour retrouver sa mise en forme.
 - **Recherche** (`chercherArticles`, `RecherchePieces.jsx`, commune au module
   et au mode Visite) : tous les mots, sans accents, titre d'abord, groupée
   par CCTP, `extrait` surligné (positions d'origine gardées malgré les

@@ -7,7 +7,7 @@
 
 import * as pdfjs from 'pdfjs-dist'
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.js?url'
-import { lignesDePage } from './piecesLogique'
+import { lignesDePage, styleDePolice, traitsHorizontaux, fragmentSouligne } from './piecesLogique'
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl
 
@@ -29,7 +29,26 @@ export async function lirePdf(fichier, { surProgression } = {}) {
   for (let i = 1; i <= doc.numPages; i++) {
     const page = await doc.getPage(i)
     const contenu = await page.getTextContent()
-    pages.push({ numero: i, lignes: lignesDePage(contenu.items) })
+    // La liste d'opérations charge les polices (gras, italique d'après leur
+    // nom) et donne les traits de la page (soulignés)
+    let traits = []
+    try {
+      const ops = await page.getOperatorList()
+      traits = traitsHorizontaux(ops.fnArray, ops.argsArray, pdfjs.OPS)
+    } catch { /* mise en forme perdue, texte intact */ }
+    const polices = new Map()
+    const police = (nom) => {
+      if (!polices.has(nom)) {
+        let style = { gras: false, italique: false }
+        try { style = styleDePolice(page.commonObjs.get(nom)?.name ?? '') } catch { /* police non chargée */ }
+        polices.set(nom, style)
+      }
+      return polices.get(nom)
+    }
+    const items = contenu.items.map((it) => (it.str?.trim()
+      ? { ...it, style: { ...police(it.fontName), souligne: fragmentSouligne(it, traits) } }
+      : it))
+    pages.push({ numero: i, lignes: lignesDePage(items) })
     surProgression?.(i / doc.numPages)
   }
   doc.destroy?.()

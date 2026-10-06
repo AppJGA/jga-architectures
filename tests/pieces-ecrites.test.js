@@ -7,6 +7,7 @@ import { test, describe } from 'node:test'
 import {
   lignesDePage, retirerBruit, decouperArticles, lireLot, lireIndice, lirePiece,
   chercherArticles, extrait, proposerLot, numeroLibre, titrePiece,
+  styleDePolice, traitsHorizontaux, fragmentSouligne,
 } from '../src/modules/etude/pieces-ecrites/piecesLogique.js'
 
 // Une page faite de lignes { texte, taille }
@@ -159,5 +160,50 @@ describe('lot proposé à l’import', () => {
   test('titre de la pièce', () => {
     assert.equal(titrePiece(7, 'Métallerie'), 'Lot 07 – Métallerie')
     assert.equal(titrePiece(null, ''), 'CCTP')
+  })
+})
+
+describe('mise en forme : gras, italique, souligné', () => {
+  const item = (str, x, style, w = str.length * 5) => ({ str, transform: [10, 0, 0, 10, x, 500], width: w, style })
+
+  test('la police dit gras et italique', () => {
+    assert.deepEqual(styleDePolice('ABCDEF+Helvetica-BoldOblique'), { gras: true, italique: true })
+    assert.deepEqual(styleDePolice('Calibri'), { gras: false, italique: false })
+    assert.deepEqual(styleDePolice('Arial,Bold'), { gras: true, italique: false })
+  })
+
+  test('les plages suivent la ligne, espaces réduits', () => {
+    const [l] = lignesDePage([item('Teinte :', 50), item('  RAL 7016', 95, { gras: true }), item(' mat', 150)])
+    assert.equal(l.texte, 'Teinte : RAL 7016 mat')
+    assert.deepEqual(l.styles, [[9, 17, 'g']])
+  })
+
+  test('un trait sous le texte souligne ; une bordure plus large que lui, non', () => {
+    const OPS = { save: 1, restore: 2, transform: 3, constructPath: 4, rectangle: 5, moveTo: 6, lineTo: 7 }
+    const traits = traitsHorizontaux([1, 3, 4, 2], [null, [1, 0, 0, 1, 0, 0], [[6, 7], [50, 498, 90, 498]], null], OPS)
+    assert.deepEqual(traits, [[50, 90, 498]])
+    assert.equal(fragmentSouligne({ transform: [10, 0, 0, 10, 50, 500], width: 40 }, traits), true)
+    assert.equal(fragmentSouligne({ transform: [10, 0, 0, 10, 50, 500], width: 40 }, [[0, 500, 498]]), false, 'bordure de tableau')
+    assert.equal(fragmentSouligne({ transform: [10, 0, 0, 10, 50, 520], width: 40 }, traits), false, 'trait d’une autre ligne')
+  })
+
+  test('les articles gardent leurs plages, décalées', () => {
+    const pages = [page(2,
+      '1 PREMIER', 'Texte simple.',
+      { texte: 'Teinte : RAL 7016', taille: 10, styles: [[9, 17, 'g']] },
+      '2 SECOND', 'Fin.', '3 TROISIEME', 'Fin.')]
+    const [a] = decouperArticles(pages)
+    assert.equal(a.texte, 'Texte simple.\nTeinte : RAL 7016')
+    assert.deepEqual(a.styles, [[23, 31, 'g']])
+  })
+
+  test('l’extrait combine surlignage et mise en forme', () => {
+    const morceaux = extrait('Teinte : RAL 7016 mat', ['ral'], 200, [[9, 17, 'g']])
+    assert.deepEqual(morceaux, [
+      { texte: 'Teinte : ', surligne: false },
+      { texte: 'RAL', surligne: true, gras: true },
+      { texte: ' 7016', surligne: false, gras: true },
+      { texte: ' mat', surligne: false },
+    ])
   })
 })

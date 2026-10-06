@@ -44,7 +44,9 @@ export function lignesDePage(items = []) {
 
   return groupes.map((fragments) => {
     const tries = [...fragments].sort((u, v) => (u.transform?.[4] ?? 0) - (v.transform?.[4] ?? 0))
-    let texte = ''
+    // Caractère par caractère, avec sa mise en forme : les espaces superflus
+    // sont ensuite réduits sans décaler les plages de gras ou d'italique
+    const car = []
     let taille = 0
     let finPrecedent = null
     for (const it of tries) {
@@ -52,12 +54,114 @@ export function lignesDePage(items = []) {
       const t = Math.round(Math.hypot(it.transform?.[2] ?? 0, it.transform?.[3] ?? 0))
       if (str.trim()) taille = Math.max(taille, t)
       const x = it.transform?.[4] ?? 0
-      if (finPrecedent != null && it.width != null && x - finPrecedent > t * 0.15 && texte && !/\s$/.test(texte) && !/^\s/.test(str)) texte += ' '
-      texte += str
+      const dernier = car[car.length - 1]?.c
+      if (finPrecedent != null && it.width != null && x - finPrecedent > t * 0.15 && dernier && !/\s/.test(dernier) && !/^\s/.test(str)) car.push({ c: ' ', s: '' })
+      const code = codeStyle(it.style)
+      for (const c of str) car.push({ c, s: code })
       if (it.width != null) finPrecedent = x + it.width
     }
-    return { texte: propre(texte), taille }
+    return reduireEspaces(car, taille)
   }).filter((l) => l.texte)
+}
+
+/** Un fragment mis en forme → code : g (gras), i (italique), s (souligné). */
+function codeStyle(style) {
+  if (!style) return ''
+  return `${style.gras ? 'g' : ''}${style.italique ? 'i' : ''}${style.souligne ? 's' : ''}`
+}
+
+// Espaces réduits et bords retirés, plages de mise en forme recalculées
+function reduireEspaces(car, taille) {
+  const net = []
+  for (const x of car) {
+    const blanc = /\s/.test(x.c)
+    if (blanc && (net.length === 0 || /\s/.test(net[net.length - 1].c))) continue
+    net.push(blanc ? { c: ' ', s: '' } : x)
+  }
+  while (net.length && net[net.length - 1].c === ' ') net.pop()
+  const texte = net.map((x) => x.c).join('')
+  const styles = plages(net)
+  return styles.length ? { texte, taille, styles } : { texte, taille }
+}
+
+// [[début, fin, code]] des suites de caractères de même mise en forme ; un
+// espace entre deux mots de même style ne coupe pas la plage
+function plages(net) {
+  const resultat = []
+  let i = 0
+  while (i < net.length) {
+    const code = net[i].s
+    if (!code) { i++; continue }
+    let j = i + 1
+    while (j < net.length && (net[j].s === code || (net[j].c === ' ' && net[j + 1]?.s === code))) j++
+    resultat.push([i, j, code])
+    i = j
+  }
+  return resultat
+}
+
+/** Gras et italique d'après le nom de la police (« Helvetica-BoldOblique »). */
+export function styleDePolice(nom = '') {
+  return {
+    gras: /bold|black|heavy|semibold|demibold/i.test(nom),
+    italique: /italic|oblique/i.test(nom),
+  }
+}
+
+/**
+ * Traits horizontaux d'une page (soulignés possibles), en coordonnées de
+ * page : chemins plats de la liste d'opérations pdf.js, la matrice courante
+ * appliquée. `OPS` : les codes d'opérations de pdf.js.
+ * @returns [[x1, x2, y]]
+ */
+export function traitsHorizontaux(fnArray = [], argsArray = [], OPS = {}) {
+  const mul = (m, n) => [m[0] * n[0] + m[2] * n[1], m[1] * n[0] + m[3] * n[1], m[0] * n[2] + m[2] * n[3], m[1] * n[2] + m[3] * n[3], m[0] * n[4] + m[2] * n[5] + m[4], m[1] * n[4] + m[3] * n[5] + m[5]]
+  const app = (m, x, y) => [m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]]
+  const traits = []
+  let ctm = [1, 0, 0, 1, 0, 0]
+  const pile = []
+  for (let k = 0; k < fnArray.length; k++) {
+    const fn = fnArray[k]
+    const args = argsArray[k]
+    if (fn === OPS.save) pile.push(ctm)
+    else if (fn === OPS.restore) ctm = pile.pop() ?? ctm
+    else if (fn === OPS.transform) ctm = mul(ctm, args)
+    else if (fn === OPS.constructPath) {
+      const [sous = [], a = []] = args ?? []
+      let j = 0
+      let p = null
+      for (const op of sous) {
+        if (op === OPS.rectangle) {
+          const [x, y, w, h] = a.slice(j, j + 4); j += 4
+          const [x1, y1] = app(ctm, x, y)
+          const [x2, y2] = app(ctm, x + w, y + h)
+          if (Math.abs(y2 - y1) < 1.5 && Math.abs(x2 - x1) > 4) traits.push([Math.min(x1, x2), Math.max(x1, x2), (y1 + y2) / 2])
+        } else if (op === OPS.moveTo) { p = app(ctm, a[j], a[j + 1]); j += 2 } else if (op === OPS.lineTo) {
+          const q = app(ctm, a[j], a[j + 1]); j += 2
+          if (p && Math.abs(q[1] - p[1]) < 0.5 && Math.abs(q[0] - p[0]) > 4) traits.push([Math.min(p[0], q[0]), Math.max(p[0], q[0]), p[1]])
+          p = q
+        } else if (op === OPS.curveTo) j += 6
+        else if (op === OPS.curveTo2 || op === OPS.curveTo3) j += 4
+      }
+    }
+  }
+  return traits
+}
+
+/**
+ * Un fragment est souligné si un trait court juste sous sa ligne de base et
+ * couvre l'essentiel du fragment, sans le déborder largement : une bordure de
+ * tableau, plus large que le texte, n'est pas un soulignement.
+ */
+export function fragmentSouligne(item, traits = []) {
+  const x0 = item.transform?.[4] ?? 0
+  const y0 = item.transform?.[5] ?? 0
+  const x1 = x0 + (item.width ?? 0)
+  const t = Math.hypot(item.transform?.[2] ?? 0, item.transform?.[3] ?? 0)
+  const largeur = x1 - x0
+  if (largeur <= 0) return false
+  return traits.some(([a, b, y]) => y <= y0 + 0.5 && y >= y0 - t * 0.35
+    && Math.min(b, x1) - Math.max(a, x0) > largeur * 0.6 && (b - a) <= largeur * 1.4 + 4)
 }
 
 // ─── 2. Bruit : en-têtes, pieds de page, sommaire ────────────────────────────
@@ -136,7 +240,7 @@ export function suitLogiquement(p, c) {
  * @returns [{ numero, niveau, titre, texte, page, ordre }]
  */
 export function decouperArticles(pages = []) {
-  const lignes = pages.flatMap((p) => p.lignes.map((l) => ({ texte: l.texte, page: p.numero })))
+  const lignes = pages.flatMap((p) => p.lignes.map((l) => ({ texte: l.texte, styles: l.styles, page: p.numero })))
 
   // La couverture (page 1 d'un document de plusieurs pages) porte adresses
   // et dates (« 1 Place de la mairie ») : pas d'article là
@@ -172,7 +276,7 @@ export function decouperArticles(pages = []) {
 
   if (retenus.length < 3) {
     return pages
-      .map((p, k) => ({ numero: null, niveau: 1, titre: `Page ${p.numero}`, texte: p.lignes.map((l) => l.texte).join('\n'), page: p.numero, ordre: k + 1 }))
+      .map((p, k) => ({ numero: null, niveau: 1, titre: `Page ${p.numero}`, ...assembler(p.lignes), page: p.numero, ordre: k + 1 }))
       .filter((a) => a.texte)
   }
 
@@ -182,11 +286,23 @@ export function decouperArticles(pages = []) {
       numero: c.numero,
       niveau: c.comp.length,
       titre: c.titre,
-      texte: lignes.slice(c.i + 1, fin_).map((l) => l.texte).join('\n'),
+      ...assembler(lignes.slice(c.i + 1, fin_)),
       page: lignes[c.i].page,
       ordre: k + 1,
     }
   })
+}
+
+// Lignes → texte d'article, plages de mise en forme décalées d'autant
+function assembler(lignes) {
+  let texte = ''
+  const styles = []
+  lignes.forEach((l, k) => {
+    if (k > 0) texte += '\n'
+    for (const [d, f, code] of l.styles ?? []) styles.push([texte.length + d, texte.length + f, code])
+    texte += l.texte
+  })
+  return { texte, styles }
 }
 
 // ─── 4. Lot et indice ────────────────────────────────────────────────────────
@@ -307,7 +423,7 @@ export function chercherArticles(articles = [], requete = '', { lotId = null } =
       else if (texte.includes(m)) score += 1
       else { manque = true; break }
     }
-    if (!manque) resultats.push({ article: a, score, extrait: extrait(a.texte, mots) })
+    if (!manque) resultats.push({ article: a, score, extrait: extrait(a.texte, mots, 160, a.styles) })
   }
   return resultats.sort((x, y) => y.score - x.score || (x.article.ordre ?? 0) - (y.article.ordre ?? 0))
 }
@@ -318,10 +434,11 @@ export function chercherArticles(articles = [], requete = '', { lotId = null } =
  * compris).
  * @returns [{ texte, surligne }]
  */
-export function extrait(texte = '', mots = [], largeur = 160) {
-  // Le texte entier garde ses retours à la ligne ; un passage tient sur une ligne
+export function extrait(texte = '', mots = [], largeur = 160, styles = []) {
+  // Le texte entier garde ses retours à la ligne ; un passage tient sur une
+  // ligne (un blanc pour un blanc : les positions des styles ne bougent pas)
   const brut = String(texte ?? '')
-  const source = largeur >= brut.length ? brut : brut.replace(/\s+/g, ' ')
+  const source = largeur >= brut.length ? brut : brut.replace(/\s/g, ' ')
   // Texte normalisé et, pour chaque caractère normalisé, sa position d'origine
   let norm = ''
   const origine = []
@@ -346,19 +463,29 @@ export function extrait(texte = '', mots = [], largeur = 160) {
       p = norm.indexOf(m, p + m.length)
     }
   }
-  zones.sort((a, b) => a[0] - b[0])
 
+  // Le passage est coupé à chaque bord de zone surlignée ou de plage de style
+  const bords = new Set([debut, fin])
+  for (const [x, y] of [...zones, ...(styles ?? [])]) {
+    if (x > debut && x < fin) bords.add(x)
+    if (y > debut && y < fin) bords.add(y)
+  }
+  const coupes = [...bords].sort((x, y) => x - y)
   const morceaux = []
   if (debut > 0) morceaux.push({ texte: '…', surligne: false })
-  let curseur = debut
-  for (const [a, b] of zones) {
-    if (b <= curseur || a >= fin) continue
-    const da = Math.max(a, curseur)
-    if (da > curseur) morceaux.push({ texte: source.slice(curseur, da), surligne: false })
-    morceaux.push({ texte: source.slice(da, Math.min(b, fin)), surligne: true })
-    curseur = Math.min(b, fin)
+  for (let k = 0; k < coupes.length - 1; k++) {
+    const [x, y] = [coupes[k], coupes[k + 1]]
+    if (y <= x) continue
+    const code = (styles ?? []).filter(([d, f]) => d <= x && f >= y).map((st) => st[2]).join('')
+    const morceau = { texte: source.slice(x, y), surligne: zones.some(([d, f]) => d <= x && f >= y) }
+    if (code.includes('g')) morceau.gras = true
+    if (code.includes('i')) morceau.italique = true
+    if (code.includes('s')) morceau.souligne = true
+    const precedent = morceaux[morceaux.length - 1]
+    // Deux morceaux voisins de même allure n'en font qu'un
+    if (precedent && precedent.texte !== '…' && ['surligne', 'gras', 'italique', 'souligne'].every((c) => !!precedent[c] === !!morceau[c])) precedent.texte += morceau.texte
+    else morceaux.push(morceau)
   }
-  if (curseur < fin) morceaux.push({ texte: source.slice(curseur, fin), surligne: false })
   if (fin < source.length) morceaux.push({ texte: '…', surligne: false })
   return morceaux
 }

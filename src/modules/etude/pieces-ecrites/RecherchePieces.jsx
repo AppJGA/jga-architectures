@@ -10,10 +10,19 @@ import { chercherArticles, extrait, motsRecherche } from './piecesLogique'
 
 const MAX_RESULTATS = 60
 
+// Mots trouvés surlignés ; gras, italique et souligné du CCTP d'origine
+// gardés, pour distinguer titres, références et réserves comme sur le papier
 function Surligne({ morceaux }) {
-  return morceaux.map((m, i) => (m.surligne
-    ? <mark key={i} style={{ background: '#FDE68A', color: 'inherit', padding: 0 }}>{m.texte}</mark>
-    : <span key={i}>{m.texte}</span>))
+  return morceaux.map((m, i) => {
+    const style = {
+      fontWeight: m.gras ? 700 : undefined,
+      fontStyle: m.italique ? 'italic' : undefined,
+      textDecoration: m.souligne ? 'underline' : undefined,
+    }
+    return m.surligne
+      ? <mark key={i} style={{ ...style, background: '#FDE68A', color: 'inherit', padding: 0 }}>{m.texte}</mark>
+      : <span key={i} style={style}>{m.texte}</span>
+  })
 }
 
 export function RecherchePieces({ pieces = [], articles = [], grand = false, autoFocus = false }) {
@@ -53,7 +62,7 @@ export function RecherchePieces({ pieces = [], articles = [], grand = false, aut
           </h3>
           <p style={{ margin: 0, fontSize: taille, lineHeight: 1.6, color: '#1F1B17', whiteSpace: 'pre-wrap' }}>
             {ouvert.texte
-              ? <Surligne morceaux={extrait(ouvert.texte, mots, ouvert.texte.length + 1)} />
+              ? <Surligne morceaux={extrait(ouvert.texte, mots, ouvert.texte.length + 1, ouvert.styles)} />
               : <em style={{ color: '#9C9591' }}>Titre de chapitre, sans texte propre : voir les articles qui suivent.</em>}
           </p>
         </div>

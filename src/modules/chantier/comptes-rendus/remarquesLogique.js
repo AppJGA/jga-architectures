@@ -6,6 +6,8 @@
 // regroupement par lot ou par rôle se calcule ici, sans base ni écran
 // (tests/remarques-destinataires.test.js).
 
+import { numeroLot } from '../../../shared/lots/numeroLot'
+
 export const PARTIES_REMARQUES = [
   { type: 'equipe', numero_romain: 'VI', titre: 'ÉQUIPE DE MAÎTRISE D’ŒUVRE ET MAÎTRISE D’OUVRAGE' },
   { type: 'entreprises', numero_romain: 'VII', titre: 'ENTREPRISES' },
@@ -111,8 +113,9 @@ const ROLES = {
 
 /** « 02 - Démolition - Gros-Oeuvre », comme les titres du CR */
 export function libelleLot(lot) {
-  if (lot?.numero == null || lot.numero === '') return lot?.nom ?? ''
-  return `${String(lot.numero).padStart(2, '0')} - ${lot.nom ?? ''}`.trim()
+  const numero = numeroLot(lot, { minimum: 2 })
+  if (!numero) return lot?.nom ?? ''
+  return `${numero} - ${lot.nom ?? ''}`.trim()
 }
 
 /** Rôle d'un interlocuteur : le libellé saisi (« BET Electricité »), sinon sa catégorie */
@@ -133,7 +136,7 @@ export function choixDestinataires({ lots = [], interlocuteurs = [] } = {}) {
     entreprises: [...lots].sort(parNumero).map((l) => ({
       cle: `lot:${l.id}`,
       libelle: libelleLot(l),
-      court: l.numero != null ? `Lot ${String(l.numero).padStart(2, '0')}` : l.nom,
+      court: numeroLot(l) ? `Lot ${numeroLot(l, { minimum: 2 })}` : l.nom,
       detail: l.nom,
     })),
     equipe: [...interlocuteurs].sort(parOrdre).map((i) => ({

@@ -127,10 +127,17 @@ export async function piecesPourConsultation(affaireId) {
   }
 }
 
-/** Crée un lot de l'affaire (sans entreprise) et rend son identifiant. */
-export async function creerLot(affaireId, { numero, nom }) {
-  const { data, error } = await supabase.from('lots')
-    .insert({ affaire_id: affaireId, numero, nom, ordre: numero }).select('id').single()
+/**
+ * Crée un lot de l'affaire (sans entreprise) et rend son identifiant. Le
+ * numéro saisi (« 060 », migration 063) part s'il y en a un ; sans la
+ * migration, le lot est créé sans lui.
+ */
+export async function creerLot(affaireId, { numero, numero_affiche = null, nom }) {
+  const inserer = (avecTexte) => supabase.from('lots')
+    .insert({ affaire_id: affaireId, numero, nom, ordre: numero, ...(avecTexte && numero_affiche ? { numero_affiche } : {}) })
+    .select('id').single()
+  let { data, error } = await inserer(true)
+  if (error && /numero_affiche/.test(error.message ?? '')) ({ data, error } = await inserer(false))
   if (error) throw error
   return data.id
 }

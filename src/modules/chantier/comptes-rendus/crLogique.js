@@ -297,6 +297,9 @@ export function copiePresence(p) {
       ...COPIE_VIDE,
       copie_type: 'entreprise',
       copie_lot_numero: le.lots?.numero ?? null, copie_lot_nom: le.lots?.nom ?? null,
+      // Le numéro saisi (« 060 ») seulement si la base le connaît (migration
+      // 063) : envoyé à une base qui ne l'a pas, la présence serait refusée
+      ...(le.lots && 'numero_affiche' in le.lots ? { copie_lot_numero_affiche: le.lots.numero_affiche ?? null } : {}),
       copie_entreprise: le.entreprises?.raison_sociale ?? null,
       copie_prenom: contact.prenom ?? null, copie_nom: contact.nom ?? null,
       copie_email: contact.email ?? le.entreprises?.email ?? null,
@@ -336,6 +339,8 @@ export function affichagePresence(p) {
     telephone: c.copie_telephone ?? null,
     ordre: c.copie_ordre ?? 99,
     lotNumero: c.copie_lot_numero ?? null,
+    // À afficher : le numéro saisi s'il a été recopié, sinon le nombre
+    lotNumeroAffiche: c.copie_lot_numero_affiche || (c.copie_lot_numero != null ? String(c.copie_lot_numero) : null),
     lotNom: c.copie_lot_nom ?? null,
     entreprise: c.copie_entreprise ?? null,
     contact: c.copie_type === 'entreprise' ? nomComplet : null,

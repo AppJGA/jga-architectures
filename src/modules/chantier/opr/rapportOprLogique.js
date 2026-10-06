@@ -4,6 +4,7 @@ import {
   COULEUR, jour, tableauFin, lignePhotos, piedPdf, entetePdf, blocAffaire, blocsPresences, blocPlanches,
 } from '../comptes-rendus/rapportLogique'
 import { TYPES_VISITE, infosStatutReserve, reserveEnRetard, tableauParLot, grouperParZone } from './oprLogique'
+import { libelleNumeroLot } from '../../../shared/lots/numeroLot'
 
 export const REGLAGES_OPR_DEFAUT = { photos: 'petites', plans: 'extraits', lot: '' }
 
@@ -71,7 +72,7 @@ export function definitionPdfOpr({ visite, affaire, groupes, toutesReserves, lot
   const num = String(visite.numero).padStart(2, '0')
   const contexte = { visite, images, reglages }
   const lotsConcernes = (visite.lot_ids ?? []).map((id) => lots.find((l) => l.id === id)).filter(Boolean)
-    .map((l) => (l.numero != null ? `Lot ${l.numero} ${l.nom}` : l.nom))
+    .map((l) => libelleNumeroLot(l, ' '))
   const recap = tableauParLot(
     (toutesReserves ?? []).filter((r) => !reglages.lot || r.lot_id === reglages.lot),
     lots, visite.date_visite,

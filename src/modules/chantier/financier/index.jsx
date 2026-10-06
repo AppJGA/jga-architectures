@@ -11,6 +11,7 @@ import { FtmFormModal } from '../ftm/FtmFormModal'
 import { generateFtmPdf } from '../ftm/generateFtmPdf'
 import { referenceFtm } from '../ftm/ligneFinanciereLogique'
 import { ModaleConfirmation } from '../../../shared/components/ModaleConfirmation'
+import { numeroLot, libelleNumeroLot } from '../../../shared/lots/numeroLot'
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
@@ -169,7 +170,7 @@ function LigneModal({ lots, editingLigne, defaultLotId, onSave, onClose, tva }) 
             <label style={LABEL}>Lot</label>
             <select value={lotId} onChange={e => setLotId(e.target.value)} style={{ ...INPUT, height: 38 }}>
               {lots.map(l => (
-                <option key={l.id} value={l.id}>Lot {l.numero} — {l.nom}</option>
+                <option key={l.id} value={l.id}>{libelleNumeroLot(l)}</option>
               ))}
             </select>
           </div>
@@ -476,7 +477,7 @@ function LotSection({ lot, filter, onAdd, onEdit, onDelete, onOpenFtm, affaireId
       <div style={{ marginBottom: 8, backgroundColor: 'white', borderRadius: 2, overflow: 'hidden' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px' }}>
           <span style={{ flex: 1, fontSize: 12, color: '#9C9591', fontStyle: 'italic' }}>
-            {lot.sansLot ? lot.nom : `Lot ${lot.numero} — ${lot.nom}`}
+            {lot.sansLot ? lot.nom : libelleNumeroLot(lot)}
           </span>
           {lot.lignes.length > 0 && (
             <span style={{ fontSize: 11, fontWeight: 500, color: '#E8602C', whiteSpace: 'nowrap' }}>
@@ -518,7 +519,7 @@ function LotSection({ lot, filter, onAdd, onEdit, onDelete, onOpenFtm, affaireId
     <div style={{ marginBottom: 8, backgroundColor: 'white', borderRadius: 2, overflow: 'hidden' }}>
       {/* Ligne marché de base */}
       <Row bg="#FAFDF7">
-        <Cel flex={C.des} bold clip>Lot {lot.numero} — {lot.nom}</Cel>
+        <Cel flex={C.des} bold clip>{libelleNumeroLot(lot)}</Cel>
         <Cel flex={C.ent} muted clip>{lot.entreprise?.raison_sociale ?? '—'}</Cel>
         <Cel flex={C.ale} right muted>—</Cel>
         <Cel flex={C.ada} right muted>—</Cel>
@@ -545,7 +546,7 @@ function LotSection({ lot, filter, onAdd, onEdit, onDelete, onOpenFtm, affaireId
       {/* Sous-total */}
       {hasVisibleLines && (
         <Row bg="rgba(42,138,78,0.12)" border>
-          <Cel flex={C.des} indent color="#2A8A4E" bold>Sous-total Lot {lot.numero}</Cel>
+          <Cel flex={C.des} indent color="#2A8A4E" bold>Sous-total Lot {numeroLot(lot)}</Cel>
           <Cel flex={C.ent} />
           <Cel flex={C.ale} right bold color={lot.total_aleas_ht ? '#E8602C' : 'var(--jga-beige)'}>
             {lot.total_aleas_ht ? `+${euro(lot.total_aleas_ht)}` : '—'}

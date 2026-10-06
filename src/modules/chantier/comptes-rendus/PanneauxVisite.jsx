@@ -464,7 +464,7 @@ export function PanneauPresences({ presences, setPresence, convocations = new Ma
               </p>
               <p style={{ fontSize: 12, color: '#9C9591' }}>
                 {v.type === 'entreprise'
-                  ? [v.lotNom && `Lot ${v.lotNumero ?? ''} — ${v.lotNom}`, v.contact].filter(Boolean).join(' · ')
+                  ? [v.lotNom && `Lot ${v.lotNumeroAffiche ?? ''} — ${v.lotNom}`, v.contact].filter(Boolean).join(' · ')
                   : [v.categorieLabel || CATEGORIE_META[v.categorie]?.label, v.organisation].filter(Boolean).join(' · ')}
               </p>
               <MentionConvocation convocation={c} absent={absent} />

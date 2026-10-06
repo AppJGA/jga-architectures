@@ -9,6 +9,7 @@ function flattenLot(lot) {
     id: lot.id,
     affaire_id: lot.affaire_id,
     numero: lot.numero,
+    numero_affiche: lot.numero_affiche ?? null,
     nom: lot.nom,
     ordre: lot.ordre,
     created_at: lot.created_at,
@@ -66,25 +67,22 @@ export function useLotsEntreprises(affaireId) {
 
   useEffect(() => { fetch() }, [fetch])
 
-  const createLot = async ({ numero, nom }) => {
-    const { error: err } = await supabase.from('lots').insert({
-      affaire_id: affaireId,
-      numero,
-      nom,
-      ordre: numero,
-    })
+  // `numero_affiche` (migration 063) peut manquer encore : on réessaie sans
+  const ecrireLot = async (requete) => {
+    let { error: err } = await requete(true)
+    if (err && /numero_affiche/.test(err.message ?? '')) ({ error: err } = await requete(false))
     if (!err) await fetch()
     return { error: err }
   }
 
-  const updateLot = async (lotId, { numero, nom }) => {
-    const { error: err } = await supabase
-      .from('lots')
-      .update({ numero, nom, ordre: numero })
-      .eq('id', lotId)
-    if (!err) await fetch()
-    return { error: err }
-  }
+  const createLot = ({ numero, numero_affiche = null, nom }) => ecrireLot((avecTexte) => supabase.from('lots').insert({
+    affaire_id: affaireId, numero, nom, ordre: numero, ...(avecTexte ? { numero_affiche } : {}),
+  }))
+
+  const updateLot = (lotId, { numero, numero_affiche = null, nom }) => ecrireLot((avecTexte) => supabase
+    .from('lots')
+    .update({ numero, nom, ordre: numero, ...(avecTexte ? { numero_affiche } : {}) })
+    .eq('id', lotId))
 
   const deleteLot = async (lotId) => {
     const { error: err } = await supabase.from('lots').delete().eq('id', lotId)

@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 768 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
+npm test         # 772 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -68,6 +68,18 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
 - **Accès aux données** : hooks dans `src/shared/hooks/`. `useAffaires()` pour
   la liste, `useAffaire(id)` pour une affaire (les deux font `select('*')`),
   `useAffaireCollaborateurs(id)` pour les droits (`canEdit`, `isProprietaire`).
+- **Numéro d'un lot tel que saisi** (migration 063, `src/shared/lots/numeroLot.js`,
+  testé) : `lots.numero` reste un nombre (tri, unicité), le texte saisi
+  (« 01 », « 060 ») est dans `numero_affiche` — **tout affichage passe par
+  `numeroLot` / `libelleNumeroLot`**, jamais par `lot.numero` (le planning
+  garde son complément à 2 chiffres sans texte saisi : `{ minimum: 2 }`).
+  Saisie par `lireNumeroSaisi` (champ texte, chiffres seuls ; le texte n'est
+  gardé que s'il a un zéro devant). Copies : `copie_lot_numero_affiche` des
+  présences (CR, OPR) — envoyée **seulement si le lot lu porte la colonne**,
+  sinon une base sans la migration refuserait la présence —, destinataire
+  recopié par le déclencheur `cr_remarque_copie_destinataire`. Les lots se
+  lisent en `select('*')` / `lots(*)` pour récupérer la colonne quand elle
+  existe ; écriture réessayée sans elle si la migration manque.
 - **Phase de l'affaire** (`src/affaire/phaseAffaire.js`, testé) : la phase
   fine (ESQ… Chantier, Livrée) se réduit à une période, étude ou chantier
   (livrée = chantier). Le tableau de bord n'affiche que les tuiles de cette
@@ -120,7 +132,7 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
   anglais d'Outlook (marque UTF-8) — l'Outlook classique ne retient que le
   premier contact d'un .vcf. Une icône par fiche donne la carte seule. La
   note de chaque contact porte l'affaire et le rôle.
-- **Base** : `supabase/migrations/`, numérotées, 62 fichiers, **passées à la
+- **Base** : `supabase/migrations/`, numérotées, 63 fichiers, **passées à la
   main** dans le SQL Editor de Supabase : un code qui dépend d'une nouvelle
   colonne doit tolérer son absence tant que la migration n'est pas faite. La photo de
   couverture d'une affaire est `affaires.photo_url` (migration 014, bucket

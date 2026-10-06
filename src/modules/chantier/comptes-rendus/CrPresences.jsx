@@ -93,7 +93,7 @@ function LotRow({ presence, convocation, absent, onPresence }) {
     <tr style={absent ? { background: FOND_ABSENT } : undefined}>
       <td style={{ padding: '10px 12px', verticalAlign: 'top' }}>
         <p style={{ fontSize: 12, fontWeight: 500, color: '#1F1B17' }}>
-          {e.lotNom ? `Lot ${e.lotNumero ?? ''} — ${e.lotNom}` : '—'}
+          {e.lotNom ? `Lot ${e.lotNumeroAffiche ?? ''} — ${e.lotNom}` : '—'}
         </p>
       </td>
       <td style={{ padding: '10px 12px', verticalAlign: 'top' }}>

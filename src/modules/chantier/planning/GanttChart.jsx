@@ -34,6 +34,7 @@ import { ExportPdfModal } from './ExportPdfModal'
 import { JalonModal } from './JalonModal'
 import { ZonesModal } from './ZonesModal'
 import { PeriodesBloqueesModal } from './PeriodesBloqueesModal'
+import { numeroLot } from '../../../shared/lots/numeroLot'
 
 // ─── Prochaine date disponible (pour la création d'une nouvelle tâche) ────────
 //
@@ -359,7 +360,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
       { data: resTaches, error: tachesErr },
       { data: resJalons },
     ] = await Promise.all([
-      supabase.from('lots').select('id, numero, nom, couleur, affaire_id').eq('affaire_id', affaireId).order('numero'),
+      supabase.from('lots').select('*').eq('affaire_id', affaireId).order('numero'),
       supabase.from('planning').select('*').eq('affaire_id', affaireId).order('id'),
       supabase.from('planning_jalons').select('*').eq('affaire_id', affaireId).order('date'),
     ])
@@ -375,7 +376,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
 
     setLots((resLots ?? []).map((l) => ({
       ...l,
-      num_lot: String(l.numero ?? '').padStart(2, '0'),
+      num_lot: numeroLot(l, { minimum: 2 }),
       couleur: l.couleur ?? '#E8602C',
     })))
 

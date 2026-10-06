@@ -26,6 +26,7 @@ import { BoutonSupprimer } from './BoutonSupprimer'
 import { BoutonPhoto, PhotosDeRemarque } from './PhotosRemarque'
 import { usePhotosRemarque } from './usePhotosRemarque'
 import { usePlansCr } from './PlansContexte'
+import { numeroLot, libelleNumeroLot } from '../../../shared/lots/numeroLot'
 
 // État propre à l'éditeur, partagé jusqu'aux lignes de remarque : sélection
 // multiple, historique et date de référence des retards.
@@ -218,7 +219,7 @@ function RemarqueForm({ initial, crDate, lots, interlocuteurs, zones = [], secti
                 <optgroup label="Lots / Entreprises">
                   {lots.map(l => (
                     <option key={l.id} value={`lot:${l.id}`}>
-                      {l.numero ? `Lot ${l.numero} — ` : ''}{l.nom}
+                      {libelleNumeroLot(l)}
                     </option>
                   ))}
                 </optgroup>
@@ -328,7 +329,7 @@ function AttrBadge({ rem, lots, interlocuteurs, sectionType }) {
     if (!lot) return null
     return (
       <span style={{ fontSize: 10, background: 'rgba(42,138,78,0.12)', color: '#2A8A4E', borderRadius: 3, padding: '1px 6px', marginLeft: 6, whiteSpace: 'nowrap' }}>
-        {lot.numero ? `Lot ${lot.numero}` : lot.nom}
+        {numeroLot(lot) ? `Lot ${numeroLot(lot)}` : lot.nom}
       </span>
     )
   }
@@ -797,7 +798,7 @@ function InterlocuteursGroupedView({ section, crDate, lots, interlocuteurs, zone
   const lotGroups = sortedLots
     .map(l => ({
       key: `lot:${l.id}`,
-      label: l.numero ? `LOT ${l.numero} — ${l.nom.toUpperCase()}` : l.nom.toUpperCase(),
+      label: numeroLot(l) ? `LOT ${numeroLot(l)} — ${l.nom.toUpperCase()}` : l.nom.toUpperCase(),
       remarques: sortByDate(visible.filter(r => r.lot_id === l.id)),
     }))
     .filter(g => g.remarques.length > 0)
@@ -1166,7 +1167,7 @@ function FilterBar({ filtre, setFiltre, lots, interlocuteurs, zones = [], nbVisi
             <option value="aucun">Sans destinataire</option>
             {lots.length > 0 && (
               <optgroup label="Lots / Entreprises">
-                {lots.map(l => <option key={l.id} value={`lot:${l.id}`}>{l.numero ? `Lot ${l.numero} — ${l.nom}` : l.nom}</option>)}
+                {lots.map(l => <option key={l.id} value={`lot:${l.id}`}>{libelleNumeroLot(l)}</option>)}
               </optgroup>
             )}
             {interlocuteurs.length > 0 && (

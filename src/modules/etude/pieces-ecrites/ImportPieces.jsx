@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { X, Upload, AlertTriangle, Check } from 'lucide-react'
 import { lirePdf, estPdf } from './lecturePdf'
-import { lirePiece, proposerLot, numeroLibre, titrePiece } from './piecesLogique'
+import { lirePiece, proposerLot, creationProposee, numeroLibre, titrePiece } from './piecesLogique'
+import { numeroLot, lireNumeroSaisi } from '../../../shared/lots/numeroLot'
 import { enregistrerPiece, creerLot } from './piecesDonnees'
 
 // ─── Importer des CCTP ───────────────────────────────────────────────────────
@@ -34,7 +35,7 @@ function Fichier({ entree, lots, pieces, onChoix, onRetirer }) {
             {lu.articles.length} article{lu.articles.length > 1 ? 's' : ''} sur {lu.nbPages} pages
             {lu.indice ? ` · indice ${lu.indice}` : ''}
             {lu.articles[0]?.numero == null ? ' · numérotation non reconnue : découpé par page' : ''}
-            {lu.lot ? ` · lu sur le document : ${titrePiece(lu.lot.numero, lu.lot.nom)}` : ' · aucun lot lu sur le document'}
+            {lu.lot ? ` · lu sur le document : ${titrePiece(lu.lot.numeroTexte ?? lu.lot.numero, lu.lot.nom)}` : ' · aucun lot lu sur le document'}
           </p>
           <fieldset disabled={etat === 'envoi' || etat === 'importe'} style={{ border: 'none', margin: 0, padding: 0, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
@@ -44,15 +45,15 @@ function Fichier({ entree, lots, pieces, onChoix, onRetirer }) {
               <select value={choix.mode === 'rattacher' ? choix.lotId ?? '' : ''} disabled={lots.length === 0}
                 onChange={(e) => onChoix({ mode: 'rattacher', lotId: e.target.value })} style={{ ...champ, flex: 1, minWidth: 0 }}>
                 {choix.mode !== 'rattacher' && <option value="">—</option>}
-                {lots.map((l) => <option key={l.id} value={l.id}>{titrePiece(l.numero, l.nom)}</option>)}
+                {lots.map((l) => <option key={l.id} value={l.id}>{titrePiece(numeroLot(l), l.nom)}</option>)}
               </select>
             </label>
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, flexWrap: 'wrap' }}>
               <input type="radio" checked={choix.mode === 'creer'}
-                onChange={() => onChoix({ mode: 'creer', numero: numeroLibre(lu.lot?.numero ?? 1, lots), nom: lu.lot?.nom ?? '' })} />
+                onChange={() => onChoix(creationProposee(lu.lot, lots))} />
               Créer le lot n°
-              <input type="number" min={1} value={choix.mode === 'creer' ? choix.numero : ''} aria-label="Numéro du lot"
-                onChange={(e) => onChoix({ ...choix, mode: 'creer', numero: e.target.value })} style={{ ...champ, width: 70, minHeight: 0 }} />
+              <input type="text" inputMode="numeric" value={choix.mode === 'creer' ? choix.numero : ''} aria-label="Numéro du lot"
+                onChange={(e) => onChoix({ ...choix, mode: 'creer', numero: e.target.value.replace(/\D/g, '').slice(0, 4) })} style={{ ...champ, width: 70, minHeight: 0 }} />
               <input type="text" value={choix.mode === 'creer' ? choix.nom : ''} placeholder="Nom du lot" aria-label="Nom du lot"
                 onChange={(e) => onChoix({ ...choix, mode: 'creer', nom: e.target.value })} style={{ ...champ, flex: '1 1 180px', minHeight: 0 }} />
             </label>
@@ -105,7 +106,7 @@ export function ImportPieces({ affaireId, lots, pieces, onTermine, onFermer }) {
   }
 
   const prets = entrees.filter((e) => e.etat === 'pret')
-  const choixValide = (c) => c && (c.mode === 'rattacher' ? !!c.lotId : Number(c.numero) > 0 && String(c.nom ?? '').trim())
+  const choixValide = (c) => c && (c.mode === 'rattacher' ? !!c.lotId : !!lireNumeroSaisi(c.numero) && String(c.nom ?? '').trim())
 
   const importer = async () => {
     setEnCours(true)
@@ -118,13 +119,17 @@ export function ImportPieces({ affaireId, lots, pieces, onTermine, onFermer }) {
         let numero
         let nom
         if (e.choix.mode === 'creer') {
-          numero = numeroLibre(Number(e.choix.numero), lotsConnus)
+          const saisi = lireNumeroSaisi(e.choix.numero)
+          const libre = numeroLibre(saisi.numero, lotsConnus)
+          // Le numéro saisi garde son zéro, sauf s'il a fallu en prendre un autre
+          const numeroAffiche = libre === saisi.numero ? saisi.numero_affiche : null
           nom = String(e.choix.nom).trim()
-          lotId = await creerLot(affaireId, { numero, nom })
-          lotsConnus = [...lotsConnus, { id: lotId, numero, nom }]
+          lotId = await creerLot(affaireId, { numero: libre, numero_affiche: numeroAffiche, nom })
+          lotsConnus = [...lotsConnus, { id: lotId, numero: libre, numero_affiche: numeroAffiche, nom }]
+          numero = numeroLot({ numero: libre, numero_affiche: numeroAffiche })
         } else {
           const lot = lotsConnus.find((l) => l.id === lotId)
-          numero = lot?.numero
+          numero = numeroLot(lot)
           nom = lot?.nom
         }
         await enregistrerPiece({ affaireId, lotId, lu: e.lu, nomFichier: e.fichier.name, titre: titrePiece(numero, nom) })

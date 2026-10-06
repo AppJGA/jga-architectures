@@ -9,6 +9,7 @@ import {
   construirePhases, estRenseignee, prochainCodePhase, prochainOrdre, phaseDuMemeNom,
   dernierePhaseRenseignee, nomPhase, SUGGESTIONS_PHASES,
 } from './phases'
+import { numeroLot, libelleNumeroLot } from '../../../shared/lots/numeroLot'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -477,7 +478,7 @@ function EstimationFormModal({ open, onClose, existing, affaire, phases, lotsExi
                   <option value="">— Sélectionner un lot —</option>
                   {lotsExistants.map(l => (
                     <option key={l.id} value={l.id}>
-                      {l.numero ? `Lot ${l.numero} — ` : ''}{l.nom}
+                      {libelleNumeroLot(l)}
                     </option>
                   ))}
                 </select>
@@ -1066,7 +1067,8 @@ function EstimationsTable({ estimationsLots, marchesLots, phases, onEdit, onAdd 
               {/* Lot */}
               <div style={{ flex: `0 0 ${col('lot')}`, width: col('lot'), minWidth: 0 }}>
                 <p style={{ fontSize: 12, fontWeight: 500, color: '#1F1B17', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {row.numero_lot ? `Lot ${row.numero_lot} — ` : ''}{row.nom_lot}
+                  {/* Rattachée à un lot : son numéro tel que saisi ; sinon le numéro gardé */}
+                  {(row.lots ? numeroLot(row.lots) : row.numero_lot) ? `Lot ${row.lots ? numeroLot(row.lots) : row.numero_lot} — ` : ''}{row.nom_lot}
                 </p>
               </div>
               {/* Phase */}

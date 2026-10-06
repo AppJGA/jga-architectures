@@ -54,7 +54,7 @@ function LigneConvocation({ presence, heureDefaut, onUpdate }) {
   const v = affichagePresence(presence)
   const titre = v.type === 'entreprise' ? (v.entreprise ?? '—') : (v.nom || '—')
   const detail = v.type === 'entreprise'
-    ? [v.lotNom && `Lot ${v.lotNumero ?? ''} — ${v.lotNom}`, v.contact].filter(Boolean).join(' · ')
+    ? [v.lotNom && `Lot ${v.lotNumeroAffiche ?? ''} — ${v.lotNom}`, v.contact].filter(Boolean).join(' · ')
     : [v.categorieLabel || CATEGORIE_META[v.categorie]?.label, v.organisation].filter(Boolean).join(' · ')
 
   return (

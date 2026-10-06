@@ -336,10 +336,11 @@ export function lireLot(pages = [], nomFichier = '') {
       // c'est la même expression qui continue
       nom = coupe ? `${nom.replace(/[\s\-–—:]+$/, '')} - ${suite.texte}` : `${nom} ${suite.texte}`
     }
-    return { numero: Number(m[1]), nom: casePhrase(nom.replace(/^[\s\-–—:]+/, '')) }
+    // Le numéro tel qu'écrit (« 080 ») accompagne le nombre : il garde son zéro
+    return { numero: Number(m[1]), numeroTexte: m[1], nom: casePhrase(nom.replace(/^[\s\-–—:]+/, '')) }
   }
   const f = /lot\s*(?:n\s*°\s*)?(\d{1,3})\s*[-_ :]*\s*(.*?)(?:_|\.pdf$|$)/i.exec(String(nomFichier).replace(/\.pdf$/i, '.pdf'))
-  if (f) return { numero: Number(f[1]), nom: casePhrase(f[2].replace(/\.pdf$/i, '')) || null }
+  if (f) return { numero: Number(f[1]), numeroTexte: f[1], nom: casePhrase(f[2].replace(/\.pdf$/i, '')) || null }
   return null
 }
 
@@ -388,12 +389,22 @@ export function proposerLot(lotLu, lots = []) {
       ?? lots.find((l) => { const n = cleNom(l.nom); return n.length >= 4 && (nom.includes(n) || n.includes(nom)) })
     if (meme) return { mode: 'rattacher', lotId: meme.id }
   }
-  return { mode: 'creer', numero: numeroLibre(lotLu?.numero ?? 1, lots), nom: lotLu?.nom ?? '' }
+  return creationProposee(lotLu, lots)
 }
 
-/** « Lot 07 – Métallerie – serrurerie » */
+/**
+ * Le lot à créer : le numéro tel qu'écrit sur le CCTP (« 080 ») s'il est
+ * libre, sinon le premier libre ; le nom lu.
+ */
+export function creationProposee(lotLu, lots = []) {
+  const libre = numeroLibre(lotLu?.numero ?? 1, lots)
+  const numero = lotLu?.numeroTexte && Number(lotLu.numeroTexte) === libre ? lotLu.numeroTexte : String(libre)
+  return { mode: 'creer', numero, nom: lotLu?.nom ?? '' }
+}
+
+/** « Lot 07 – Métallerie – serrurerie » : le numéro tel que saisi (numeroLot). */
 export function titrePiece(numero, nom) {
-  return [numero != null && numero !== '' ? `Lot ${String(numero).padStart(2, '0')}` : null, nom].filter(Boolean).join(' – ') || 'CCTP'
+  return [numero != null && numero !== '' ? `Lot ${numero}` : null, nom].filter(Boolean).join(' – ') || 'CCTP'
 }
 
 // ─── 5. Recherche ────────────────────────────────────────────────────────────

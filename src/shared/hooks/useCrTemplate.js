@@ -4,6 +4,7 @@ import { supabase } from '../../core/supabase/client'
 // Le modèle vit à part : la logique des généralités le lit sans React ni base
 export { DEFAULT_TEMPLATE_SECTIONS } from './modeleSections'
 import { DEFAULT_TEMPLATE_SECTIONS } from './modeleSections'
+import { numeroLot } from '../lots/numeroLot'
 
 export function useCrTemplate(affaireId) {
   const [templates, setTemplates] = useState([])
@@ -92,7 +93,7 @@ export function useCrTemplate(affaireId) {
       if (tmpl.numero_romain === 'VII' && lots.length > 0) {
         sousSections = lots.map((l, idx) => ({
           code: String(idx + 1),
-          titre: `Lot ${l.numero ? l.numero + ' — ' : ''}${l.nom}`,
+          titre: `Lot ${numeroLot(l) ? numeroLot(l) + ' — ' : ''}${l.nom}`,
         }))
       }
 

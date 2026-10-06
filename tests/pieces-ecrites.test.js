@@ -82,17 +82,17 @@ describe('lot lu sur la couverture', () => {
   const grand = (texte) => ({ texte, taille: 20 })
 
   test('les trois formes rencontrées', () => {
-    assert.deepEqual(lireLot(couverture(grand('LOT 07 - OUVRAGES - IMAGINAIRES'), 'Commune fictive')), { numero: 7, nom: 'Ouvrages - imaginaires' })
-    assert.deepEqual(lireLot(couverture(grand('Lot n°170 : PLOMBERIE DES NUAGES'))), { numero: 170, nom: 'Plomberie des nuages' })
-    assert.deepEqual(lireLot(couverture(grand('Lot N°080 MENUISERIES EN BRUME'))), { numero: 80, nom: 'Menuiseries en brume' })
+    assert.deepEqual(lireLot(couverture(grand('LOT 07 - OUVRAGES - IMAGINAIRES'), 'Commune fictive')), { numero: 7, numeroTexte: '07', nom: 'Ouvrages - imaginaires' })
+    assert.deepEqual(lireLot(couverture(grand('Lot n°170 : PLOMBERIE DES NUAGES'))), { numero: 170, numeroTexte: '170', nom: 'Plomberie des nuages' })
+    assert.deepEqual(lireLot(couverture(grand('Lot N°080 MENUISERIES EN BRUME'))), { numero: 80, numeroTexte: '080', nom: 'Menuiseries en brume' })
   })
 
   test('un nom coupé en fin de ligne continue sur la suivante', () => {
-    assert.deepEqual(lireLot(couverture(grand('LOT 2 - DEMOLITION - GROS ŒUVRE -'), grand('TERRASSEMENT'))), { numero: 2, nom: 'Demolition - gros œuvre - terrassement' })
+    assert.deepEqual(lireLot(couverture(grand('LOT 2 - DEMOLITION - GROS ŒUVRE -'), grand('TERRASSEMENT'))), { numero: 2, numeroTexte: '2', nom: 'Demolition - gros œuvre - terrassement' })
   })
 
   test('à défaut, le nom du fichier ; sinon rien', () => {
-    assert.deepEqual(lireLot(couverture('Sans mention'), 'Affaire fictive - CCTP LOT 290 FACADES.pdf'), { numero: 290, nom: 'Facades' })
+    assert.deepEqual(lireLot(couverture('Sans mention'), 'Affaire fictive - CCTP LOT 290 FACADES.pdf'), { numero: 290, numeroTexte: '290', nom: 'Facades' })
     assert.equal(lireLot(couverture('Sans mention'), 'document.pdf'), null)
   })
 
@@ -152,13 +152,15 @@ describe('lot proposé à l’import', () => {
   })
 
   test('sinon créer, sur un numéro libre', () => {
-    assert.deepEqual(proposerLot({ numero: 7, nom: 'Peinture' }, lots), { mode: 'creer', numero: 8, nom: 'Peinture' })
-    assert.deepEqual(proposerLot(null, lots), { mode: 'creer', numero: 1, nom: '' })
+    assert.deepEqual(proposerLot({ numero: 7, nom: 'Peinture' }, lots), { mode: 'creer', numero: '8', nom: 'Peinture' })
+    assert.deepEqual(proposerLot(null, lots), { mode: 'creer', numero: '1', nom: '' })
     assert.equal(numeroLibre(170, lots), 170)
+    assert.deepEqual(proposerLot({ numero: 60, numeroTexte: '060', nom: 'Façades' }, lots), { mode: 'creer', numero: '060', nom: 'Façades' }, 'le zéro lu sur le CCTP reste')
   })
 
   test('titre de la pièce', () => {
-    assert.equal(titrePiece(7, 'Métallerie'), 'Lot 07 – Métallerie')
+    assert.equal(titrePiece('07', 'Métallerie'), 'Lot 07 – Métallerie')
+    assert.equal(titrePiece('7', 'Métallerie'), 'Lot 7 – Métallerie')
     assert.equal(titrePiece(null, ''), 'CCTP')
   })
 })

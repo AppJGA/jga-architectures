@@ -3,6 +3,7 @@
 import { definitionPdf, selectionnerSections, remarquesDesSections, nomFichierCr, reglagesEffectifs } from './rapportLogique'
 import { imagePourPdf, extraitPlanPourPdf, plancheAvecPastilles } from './imagesRapport'
 import { infosStatut } from './crLogique'
+import { libelleNumeroLot } from '../../../shared/lots/numeroLot'
 
 // pdfmake et ses polices (~1 Mo) ne sont chargés qu'au premier export
 let chargement = null
@@ -23,7 +24,7 @@ export function chargerPdfMake() {
 export function libelleVersion(destinataire, lots, interlocuteurs) {
   if (destinataire.startsWith('lot:')) {
     const l = lots.find((x) => x.id === destinataire.slice(4))
-    return l ? (l.numero ? `Lot ${l.numero} — ${l.nom}` : l.nom) : null
+    return l ? libelleNumeroLot(l) : null
   }
   if (destinataire.startsWith('interlo:')) {
     const i = interlocuteurs.find((x) => x.id === destinataire.slice(8))

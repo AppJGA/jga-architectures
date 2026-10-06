@@ -32,12 +32,12 @@ export function useSuiviFinancierEtude(affaireId, affaire) {
         .eq('affaire_id', affaireId),
       supabase
         .from('estimations_lots')
-        .select('*, lots(id, numero, nom)')
+        .select('*, lots(*)')
         .eq('affaire_id', affaireId)
         .order('numero_lot', { ascending: true }),
       supabase
         .from('lots')
-        .select('id, numero, nom')
+        .select('*')
         .eq('affaire_id', affaireId)
         .order('numero', { ascending: true }),
       supabase

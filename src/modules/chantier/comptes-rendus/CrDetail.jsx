@@ -520,7 +520,7 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
     if (!affaire?.id) return
     supabase
       .from('lot_entreprises')
-      .select('id, lot_id, lots(id, numero, nom), entreprises(id, raison_sociale), interlocuteurs:interlocuteur_id(prenom, nom, telephone, email)')
+      .select('id, lot_id, lots(*), entreprises(id, raison_sociale), interlocuteurs:interlocuteur_id(prenom, nom, telephone, email)')
       .eq('affaire_id', affaire.id)
       .then(({ data, error }) => {
         if (error) signalerErreur(error)

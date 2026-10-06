@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { payloadFtm, erreurFtm, sensMontant } from './payloadFtm'
 import { X } from 'lucide-react'
+import { libelleNumeroLot } from '../../../shared/lots/numeroLot'
 
 const ORIGINE_OPTIONS = [
   { value: 'mo', label: 'Demande MO', emoji: '👤', color: '#1B3A5C' },
@@ -255,7 +256,7 @@ export function FtmFormModal({ open, onClose, ftm, lots = [], lotParDefaut = nul
                 >
                   <option value="">— Choisir le lot —</option>
                   {lots.map(l => (
-                    <option key={l.id} value={l.id}>{l.numero != null ? `Lot ${l.numero} — ${l.nom}` : l.nom}</option>
+                    <option key={l.id} value={l.id}>{libelleNumeroLot(l)}</option>
                   ))}
                 </select>
               </div>

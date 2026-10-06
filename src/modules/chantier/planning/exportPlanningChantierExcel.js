@@ -11,6 +11,7 @@ import { parseDate, formatDateISO, addWorkingDaysBlocked, dernierJourTache } fro
 import { etenduePlanning } from './geometrie'
 import { buildRowsByZone } from './groupByZone'
 import { legendeCouleurs, sansDiese } from './legende'
+import { numeroLot } from '../../../shared/lots/numeroLot'
 
 // ── Teinte pastel pour Excel ──────────────────────────────────────────────────
 //
@@ -478,7 +479,7 @@ export function exporterPlanningChantierExcel({
       const lot = lots.find((l) => l.id === lotId)
       emitGroupHeader(
         lot?.couleur ?? '#E8602C',
-        `${lot?.numero ? String(lot.numero).padStart(2, '0') : ''} – ${lot?.nom ?? 'Sans lot'}`.trim()
+        `${lot ? numeroLot(lot, { minimum: 2 }) : ''} – ${lot?.nom ?? 'Sans lot'}`.trim()
       )
       tasksByLot[lotId].forEach((task) => emitTaskRow(task, null))
     })

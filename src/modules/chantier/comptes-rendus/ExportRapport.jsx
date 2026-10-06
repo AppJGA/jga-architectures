@@ -8,6 +8,7 @@ import { genererPdfCr, telechargerBlob } from './genererRapport'
 import { lienArchive } from './rapportStockage'
 import { DiffusionCr } from './DiffusionCr'
 import { IconeExportPdf, IconeEmission } from '../../../shared/icones/IconesAffaire'
+import { libelleNumeroLot } from '../../../shared/lots/numeroLot'
 
 // ─── Écran « Exporter le CR » ────────────────────────────────────────────────
 // Réglages du rapport, aperçu et téléchargement du PDF, archives des émissions,
@@ -229,7 +230,7 @@ export function ExportRapport({
               <select value={reglages.destinataire} onChange={e => setReglages({ destinataire: e.target.value })}
                 style={{ height: 34, padding: '0 8px', fontSize: 13, border: '0.5px solid rgba(0,0,0,0.15)', borderRadius: 2, background: 'white', minWidth: 220 }}>
                 <option value="">Compte rendu complet</option>
-                {lots.length > 0 && <optgroup label="Pour une entreprise">{lots.map(l => <option key={l.id} value={`lot:${l.id}`}>{l.numero ? `Lot ${l.numero} — ${l.nom}` : l.nom}</option>)}</optgroup>}
+                {lots.length > 0 && <optgroup label="Pour une entreprise">{lots.map(l => <option key={l.id} value={`lot:${l.id}`}>{libelleNumeroLot(l)}</option>)}</optgroup>}
                 {(interlocuteurs ?? []).length > 0 && <optgroup label="Pour un interlocuteur">{interlocuteurs.map(i => <option key={i.id} value={`interlo:${i.id}`}>{[i.prenom, i.nom].filter(Boolean).join(' ') || i.organisation}</option>)}</optgroup>}
               </select>
             </label>

@@ -22,7 +22,7 @@ const SELECT_PRESENCES = `
   ),
   lot_entreprises:lot_entreprise_id(
     id, lot_id,
-    lots:lot_id(id, numero, nom),
+    lots:lot_id(*),
     entreprises:entreprise_id(id, raison_sociale, email, telephone),
     interlocuteurs:interlocuteur_id(prenom, nom, telephone, email)
   )
@@ -182,7 +182,7 @@ export function useCompteRendu(crId, affaireId) {
       // Fiches de travaux nées d'une remarque (migration 048)
       surAffaire(() => supabase.from('ftm').select('id, numero, decision, source_type, source_suivi_id').eq('affaire_id', affaireId).then(vide)),
       surAffaire(() => supabase.from('planning').select('id, lot_id, num_tache, nom, debut, duree, avancement, ordre').eq('affaire_id', affaireId).order('ordre').then(vide)),
-      surAffaire(() => supabase.from('lots').select('id, numero, nom, couleur').eq('affaire_id', affaireId).order('numero').then(vide)),
+      surAffaire(() => supabase.from('lots').select('*').eq('affaire_id', affaireId).order('numero').then(vide)),
       surAffaire(() => supabase.from('periodes_bloquees').select('date_debut, date_fin, est_bloquante').eq('affaire_id', affaireId).then(vide)),
       supabase.from('cr_remarques').select('gras').limit(1),
     ])

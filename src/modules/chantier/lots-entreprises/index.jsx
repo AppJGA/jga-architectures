@@ -6,6 +6,7 @@ import {
 import { IconeEntreprisesLots } from '../../../shared/icones/IconesAffaire'
 import { useLotsEntreprises, useEntreprises } from '../../../shared/hooks/useLotsEntreprises'
 import { supabase } from '../../../core/supabase/client'
+import { numeroLot, lireNumeroSaisi } from '../../../shared/lots/numeroLot'
 
 const LOT_SUGGESTIONS = [
   'Gros œuvre', 'Charpente - Couverture', 'Étanchéité', 'Façades',
@@ -86,17 +87,19 @@ function ModalHeader({ title, onClose }) {
 // ─── LotFormModal ─────────────────────────────────────────────────────────────
 function LotFormModal({ lots, editingLot, onSave, onClose }) {
   const nextNumero = lots.length > 0 ? Math.max(...lots.map(l => l.numero)) + 1 : 1
+  // Le numéro se saisit en texte : « 060 » garde son zéro (numeroLot)
   const [form, setForm] = useState({
-    numero: editingLot?.numero ?? nextNumero,
+    numero: editingLot ? numeroLot(editingLot) : String(nextNumero),
     nom: editingLot?.nom ?? '',
   })
   const [saving, setSaving] = useState(false)
-  const canSave = form.nom.trim() && form.numero
+  const numeroLu = lireNumeroSaisi(form.numero)
+  const canSave = form.nom.trim() && numeroLu
 
   const handleSubmit = async () => {
     if (!canSave) return
     setSaving(true)
-    await onSave({ numero: Number(form.numero), nom: form.nom.trim() })
+    await onSave({ ...numeroLu, nom: form.nom.trim() })
     setSaving(false)
   }
 
@@ -109,9 +112,9 @@ function LotFormModal({ lots, editingLot, onSave, onClose }) {
           <div>
             <label style={LABEL}>Numéro de lot</label>
             <input
-              type="number" min={1}
+              type="text" inputMode="numeric" placeholder="Ex : 02, 060"
               value={form.numero}
-              onChange={e => setForm(f => ({ ...f, numero: e.target.value }))}
+              onChange={e => setForm(f => ({ ...f, numero: e.target.value.replace(/\D/g, '').slice(0, 4) }))}
               style={INPUT}
             />
           </div>
@@ -428,7 +431,7 @@ function LotCard({ lot, isSelected, menuOpen, onSelect, onOpenMenu, onEdit, onDe
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 4 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <span style={{ fontSize: 10, fontWeight: 500, color: '#9C9591', letterSpacing: '0.06em' }}>
-            Lot {lot.numero}
+            Lot {numeroLot(lot)}
           </span>
           <p style={{ fontSize: 13, fontWeight: 500, color: '#1F1B17', lineHeight: 1.3, marginTop: 1 }}>{lot.nom}</p>
         </div>
@@ -574,7 +577,7 @@ function LotDetail({ lot, onEditLot, onAssign, onEditInterlocuteur }) {
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
           <div>
             <p style={{ fontSize: 10, fontWeight: 500, color: '#9C9591', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>
-              Lot {lot.numero}
+              Lot {numeroLot(lot)}
             </p>
             <h2 style={{ fontSize: 18, fontWeight: 500, color: '#1F1B17' }}>{lot.nom}</h2>
           </div>

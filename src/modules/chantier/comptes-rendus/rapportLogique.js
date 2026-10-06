@@ -470,7 +470,7 @@ export function blocsPresences(presences, complet, convocations = new Map()) {
     { titre: 'Convoqué', largeur: 50, cellule: celluleConvoque },
   ]
   const colonnesEntreprises = [
-    { titre: 'Lot', largeur: 110, cellule: ({ v }) => ({ text: v.lotNom ? `Lot ${v.lotNumero ?? ''} — ${v.lotNom}` : '—', fontSize: 8 }) },
+    { titre: 'Lot', largeur: 110, cellule: ({ v }) => ({ text: v.lotNom ? `Lot ${v.lotNumeroAffiche ?? ''} — ${v.lotNom}` : '—', fontSize: 8 }) },
     { titre: 'Entreprise', largeur: '*', cellule: ({ v }) => ({ stack: [{ text: v.entreprise ?? '—', bold: true, fontSize: 8 }, ...(v.contact ? [{ text: v.contact, fontSize: 7.5, color: COULEUR.gris }] : [])] }) },
     ...(complet ? [{ titre: 'Email / Tél', largeur: 120, cellule: celluleContact }] : []),
     { titre: 'Présence', largeur: 44, cellule: cellulePresence },
@@ -490,7 +490,7 @@ function ligneConvoquesAbsents(absents, convocations) {
   if (!absents.length) return []
   const numero = convocationDe(absents[0].p, convocations)?.numero
   const noms = absents.map(({ v }) => (v.type === 'entreprise'
-    ? `${v.entreprise ?? '—'}${v.lotNom ? ` (lot ${[v.lotNumero, v.lotNom].filter((x) => x != null && x !== '').join(' ')})` : ''}`
+    ? `${v.entreprise ?? '—'}${v.lotNom ? ` (lot ${[v.lotNumeroAffiche, v.lotNom].filter((x) => x != null && x !== '').join(' ')})` : ''}`
     : (v.nom || v.organisation || '—')))
   return [{
     text: [

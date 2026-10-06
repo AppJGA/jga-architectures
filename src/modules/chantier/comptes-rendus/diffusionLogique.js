@@ -4,6 +4,7 @@
 // l'e-mail. Testée par tests/diffusion.test.js.
 
 import { affichagePresence } from './crLogique'
+import { libelleNumeroLot } from '../../../shared/lots/numeroLot'
 
 export const DUREE_LIEN_JOURS = 30
 
@@ -30,7 +31,7 @@ export function participantsAvecEmail(presences) {
       type: v.type,
       nom: v.type === 'entreprise' ? (v.entreprise ?? v.contact ?? email) : (v.nom || v.organisation || email),
       detail: v.type === 'entreprise'
-        ? [v.lotNom && `Lot ${v.lotNumero ?? ''} — ${v.lotNom}`, v.contact].filter(Boolean).join(' · ')
+        ? [v.lotNom && `Lot ${v.lotNumeroAffiche ?? ''} — ${v.lotNom}`, v.contact].filter(Boolean).join(' · ')
         : [v.categorieLabel, v.organisation].filter(Boolean).join(' · '),
       convoque: !!p.convoque,
       present: p.presence === 'p' || p.presence === 'r',
@@ -60,7 +61,7 @@ export function entreprisesDiffusion(presences, lots) {
     const lot = (lots ?? []).find((l) => l.id === lotId)
     const ligne = parLot.get(lotId) ?? {
       destinataire: `lot:${lotId}`,
-      libelle: lot ? (lot.numero ? `Lot ${lot.numero} — ${lot.nom}` : lot.nom) : `Lot ${v.lotNumero ?? ''} — ${v.lotNom ?? ''}`,
+      libelle: lot ? libelleNumeroLot(lot) : `Lot ${v.lotNumero ?? ''} — ${v.lotNom ?? ''}`,
       numero: lot?.numero ?? v.lotNumero ?? 999,
       entreprises: [],
       adresses: [],

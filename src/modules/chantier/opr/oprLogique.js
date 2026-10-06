@@ -3,6 +3,7 @@
 // Sans navigateur ni base, pour être testée (tests/opr.test.js).
 
 import { sansAccents, libelleZone, grouperParZone } from '../comptes-rendus/crLogique'
+import { libelleNumeroLot } from '../../../shared/lots/numeroLot'
 
 export { libelleZone, grouperParZone }
 
@@ -24,7 +25,7 @@ export const TYPES_VISITE = {
 }
 
 export function libelleLot(lot, copie) {
-  if (lot) return lot.numero != null ? `Lot ${lot.numero} — ${lot.nom}` : lot.nom
+  if (lot) return libelleNumeroLot(lot)
   return copie ?? 'Sans lot'
 }
 

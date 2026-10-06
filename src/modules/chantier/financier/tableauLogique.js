@@ -45,6 +45,7 @@ export function buildTableau(lotsData, lignesData, ftmsData, tva) {
     return {
       id: lot.id,
       numero: lot.numero,
+      numero_affiche: lot.numero_affiche ?? null,
       nom: lot.nom,
       ordre: lot.ordre,
       entreprise: le?.entreprises ?? null,

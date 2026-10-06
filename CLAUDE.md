@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 795 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
+npm test         # 798 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -811,6 +811,42 @@ trois à cinq fois plus rapide dans pdf.js.
 - Piège : `pdfjs.getDocument({ data })` **transfère** le tampon à son worker ;
   relu ensuite, il est vide (« detached ArrayBuffer »). Relire le fichier, ou
   passer une copie.
+
+## Hors ligne (chantier sans réseau)
+
+Ouvrir l'app, rester connecté, retrouver le portail et toute affaire déjà
+ouverte sur l'appareil — sans réseau. Vérifié le 2026-10-06 sur la version
+construite (service worker actif, réseau coupé, jeton expiré) : portail et
+affaire en 0,1 s. La visite elle-même suit ses propres règles (« Visite hors
+ligne », plus haut).
+
+- **Mémoire des pages** : service worker (`vite.config.js`), réponses de la
+  base en `NetworkFirst` (`supabase-api`, 4 000 réponses, 45 jours, bascule
+  sur la mémoire si le réseau ne répond pas en 6 s), photos publiques à part
+  (`supabase-images`). Les liens signés ne sont pas gardés (ils changent à
+  chaque fois). Tout est effacé à la déconnexion (`viderMemoireDonnees`).
+- **Connexion** (`AuthProvider`, `sessionHorsLigne.js`, testé) : passé une
+  heure, le jeton doit se renouveler ; sans réseau, Supabase répond « pas de
+  session » après avoir cherché le réseau jusqu'à 30 s — l'app renvoyait à la
+  page de connexion. Désormais, sur un échec **de réseau**, l'utilisateur
+  rangé sur l'appareil fait foi (tout de suite si `navigator.onLine` est
+  faux, au bout de 2,5 s sinon) ; un refus du serveur déconnecte. Seul
+  `SIGNED_OUT` efface l'utilisateur. Au retour du réseau, le jeton se
+  renouvelle.
+- **Lectures hors ligne sans attendre** (`core/supabase/client.js`) : sans
+  réseau, `supabase.from` passe par un second client **sans session** (la
+  mémoire du service worker répond d'après l'adresse, pas d'après le jeton)
+  et **sans relances** (`rest.retry = false` ; postgrest-js relance trois
+  fois une erreur réseau, 7 s par écran).
+- **Ne jamais demander l'utilisateur au serveur** pour afficher :
+  `auth.getUser()` part sur le réseau. `useAuth().user` (sur l'appareil).
+  Piège vu : `useAffaireCollaborateurs` le demandait, et sans réseau l'affaire
+  pouvait passer en lecture seule en pleine visite.
+- **Écran** : `BandeauHorsLigne` (dans `AppShell`) dit « Hors ligne » et la
+  date de la dernière réponse reçue du réseau (`derniereSynchro`, notée par
+  le `fetch` du client). Portail sans copie : message au lieu de « 0
+  affaire » (`useAffaires().horsLigne`) ; affaire sans copie : message au
+  lieu d'une roue sans fin (`useAffaire().horsLigne`).
 
 ## Pièges déjà rencontrés
 

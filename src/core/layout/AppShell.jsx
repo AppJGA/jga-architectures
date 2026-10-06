@@ -3,6 +3,7 @@ import { Outlet, useLocation } from 'react-router-dom'
 import { RetourContexte } from './retourContexte'
 import { Sidebar } from './Sidebar'
 import { Topbar } from './Topbar'
+import { BandeauHorsLigne } from './BandeauHorsLigne'
 
 export function AppShell() {
   const location = useLocation()
@@ -34,6 +35,7 @@ export function AppShell() {
       {showSidebar && <Sidebar />}
       <div className="flex flex-col flex-1 min-w-0" style={{ backgroundColor: 'var(--jga-beige-light)' }}>
         <Topbar />
+        <BandeauHorsLigne />
         <main className="flex-1 overflow-y-auto">
           <Outlet />
         </main>

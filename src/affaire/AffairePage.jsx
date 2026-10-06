@@ -1052,7 +1052,8 @@ function AffaireOverview({ affaire, stats, affaireId, onEdit, onGererContacts, v
 // ─── Page principale ──────────────────────────────────────────────────────────
 export function AffairePage() {
   const { affaireId, moduleId } = useParams()
-  const { affaire: rawAffaire, loading, updateAffaire } = useAffaire(affaireId)
+  const { affaire: rawAffaire, loading, horsLigne: affaireHorsLigne, introuvable, updateAffaire } = useAffaire(affaireId)
+  const allerAuPortail = useNavigate()
   const [affaire, setAffaire] = useState(null)
   const [editOpen, setEditOpen] = useState(false)
   // Section de la fiche à montrer à l'ouverture (« Gérer les interlocuteurs »)
@@ -1148,6 +1149,27 @@ export function AffairePage() {
   const handleSave = async (data) => {
     await updateAffaire(data)
     fermerEdition()
+  }
+
+  // Sans réseau, une affaire jamais ouverte sur cet appareil : le dire,
+  // plutôt qu'une roue qui tourne sans fin
+  if (!loading && !affaire && (affaireHorsLigne || introuvable)) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 300, gap: 10, padding: '0 16px', textAlign: 'center' }}>
+        <p style={{ fontSize: 15, fontWeight: 500, color: '#1F1B17' }}>
+          {affaireHorsLigne ? 'Pas de réseau, et cette affaire n’a pas encore été ouverte sur cet appareil.' : 'Cette affaire est introuvable.'}
+        </p>
+        {affaireHorsLigne && (
+          <p style={{ fontSize: 13, color: '#5E5854', maxWidth: 460, lineHeight: 1.5 }}>
+            Ouvrez-la une fois avec du réseau : elle restera ensuite consultable sans.
+          </p>
+        )}
+        <button type="button" onClick={() => allerAuPortail('/dashboard')}
+          style={{ marginTop: 6, minHeight: 40, padding: '0 16px', border: '0.5px solid rgba(0,0,0,0.15)', borderRadius: 3, background: 'white', fontSize: 13, cursor: 'pointer' }}>
+          Retour au portail
+        </button>
+      </div>
+    )
   }
 
   if (loading || !affaire) {

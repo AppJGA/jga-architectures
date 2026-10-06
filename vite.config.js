@@ -49,13 +49,30 @@ export default defineConfig({
         // Le décodeur HEIC du convertisseur (3 Mo) ne sert qu'au bureau : le
         // précharger alourdirait chaque installation de l'app, iPad compris.
         globIgnores: ['**/heic-to-*.js'],
+        // Hors ligne (chantier) : chaque page consultée avec du réseau reste
+        // lisible sans. Le réseau d'abord ; s'il manque, ou ne répond pas en
+        // 6 s (une barre de réseau), la dernière réponse gardée. 45 jours et
+        // 4 000 réponses : une page d'affaire en fait une vingtaine. Les liens
+        // signés (photos, PDF) changent à chaque fois : inutile de les garder,
+        // la visite emportée a ses propres images (horsLigne/images.js).
         runtimeCaching: [
           {
-            urlPattern: ({ url }) => url.hostname.includes('supabase.co'),
+            urlPattern: ({ url }) => url.hostname.includes('supabase.co') && url.pathname.startsWith('/storage/v1/object/public/'),
+            handler: 'StaleWhileRevalidate',
+            options: {
+              cacheName: 'supabase-images',
+              expiration: { maxEntries: 400, maxAgeSeconds: 60 * 60 * 24 * 60 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+          {
+            urlPattern: ({ url }) => url.hostname.includes('supabase.co') && !url.pathname.startsWith('/storage/'),
             handler: 'NetworkFirst',
             options: {
               cacheName: 'supabase-api',
-              expiration: { maxEntries: 50, maxAgeSeconds: 60 * 60 * 24 },
+              networkTimeoutSeconds: 6,
+              expiration: { maxEntries: 4000, maxAgeSeconds: 60 * 60 * 24 * 45 },
+              cacheableResponse: { statuses: [200] },
             },
           },
         ],

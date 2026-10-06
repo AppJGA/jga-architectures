@@ -1,19 +1,18 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../../core/supabase/client'
+import { useAuth } from '../../core/auth/useAuth'
 
 export function useAffaireCollaborateurs(affaireId) {
+  // L'utilisateur est celui de l'appareil : demandé au serveur, il manquait
+  // sans réseau, et l'affaire passait en lecture seule en pleine visite
+  const { user } = useAuth()
+  const currentUserId = user?.id ?? null
   const [collaborateurs, setCollaborateurs] = useState([])
-  const [currentUserId, setCurrentUserId] = useState(null)
   const [loading, setLoading] = useState(true)
 
   const fetchData = useCallback(async () => {
     if (!affaireId) return
     setLoading(true)
-
-    // 1. User courant
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { setLoading(false); return }
-    setCurrentUserId(user.id)
 
     // 2. Collaborateurs de l'affaire
     const { data: collabData, error: collabErr } = await supabase

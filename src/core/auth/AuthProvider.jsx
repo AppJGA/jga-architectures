@@ -1,5 +1,6 @@
 import { createContext, useEffect, useState } from 'react'
-import { supabase } from '../supabase/client'
+import { supabase, viderMemoireDonnees } from '../supabase/client'
+import { utilisateurDeSessionGardee, echecDeReseau } from './sessionHorsLigne'
 
 export const AuthContext = createContext(null)
 
@@ -29,16 +30,49 @@ export function AuthProvider({ children }) {
   const [profilCharge, setProfilCharge] = useState(null)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null)
+    let abandon = false
+    // Sans réseau, une session expirée n'est pas rendue : on garde alors
+    // l'utilisateur rangé sur l'appareil (voir sessionHorsLigne.js)
+    const utilisateurGarde = () => {
+      try { return utilisateurDeSessionGardee(localStorage.getItem(supabase.auth.storageKey)) } catch { return null }
+    }
+    const appliquer = ({ data, error }) => {
+      if (abandon) return
+      const session = data?.session
+      if (session?.user) setUser(session.user)
+      else if (echecDeReseau(error, navigator.onLine)) setUser(utilisateurGarde())
+      else setUser(null)
       setLoading(false)
-    })
+    }
+    const relire = () => supabase.auth.getSession().then(appliquer, (error) => appliquer({ data: null, error }))
+    relire()
+    // Le renouvellement d'un jeton expiré peut chercher le réseau 30 s : sans
+    // réseau, ou s'il tarde, l'utilisateur gardé ouvre l'app tout de suite
+    const ouvrirSansAttendre = () => {
+      if (abandon) return
+      const garde = utilisateurGarde()
+      if (!garde) return
+      setUser((actuel) => actuel ?? garde)
+      setLoading(false)
+    }
+    if (navigator.onLine === false) ouvrirSansAttendre()
+    const minuterie = setTimeout(ouvrirSansAttendre, 2500)
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null)
+    // Seule une vraie déconnexion efface l'utilisateur : la première
+    // annonce, sans session faute de réseau, est laissée à `relire`
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT') setUser(null)
+      else if (session?.user) setUser(session.user)
     })
+    // Le réseau revient : le jeton se renouvelle
+    window.addEventListener('online', relire)
 
-    return () => subscription.unsubscribe()
+    return () => {
+      abandon = true
+      clearTimeout(minuterie)
+      subscription.unsubscribe()
+      window.removeEventListener('online', relire)
+    }
   }, [])
 
   useEffect(() => {
@@ -64,7 +98,13 @@ export function AuthProvider({ children }) {
   const signIn = (email, password) =>
     supabase.auth.signInWithPassword({ email, password })
 
-  const signOut = () => supabase.auth.signOut()
+  // Les données gardées pour le hors-ligne appartiennent à ce compte
+  const signOut = async () => {
+    const resultat = await supabase.auth.signOut()
+    // Sans réseau, la déconnexion n'a pas lieu : rien n'est effacé
+    if (!resultat?.error) await viderMemoireDonnees()
+    return resultat
+  }
 
   return (
     <AuthContext.Provider value={{ user, loading, profil, estAgence, signIn, signOut }}>

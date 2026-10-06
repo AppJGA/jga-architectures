@@ -12,7 +12,7 @@ const RANG_MAX = 12
 const delai = (rang) => `${(Math.min(rang, RANG_MAX) * CADENCE).toFixed(3)}s`
 
 export function DashboardPage() {
-  const { affaires, affairesNonAutorisees, loading, error, createAffaire, deleteAffaire } = useAffaires()
+  const { affaires, affairesNonAutorisees, loading, error, horsLigne, createAffaire, deleteAffaire } = useAffaires()
   const [search, setSearch] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
   const [deletingAffaire, setDeletingAffaire] = useState(null)
@@ -56,6 +56,18 @@ export function DashboardPage() {
           borderTopColor: 'var(--jga-orange)',
           animation: 'spin 0.8s linear infinite',
         }} />
+      </div>
+    )
+  }
+
+  // Sans réseau et sans liste gardée : le dire, plutôt que « 0 affaire »
+  if (horsLigne) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 256, gap: 8, padding: '0 16px', textAlign: 'center' }}>
+        <p style={{ fontSize: 15, fontWeight: 500, color: '#1F1B17' }}>Pas de réseau, et pas encore de liste des affaires sur cet appareil.</p>
+        <p style={{ fontSize: 13, color: '#5E5854', maxWidth: 460, lineHeight: 1.5 }}>
+          Ouvrez une fois le portail avec du réseau : il restera ensuite consultable sans, comme chaque affaire ouverte.
+        </p>
       </div>
     )
   }

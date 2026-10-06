@@ -3,6 +3,7 @@ import { supabase } from '../../core/supabase/client'
 import { photosDeLAffaire, nettoyerFichiers } from '../../modules/chantier/comptes-rendus/photosStockage'
 import { useAuth } from '../../core/auth/useAuth'
 import { erreurColonnesHT, sansColonnesHT } from '../montants'
+import { echecDeReseau } from '../../core/auth/sessionHorsLigne'
 
 // La table `affaires` porte des montants : un compte extérieur la lit par une
 // vue allégée (migration 051), qui ne montre ni enveloppe ni honoraires.
@@ -35,14 +36,18 @@ function buildPayload(formData) {
 }
 
 export function useAffaires() {
-  const { estAgence } = useAuth()
+  // L'utilisateur est lu sur l'appareil (useAuth), pas demandé au serveur :
+  // sans réseau, la liste gardée doit pouvoir s'afficher
+  const { estAgence, user } = useAuth()
+  const userId = user?.id
   const [affaires, setAffaires] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  // Pas de réseau et aucune liste gardée sur l'appareil
+  const [horsLigne, setHorsLigne] = useState(false)
 
   const refetch = useCallback(async () => {
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) return
+    if (!userId) return
 
     // 1. Toutes les affaires
     const { data: allAffaires, error: affairesError } = await supabase
@@ -50,7 +55,12 @@ export function useAffaires() {
       .select('*')
       .order('created_at', { ascending: false })
 
-    if (affairesError) { setError(affairesError.message); return }
+    if (affairesError) {
+      if (echecDeReseau(affairesError, navigator.onLine)) setHorsLigne(true)
+      else setError(affairesError.message)
+      return
+    }
+    setHorsLigne(false)
 
     if (!allAffaires?.length) {
       setAffaires([]); setError(null); return
@@ -67,7 +77,7 @@ export function useAffaires() {
     // 3. IDs des affaires où l'utilisateur est autorisé
     const authorizedIds = new Set(
       (collabData ?? [])
-        .filter(c => c.user_id === user.id)
+        .filter(c => c.user_id === userId)
         .map(c => c.affaire_id)
     )
 
@@ -98,7 +108,7 @@ export function useAffaires() {
 
     setAffaires(enriched)
     setError(null)
-  }, [estAgence])
+  }, [estAgence, userId])
 
   useEffect(() => {
     refetch().finally(() => setLoading(false))
@@ -171,7 +181,7 @@ export function useAffaires() {
   return {
     affaires: affaires.filter(a => a.isAuthorized),
     affairesNonAutorisees: affaires.filter(a => !a.isAuthorized),
-    loading, error,
+    loading, error, horsLigne,
     refetch, createAffaire, updateAffaire, deleteAffaire,
   }
 }
@@ -180,11 +190,16 @@ export function useAffaire(id) {
   const { estAgence } = useAuth()
   const [affaire, setAffaire] = useState(null)
   const [loading, setLoading] = useState(true)
+  // Sans réseau, une affaire jamais ouverte sur cet appareil n'a pas de copie
+  const [horsLigne, setHorsLigne] = useState(false)
+  const [introuvable, setIntrouvable] = useState(false)
 
   const refetch = useCallback(async () => {
     if (!id) return
-    const { data } = await supabase.from(sourceAffaires(estAgence)).select('*').eq('id', id).single()
+    const { data, error } = await supabase.from(sourceAffaires(estAgence)).select('*').eq('id', id).single()
     if (data) setAffaire(data)
+    setHorsLigne(!data && echecDeReseau(error, navigator.onLine))
+    setIntrouvable(!data && !!error && !echecDeReseau(error, navigator.onLine))
   }, [id, estAgence])
 
   useEffect(() => {
@@ -200,5 +215,5 @@ export function useAffaire(id) {
     return { error }
   }, [id, refetch])
 
-  return { affaire, loading, updateAffaire, refetch }
+  return { affaire, loading, horsLigne, introuvable, updateAffaire, refetch }
 }

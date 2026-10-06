@@ -7,7 +7,60 @@ if (!url || !key) {
   console.warn('Supabase env vars missing — copy .env.example to .env and fill in your credentials.')
 }
 
-export const supabase = createClient(url ?? '', key ?? '')
+// ─── Hors ligne : la dernière synchronisation ────────────────────────────────
+//
+// Les réponses de la base sont gardées par le service worker (vite.config.js,
+// « supabase-api ») : sans réseau, l'app montre la dernière version reçue de
+// chaque page. Le moment de la dernière réponse reçue du réseau est noté ici,
+// pour dire à l'écran de quand datent les données montrées.
+
+export const CLE_DERNIERE_SYNCHRO = 'jga.derniere-synchro'
+const CACHES_DONNEES = ['supabase-api', 'supabase-images']
+let derniereNote = 0
+
+function noterSynchro() {
+  const maintenant = Date.now()
+  if (maintenant - derniereNote < 30_000) return
+  derniereNote = maintenant
+  try { localStorage.setItem(CLE_DERNIERE_SYNCHRO, String(maintenant)) } catch { /* navigation privée */ }
+}
+
+async function fetchNote(...args) {
+  const reponse = await fetch(...args)
+  if (reponse.ok && navigator.onLine) noterSynchro()
+  return reponse
+}
+
+/** Date de la dernière réponse reçue du réseau, ou null */
+export function derniereSynchro() {
+  try {
+    const t = Number(localStorage.getItem(CLE_DERNIERE_SYNCHRO))
+    return t > 0 ? new Date(t) : null
+  } catch { return null }
+}
+
+/** À la déconnexion : les données gardées sur l'appareil appartenaient à ce compte */
+export async function viderMemoireDonnees() {
+  try {
+    if (typeof caches !== 'undefined') await Promise.all(CACHES_DONNEES.map((nom) => caches.delete(nom)))
+    localStorage.removeItem(CLE_DERNIERE_SYNCHRO)
+  } catch { /* rien à effacer */ }
+}
+
+export const supabase = createClient(url ?? '', key ?? '', { global: { fetch: fetchNote } })
+
+// Sans réseau, une session expirée fait patienter chaque requête jusqu'à 30 s :
+// la bibliothèque retente de renouveler le jeton avant de laisser partir quoi
+// que ce soit. Or la mémoire du service worker répond d'après l'adresse seule,
+// sans regarder le jeton. Les lectures hors ligne passent donc par un second
+// client, sans session, qui part tout de suite.
+const lecteurHorsLigne = createClient(url ?? '', key ?? '', {
+  auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false, storageKey: 'jga-lecture-hors-ligne' },
+})
+// Sans réseau, relancer une lecture ne sert à rien : sans copie gardée, on
+// le dit tout de suite (sinon trois relances, 7 s d'attente par écran)
+lecteurHorsLigne.rest.retry = false
+const horsLigne = () => typeof navigator !== 'undefined' && navigator.onLine === false
 
 // ─── Verrou d'écriture d'une affaire en lecture seule ────────────────────────
 //
@@ -62,8 +115,9 @@ function refuser(cible) {
 }
 
 const fromOriginal = supabase.from.bind(supabase)
+const fromHorsLigne = lecteurHorsLigne.from.bind(lecteurHorsLigne)
 supabase.from = (table) => {
-  const requete = fromOriginal(table)
+  const requete = (horsLigne() ? fromHorsLigne : fromOriginal)(table)
   if (!verrou || TABLES_LIBRES.has(table)) return requete
   for (const methode of ['insert', 'update', 'upsert', 'delete']) {
     requete[methode] = () => { refuser(table); return requeteRefusee() }

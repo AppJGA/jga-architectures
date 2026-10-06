@@ -42,6 +42,9 @@ export default defineConfig({
       },
       workbox: {
         navigateFallback: '/index.html',
+        // Liens courts des PDF diffusés (/pdf/<code>) et fonctions serveur :
+        // jamais l'app à leur place, même installée
+        navigateFallbackDenylist: [/^\/api\//, /^\/pdf\//],
         globPatterns: ['**/*.{js,css,html,ico,png,svg,jpg}'],
         // Le décodeur HEIC du convertisseur (3 Mo) ne sert qu'au bureau : le
         // précharger alourdirait chaque installation de l'app, iPad compris.

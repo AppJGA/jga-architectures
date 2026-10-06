@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 789 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
+npm test         # 795 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -132,7 +132,7 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
   anglais d'Outlook (marque UTF-8) — l'Outlook classique ne retient que le
   premier contact d'un .vcf. Une icône par fiche donne la carte seule. La
   note de chaque contact porte l'affaire et le rôle.
-- **Base** : `supabase/migrations/`, numérotées, 64 fichiers, **passées à la
+- **Base** : `supabase/migrations/`, numérotées, 65 fichiers, **passées à la
   main** dans le SQL Editor de Supabase : un code qui dépend d'une nouvelle
   colonne doit tolérer son absence tant que la migration n'est pas faite. La photo de
   couverture d'une affaire est `affaires.photo_url` (migration 014, bucket
@@ -341,7 +341,13 @@ création avec reprise de la visite précédente) et `useCompteRendu` (un CR).
   ouvre toujours Outlook sur un e-mail modifiable, **et le PDF à côté** — le
   nouvel Outlook ignore les pièces jointes d'un modèle et ouvre un `.eml` en
   lecture seule (essayé le 2026-10-06). Le texte dit « ci-joint » et garde un
-  lien signé de 30 jours vers le PDF archivé. « Autre messagerie » = mailto.
+  lien de 30 jours vers le PDF archivé, **court et lisible** (migration 065) :
+  `<site>/pdf/2618-LVV-CR03-02-Gros-oeuvre-k7Pq9x` (`codeLien`, 6 caractères
+  au hasard à la fin). `vercel.json` envoie `/pdf/<code>` à `api/pdf.js`, qui
+  lit le lien signé par `lien_telechargement(code)` (ouverte aux visiteurs
+  sans compte, ne rend que ce code, s'il n'a pas expiré) et y redirige ; le
+  service worker laisse passer `/pdf/` et `/api/`. Sans la migration, l'e-mail
+  garde le lien signé. « Autre messagerie » = mailto.
   Pour joindre le PDF d'office, il faudrait créer le brouillon par Microsoft
   Graph (inscription d'une application dans l'administration Microsoft 365). Les versions par entreprise sont des archives avec
   `destinataire` renseigné, réutilisées pour la même émission ; seules celles

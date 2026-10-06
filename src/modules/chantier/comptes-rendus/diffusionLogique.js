@@ -179,3 +179,38 @@ export function fichierOutlook({ adresses, copieCachee = false, objet, corps }) 
 export function nomFichierOutlook(nomPdf) {
   return `${String(nomPdf ?? 'E-mail').replace(/\.pdf$/i, '')}.emltpl`
 }
+
+// ─── Lien de téléchargement court (migration 065) ────────────────────────────
+//
+// « https://<site>/pdf/2618-LVV-CR03-02-Gros-oeuvre-k7Pq9x » plutôt que le
+// lien signé du stockage : on lit l'affaire, le document et la version ; les
+// 6 derniers caractères, tirés au hasard, empêchent de deviner une adresse.
+
+const ALPHABET = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789' // sans l, o, 0, 1, I, O : lisibles à la main
+
+export function aleaLien(taille = 6, hasard = (n) => crypto.getRandomValues(new Uint8Array(n))) {
+  return [...hasard(taille)].map((o) => ALPHABET[o % ALPHABET.length]).join('')
+}
+
+const morceau = (t) => String(t ?? '')
+  .replace(/œ/g, 'oe').replace(/Œ/g, 'OE').replace(/æ/g, 'ae').replace(/Æ/g, 'AE')
+  .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  .replace(/[^A-Za-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+
+/**
+ * Code du lien : affaire, document et numéro, version (lot ou interlocuteur,
+ * raccourcie), puis l'aléa.
+ */
+export function codeLien({ codeAffaire, document = 'CR', numero, version, alea }) {
+  const parties = [
+    morceau(codeAffaire),
+    `${morceau(document)}${numero != null ? String(numero).padStart(2, '0') : ''}`,
+    morceau(version).slice(0, 24).replace(/-+$/, ''),
+    alea,
+  ].filter(Boolean)
+  return parties.join('-')
+}
+
+export function adresseLien(origine, code) {
+  return `${String(origine).replace(/\/+$/, '')}/pdf/${code}`
+}

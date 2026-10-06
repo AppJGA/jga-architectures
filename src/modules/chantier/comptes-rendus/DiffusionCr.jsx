@@ -4,11 +4,11 @@ import { IconeEntreprisesLots } from '../../../shared/icones/IconesAffaire'
 import { useCr } from './CrContexte'
 import {
   participantsAvecEmail, selectionParDefaut, entreprisesDiffusion, dateExpiration, texteEmail, lienMailto,
-  texteACopier, MAILTO_MAX, DUREE_LIEN_JOURS, fichierOutlook, nomFichierOutlook,
+  texteACopier, MAILTO_MAX, DUREE_LIEN_JOURS, fichierOutlook, nomFichierOutlook, codeLien, aleaLien,
 } from './diffusionLogique'
 import { telechargerBlob } from './genererRapport'
 import { nomFichierCr } from './rapportLogique'
-import { lienArchive, diffusionsDuCr, noterDiffusion } from './rapportStockage'
+import { lienArchive, diffusionsDuCr, noterDiffusion, creerLienCourt } from './rapportStockage'
 
 /** Diffusion d'un compte rendu */
 export function DiffusionCr({ cr, affaire, presences, lots, archives, onPreparerVersion, signataire }) {
@@ -18,6 +18,7 @@ export function DiffusionCr({ cr, affaire, presences, lots, archives, onPreparer
       archiveEmission={(archives ?? []).find(a => !a.destinataire)}
       optionGenerales
       nomFichier={(versionPour) => nomFichierCr(cr, affaire, versionPour)}
+      codeDocument={(versionPour) => ({ codeAffaire: affaire?.code_affaire, document: 'CR', numero: cr.numero, version: versionPour })}
       texte={(options) => texteEmail({ cr, affaire, signataire, ...options })}
       preparerVersion={onPreparerVersion}
       chargerDiffusions={() => diffusionsDuCr(cr.id)}
@@ -108,7 +109,7 @@ function BoutonsEmail({ adresses, copieCachee, objet, corps, pdf, onOuvert }) {
  * @param chargerDiffusions () → lignes, ou null si la table manque
  * @param noter (ligne) → enregistre un e-mail préparé
  */
-export function DiffusionDocument({ cleDocument, presences, lots, archiveEmission, optionGenerales = false, nomFichier = () => 'Document.pdf', texte, preparerVersion, chargerDiffusions, noter: noterLigne }) {
+export function DiffusionDocument({ cleDocument, presences, lots, archiveEmission, optionGenerales = false, nomFichier = () => 'Document.pdf', codeDocument = () => ({}), texte, preparerVersion, chargerDiffusions, noter: noterLigne }) {
   const { signalerErreur } = useCr()
   const participants = useMemo(() => participantsAvecEmail(presences), [presences])
   const entreprises = useMemo(() => entreprisesDiffusion(presences, lots), [presences, lots])
@@ -136,7 +137,12 @@ export function DiffusionDocument({ cleDocument, presences, lots, archiveEmissio
   const adresses = participants.filter(x => selection.has(x.id)).map(x => x.email)
   const expiration = dateExpiration()
 
-  const lienMail = async (chemin) => lienArchive(chemin, DUREE_LIEN_JOURS * 24 * 3600)
+  // Le lien court et lisible, sinon (migration 065 absente) le lien signé
+  const lienMail = async (chemin, versionPour = null) => {
+    const signe = await lienArchive(chemin, DUREE_LIEN_JOURS * 24 * 3600)
+    const court = await creerLienCourt({ chemin, url: signe, expiration, code: codeLien({ ...codeDocument(versionPour), alea: aleaLien() }) })
+    return court ?? signe
+  }
 
   const preparerTous = async () => {
     if (!archiveEmission) {
@@ -155,7 +161,7 @@ export function DiffusionDocument({ cleDocument, presences, lots, archiveEmissio
     setEnCours(e.destinataire)
     try {
       const archive = await preparerVersion(e.destinataire, inclureGenerales)
-      const lien = await lienMail(archive.chemin)
+      const lien = await lienMail(archive.chemin, e.libelle)
       setEmailsLots(m => ({ ...m, [e.destinataire]: { ...texte({ versionPour: e.libelle, lien, expiration }), archiveId: archive.id, pdf: { chemin: archive.chemin, nomFichier: nomFichier(e.libelle) } } }))
     } catch (err) { signalerErreur(err) }
     setEnCours(null)

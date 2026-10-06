@@ -253,6 +253,7 @@ function DocumentVisite({ visite, affaire, opr, plansCr, lectureSeuleAffaire, si
             lots={opr.lots.filter(l => entreprisesDiffusion(presences, opr.lots).some(e => e.destinataire === `lot:${l.id}`))}
             archiveEmission={archiveEmission}
             nomFichier={(versionPour) => nomFichierOpr(visite, affaire, versionPour)}
+            codeDocument={(versionPour) => ({ codeAffaire: affaire?.code_affaire, document: visite.type === 'levee' ? 'LEVEE' : 'OPR', numero: visite.numero, version: versionPour })}
             texte={(o) => texteEmailDocument({
               intitule: visite.type === 'levee' ? 'Levée des réserves' : 'OPR',
               designation: visite.type === 'levee' ? 'le compte rendu de la visite de levée des réserves' : 'le compte rendu des opérations préalables à la réception',

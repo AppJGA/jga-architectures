@@ -1,5 +1,6 @@
 {
   "rewrites": [
+    { "source": "/pdf/:code", "destination": "/api/pdf?code=:code" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ],
   "crons": [

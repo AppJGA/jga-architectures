@@ -6,7 +6,7 @@ import assert from 'node:assert/strict'
 import { test, describe } from 'node:test'
 
 import {
-  participantsAvecEmail, selectionParDefaut, entreprisesDiffusion, dateExpiration, texteEmail, texteEmailDocument, lienMailto, texteACopier, MAILTO_MAX, fichierOutlook, corpsHtml, nomFichierOutlook,
+  participantsAvecEmail, selectionParDefaut, entreprisesDiffusion, dateExpiration, texteEmail, texteEmailDocument, lienMailto, texteACopier, MAILTO_MAX, fichierOutlook, corpsHtml, nomFichierOutlook, codeLien, aleaLien, adresseLien,
 } from '../src/modules/chantier/comptes-rendus/diffusionLogique.js'
 
 const presences = [
@@ -109,5 +109,31 @@ describe('fichier e-mail pour Outlook', () => {
   })
   test('nom du fichier d’après le PDF', () => {
     assert.equal(nomFichierOutlook('CR05 – Groupe scolaire – 2026-09-15.pdf'), 'CR05 – Groupe scolaire – 2026-09-15.emltpl')
+  })
+})
+
+describe('lien de téléchargement court', () => {
+  test('affaire, document, numéro et aléa', () => {
+    assert.equal(codeLien({ codeAffaire: '2618-LVV', numero: 3, alea: 'k7Pq9x' }), '2618-LVV-CR03-k7Pq9x')
+  })
+  test('version par lot, sans accents ni ligatures, raccourcie', () => {
+    assert.equal(codeLien({ codeAffaire: '2618-LVV', numero: 3, version: '02 - Gros œuvre', alea: 'k7Pq9x' }), '2618-LVV-CR03-02-Gros-oeuvre-k7Pq9x')
+    const long = codeLien({ codeAffaire: 'A', numero: 1, version: '07 - Menuiseries extérieures aluminium et occultations', alea: 'x' })
+    assert.equal(long, 'A-CR01-07-Menuiseries-exterieur-x')
+  })
+  test('OPR, affaire sans code', () => {
+    assert.equal(codeLien({ document: 'OPR', numero: 1, alea: 'abcdef' }), 'OPR01-abcdef')
+  })
+  test('le code passe la contrainte de la base', () => {
+    assert.match(codeLien({ codeAffaire: '2618/LVV É', numero: 12, version: 'Mme Dupont (BET)', alea: aleaLien() }), /^[A-Za-z0-9-]{6,80}$/)
+  })
+  test('aléa : 6 caractères lisibles', () => {
+    // 56 caractères : l'octet 56 revient au premier
+    assert.equal(aleaLien(6, () => [0, 1, 2, 55, 56, 255]), 'abc9aH')
+    assert.doesNotMatch(aleaLien(200), /[lo01IO]/)
+    assert.equal(aleaLien().length, 6)
+  })
+  test('adresse', () => {
+    assert.equal(adresseLien('https://site.fr/', 'A-CR01-x'), 'https://site.fr/pdf/A-CR01-x')
   })
 })

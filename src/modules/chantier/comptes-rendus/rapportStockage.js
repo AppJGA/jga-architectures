@@ -2,6 +2,7 @@
 
 import { supabase } from '../../../core/supabase/client'
 import { photosIndisponibles } from './photosStockage'
+import { adresseLien } from './diffusionLogique'
 
 export const BUCKET_ARCHIVES = 'cr-archives'
 
@@ -47,6 +48,22 @@ export async function supprimerArchive(archive) {
   if (!data?.length) throw new Error('Suppression refusée : vous ne pouvez pas modifier cette affaire.')
   const { error: erreurFichier } = await supabase.storage.from(BUCKET_ARCHIVES).remove([archive.chemin])
   if (erreurFichier) console.warn('Archive : fichier non retiré, à nettoyer', erreurFichier)
+}
+
+/**
+ * Lien court et lisible vers un PDF diffusé (migration 065) : « <site>/pdf/<code> »,
+ * qui mène au lien signé `url` jusqu'à `expiration`. null si la migration
+ * manque ou si l'écriture échoue : l'e-mail garde alors le lien signé.
+ */
+export async function creerLienCourt({ chemin, url, expiration, code }) {
+  const { error } = await supabase.from('liens_telechargement').insert({
+    code, affaire_id: chemin.split('/')[0], chemin, url, expire_le: expiration.toISOString(),
+  })
+  if (error) {
+    if (!photosIndisponibles(error)) console.warn('Lien court :', error)
+    return null
+  }
+  return adresseLien(window.location.origin, code)
 }
 
 // Lien de téléchargement : 10 minutes pour l'écran, 30 jours pour un e-mail

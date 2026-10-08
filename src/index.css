@@ -112,6 +112,8 @@ body {
 
 /* ── Sous-remarques : actions visibles au survol ── */
 .sous-remarque-row:hover .sous-remarque-actions { opacity: 1 !important; }
+/* Boutons d'action de l'éditeur de remarques (styleActions.js) */
+.jga-action:not(:disabled):hover { background-color: #F5F1E9 !important; border-color: rgba(0,0,0,0.22) !important; }
 /* Au clavier et sur tablette (pas de survol), les actions restent accessibles */
 .sous-remarque-row:focus-within .sous-remarque-actions { opacity: 1 !important; }
 @media (hover: none) { .sous-remarque-actions { opacity: 1 !important; } }

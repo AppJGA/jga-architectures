@@ -24,6 +24,7 @@ import { useCr } from './CrContexte'
 import { ftmDeRemarque, resumeFtm } from '../ftm/lienFtm'
 import { BoutonSupprimer } from './BoutonSupprimer'
 import { BoutonPhoto, PhotosDeRemarque } from './PhotosRemarque'
+import { styleAction, TAILLE_ICONE_ACTION } from './styleActions'
 import { usePhotosRemarque } from './usePhotosRemarque'
 import { usePlansCr } from './PlansContexte'
 import { numeroLot, libelleNumeroLot } from '../../../shared/lots/numeroLot'
@@ -424,14 +425,14 @@ function SousRemarqueRow({ sr, onDelete, onStatut, onEdit }) {
         </select>
       )}
       {!lectureSeule && (
-        <div className="sous-remarque-actions" style={{ display: 'flex', gap: 3, opacity: 0, transition: 'opacity 0.15s', flexShrink: 0 }}>
-          <button type="button" onClick={() => setEdition({ description: sr.description ?? '', date_echeance: sr.date_echeance ?? '' })}
+        <div className="sous-remarque-actions" style={{ display: 'flex', gap: 4, opacity: 0, transition: 'opacity 0.15s', flexShrink: 0 }}>
+          <button type="button" className="jga-action" data-compact onClick={() => setEdition({ description: sr.description ?? '', date_echeance: sr.date_echeance ?? '' })}
             aria-label="Modifier cette suite" title="Modifier cette suite"
-            style={{ display: 'inline-flex', padding: 2, background: 'none', border: 'none', cursor: 'pointer', color: '#5E5854' }}>
-            <Pencil size={11} />
+            style={{ ...styleAction({ hauteur: 28 }), padding: 0 }}>
+            <Pencil size={14} />
           </button>
-          <BoutonPhoto ctl={photos} />
-          <BoutonSupprimer taille={11} onConfirm={() => onDelete(sr.id)} style={{ padding: 2 }} />
+          <BoutonPhoto ctl={photos} hauteur={28} />
+          <BoutonSupprimer taille={14} onConfirm={() => onDelete(sr.id)} style={{ ...styleAction({ hauteur: 28 }), padding: '0 7px' }} />
         </div>
       )}
     </div>
@@ -661,30 +662,34 @@ function RemarqueRow({ rem, idx, total, crDate, lots, interlocuteurs, zones, sec
           <BadgeStatut rem={rem} onChange={code => onEdit(rem.id, changementStatut(code)).catch(() => {})} />
         </div>
 
-        {!lectureSeule && <div style={{ display: 'flex', gap: 2, flexShrink: 0, alignItems: 'flex-start' }}>
+        {!lectureSeule && <div style={{ display: 'flex', gap: 4, flexShrink: 0, alignItems: 'flex-start', flexWrap: 'wrap', justifyContent: 'flex-end', maxWidth: 360 }}>
           {!noReorder && (
             <>
-              <button onClick={() => onReorder(rem.id, 'up')} disabled={idx === 0} data-compact style={{ padding: 3, background: 'none', border: 'none', cursor: idx === 0 ? 'default' : 'pointer', color: idx === 0 ? '#D1D5DB' : '#9C9591' }}><ChevronUp size={12} /></button>
-              <button onClick={() => onReorder(rem.id, 'down')} disabled={idx === total - 1} data-compact style={{ padding: 3, background: 'none', border: 'none', cursor: idx === total - 1 ? 'default' : 'pointer', color: idx === total - 1 ? '#D1D5DB' : '#9C9591' }}><ChevronDown size={12} /></button>
+              <button type="button" className="jga-action" onClick={() => onReorder(rem.id, 'up')} disabled={idx === 0} data-compact title="Monter" aria-label="Monter la remarque"
+                style={{ ...styleAction({ desactive: idx === 0 }), padding: 0 }}><ChevronUp size={TAILLE_ICONE_ACTION} /></button>
+              <button type="button" className="jga-action" onClick={() => onReorder(rem.id, 'down')} disabled={idx === total - 1} data-compact title="Descendre" aria-label="Descendre la remarque"
+                style={{ ...styleAction({ desactive: idx === total - 1 }), padding: 0 }}><ChevronDown size={TAILLE_ICONE_ACTION} /></button>
             </>
           )}
-          <button onClick={modifier} data-compact style={{ padding: 3, background: 'none', border: 'none', cursor: 'pointer', color: '#9C9591' }}><Pencil size={12} /></button>
+          <button type="button" className="jga-action" onClick={modifier} data-compact title="Modifier la remarque" style={styleAction()}>
+            <Pencil size={TAILLE_ICONE_ACTION} /> Modifier
+          </button>
           <BoutonPhoto ctl={photos} />
           {plansCr.disponible && (
             <button
-              type="button" data-compact onClick={() => plansCr.ouvrirPlacement(rem)}
+              type="button" className="jga-action" data-compact onClick={() => plansCr.ouvrirPlacement(rem)}
               title={pastille ? 'Déplacer la pastille sur le plan' : 'Placer sur un plan'}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 5px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 10, color: pastille ? '#6B4E9B' : '#9C9591' }}
+              style={styleAction({ couleur: pastille ? '#6B4E9B' : '#5E5854' })}
             >
-              <MapPin size={12} /> Plan
+              <MapPin size={TAILLE_ICONE_ACTION} /> Plan
             </button>
           )}
           {onAddSousRemarque && (
-            <button onClick={() => (onOuvrirSuite ? onOuvrirSuite(rem) : setAddingSuivi(a => !a))} data-compact
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 5px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 10, color: addingSuivi ? '#E8602C' : '#9C9591' }}
+            <button type="button" className="jga-action" onClick={() => (onOuvrirSuite ? onOuvrirSuite(rem) : setAddingSuivi(a => !a))} data-compact
+              style={styleAction({ actif: addingSuivi })}
               title="Ajouter une suite"
             >
-              <IconeSuite size={16} />+ Suite
+              <IconeSuite size={18} /> Suite
             </button>
           )}
         </div>}
@@ -926,9 +931,9 @@ function PartieRemarquesView({ section, crDate, lots, interlocuteurs, zones, ops
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, backgroundColor: '#E9E2D6', padding: '4px 12px', fontSize: 11, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.04em', color: '#5E5854', marginBottom: 6 }}>
             <span style={{ flex: 1 }}>{g.titre}</span>
             {!lectureSeule && g.destinataire && (
-              <button type="button" onClick={() => onNouvelle(g.destinataire)} data-compact title={`Nouvelle remarque pour ${g.titre}`}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 6px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: '#2A8A4E', textTransform: 'none', letterSpacing: 0 }}>
-                <Plus size={12} /> Remarque
+              <button type="button" className="jga-action" onClick={() => onNouvelle(g.destinataire)} data-compact title={`Nouvelle remarque pour ${g.titre}`}
+                style={{ ...styleAction({ couleur: '#2A8A4E', hauteur: 28 }), textTransform: 'none', letterSpacing: 0 }}>
+                <Plus size={14} /> Remarque
               </button>
             )}
           </div>

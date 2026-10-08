@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { Camera, Images, ChevronLeft, ChevronRight, X, PenLine } from 'lucide-react'
+import { styleAction, TAILLE_ICONE_ACTION } from './styleActions'
 import { useCr } from './CrContexte'
 import { BoutonSupprimer } from './BoutonSupprimer'
 import { AnnotationPhoto } from './AnnotationPhoto'
@@ -10,7 +11,7 @@ import { AnnotationPhoto } from './AnnotationPhoto'
 // Bouton « Photo » des actions d'une remarque. Les champs fichier sont dans
 // des <label> : un clic programmé sur un champ caché est ignoré par certains
 // navigateurs de tablette.
-export function BoutonPhoto({ ctl }) {
+export function BoutonPhoto({ ctl, hauteur = 32 }) {
   const [menu, setMenu] = useState(false)
   const conteneur = useRef(null)
 
@@ -29,11 +30,11 @@ export function BoutonPhoto({ ctl }) {
   return (
     <div ref={conteneur} style={{ position: 'relative' }}>
       <button
-        type="button" data-compact onClick={() => setMenu(m => !m)} title="Ajouter une photo"
-        aria-haspopup="menu" aria-expanded={menu}
-        style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 5px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 10, color: menu ? '#E8602C' : '#9C9591' }}
+        type="button" className="jga-action" data-compact onClick={() => setMenu(m => !m)} title="Ajouter une photo"
+        aria-haspopup="menu" aria-expanded={menu} aria-label="Ajouter une photo"
+        style={{ ...styleAction({ actif: menu, hauteur }), ...(hauteur < 32 && { padding: 0 }) }}
       >
-        <Camera size={12} /> Photo
+        <Camera size={hauteur < 32 ? 14 : TAILLE_ICONE_ACTION} />{hauteur >= 32 && ' Photo'}
       </button>
       {menu && (
         <div role="menu" style={{ position: 'absolute', right: 0, top: '100%', zIndex: 30, background: 'white', border: '0.5px solid rgba(0,0,0,0.12)', boxShadow: '0 10px 24px -12px rgba(31,27,23,0.45)', minWidth: 190 }}>

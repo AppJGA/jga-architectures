@@ -88,6 +88,48 @@ function libelleDestinataire(rem, lots, interlocuteurs) {
   return rem.copie_destinataire ?? null
 }
 
+// Une suite sous sa remarque : son crayon et sa photo à côté de son texte,
+// ses photos dessous. Toucher le texte ouvre la remarque.
+function BlocSuite({ sr, cr, lectureSeule, onOuvrir, onModifier }) {
+  const acces = useCr()
+  const photos = usePhotosRemarque(sr)
+  const st = infosStatut(sr)
+  const modifiable = !lectureSeule && peutModifierRemarque(sr, acces)
+  const petitBouton = { ...bouton(), minWidth: 44, padding: '0 10px', flexShrink: 0 }
+  return (
+    <li style={{ display: 'flex', gap: 8, padding: '8px 10px 8px 12px', background: '#FAF7F2', borderLeft: `3px solid ${st.couleur}`, borderRadius: 2 }}>
+      <CornerDownRight size={16} color="#9C9591" style={{ flexShrink: 0, marginTop: 2 }} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', fontSize: 12, color: '#9C9591' }}>
+          <span>Suite du {fmtJour(sr.date_note)}</span>
+          <span style={{ flex: 1 }} />
+          {sr.date_echeance && <span style={{ color: estEnRetard(sr, cr.date_reunion) ? '#B8412C' : '#5E5854' }}>Pour le {fmtJour(sr.date_echeance)}</span>}
+          <span style={{ fontWeight: 600, color: st.couleur, background: st.fond, borderRadius: 3, padding: '2px 8px' }}>{st.libelle}</span>
+        </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginTop: 4 }}>
+          <p role="button" tabIndex={0} onClick={onOuvrir} onKeyDown={e => { if (e.key === 'Enter') onOuvrir() }}
+            style={{ flex: 1, margin: '6px 0 0', fontSize: 15, lineHeight: 1.4, cursor: 'pointer', color: st.clos ? '#9CA3AF' : '#1F1B17', textDecoration: st.clos ? 'line-through' : 'none' }}>
+            {sr.description}
+          </p>
+          {modifiable && (
+            <>
+              <label style={{ ...petitBouton, cursor: 'pointer' }} title="Ajouter une photo à cette suite" aria-label="Photo de la suite">
+                <Camera size={17} />
+                <input type="file" accept="image/*" capture="environment" hidden
+                  onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; photos.annoterNouvelle(f) }} />
+              </label>
+              <button type="button" onClick={onModifier} aria-label="Modifier cette suite" title="Modifier cette suite" style={petitBouton}>
+                <Pencil size={17} />
+              </button>
+            </>
+          )}
+        </div>
+        <PhotosDeRemarque ctl={photos} />
+      </div>
+    </li>
+  )
+}
+
 function CarteRemarque({ rem, cr, lots, interlocuteurs, zones, ftms, ouvrirFtm, lectureSeule: lectureSeuleCr, surbrillance, masquerDestinataire, ops, onPanneau, demarrerGlisser }) {
   // Un intervenant extérieur ne touche qu'à ses propres observations
   const acces = useCr()
@@ -178,19 +220,9 @@ function CarteRemarque({ rem, cr, lots, interlocuteurs, zones, ftms, ouvrirFtm, 
               </li>
             )
             return (
-              <li key={sr.id} onClick={() => onPanneau({ type: 'suivi', remarque: rem })}
-                style={{ display: 'flex', gap: 8, padding: '8px 12px', background: '#FAF7F2', borderLeft: `3px solid ${st.couleur}`, borderRadius: 2, cursor: 'pointer' }}>
-                <CornerDownRight size={16} color="#9C9591" style={{ flexShrink: 0, marginTop: 2 }} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', fontSize: 12, color: '#9C9591' }}>
-                    <span>Suite du {fmtJour(sr.date_note)}</span>
-                    <span style={{ flex: 1 }} />
-                    {sr.date_echeance && <span style={{ color: estEnRetard(sr, cr.date_reunion) ? '#B8412C' : '#5E5854' }}>Pour le {fmtJour(sr.date_echeance)}</span>}
-                    <span style={{ fontWeight: 600, color: st.couleur, background: st.fond, borderRadius: 3, padding: '2px 8px' }}>{st.libelle}</span>
-                  </div>
-                  <p style={{ margin: '3px 0 0', fontSize: 15, lineHeight: 1.4, color: st.clos ? '#9CA3AF' : '#1F1B17', textDecoration: st.clos ? 'line-through' : 'none' }}>{sr.description}</p>
-                </div>
-              </li>
+              <BlocSuite key={sr.id} sr={sr} cr={cr} lectureSeule={lectureSeuleCr}
+                onOuvrir={() => onPanneau({ type: 'suivi', remarque: rem })}
+                onModifier={() => onPanneau({ type: 'suivi', remarque: rem, suite: sr.id })} />
             )
           })}
         </ul>
@@ -606,6 +638,7 @@ export function ModeVisite({ cr, affaire = null, convocations = new Map(), secti
       )}
       {panneau?.type === 'suivi' && (
         <PanneauSuite
+          suiteAModifier={panneau.suite ?? null}
           remarque={groupesVisite(sections, filtreVisite('toutes'), cr.date_reunion).flatMap(g => g.remarques).find(r => r.id === panneau.remarque.id) ?? panneau.remarque}
           cr={cr} lectureSeule={lectureSeule} acces={acces} ops={ops}
           onModifier={rem => setPanneau({ type: 'modifier', remarque: rem })}

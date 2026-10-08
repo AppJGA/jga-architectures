@@ -353,6 +353,8 @@ function SousRemarqueRow({ sr, onDelete, onStatut, onEdit }) {
   const acces = useCr()
   const lectureSeule = !peutModifierRemarque(sr, acces)
   const st = infosStatut(sr)
+  // Une suite a ses propres photos, comme une remarque
+  const photos = usePhotosRemarque(sr)
   // Correction sur place d'une suite déjà écrite
   const [edition, setEdition] = useState(null) // { description, date_echeance }
   const [enregistrement, setEnregistrement] = useState(false)
@@ -402,7 +404,8 @@ function SousRemarqueRow({ sr, onDelete, onStatut, onEdit }) {
     </div>
   )
   return (
-    <div className="sous-remarque-row" style={{ display: 'flex', gap: 8, padding: '4px 0', borderBottom: '0.5px solid rgba(0,0,0,0.05)', alignItems: 'flex-start' }}>
+    <div style={{ borderBottom: '0.5px solid rgba(0,0,0,0.05)' }}>
+    <div className="sous-remarque-row" style={{ display: 'flex', gap: 8, padding: '4px 0', alignItems: 'flex-start' }}>
       {sr.est_nouveau && <span style={{ color: '#E8602C', fontSize: 10, flexShrink: 0, marginTop: 2 }}>▶</span>}
       <span style={{ color: '#9C9591', fontSize: 11, fontFamily: "'JetBrains Mono', monospace", minWidth: 40, flexShrink: 0, marginTop: 1 }}>
         {fmtD(sr.date_note)}
@@ -427,9 +430,12 @@ function SousRemarqueRow({ sr, onDelete, onStatut, onEdit }) {
             style={{ display: 'inline-flex', padding: 2, background: 'none', border: 'none', cursor: 'pointer', color: '#5E5854' }}>
             <Pencil size={11} />
           </button>
+          <BoutonPhoto ctl={photos} />
           <BoutonSupprimer taille={11} onConfirm={() => onDelete(sr.id)} style={{ padding: 2 }} />
         </div>
       )}
+    </div>
+    <div style={{ paddingLeft: 48 }}><PhotosDeRemarque ctl={photos} /></div>
     </div>
   )
 }

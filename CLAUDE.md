@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 811 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
+npm test         # 813 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -250,7 +250,11 @@ création avec reprise de la visite précédente) et `useCompteRendu` (un CR).
   tout se retrouvent par `cr_photos_orphelines()` (migration 040, ignore ceux
   de moins d'une heure : envoi en cours) — bouton « Nettoyer le stockage » de
   l'écran d'export. Depuis la migration 041, `fichiers_orphelins()` couvre
-  photos et plans.
+  photos et plans. **Une suite a ses propres photos** (`remarque_id` = l'id
+  de la suite, aucune migration) : bouton à côté de son texte (tablette) ou
+  dans ses actions (bureau), reprises avec elle (`preparerReprise`), imprimées
+  sous elle dans le PDF, et comptées dans les fichiers à nettoyer quand sa
+  remarque est supprimée (`photosDesRemarques`).
 - **Plans** (migration 041) : `affaire_plans` (commun à l'affaire) →
   `affaire_plan_versions` (indice A, B…, image convertie sur l'appareil par
   `conversionPlan.js`, 6 000 px et 16 Mpx au plus — plafond des iPad) →

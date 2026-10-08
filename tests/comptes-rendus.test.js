@@ -323,3 +323,24 @@ describe('auteur d’une remarque reprise', () => {
     assert.equal('created_by' in reprise.remarques[0], false)
   })
 })
+
+test('preparerReprise : les photos d’une suite la suivent à la visite suivante', () => {
+  let n = 0
+  const r = preparerReprise({
+    sections: [{ id: 's1', numero_romain: 'VII', titre: 'E', ordre: 7 }],
+    remarques: [
+      { id: 'r1', section_id: 's1', description: 'Joint', statut: 'a_faire' },
+      { id: 'r1s', parent_id: 'r1', description: 'Relancé', statut: 'a_faire' },
+    ],
+    photos: [
+      { id: 'p1', remarque_id: 'r1', chemin: 'a/1.webp', chemin_miniature: 'a/1m.webp' },
+      { id: 'p2', remarque_id: 'r1s', chemin: 'a/2.webp', chemin_miniature: 'a/2m.webp' },
+    ],
+    crId: 'cr2', affaireId: 'a', nouvelId: () => `n${++n}`,
+  })
+  const suite = r.sousRemarques[0]
+  const photoSuite = r.photos.find((p) => p.chemin === 'a/2.webp')
+  assert.ok(photoSuite, 'la photo de la suite est reprise')
+  assert.equal(photoSuite.remarque_id, suite.id, 'rattachée à la nouvelle suite')
+  assert.equal(r.photos.find((p) => p.chemin === 'a/1.webp').remarque_id, r.remarques[0].id)
+})

@@ -235,3 +235,19 @@ describe('généralités dans le PDF', async () => {
     assert.ok(t.indexOf('Réunion fixée') < t.indexOf('Joints à reprendre'))
   })
 })
+
+test('PDF : les photos d’une suite s’impriment sous elle', () => {
+  const parties = [
+    { id: 'S7', numero_romain: 'VII', titre: 'ENTREPRISES', type_section: 'entreprises', sousSections: [], directRemarques: [
+      { id: 'p1', numero: 8, description: 'Raccorder la descente EP', statut: 'a_faire', lot_id: 'L2', sous_remarques: [
+        { id: 'ps1', description: 'Regard posé', statut: 'a_prevoir', date_note: '2026-09-15' },
+      ] },
+    ] },
+  ]
+  const images = { photos: new Map([['ps1', [{ image: 'data:image/jpeg;base64,SUITE', legende: 'Regard' }]]]) }
+  const base = { cr: { numero: 5, date_reunion: '2026-09-15', statut: 'emis' }, affaire: { nom: 'A' }, lots: [{ id: 'L2', numero: 2, nom: 'GO' }], interlocuteurs: [], presences: [] }
+  const avec = JSON.stringify(definitionPdf({ ...base, sections: selectionnerSections(parties, {}), reglages: {}, images }).content)
+  assert.ok(avec.includes('SUITE') && avec.includes('Regard'))
+  const sans = JSON.stringify(definitionPdf({ ...base, sections: selectionnerSections(parties, {}), reglages: { photos: 'aucune' }, images }).content)
+  assert.ok(!sans.includes('SUITE'))
+})

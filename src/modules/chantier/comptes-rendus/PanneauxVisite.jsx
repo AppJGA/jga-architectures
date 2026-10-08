@@ -349,7 +349,7 @@ function EditionSuite({ sr, cr, occupe, signalerErreur, onEnregistrer, onAnnuler
 // son propre statut et sa propre échéance (migration 054). La remarque
 // d'origine garde le sien, sauf si l'on coche « Clore la remarque d'origine ».
 
-export function PanneauSuite({ remarque, cr, lectureSeule, acces, ops, onModifier, onFermer, signalerErreur }) {
+export function PanneauSuite({ remarque, cr, lectureSeule, acces, ops, onModifier, onFermer, signalerErreur, suiteAModifier = null }) {
   const [texte, setTexte] = useState('')
   const [statut, setStatut] = useState(STATUT_PAR_DEFAUT)
   const [echeance, setEcheance] = useState('')
@@ -380,7 +380,8 @@ export function PanneauSuite({ remarque, cr, lectureSeule, acces, ops, onModifie
 
   // Une suite déjà écrite se corrige sur place (texte, statut, échéance) ;
   // par la file, comme le reste : sans réseau aussi
-  const [enEdition, setEnEdition] = useState(null) // id de la suite
+  // Ouvert depuis le crayon d'une suite : directement sur sa correction
+  const [enEdition, setEnEdition] = useState(suiteAModifier) // id de la suite
   const enregistrerSuite = async (sr, champs) => {
     setOccupe(true)
     try {

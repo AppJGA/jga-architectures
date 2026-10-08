@@ -409,10 +409,21 @@ export function useCompteRendu(crId, affaireId) {
 
   // Supprimer une remarque, une sous-section ou une section emporte ses photos
   // en cascade : leurs fichiers sont ensuite effacés s'ils ne servent plus.
+  // Les photos emportées par la suppression de ces remarques, suites comprises
+  // (supprimées en cascade avec leur remarque)
   const photosDesRemarques = useCallback((ids) => {
     const cibles = new Set(ids)
+    const suites = (liste) => {
+      for (const r of liste ?? []) {
+        if (cibles.has(r.id)) for (const sr of r.sous_remarques ?? []) cibles.add(sr.id)
+      }
+    }
+    for (const sec of sections) {
+      suites(sec.directRemarques)
+      for (const ss of sec.sousSections ?? []) suites(ss.remarques)
+    }
     return photos.filter(p => cibles.has(p.remarque_id))
-  }, [photos])
+  }, [photos, sections])
 
   const deleteSection = useCallback(async (id) => {
     const sec = sections.find(s => s.id === id)

@@ -217,6 +217,11 @@ function lignesRemarque(rem, contexte) {
         : { text: '', fillColor: '#FAFAFA' },
       { text: st.libelle, fontSize: 7.5, bold: true, color: st.clos ? COULEUR.grisClair : st.couleur, fillColor: '#FAFAFA' },
     ])
+    // Les photos d'une suite sous elle, comme celles d'une remarque
+    const photosSuite = reglages.photos !== 'aucune' ? images.photos?.get(sr.id) ?? [] : []
+    if (photosSuite.length > 0) {
+      lignes.push([{ text: '', fillColor: '#FAFAFA' }, { colSpan: 3, stack: lignePhotos(photosSuite, reglages.photos), fillColor: '#FAFAFA', margin: [8, 0, 0, 0] }, '', ''])
+    }
   }
   return lignes
 }

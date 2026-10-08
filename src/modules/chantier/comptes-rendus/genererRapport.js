@@ -105,7 +105,8 @@ export async function genererPdfCr({ cr, affaire, sections, presences, convocati
   const remarques = remarquesDesSections(choisies)
 
   const { images, avertissements } = await imagesDocument({
-    elements: remarques.map((r) => ({ id: r.id, numero: r.numero, couleur: infosStatut(r).couleur })),
+    // Les suites aussi : elles ont leurs photos
+    elements: remarques.flatMap((r) => [r, ...(r.sous_remarques ?? [])]).map((r) => ({ id: r.id, numero: r.numero, couleur: infosStatut(r).couleur })),
     photos: (photos ?? []).map((p) => ({ cle: p.remarque_id, chemin: p.chemin, legende: p.legende })),
     pastilles: (pastilles ?? []).map((p) => ({ cle: p.remarque_id, version_id: p.version_id, x: p.x, y: p.y })),
     liensPhotos, plansCr,

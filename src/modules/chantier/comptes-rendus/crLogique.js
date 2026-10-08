@@ -214,13 +214,17 @@ export function preparerReprise({ sections = [], sousSections = [], remarques = 
 
   // Une suite garde son statut et son échéance (migration 054), comme sa
   // remarque : « À faire » sous une remarque « Fait » reste à faire.
+  // Ses photos la suivent, comme celles d'une remarque.
+  const idSuite = new Map()
   const lignesSousRemarques = remarques
     .filter((r) => r.parent_id && idRemarque.has(r.parent_id) && !r.a_valider)
     .map((r) => {
       const statut = statutNormalise(r)
       const clos = PAR_CODE.get(statut).clos
+      const nouveau = nouvelId()
+      idSuite.set(r.id, nouveau)
       return {
-        id: nouvelId(), cr_id: crId, affaire_id: affaireId,
+        id: nouveau, cr_id: crId, affaire_id: affaireId,
         parent_id: idRemarque.get(r.parent_id),
         date_note: r.date_note ?? null, pour: r.pour ?? null, description: r.description,
         statut, date_echeance: r.date_echeance ?? null,
@@ -231,10 +235,10 @@ export function preparerReprise({ sections = [], sousSections = [], remarques = 
     })
 
   const lignesPhotos = photos
-    .filter((ph) => idRemarque.has(ph.remarque_id))
+    .filter((ph) => idRemarque.has(ph.remarque_id) || idSuite.has(ph.remarque_id))
     .map((ph) => ({
       id: nouvelId(), affaire_id: affaireId, cr_id: crId,
-      remarque_id: idRemarque.get(ph.remarque_id),
+      remarque_id: idRemarque.get(ph.remarque_id) ?? idSuite.get(ph.remarque_id),
       chemin: ph.chemin, chemin_miniature: ph.chemin_miniature,
       largeur: ph.largeur ?? null, hauteur: ph.hauteur ?? null,
       poids_octets: ph.poids_octets ?? 0, legende: ph.legende ?? null, ordre: ph.ordre ?? 0,

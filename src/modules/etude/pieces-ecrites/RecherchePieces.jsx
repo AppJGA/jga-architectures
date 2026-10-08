@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Search, ChevronLeft, FileText } from 'lucide-react'
-import { chercherArticles, extrait, motsRecherche } from './piecesLogique'
+import { chercherArticles, extrait, motsRecherche, recomposerTexte } from './piecesLogique'
 
 // ─── Recherche dans les CCTP ─────────────────────────────────────────────────
 //
@@ -62,7 +62,7 @@ export function RecherchePieces({ pieces = [], articles = [], grand = false, aut
           </h3>
           <p style={{ margin: 0, fontSize: taille, lineHeight: 1.6, color: '#1F1B17', whiteSpace: 'pre-wrap' }}>
             {ouvert.texte
-              ? <Surligne morceaux={extrait(ouvert.texte, mots, ouvert.texte.length + 1, ouvert.styles)} />
+              ? <Surligne morceaux={extrait(recomposerTexte(ouvert.texte), mots, ouvert.texte.length + 1, ouvert.styles)} />
               : <em style={{ color: '#9C9591' }}>Titre de chapitre, sans texte propre : voir les articles qui suivent.</em>}
           </p>
         </div>

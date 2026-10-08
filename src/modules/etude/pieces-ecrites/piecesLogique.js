@@ -305,6 +305,48 @@ function assembler(lignes) {
   return { texte, styles }
 }
 
+/**
+ * Les retours à la ligne du PDF retirés là où ils coupent une phrase : le
+ * texte d'un article garde les lignes de la page, qui tombent souvent au
+ * milieu d'une phrase. Même longueur que le texte d'origine (un retour devient
+ * une espace) : les plages de mise en forme ne bougent pas, et la fonction
+ * s'applique à l'affichage, donc aussi aux CCTP déjà importés.
+ * Un retour reste : après une fin de phrase (. : ; ! ?), avant ou après une
+ * ligne vide, devant une puce ou une énumération (« - », « • », « a) »,
+ * « 1. ») ou un mot en capitales (sous-titre : « TYPE A : … »). Sinon il
+ * disparaît si la ligne suivante commence par une minuscule, un chiffre ou une
+ * parenthèse, ou si la ligne coupée occupe toute la largeur du texte
+ * (justifié). Un mot coupé par un trait d'union (« huisse-/rie ») se recolle
+ * en gardant le trait : un retour invisible (espace sans largeur) remplace le
+ * saut, car « garde-/corps » ne se distingue pas d'une césure.
+ */
+const PUCE = /^(?:[-–—•·●▪■□►>*]|o\s|\d{1,2}[.)°]\s|[a-zA-Z][.)]\s|[IVX]{1,4}[.)–-]\s)/
+const FIN_DE_PHRASE = /[.:;!?…]["»)]?$/
+const SOUS_TITRE = /^[A-ZÀ-ÖØ-Þ]{2,}\b(?![a-zà-ÿ])/
+
+export function recomposerTexte(texte = '') {
+  const lignes = String(texte).split('\n')
+  if (lignes.length < 2) return String(texte)
+  // Largeur du texte : les lignes pleines (justifiées) font presque toutes
+  // la même longueur ; on la lit sur les plus longues
+  const longueurs = lignes.map((l) => l.trim().length).filter((n) => n > 0).sort((a, b) => b - a)
+  const pleine = longueurs.length >= 3 ? longueurs[Math.floor(longueurs.length * 0.2)] * 0.85 : Infinity
+  let resultat = lignes[0]
+  for (let k = 1; k < lignes.length; k++) {
+    const avant = lignes[k - 1].trimEnd()
+    const apres = lignes[k].trimStart()
+    if (/[a-zà-ÿ][-‐]$/.test(avant) && /^[a-zà-ÿ]/.test(apres) && lignes[k - 1].endsWith(avant.slice(-1))) {
+      resultat += '\u200B' + lignes[k]
+      continue
+    }
+    const coupe = avant.length > 0 && apres.length > 0
+      && !FIN_DE_PHRASE.test(avant) && !/[-‐]$/.test(avant) && !PUCE.test(apres) && !SOUS_TITRE.test(apres)
+      && (/^[a-zà-ÿœæ0-9(«"]/.test(apres) || avant.trim().length >= pleine)
+    resultat += (coupe ? ' ' : '\n') + lignes[k]
+  }
+  return resultat
+}
+
 // ─── 4. Lot et indice ────────────────────────────────────────────────────────
 
 const LOT = /\blot\s*(?:n\s*[°o]\s*)?(\d{1,3})\b\s*[-:–—]?\s*(.*)$/i

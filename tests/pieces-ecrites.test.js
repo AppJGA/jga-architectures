@@ -8,6 +8,7 @@ import {
   lignesDePage, retirerBruit, decouperArticles, lireLot, lireIndice, lirePiece,
   chercherArticles, extrait, proposerLot, numeroLibre, titrePiece,
   styleDePolice, traitsHorizontaux, fragmentSouligne,
+  recomposerTexte,
 } from '../src/modules/etude/pieces-ecrites/piecesLogique.js'
 
 // Une page faite de lignes { texte, taille }
@@ -207,5 +208,53 @@ describe('mise en forme : gras, italique, souligné', () => {
       { texte: ' 7016', surligne: false, gras: true },
       { texte: ' mat', surligne: false },
     ])
+  })
+})
+
+describe('phrases coupées par les lignes du PDF', () => {
+  // Texte inventé, mis en page comme un CCTP justifié
+  const texte = [
+    "Les menuiseries extérieures seront réalisées en profilés aluminium à rupture de",
+    "pont thermique, de teinte au choix de l'architecte dans la gamme RAL du fabricant",
+    'retenu par le maître d’ouvrage.',
+    'Les prestations comprennent :',
+    '- la fourniture des châssis ;',
+    '- la pose sur précadre et les calfeutrements ;',
+    'a) en façade nord',
+    "Les vitrages seront conformes à la norme NF DTU 39 et au classement acoustique",
+    'Rw+Ctr ≥ 35 dB.',
+    '',
+    'Article suivant après une ligne vide.',
+  ].join('\n')
+  const recompose = recomposerTexte(texte)
+
+  test('même longueur : la mise en forme ne bouge pas', () => {
+    assert.equal(recompose.length, texte.length)
+  })
+  test('une phrase coupée en milieu de ligne se recolle', () => {
+    assert.ok(recompose.includes('à rupture de pont thermique, de teinte'))
+    assert.ok(recompose.includes('du fabricant retenu par le maître'))
+    assert.ok(recompose.includes('classement acoustique Rw+Ctr'), 'ligne pleine suivie d’une majuscule')
+  })
+  test('fin de phrase, puces, énumérations et lignes vides gardent leur retour', () => {
+    assert.ok(recompose.includes('d’ouvrage.\nLes prestations comprennent :\n- la fourniture'))
+    assert.ok(recompose.includes('châssis ;\n- la pose'))
+    assert.ok(recompose.includes('calfeutrements ;\na) en façade nord\nLes vitrages'))
+    assert.ok(recompose.includes('35 dB.\n\nArticle suivant'))
+  })
+  test('mot coupé par un trait d’union : recollé, trait gardé, même longueur', () => {
+    const t = "Fourniture d'un bloc-porte avec huisse-\nrie bois et cadre périphérique en bois exotique de section courante"
+    const r = recomposerTexte(t)
+    assert.equal(r.length, t.length)
+    assert.ok(r.includes('huisse-\u200Brie'))
+    assert.ok(!r.includes('\n'))
+  })
+  test('une ligne en capitales est un sous-titre : son retour reste', () => {
+    const t = "Lampe LED E27 15W de 1250 lm, culot standard, teinte chaude, pour tous les locaux du rez-de-chaussée\nTYPE A : caves et locaux techniques"
+    assert.ok(recomposerTexte(t).includes('chaussée\nTYPE A'))
+  })
+  test('texte d’une ligne ou vide : inchangé', () => {
+    assert.equal(recomposerTexte('Une seule ligne'), 'Une seule ligne')
+    assert.equal(recomposerTexte(''), '')
   })
 })

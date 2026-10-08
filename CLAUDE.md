@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 813 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
+npm test         # 819 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -501,7 +501,13 @@ du mode Visite, hors ligne). Conception :
 - **Recherche** (`chercherArticles`, `RecherchePieces.jsx`, commune au module
   et au mode Visite) : tous les mots, sans accents, titre d'abord, groupée
   par CCTP, `extrait` surligné (positions d'origine gardées malgré les
-  accents) ; l'article entier garde ses retours à la ligne.
+  accents) ; l'article entier garde ses retours à la ligne, sauf ceux qui
+  coupent une phrase : `recomposerTexte` (testé, à l'affichage, donc aussi
+  pour les CCTP déjà importés) les remplace par une espace — **même longueur**,
+  les plages de mise en forme ne bougent pas. Restent : fin de phrase,
+  ligne vide, puce ou énumération, sous-titre en capitales ; une césure
+  (« huisse-/rie ») se recolle par une espace sans largeur. Sur les 7 CCTP
+  d'exemple, un tiers à la moitié des retours disparaissent.
 
 ## Suivi financier d'étude
 

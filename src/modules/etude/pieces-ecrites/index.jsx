@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { Upload, Trash2, FileText, FolderDown } from 'lucide-react'
+import { Upload, Trash2, FileText } from 'lucide-react'
+import { LogoClaude } from '../../../shared/icones/LogoClaude'
 import { useLotsEntreprises } from '../../../shared/hooks/useLotsEntreprises'
 import { useAffaire } from '../../../shared/hooks/useAffaires'
 import { ModaleConfirmation } from '../../../shared/components/ModaleConfirmation'
@@ -52,7 +53,7 @@ export default function PiecesEcritesModule({ lectureSeule = false }) {
         {pieces.length > 0 && (
           <button type="button" onClick={() => setDossierOuvert(true)}
             style={{ display: 'inline-flex', alignItems: 'center', gap: 8, minHeight: 40, padding: '0 16px', border: '0.5px solid rgba(0,0,0,0.15)', borderRadius: 3, background: 'white', color: '#1F1B17', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-            <FolderDown size={15} /> Préparer le dossier pour Claude
+            <LogoClaude size={16} /> Préparer le dossier d’analyse de conformité par l’IA
           </button>
         )}
         {!lectureSeule && donnees?.disponible && (

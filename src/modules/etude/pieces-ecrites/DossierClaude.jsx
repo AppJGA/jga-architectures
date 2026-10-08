@@ -9,7 +9,7 @@ import {
   PROJET_CLAUDE_CONFORMITE, VERSION_CONSIGNES, LIMITE_PDF_CLAUDE,
 } from './dossierClaudeLogique'
 
-// ─── Préparer le dossier pour Claude ─────────────────────────────────────────
+// ─── Préparer le dossier d’analyse de conformité par l’IA ─────────────────────────────────────────
 //
 // Les CCTP de l'affaire + les plans déposés ici → un ZIP à glisser dans le
 // projet claude.ai de l'agence, où se fait l'analyse de conformité. Les plans
@@ -84,10 +84,10 @@ export function DossierClaude({ affaire, pieces, articles, lots, onFermer }) {
 
   return createPortal(
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(20,18,16,0.38)', zIndex: 400, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 'calc(32px + env(safe-area-inset-top)) 16px 32px', overflowY: 'auto' }}>
-      <div role="dialog" aria-modal="true" aria-label="Préparer le dossier pour Claude"
+      <div role="dialog" aria-modal="true" aria-label="Préparer le dossier d’analyse de conformité par l’IA"
         style={{ background: '#FAF7F2', width: '100%', maxWidth: 720, borderTop: '3px solid #E8602C', boxShadow: '0 24px 60px -24px rgba(31,27,23,0.55)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 20px', background: 'white', borderBottom: '0.5px solid rgba(0,0,0,0.08)' }}>
-          <h2 style={{ flex: 1, margin: 0, fontSize: 15, fontWeight: 600, color: '#1F1B17' }}>Préparer le dossier pour Claude</h2>
+          <h2 style={{ flex: 1, margin: 0, fontSize: 15, fontWeight: 600, color: '#1F1B17' }}>Préparer le dossier d’analyse de conformité par l’IA</h2>
           <button type="button" onClick={onFermer} disabled={enCours} aria-label="Fermer" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9C9591', padding: 4 }}><X size={18} /></button>
         </div>
 

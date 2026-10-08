@@ -510,7 +510,8 @@ du mode Visite, hors ligne). Conception :
   d'exemple, un tiers à la moitié des retours disparaissent.
 - **Dossier pour Claude** (conformité plans / CCTP, conception
   `docs/superpowers/specs/2026-10-08-dossier-claude-conformite-design.md`) :
-  bouton « Préparer le dossier pour Claude » → ZIP de quatre fichiers
+  bouton « Préparer le dossier d’analyse de conformité par l’IA » (logo de
+  Claude, `shared/icones/LogoClaude.jsx`) → ZIP de quatre fichiers
   (sommaire, CCTP article par article, texte des plans, plans réunis) à
   glisser dans le **projet claude.ai de l'agence** (Team,
   `PROJET_CLAUDE_CONFORMITE`), où se fait l'analyse : **aucun appel d'API**.

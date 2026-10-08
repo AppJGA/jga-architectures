@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 819 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur)
+npm test         # 844 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -508,6 +508,30 @@ du mode Visite, hors ligne). Conception :
   ligne vide, puce ou énumération, sous-titre en capitales ; une césure
   (« huisse-/rie ») se recolle par une espace sans largeur. Sur les 7 CCTP
   d'exemple, un tiers à la moitié des retours disparaissent.
+- **Dossier pour Claude** (conformité plans / CCTP, conception
+  `docs/superpowers/specs/2026-10-08-dossier-claude-conformite-design.md`) :
+  bouton « Préparer le dossier pour Claude » → ZIP de quatre fichiers
+  (sommaire, CCTP article par article, texte des plans, plans réunis) à
+  glisser dans le **projet claude.ai de l'agence** (Team,
+  `PROJET_CLAUDE_CONFORMITE`), où se fait l'analyse : **aucun appel d'API**.
+  Les plans sont lus sur l'appareil et gardés nulle part. Ce qui fait la
+  qualité (constaté aux essais) : chaque annotation de plan avec sa
+  **position en mm et sa couleur** — pdf.js ne donnant pas la couleur des
+  fragments, `ecrituresColorees` la suit dans la liste d'opérations (matrices,
+  avance des glyphes) et `annotationsDePage` rapproche chaque fragment de
+  l'écriture la plus proche (2 pt), recolle les exposants (m²), puis fusionne
+  les lignes d'un bloc (même couleur, 6 mm, 12 mm, « / ») ; sur les 26 plans
+  de l'essai, 98,5 % des annotations de la référence PyMuPDF retrouvées et
+  99,6 % de couleurs identiques. Tout est pur dans `dossierClaudeLogique.js`
+  (testé) ; lecture, PDF réuni (pdf-lib) et ZIP dans `fabricationDossier.js`
+  (pas `dossierClaude.js` : le Mac ignore la casse et le confondait avec
+  `DossierClaude.jsx`). Les **consignes** du projet sont
+  `consignesConformite.md` (copiées depuis la fenêtre) : changer leur texte
+  oblige à monter `VERSION_CONSIGNES` (test) ; Claude signale un projet resté
+  sur une ancienne version. « Rapport complet » fait tous les lots d'un coup
+  (CCTP commun, chaque lot, Excel) et s'arrête proprement sur « Continue » si
+  la réponse est trop longue. Le message à coller commence par le code de
+  l'affaire : claude.ai titre la conversation d'après lui.
 
 ## Suivi financier d'étude
 

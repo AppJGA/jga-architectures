@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { Upload, Trash2, FileText } from 'lucide-react'
+import { Upload, Trash2, FileText, FolderDown } from 'lucide-react'
 import { useLotsEntreprises } from '../../../shared/hooks/useLotsEntreprises'
+import { useAffaire } from '../../../shared/hooks/useAffaires'
 import { ModaleConfirmation } from '../../../shared/components/ModaleConfirmation'
 import { listerPieces, supprimerPiece } from './piecesDonnees'
 import { RecherchePieces } from './RecherchePieces'
 import { ImportPieces } from './ImportPieces'
+import { DossierClaude } from './DossierClaude'
 
 // ─── Pièces écrites (CCTP) ───────────────────────────────────────────────────
 //
@@ -21,6 +23,8 @@ export default function PiecesEcritesModule({ lectureSeule = false }) {
   const [erreur, setErreur] = useState(null)
   const [importOuvert, setImportOuvert] = useState(false)
   const [aSupprimer, setASupprimer] = useState(null)
+  const { affaire } = useAffaire(affaireId)
+  const [dossierOuvert, setDossierOuvert] = useState(false)
 
   const charger = useCallback(() => {
     listerPieces(affaireId)
@@ -45,6 +49,12 @@ export default function PiecesEcritesModule({ lectureSeule = false }) {
         <p style={{ flex: 1, margin: 0, fontSize: 12, color: '#9C9591' }}>
           {donnees === null ? 'Chargement…' : `${pieces.length} CCTP · ${articles.length} articles`}
         </p>
+        {pieces.length > 0 && (
+          <button type="button" onClick={() => setDossierOuvert(true)}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 8, minHeight: 40, padding: '0 16px', border: '0.5px solid rgba(0,0,0,0.15)', borderRadius: 3, background: 'white', color: '#1F1B17', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+            <FolderDown size={15} /> Préparer le dossier pour Claude
+          </button>
+        )}
         {!lectureSeule && donnees?.disponible && (
           <button type="button" onClick={() => setImportOuvert(true)}
             style={{ display: 'inline-flex', alignItems: 'center', gap: 8, minHeight: 40, padding: '0 16px', border: 'none', borderRadius: 3, background: '#E8602C', color: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
@@ -91,6 +101,10 @@ export default function PiecesEcritesModule({ lectureSeule = false }) {
           onTermine={() => { charger(); rechargerLots() }}
           onFermer={() => { setImportOuvert(false); charger() }}
         />
+      )}
+
+      {dossierOuvert && (
+        <DossierClaude affaire={affaire} pieces={pieces} articles={articles} lots={lots} onFermer={() => setDossierOuvert(false)} />
       )}
 
       {aSupprimer && (

@@ -6,7 +6,7 @@
 
 **Architecture :**
 - Tous les calculs sont dans un module pur testé, `dossierClaudeLogique.js` : couleur des écritures suivie dans la liste d'opérations pdf.js, lignes, fusion, contenu des quatre fichiers.
-- La lecture pdf.js, la réunion des PDF (pdf-lib) et le ZIP (fflate) sont dans `dossierClaude.js`.
+- La lecture pdf.js, la réunion des PDF (pdf-lib) et le ZIP (fflate) sont dans `fabricationDossier.js`.
 - La fenêtre est `DossierClaude.jsx`.
 - Rien n'est enregistré : ni base, ni stockage.
 
@@ -33,7 +33,7 @@
 |---|---|
 | `src/modules/etude/pieces-ecrites/dossierClaudeLogique.js` (créé) | Pur : couleurs, annotations d'une page, texte d'un plan, ordre des pièces et des plans, contenu des 3 fichiers texte, message, nom du ZIP, constantes |
 | `src/modules/etude/pieces-ecrites/consignesConformite.md` (créé) | Les consignes du projet claude.ai (version 2), importées en `?raw` par la fenêtre |
-| `src/modules/etude/pieces-ecrites/dossierClaude.js` (créé) | Navigateur : lecture pdf.js d'un plan, réunion des PDF, fabrication et téléchargement du ZIP |
+| `src/modules/etude/pieces-ecrites/fabricationDossier.js` (créé) | Navigateur : lecture pdf.js d'un plan, réunion des PDF, fabrication et téléchargement du ZIP |
 | `src/modules/etude/pieces-ecrites/DossierClaude.jsx` (créé) | La fenêtre : CCTP, dépôt des plans, fabrication, message, projet, consignes |
 | `src/modules/etude/pieces-ecrites/index.jsx` (modifié) | Bouton « Préparer le dossier pour Claude » |
 | `tests/dossier-claude.test.js` (créé) | Tests de la logique pure |
@@ -710,7 +710,7 @@ git push
 ### Tâche 3 : fabrication du dossier dans le navigateur
 
 **Files :**
-- Create: `src/modules/etude/pieces-ecrites/dossierClaude.js`
+- Create: `src/modules/etude/pieces-ecrites/fabricationDossier.js`
 
 **Interfaces :**
 - Consumes : tout ce que les tâches 1 et 2 produisent
@@ -822,7 +822,7 @@ Attendu : le build passe. Le module n'est encore importé par personne ; la tâc
 - [ ] **Étape 3 : commit**
 
 ```bash
-git add src/modules/etude/pieces-ecrites/dossierClaude.js
+git add src/modules/etude/pieces-ecrites/fabricationDossier.js
 git commit -m "feat: dossier pour Claude — lecture des plans, PDF réuni et ZIP sur l'appareil"
 git push
 ```
@@ -1144,7 +1144,7 @@ Ajouter à la fin de la section « Pièces écrites » :
   avance des glyphes) et `annotationsDePage` rapproche chaque fragment de
   l'écriture la plus proche (2 pt), puis fusionne les lignes d'un bloc (même
   couleur, 6 mm, 12 mm, « / »). Tout est pur dans `dossierClaudeLogique.js`
-  (testé) ; lecture, PDF réuni (pdf-lib) et ZIP dans `dossierClaude.js`. Les
+  (testé) ; lecture, PDF réuni (pdf-lib) et ZIP dans `fabricationDossier.js`. Les
   **consignes** du projet sont `consignesConformite.md` (copiées depuis la
   fenêtre) : changer leur texte oblige à monter `VERSION_CONSIGNES` (test) ;
   Claude signale un projet resté sur une ancienne version. Le message à coller

@@ -46,7 +46,9 @@ côté) :
 3. **« Fabriquer le dossier »**. Une progression s'affiche, plan par plan, puis
    `Dossier Claude - <code affaire>.zip` est téléchargé.
 4. Un **texte explicatif** remplace alors le formulaire :
-   « Le dossier est prêt. Ouvrez le projet Claude, démarrez une nouvelle conversation, glissez-y les quatre fichiers du dossier (décompressé) et écrivez par exemple « Analyse le CCTP commun » ou « Analyse le lot 080 », puis « Rapport complet ». »
+   « Le dossier est prêt. Ouvrez le projet Claude, démarrez une nouvelle conversation, glissez-y les quatre fichiers du dossier (décompressé) et écrivez « Rapport complet ». Si Claude s'arrête en cours de route, écrivez « Continue ». »
+
+   L'usage de l'agence est **l'analyse de tous les lots d'un coup**. Les consignes enchaînent le CCTP commun, puis chaque lot, puis l'Excel complet. Une réponse claude.ai ayant une longueur limitée, Claude s'arrête proprement après un lot terminé et demande « Continue ». Un lot seul reste possible (« Analyse le lot 080 »).
 
    Il est suivi d'un bouton **« Ouvrir le projet Claude »**, qui ouvre un nouvel
    onglet sur l'adresse du projet. Les fichiers ne peuvent pas être déposés
@@ -106,7 +108,7 @@ Un PDF sans texte (plan scanné) est signalé ; il part quand même dans le PDF 
 
 ## Les consignes
 
-- Rangées dans le code, `consignesConformite.js`, avec `VERSION_CONSIGNES` (1 au
+- Rangées dans le code, `consignesConformite.js`, avec `VERSION_CONSIGNES` (2 au
   départ). Le texte est celui validé par l'essai : méthode, statuts, gravité,
   certitude, contrôles entre lots, diagnostics amiante et plomb, mesure des cotes
   à l'échelle, une ligne par écart, format Excel.

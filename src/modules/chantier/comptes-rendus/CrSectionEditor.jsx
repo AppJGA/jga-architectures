@@ -1629,6 +1629,9 @@ export function CrSectionEditor({ sections, crId, crDate, interlocuteurs, lotEnt
           destinataireInitial={panneau.destinataire ?? null}
           numeros={numerosParties(sections)}
           onEnregistrer={enregistrerAdressee}
+          // Au bureau, une remarque se supprime même si elle a des suites
+          // (elles partent avec elle, en base comme leurs photos)
+          onSupprimer={panneau.type === 'modifier' && !lectureSeule && peutModifierRemarque(panneau.remarque, acces) ? (rem) => ops.deleteRemarque(rem.id) : null}
           onFermer={() => setPanneau(null)}
           signalerErreur={acces.signalerErreur}
         />

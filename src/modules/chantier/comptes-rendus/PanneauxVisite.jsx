@@ -1,5 +1,6 @@
 import { useState, useEffect, useContext } from 'react'
-import { X, Camera, Images, Pencil } from 'lucide-react'
+import { X, Camera, Images, Pencil, Trash2 } from 'lucide-react'
+import { ModaleConfirmation } from '../../../shared/components/ModaleConfirmation'
 import { CATEGORIE_META } from '../../../shared/hooks/useAffaireInterlocuteurs'
 import { STATUTS, FAMILLES_STATUT, STATUT_PAR_DEFAUT, statutNormalise, affichagePresence, infosStatut, peutModifierRemarque, miseEnForme, champsMiseEnForme, COULEUR_SURLIGNE } from './crLogique'
 import { useCr } from './CrContexte'
@@ -125,13 +126,14 @@ function ChoixDestinataire({ choix, valeur, onChoisir, facultatif, numeros }) {
  * @param contributeur intervenant extérieur : destinataire facultatif, ses
  *   observations vont dans leur section à part
  */
-export function PanneauRemarque({ remarque, cr, lots, interlocuteurs, zones = [], destinataireInitial = null, contributeur = false, numeros = { equipe: 'VI', entreprises: 'VII' }, onEnregistrer, onFermer, signalerErreur }) {
+export function PanneauRemarque({ remarque, cr, lots, interlocuteurs, zones = [], destinataireInitial = null, contributeur = false, numeros = { equipe: 'VI', entreprises: 'VII' }, onEnregistrer, onSupprimer = null, onFermer, signalerErreur }) {
   const modification = !!remarque
   // Le destinataire de la remarque précédente est reproposé : sur le chantier,
   // on enchaîne souvent plusieurs remarques pour le même lot
   const cleMemoire = `jga-cr-destinataire-${cr.id}`
   const choix = choixDestinataires({ lots, interlocuteurs })
   const [description, setDescription] = useState(remarque?.description ?? '')
+  const [confirmerSuppression, setConfirmerSuppression] = useState(false)
   const [statut, setStatut] = useState(remarque ? statutNormalise(remarque) : STATUT_PAR_DEFAUT)
   const [echeance, setEcheance] = useState(remarque?.date_echeance ?? '')
   const [zoneId, setZoneId] = useState(remarque?.zone_id ?? '')
@@ -188,6 +190,13 @@ export function PanneauRemarque({ remarque, cr, lots, interlocuteurs, zones = []
       onFermer={onFermer} occupe={occupe}
       pied={
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+          {/* Au bureau seulement (onSupprimer) : la remarque part avec ses suites */}
+          {modification && onSupprimer && (
+            <button type="button" onClick={() => setConfirmerSuppression(true)} disabled={occupe}
+              style={{ ...puce(false), color: '#B8412C', borderColor: 'rgba(184,65,44,0.45)', borderRadius: 3, marginRight: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <Trash2 size={16} /> Supprimer
+            </button>
+          )}
           <button type="button" onClick={onFermer} disabled={occupe} style={{ ...puce(false), borderRadius: 3 }}>Annuler</button>
           <button type="button" onClick={enregistrer} disabled={occupe || !pret}
             title={!destinataire && destinataireRequis ? 'Choisissez à qui s’adresse la remarque' : undefined}
@@ -301,6 +310,21 @@ export function PanneauRemarque({ remarque, cr, lots, interlocuteurs, zones = []
           onAnnuler={() => setAnnotation(null)}
         />
       )}
+      {confirmerSuppression && (() => {
+        const suites = (remarque.sous_remarques ?? []).length
+        return (
+          <ModaleConfirmation
+            danger
+            titre={`Supprimer la remarque${remarque.numero != null ? ` n°${remarque.numero}` : ''} ?`}
+            texte={`Elle est retirée de ce compte rendu${suites > 0 ? `, avec ${suites === 1 ? 'sa suite' : `ses ${suites} suites`}` : ''} et ses photos. Les comptes rendus précédents la gardent.`}
+            libelle={suites > 0 ? `Supprimer la remarque et ${suites === 1 ? 'sa suite' : `ses ${suites} suites`}` : 'Supprimer la remarque'}
+            onConfirmer={async () => {
+              try { await onSupprimer(remarque); setConfirmerSuppression(false); onFermer() } catch { setConfirmerSuppression(false) }
+            }}
+            onAnnuler={() => setConfirmerSuppression(false)}
+          />
+        )
+      })()}
     </Panneau>
   )
 }

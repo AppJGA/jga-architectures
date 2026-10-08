@@ -4,8 +4,13 @@
 import assert from 'node:assert/strict'
 import { test, describe } from 'node:test'
 
+import { readFileSync } from 'node:fs'
+
 import {
   nomCouleur, ecrituresColorees, annotationsDePage, textePlan,
+  VERSION_CONSIGNES, FICHIERS_DOSSIER, estCctpCommun, ordonnerPieces, libellePiece, lotsSansCctp,
+  numeroPlan, titrePlan, ordonnerPlans, intituleAffaire, messageClaude, nomDossier,
+  sommaireMarkdown, cctpMarkdown, plansMarkdown,
 } from '../src/modules/etude/pieces-ecrites/dossierClaudeLogique.js'
 
 // Codes d'opérations factices : seuls les noms comptent pour la logique
@@ -125,5 +130,105 @@ describe('texte d’un plan', () => {
   test('une page sans texte le dit', () => {
     const t = textePlan({ titre: 'Scan', pages: [{ largeur: 420, hauteur: 297, annotations: [] }] })
     assert.match(t, /aucun texte lisible/)
+  })
+})
+
+const affaire = { code_affaire: '9901-ESS', nom: 'Réhabilitation de 4 maisons', projet_commune: 'Villeneuve', projet_code_postal: '01000', moa_nom: 'Office exemple', phase: 'DCE' }
+const lots = [
+  { id: 'l2', numero: 80, numero_affiche: '080', nom: 'Menuiseries extérieures' },
+  { id: 'l1', numero: 60, numero_affiche: '060', nom: 'Couverture' },
+  { id: 'l3', numero: 140, numero_affiche: null, nom: 'Peinture' },
+]
+const pieces = [
+  { id: 'p2', lot_id: 'l2', titre: 'Lot 080 — Menuiseries extérieures', nom_fichier: 'CCTP 080.pdf', indice: 'B', nb_pages: 12, nb_articles: 2 },
+  { id: 'p0', lot_id: null, titre: 'CCTPC', nom_fichier: 'Exemple - CCTPC.pdf', indice: null, nb_pages: 9, nb_articles: 1 },
+  { id: 'p1', lot_id: 'l1', titre: 'Lot 060 — Couverture', nom_fichier: 'CCTP 060.pdf', indice: null, nb_pages: 8, nb_articles: 1 },
+]
+
+describe('consignes', () => {
+  test('la version du fichier est celle du code', () => {
+    const md = readFileSync(new URL('../src/modules/etude/pieces-ecrites/consignesConformite.md', import.meta.url), 'utf8')
+    assert.equal(md.split('\n')[0], `Version des consignes : ${VERSION_CONSIGNES}`)
+  })
+})
+
+describe('pièces et plans', () => {
+  test('le CCTP commun vient en tête, puis les lots par numéro', () => {
+    assert.equal(estCctpCommun(pieces[1]), true)
+    assert.equal(estCctpCommun(pieces[0]), false)
+    assert.deepEqual(ordonnerPieces(pieces, lots).map((p) => p.id), ['p0', 'p1', 'p2'])
+    assert.equal(libellePiece(pieces[1], lots), 'CCTP commun')
+    assert.equal(libellePiece(pieces[0], lots), 'Lot 080 — Menuiseries extérieures')
+  })
+
+  test('un CCTP dont le titre dit « commun » est commun même rattaché', () => {
+    assert.equal(estCctpCommun({ lot_id: 'l9', titre: 'CCTP commun à tous les lots', nom_fichier: 'x.pdf' }), true)
+  })
+
+  test('lots sans CCTP', () => {
+    assert.deepEqual(lotsSansCctp(lots, pieces).map((l) => l.id), ['l3'])
+  })
+
+  test('les plans se rangent par leur numéro en tête du nom', () => {
+    assert.equal(numeroPlan('40 RDC.pdf'), '40')
+    assert.equal(numeroPlan('Plan de masse.pdf'), null)
+    assert.equal(titrePlan('40 RDC.PDF'), '40 RDC')
+    const ordre = ordonnerPlans([{ nomFichier: '100 Détail.pdf' }, { nomFichier: 'Notice.pdf' }, { nomFichier: '9 Masse.pdf' }, { nomFichier: '40 RDC.pdf' }])
+    assert.deepEqual(ordre.map((p) => p.nomFichier), ['9 Masse.pdf', '40 RDC.pdf', '100 Détail.pdf', 'Notice.pdf'])
+  })
+})
+
+describe('message et nom', () => {
+  test('le message commence par le code de l’affaire (titre de la conversation)', () => {
+    assert.equal(messageClaude(affaire), '9901-ESS — Réhabilitation de 4 maisons — Rapport complet')
+    assert.equal(messageClaude({ nom: 'Sans code' }), 'Sans code — Rapport complet')
+  })
+  test('nom du ZIP sans caractère interdit', () => {
+    assert.equal(nomDossier(affaire), 'Dossier Claude - 9901-ESS')
+    assert.equal(nomDossier({ nom: 'A/B: test' }), 'Dossier Claude - A-B- test')
+  })
+  test('intitulé de l’affaire', () => {
+    assert.equal(intituleAffaire(affaire), '9901-ESS — Réhabilitation de 4 maisons — Villeneuve (01000) — maître d’ouvrage : Office exemple — phase DCE')
+  })
+})
+
+describe('fichiers du dossier', () => {
+  test('sommaire : version, CCTP, plans, lots sans CCTP, pièces non fournies', () => {
+    const md = sommaireMarkdown({
+      affaire, pieces, lots, date: '2026-10-08',
+      plans: [{ nomFichier: '40 RDC.pdf', largeur: 420, hauteur: 297, nbPages: 1, sansTexte: false }, { nomFichier: '41 Scan.pdf', largeur: 594, hauteur: 420, nbPages: 2, sansTexte: true }],
+    })
+    assert.match(md, /Version des consignes attendue : 2/)
+    assert.match(md, /\| CCTP commun \| Exemple - CCTPC\.pdf \| — \| 9 \| 1 \|/)
+    assert.match(md, /\| Lot 080 — Menuiseries extérieures \| CCTP 080\.pdf \| B \| 12 \| 2 \|/)
+    assert.match(md, /\| 40 \| 40 RDC \| 420×297 \| 1 \|/)
+    assert.match(md, /\| 41 \| 41 Scan \(sans texte lisible\) \| 594×420 \| 2 à 3 \|/)
+    assert.match(md, /Lot 140 — Peinture/)
+    assert.match(md, /DPGF/)
+    assert.ok(md.indexOf('CCTP commun') < md.indexOf('Lot 060'))
+  })
+
+  test('CCTP : en-tête par pièce, articles numérotés avec leur page, phrases recollées', () => {
+    const articles = [
+      { piece_id: 'p2', ordre: 2, numero: '5.1', titre: 'FENÊTRES', page: 4, texte: 'Fourniture et pose\nde fenêtres PVC.' },
+      { piece_id: 'p2', ordre: 1, numero: '1', titre: 'OBJET', page: 3, texte: 'Texte.' },
+      { piece_id: 'p0', ordre: 1, numero: null, titre: 'Page 2', page: 2, texte: 'Généralités.' },
+    ]
+    const md = cctpMarkdown({ affaire, pieces, articles, lots })
+    assert.ok(md.indexOf('## CCTP COMMUN') < md.indexOf('## LOT 080'))
+    assert.match(md, /Fichier : CCTP 080\.pdf · indice : B · 12 pages · 2 articles/)
+    assert.ok(md.indexOf('§1 OBJET [p.3]') < md.indexOf('§5.1 FENÊTRES [p.4]'))
+    assert.match(md, /Fourniture et pose de fenêtres PVC\./)
+    assert.match(md, /\nPage 2 \[p\.2\]\n/)
+  })
+
+  test('plans : mode d’emploi puis les textes dans l’ordre', () => {
+    const md = plansMarkdown({ affaire, textes: ['=== 40 RDC ===\n(1,2) A', '=== 41 R+1 ===\n(3,4) B'] })
+    assert.match(md, /coin HAUT GAUCHE/)
+    assert.ok(md.indexOf('=== 40 RDC ===') < md.indexOf('=== 41 R+1 ==='))
+  })
+
+  test('les quatre noms de fichiers', () => {
+    assert.deepEqual(Object.values(FICHIERS_DOSSIER), ['1 - Sommaire.md', '2 - CCTP.md', '3 - Plans (texte).md', '4 - Plans.pdf'])
   })
 })

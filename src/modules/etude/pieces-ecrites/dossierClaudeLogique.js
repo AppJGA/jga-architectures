@@ -8,6 +8,19 @@
 // démolition, bleu = cotes…), plus fiable qu'un coup d'œil sur une planche
 // A3 réduite. Pur, testé (tests/dossier-claude.test.js).
 
+import { recomposerTexte } from './piecesLogique'
+import { numeroLot, libelleNumeroLot } from '../../../shared/lots/numeroLot'
+
+/** Projet claude.ai de l'agence (Team) : sans le compte de l'agence, l'adresse n'ouvre rien. */
+export const PROJET_CLAUDE_CONFORMITE = 'https://claude.ai/project/019e0285-ad37-7277-9c8f-e7e6367140c6'
+/** Doit suivre la première ligne de `consignesConformite.md` (vérifié par les tests). */
+export const VERSION_CONSIGNES = 2
+/** Taille maximale d'un fichier déposé dans claude.ai. */
+export const LIMITE_PDF_CLAUDE = 30 * 1024 * 1024
+export const FICHIERS_DOSSIER = {
+  sommaire: '1 - Sommaire.md', cctp: '2 - CCTP.md', plans: '3 - Plans (texte).md', pdf: '4 - Plans.pdf',
+}
+
 const MM_PAR_POINT = 25.4 / 72
 
 // ─── Couleur des textes d'un plan ───────────────────────────────────────────
@@ -181,4 +194,131 @@ export function textePlan({ titre, pages = [] }) {
     for (const a of p.annotations) lignes.push(`(${a.x},${a.y})${a.couleur ? ` [${a.couleur}]` : ''} ${a.texte}`)
   })
   return lignes.join('\n')
+}
+
+// ─── Pièces et plans ────────────────────────────────────────────────────────
+
+export function estCctpCommun(piece) {
+  return !piece?.lot_id || /\bcctpc\b|commun/i.test(`${piece?.titre ?? ''} ${piece?.nom_fichier ?? ''}`)
+}
+
+const lotDe = (piece, lots) => lots.find((l) => l.id === piece.lot_id) ?? null
+
+export function libellePiece(piece, lots = []) {
+  if (estCctpCommun(piece)) return 'CCTP commun'
+  const lot = lotDe(piece, lots)
+  return lot ? libelleNumeroLot(lot) : piece.titre
+}
+
+export function ordonnerPieces(pieces = [], lots = []) {
+  const rang = (p) => (estCctpCommun(p) ? -1 : lotDe(p, lots)?.numero ?? p.lot_numero_lu ?? Number.MAX_SAFE_INTEGER)
+  return [...pieces].sort((a, b) => rang(a) - rang(b) || String(a.titre).localeCompare(String(b.titre), 'fr'))
+}
+
+export function lotsSansCctp(lots = [], pieces = []) {
+  const avecCctp = new Set(pieces.map((p) => p.lot_id).filter(Boolean))
+  return lots.filter((l) => !avecCctp.has(l.id)).sort((a, b) => (a.numero ?? 0) - (b.numero ?? 0))
+}
+
+export function numeroPlan(nomFichier = '') {
+  return nomFichier.match(/^\s*(\d+)/)?.[1] ?? null
+}
+
+export function titrePlan(nomFichier = '') {
+  return nomFichier.replace(/\.pdf$/i, '').trim()
+}
+
+/** Par le numéro en tête du nom (00, 30, 40…), puis par nom ; les plans sans numéro à la fin. */
+export function ordonnerPlans(plans = []) {
+  const rang = (p) => { const n = numeroPlan(p.nomFichier); return n == null ? Number.MAX_SAFE_INTEGER : Number(n) }
+  return [...plans].sort((a, b) => rang(a) - rang(b) || a.nomFichier.localeCompare(b.nomFichier, 'fr', { numeric: true }))
+}
+
+// ─── Affaire ────────────────────────────────────────────────────────────────
+
+export function intituleAffaire(a = {}) {
+  const lieu = [a.projet_commune, a.projet_code_postal && `(${a.projet_code_postal})`].filter(Boolean).join(' ')
+  return [a.code_affaire, a.nom, lieu, a.moa_nom && `maître d’ouvrage : ${a.moa_nom}`, a.phase && `phase ${a.phase}`]
+    .filter(Boolean).join(' — ')
+}
+
+/**
+ * Le premier message de la conversation. claude.ai titre une conversation
+ * d'après lui : le code de l'affaire en tête la fait retrouver dans la liste
+ * des conversations du projet.
+ */
+export function messageClaude(a = {}) {
+  return [a.code_affaire, a.nom, 'Rapport complet'].filter(Boolean).join(' — ')
+}
+
+export function nomDossier(a = {}) {
+  return `Dossier Claude - ${(a.code_affaire || a.nom || 'affaire').replace(/[/\\:*?"<>|]/g, '-')}`
+}
+
+// ─── Les trois fichiers texte ───────────────────────────────────────────────
+
+const cellule = (v) => String(v ?? '—').replace(/\|/g, '/') || '—'
+
+export function sommaireMarkdown({ affaire = {}, pieces = [], lots = [], plans = [], date }) {
+  const l = [
+    '# Sommaire du dossier', '',
+    `**Affaire** : ${intituleAffaire(affaire)}`,
+    `**Dossier préparé le** : ${date}`,
+    `**Version des consignes attendue : ${VERSION_CONSIGNES}**`, '',
+    '## Fichiers du dossier',
+    `1. ${FICHIERS_DOSSIER.sommaire} — ce fichier`,
+    `2. ${FICHIERS_DOSSIER.cctp} — les ${pieces.length} CCTP, article par article`,
+    `3. ${FICHIERS_DOSSIER.plans} — les annotations des ${plans.length} plans, avec position et couleur`,
+    `4. ${FICHIERS_DOSSIER.pdf} — les ${plans.length} plans d'origine, dans l'ordre ci-dessous`, '',
+    '## CCTP fournis',
+    '| Pièce | Fichier d\'origine | Indice | Pages | Articles |', '|---|---|---|---|---|',
+    ...ordonnerPieces(pieces, lots).map((p) => `| ${cellule(libellePiece(p, lots))} | ${cellule(p.nom_fichier)} | ${cellule(p.indice)} | ${p.nb_pages ?? '—'} | ${p.nb_articles ?? '—'} |`),
+    '',
+    '## Plans fournis',
+    '| N° | Titre | Format (mm) | Page(s) dans « 4 - Plans.pdf » |', '|---|---|---|---|',
+  ]
+  let page = 1
+  for (const p of plans) {
+    const pages = p.nbPages > 1 ? `${page} à ${page + p.nbPages - 1}` : `${page}`
+    l.push(`| ${cellule(numeroPlan(p.nomFichier))} | ${cellule(titrePlan(p.nomFichier))}${p.sansTexte ? ' (sans texte lisible)' : ''} | ${p.largeur}×${p.hauteur} | ${pages} |`)
+    page += p.nbPages
+  }
+  const manquants = lotsSansCctp(lots, pieces)
+  l.push('', '## Lots de l\'affaire sans CCTP au dossier')
+  l.push(...(manquants.length ? manquants.map((lot) => `- ${libelleNumeroLot(lot)}`) : ['Aucun.']))
+  l.push('', '## Pièces non fournies',
+    'L\'application ne fournit que les CCTP et les plans. Ne sont pas au dossier : DPGF / cadres de décomposition du prix, CCAP, acte d\'engagement, règlement de consultation, rapports de diagnostic (amiante, plomb…), notes de calcul. Si un CCTP y renvoie, le signaler.')
+  return `${l.join('\n')}\n`
+}
+
+export function cctpMarkdown({ affaire = {}, pieces = [], articles = [], lots = [] }) {
+  const parties = [`# CCTP — ${intituleAffaire(affaire)}`, '',
+    'Texte des CCTP importés dans l\'application, découpé en articles. Chaque article : « §numéro TITRE [p.page du PDF] », puis son texte.']
+  for (const p of ordonnerPieces(pieces, lots)) {
+    const lot = lotDe(p, lots)
+    const titre = estCctpCommun(p) ? 'CCTP COMMUN' : (lot ? `LOT ${numeroLot(lot)} — ${lot.nom}` : p.titre).toUpperCase()
+    parties.push('', '='.repeat(70), `## ${titre}`,
+      `Fichier : ${p.nom_fichier ?? '—'} · indice : ${p.indice ?? 'non lu'} · ${p.nb_pages ?? '?'} pages · ${p.nb_articles ?? '?'} articles`,
+      '='.repeat(70))
+    const siens = articles.filter((a) => a.piece_id === p.id).sort((a, b) => a.ordre - b.ordre)
+    for (const a of siens) {
+      parties.push('', `${a.numero ? `§${a.numero} ` : ''}${a.titre}${a.page ? ` [p.${a.page}]` : ''}`)
+      // L'espace sans largeur d'une césure recollée n'a rien à faire chez Claude
+      const texte = recomposerTexte(a.texte ?? '').replace(/\u200B/g, '').trim()
+      if (texte) parties.push(texte)
+    }
+  }
+  return `${parties.join('\n')}\n`
+}
+
+export function plansMarkdown({ affaire = {}, textes = [] }) {
+  return `${[
+    `# Plans en texte — ${intituleAffaire(affaire)}`, '',
+    'Toutes les annotations de chaque plan, relevées dans le PDF avec leur position et leur couleur.',
+    '- Position (x,y) en mm depuis le coin HAUT GAUCHE de la planche (format donné en tête de chaque page).',
+    '- Couleur entre crochets quand le texte n\'est pas noir : [rouge], [bleu], [vert], [orange], [magenta]. Le sens des couleurs est donné par la légende du plan quand il y en a une (sinon, en général : rouge = démolition / désordres, bleu = cotes, vert = repères et ouvrages projetés).',
+    '- Les textes écrits sur plusieurs lignes sont joints par « / ». Les lignes sont classées de haut en bas.',
+    `- Les PDF d'origine sont dans « ${FICHIERS_DOSSIER.pdf} », dans le même ordre (voir le sommaire pour les numéros de page).`,
+    ...textes.flatMap((t) => ['', t]),
+  ].join('\n')}\n`
 }

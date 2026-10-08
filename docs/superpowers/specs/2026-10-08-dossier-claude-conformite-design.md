@@ -46,7 +46,9 @@ côté) :
 3. **« Fabriquer le dossier »**. Une progression s'affiche, plan par plan, puis
    `Dossier Claude - <code affaire>.zip` est téléchargé.
 4. Un **texte explicatif** remplace alors le formulaire :
-   « Le dossier est prêt. Ouvrez le projet Claude, démarrez une nouvelle conversation, glissez-y les quatre fichiers du dossier (décompressé) et écrivez « Rapport complet ». Si Claude s'arrête en cours de route, écrivez « Continue ». »
+   « Le dossier est prêt. Ouvrez le projet Claude, démarrez une nouvelle conversation, glissez-y les quatre fichiers du dossier (décompressé) et collez le message ci-dessous. Si Claude s'arrête en cours de route, écrivez « Continue ». »
+
+   Le message à coller est **« <code> — <nom de l'affaire> — Rapport complet »**, par exemple « 2618-LVV — Réhabilitation de 11 logements — Rapport complet ». Il a son bouton **« Copier le message »**. claude.ai titre une conversation d'après son premier message : le **code de l'affaire** se retrouve ainsi dans la liste des conversations du projet. Claude ne peut pas renommer une conversation lui-même ; un titre raté se corrige à la main dans claude.ai.
 
    L'usage de l'agence est **l'analyse de tous les lots d'un coup**. Les consignes enchaînent le CCTP commun, puis chaque lot, puis l'Excel complet. Une réponse claude.ai ayant une longueur limitée, Claude s'arrête proprement après un lot terminé et demande « Continue ». Un lot seul reste possible (« Analyse le lot 080 »).
 

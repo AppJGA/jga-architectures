@@ -14,7 +14,7 @@ import { numeroLot, libelleNumeroLot } from '../../../shared/lots/numeroLot'
 /** Projet claude.ai de l'agence (Team) : sans le compte de l'agence, l'adresse n'ouvre rien. */
 export const PROJET_CLAUDE_CONFORMITE = 'https://claude.ai/project/019e0285-ad37-7277-9c8f-e7e6367140c6'
 /** Doit suivre la première ligne de `consignesConformite.md` (vérifié par les tests). */
-export const VERSION_CONSIGNES = 2
+export const VERSION_CONSIGNES = 3
 /** Taille maximale d'un fichier déposé dans claude.ai. */
 export const LIMITE_PDF_CLAUDE = 30 * 1024 * 1024
 export const FICHIERS_DOSSIER = {

@@ -198,7 +198,7 @@ describe('fichiers du dossier', () => {
       affaire, pieces, lots, date: '2026-10-08',
       plans: [{ nomFichier: '40 RDC.pdf', largeur: 420, hauteur: 297, nbPages: 1, sansTexte: false }, { nomFichier: '41 Scan.pdf', largeur: 594, hauteur: 420, nbPages: 2, sansTexte: true }],
     })
-    assert.match(md, /Version des consignes attendue : 2/)
+    assert.ok(md.includes(`Version des consignes attendue : ${VERSION_CONSIGNES}`))
     assert.match(md, /\| CCTP commun \| Exemple - CCTPC\.pdf \| — \| 9 \| 1 \|/)
     assert.match(md, /\| Lot 080 — Menuiseries extérieures \| CCTP 080\.pdf \| B \| 12 \| 2 \|/)
     assert.match(md, /\| 40 \| 40 RDC \| 420×297 \| 1 \|/)

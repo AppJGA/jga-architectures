@@ -18,7 +18,7 @@ const BTN = {
   border: '0.5px solid rgba(0,0,0,0.12)', backgroundColor: 'white', color: '#374151',
 }
 const BTN_PRIMARY = {
-  ...BTN, backgroundColor: '#2A8A4E', color: 'white', border: 'none', fontWeight: 500,
+  ...BTN, backgroundColor: 'var(--jga-blueprint)', color: 'white', border: 'none', fontWeight: 500,
 }
 
 function getInitials(name) {
@@ -74,7 +74,7 @@ function EntrepriseCard({ entreprise, onEdit, onDelete }) {
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
         <div style={{
           width: 36, height: 36, borderRadius: '50%', flexShrink: 0,
-          backgroundColor: '#E8602C', color: 'white',
+          backgroundColor: 'var(--jga-blueprint)', color: 'white',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           fontSize: 12, fontWeight: 700,
         }}>
@@ -152,8 +152,8 @@ function EntrepriseCard({ entreprise, onEdit, onDelete }) {
                 onClick={() => navigate(`/affaires/${a.id}`)}
                 style={{
                   fontSize: 10, padding: '2px 8px', borderRadius: 3,
-                  backgroundColor: 'rgba(232,96,44,0.10)', color: '#E8602C', cursor: 'pointer',
-                  border: '0.5px solid rgba(224,90,30,0.2)', whiteSpace: 'nowrap',
+                  backgroundColor: 'rgba(27,58,92,0.10)', color: 'var(--jga-blueprint)', cursor: 'pointer',
+                  border: '0.5px solid rgba(27,58,92,0.2)', whiteSpace: 'nowrap',
                 }}
               >
                 {a.code_affaire ?? a.nom}
@@ -208,7 +208,7 @@ function EntrepriseRow({ entreprise, onEdit, onDelete }) {
       <div style={{ flex: 3, display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, paddingRight: 12 }}>
         <div style={{
           width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
-          backgroundColor: '#E8602C', color: 'white',
+          backgroundColor: 'var(--jga-blueprint)', color: 'white',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           fontSize: 10, fontWeight: 700,
         }}>
@@ -253,7 +253,7 @@ function EntrepriseRow({ entreprise, onEdit, onDelete }) {
         {affaires.length > 0
           ? <span
               onClick={() => navigate(`/affaires/${affaires[0].id}`)}
-              style={{ fontSize: 10, padding: '2px 8px', borderRadius: 3, backgroundColor: 'rgba(232,96,44,0.10)', color: '#E8602C', border: '0.5px solid rgba(224,90,30,0.2)', cursor: 'pointer' }}
+              style={{ fontSize: 10, padding: '2px 8px', borderRadius: 3, backgroundColor: 'rgba(27,58,92,0.10)', color: 'var(--jga-blueprint)', border: '0.5px solid rgba(27,58,92,0.2)', cursor: 'pointer' }}
             >
               {affaires.length}
             </span>
@@ -442,8 +442,8 @@ export default function CarnetAdressesPage() {
   const toggleBtnStyle = (active) => ({
     width: 32, height: 32, borderRadius: 2,
     border: '0.5px solid rgba(0,0,0,0.12)',
-    background: active ? 'var(--jga-orange-light)' : 'transparent',
-    color: active ? 'var(--jga-orange)' : '#9C9591',
+    background: active ? 'rgba(27,58,92,0.08)' : 'transparent',
+    color: active ? 'var(--jga-blueprint)' : '#9C9591',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
     cursor: 'pointer',
   })
@@ -487,9 +487,9 @@ export default function CarnetAdressesPage() {
               onClick={() => setFilter(f.key)}
               style={{
                 padding: '5px 14px', borderRadius: 3, fontSize: 12, cursor: 'pointer',
-                border: filter === f.key ? '0.5px solid #E8602C' : '0.5px solid rgba(0,0,0,0.12)',
-                backgroundColor: filter === f.key ? 'rgba(232,96,44,0.10)' : 'white',
-                color: filter === f.key ? '#E8602C' : '#5E5854',
+                border: filter === f.key ? '0.5px solid var(--jga-blueprint)' : '0.5px solid rgba(0,0,0,0.12)',
+                backgroundColor: filter === f.key ? 'rgba(27,58,92,0.10)' : 'white',
+                color: filter === f.key ? 'var(--jga-blueprint)' : '#5E5854',
                 fontWeight: filter === f.key ? 500 : 400,
               }}
             >
@@ -510,7 +510,7 @@ export default function CarnetAdressesPage() {
       {/* Contenu */}
       {loading ? (
         <div style={{ display: 'flex', justifyContent: 'center', padding: '60px 0' }}>
-          <div style={{ width: 28, height: 28, borderRadius: '50%', border: '2px solid #E8602C', borderTopColor: 'transparent', animation: 'spin 0.7s linear infinite' }} />
+          <div style={{ width: 28, height: 28, borderRadius: '50%', border: '2px solid var(--jga-blueprint)', borderTopColor: 'transparent', animation: 'spin 0.7s linear infinite' }} />
         </div>
       ) : filtered.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '60px 0', color: '#9C9591', fontSize: 13 }}>

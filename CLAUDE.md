@@ -148,6 +148,11 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
   compris les comptes rendus de fin de tâche et les questions posées.
 - **Styles inline**, pas de Tailwind. Les couleurs passent par les variables CSS
   de `src/index.css` (`--jga-orange`, `--jga-green`, `--jga-beige`…).
+- **Chaque partie a la couleur de sa bulle d'accueil** (demande de l'agence) :
+  affaires en orange (vert au chantier, `--affaire-accent`), Boîte à outils
+  en vert (`--jga-green`, `--jga-green-light`), Carnet d'adresses en bleu
+  (`--jga-blueprint`), Gestion d'agence en violet (`#7A4E9C`). Un élément
+  coloré d'une de ces parties prend sa couleur, jamais l'orange par défaut.
 - **Animations** : les `@keyframes` et les classes d'entrée vivent dans
   `src/index.css`, jamais inline — seul le `animation-delay` est inline. C'est
   ce qui permet au bloc `prefers-reduced-motion` de les neutraliser.

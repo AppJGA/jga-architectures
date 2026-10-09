@@ -274,11 +274,11 @@ export function RasterisationTool() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
         <div style={{
           width: 44, height: 44,
-          backgroundColor: 'rgba(232,96,44,0.1)',
+          backgroundColor: 'rgba(42,138,78,0.1)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           flexShrink: 0,
         }}>
-          <Layers size={22} strokeWidth={1.25} style={{ color: '#E8602C' }} />
+          <Layers size={22} strokeWidth={1.25} style={{ color: 'var(--jga-green)' }} />
         </div>
         <div>
           <h1 style={{ fontSize: 16, fontWeight: 600, color: '#1F1B17', margin: 0, lineHeight: 1.3 }}>
@@ -297,8 +297,8 @@ export function RasterisationTool() {
         onDrop={handleDrop}
         onClick={() => !isProcessing && fileInputRef.current?.click()}
         style={{
-          border: '2px dashed #E8602C',
-          backgroundColor: isDragging ? 'rgba(232,96,44,0.08)' : '#FAF7F2',
+          border: '2px dashed var(--jga-green)',
+          backgroundColor: isDragging ? 'rgba(42,138,78,0.08)' : '#FAF7F2',
           padding: '28px 24px',
           display: 'flex', flexDirection: 'column',
           alignItems: 'center', gap: 6,
@@ -308,7 +308,7 @@ export function RasterisationTool() {
           userSelect: 'none',
         }}
       >
-        <Upload size={26} strokeWidth={1.25} style={{ color: '#E8602C', marginBottom: 2 }} />
+        <Upload size={26} strokeWidth={1.25} style={{ color: 'var(--jga-green)', marginBottom: 2 }} />
         <p style={{ fontSize: 13, fontWeight: 500, color: '#1F1B17', margin: 0 }}>
           Déposez vos plans PDF ici
         </p>
@@ -379,12 +379,12 @@ export function RasterisationTool() {
                     <div style={{ flex: 1, maxWidth: 50, height: 3, backgroundColor: '#E8E4DF' }}>
                       <div style={{
                         width: `${f.progress}%`, height: '100%',
-                        backgroundColor: '#E8602C',
+                        backgroundColor: 'var(--jga-green)',
                         transition: 'width 0.2s ease',
                       }} />
                     </div>
                     <span style={{
-                      fontSize: 10, color: '#E8602C',
+                      fontSize: 10, color: 'var(--jga-green)',
                       fontFamily: "'JetBrains Mono', monospace",
                       minWidth: 28,
                     }}>{f.progress}%</span>
@@ -477,7 +477,7 @@ export function RasterisationTool() {
               value={jpegQuality}
               onChange={e => setJpegQuality(+e.target.value)}
               disabled={isProcessing}
-              style={{ width: '100%', accentColor: '#E8602C', marginTop: 4 }}
+              style={{ width: '100%', accentColor: 'var(--jga-green)', marginTop: 4 }}
             />
           </div>
         )}
@@ -500,7 +500,7 @@ export function RasterisationTool() {
         style={{
           width: '100%',
           padding: '13px 24px',
-          backgroundColor: isProcessing || pending.length === 0 ? '#C4BEB9' : '#E8602C',
+          backgroundColor: isProcessing || pending.length === 0 ? '#C4BEB9' : 'var(--jga-green)',
           color: 'white',
           border: 'none',
           fontSize: 14, fontWeight: 600,

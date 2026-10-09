@@ -24,8 +24,8 @@ function ToolCard({ tool, onClick }) {
         gap: 12,
         padding: '20px 14px',
         borderRadius: 0,
-        border: active ? '0.5px solid var(--jga-orange)' : '0.5px solid rgba(0,0,0,0.08)',
-        backgroundColor: active ? 'var(--jga-orange-light)' : 'white',
+        border: active ? '0.5px solid var(--jga-green)' : '0.5px solid rgba(0,0,0,0.08)',
+        backgroundColor: active ? 'var(--jga-green-light)' : 'white',
         opacity: tool.enabled ? 1 : 0.55,
         cursor: tool.enabled ? 'pointer' : 'default',
         transition: 'all 0.15s ease',
@@ -37,7 +37,7 @@ function ToolCard({ tool, onClick }) {
           width: 52,
           height: 52,
           borderRadius: 0,
-          backgroundColor: active ? 'var(--jga-orange)' : 'var(--jga-orange-light)',
+          backgroundColor: active ? 'var(--jga-green)' : 'var(--jga-green-light)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -49,7 +49,7 @@ function ToolCard({ tool, onClick }) {
           <Icon
             size={24}
             strokeWidth={1.25}
-            style={{ color: active ? 'white' : 'var(--jga-orange)', transition: 'color 0.15s ease' }}
+            style={{ color: active ? 'white' : 'var(--jga-green)', transition: 'color 0.15s ease' }}
           />
         )}
       </div>

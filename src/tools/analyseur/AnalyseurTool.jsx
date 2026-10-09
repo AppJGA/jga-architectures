@@ -106,7 +106,7 @@ const LABEL_STYLE = {
 
 const NUMERO_STYLE = {
   width: 20, height: 20, flexShrink: 0,
-  backgroundColor: '#E8602C', color: 'white',
+  backgroundColor: 'var(--jga-green)', color: 'white',
   fontSize: 11, fontWeight: 700,
   display: 'flex', alignItems: 'center', justifyContent: 'center',
   fontFamily: "'JetBrains Mono', monospace",
@@ -119,7 +119,7 @@ function Etape({ numero, titre, actif, children }) {
       opacity: actif ? 1 : 0.5, transition: 'opacity 0.2s',
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-        <div style={{ ...NUMERO_STYLE, backgroundColor: actif ? '#E8602C' : '#C4BEB9' }}>{numero}</div>
+        <div style={{ ...NUMERO_STYLE, backgroundColor: actif ? 'var(--jga-green)' : '#C4BEB9' }}>{numero}</div>
         <span style={{ fontSize: 13, fontWeight: 600, color: '#1F1B17' }}>{titre}</span>
       </div>
       {children}
@@ -272,15 +272,15 @@ export function AnalyseurTool() {
                 style={{
                   display: 'flex', alignItems: 'flex-start', gap: 10,
                   padding: '10px 16px',
-                  border: actif ? '1.5px solid #E8602C' : '0.5px solid rgba(0,0,0,0.15)',
-                  backgroundColor: actif ? 'rgba(232,96,44,0.06)' : 'white',
+                  border: actif ? '1.5px solid var(--jga-green)' : '0.5px solid rgba(0,0,0,0.15)',
+                  backgroundColor: actif ? 'rgba(42,138,78,0.06)' : 'white',
                   cursor: 'pointer', fontFamily: "'Inter', sans-serif",
                   textAlign: 'left', transition: 'all 0.15s', minWidth: 176,
                 }}
               >
                 <div style={{
                   width: 16, height: 16, marginTop: 2, flexShrink: 0,
-                  backgroundColor: actif ? '#E8602C' : '#C9C4C0',
+                  backgroundColor: actif ? 'var(--jga-green)' : '#C9C4C0',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}>
                   {actif && (
@@ -290,7 +290,7 @@ export function AnalyseurTool() {
                   )}
                 </div>
                 <div>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: actif ? '#E8602C' : '#1F1B17', marginBottom: 2 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: actif ? 'var(--jga-green)' : '#1F1B17', marginBottom: 2 }}>
                     {reg.label}
                   </div>
                   <div style={{ fontSize: 11, color: '#9C9591', lineHeight: 1.3 }}>
@@ -313,8 +313,8 @@ export function AnalyseurTool() {
         onDrop={handleDrop}
         onClick={() => fileInputRef.current?.click()}
         style={{
-          border: '2px dashed #E8602C',
-          backgroundColor: isDragging ? 'rgba(232,96,44,0.08)' : '#FAF7F2',
+          border: '2px dashed var(--jga-green)',
+          backgroundColor: isDragging ? 'rgba(42,138,78,0.08)' : '#FAF7F2',
           padding: '20px', display: 'flex', flexDirection: 'column',
           alignItems: 'center', justifyContent: 'center',
           gap: 6, height: 150, cursor: 'pointer',
@@ -322,7 +322,7 @@ export function AnalyseurTool() {
           userSelect: 'none', textAlign: 'center',
         }}
       >
-        <Upload size={24} strokeWidth={1.25} style={{ color: '#E8602C', marginBottom: 4 }} />
+        <Upload size={24} strokeWidth={1.25} style={{ color: 'var(--jga-green)', marginBottom: 4 }} />
         <p style={{ fontSize: 13, fontWeight: 500, color: '#1F1B17', margin: 0 }}>
           Déposez vos fichiers DXF ici
         </p>
@@ -411,7 +411,7 @@ export function AnalyseurTool() {
             style={{
               flex: 1, height: 44,
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-              backgroundColor: !prete ? '#C4BEB9' : copie ? '#2A8A4E' : '#E8602C',
+              backgroundColor: !prete ? '#C4BEB9' : copie ? '#1F6B3B' : 'var(--jga-green)',
               color: 'white', border: 'none', fontSize: 14, fontWeight: 600,
               cursor: prete ? 'pointer' : 'not-allowed',
               fontFamily: "'Inter', sans-serif", transition: 'background-color 0.15s',
@@ -464,7 +464,7 @@ export function AnalyseurTool() {
             target="_blank"
             rel="noreferrer"
             style={{
-              color: '#E8602C', textDecoration: 'none', fontWeight: 600,
+              color: 'var(--jga-green)', textDecoration: 'none', fontWeight: 600,
               whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 3,
             }}
           >

@@ -114,11 +114,11 @@ export function ConvertisseurTool() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
         <div style={{
           width: 44, height: 44,
-          backgroundColor: 'rgba(232,96,44,0.1)',
+          backgroundColor: 'rgba(42,138,78,0.1)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           flexShrink: 0,
         }}>
-          <ArrowRightLeft size={22} strokeWidth={1.25} style={{ color: 'var(--jga-orange)' }} />
+          <ArrowRightLeft size={22} strokeWidth={1.25} style={{ color: 'var(--jga-green)' }} />
         </div>
         <div>
           <h1 style={{ fontSize: 16, fontWeight: 600, color: '#1F1B17', margin: 0, lineHeight: 1.3 }}>
@@ -136,8 +136,8 @@ export function ConvertisseurTool() {
         onDrop={e => { e.preventDefault(); setSurvol(false); if (!enCours) ajouter(e.dataTransfer.files) }}
         onClick={() => !enCours && inputRef.current?.click()}
         style={{
-          border: '2px dashed var(--jga-orange)',
-          backgroundColor: survol ? 'rgba(232,96,44,0.08)' : '#FAF7F2',
+          border: '2px dashed var(--jga-green)',
+          backgroundColor: survol ? 'rgba(42,138,78,0.08)' : '#FAF7F2',
           padding: '28px 24px',
           display: 'flex', flexDirection: 'column',
           alignItems: 'center', gap: 6,
@@ -147,7 +147,7 @@ export function ConvertisseurTool() {
           userSelect: 'none',
         }}
       >
-        <Upload size={26} strokeWidth={1.25} style={{ color: 'var(--jga-orange)', marginBottom: 2 }} />
+        <Upload size={26} strokeWidth={1.25} style={{ color: 'var(--jga-green)', marginBottom: 2 }} />
         <p style={{ fontSize: 13, fontWeight: 500, color: '#1F1B17', margin: 0 }}>
           Déposez vos photos ici
         </p>
@@ -247,8 +247,8 @@ export function ConvertisseurTool() {
                   disabled={enCours}
                   style={{
                     flex: 1, textAlign: 'left', padding: '6px 10px',
-                    border: actif ? '1px solid var(--jga-orange)' : '0.5px solid rgba(0,0,0,0.15)',
-                    backgroundColor: actif ? 'var(--jga-orange-light)' : 'white',
+                    border: actif ? '1px solid var(--jga-green)' : '0.5px solid rgba(0,0,0,0.15)',
+                    backgroundColor: actif ? 'var(--jga-green-light)' : 'white',
                     cursor: enCours ? 'default' : 'pointer',
                     fontFamily: "'Inter', sans-serif",
                   }}
@@ -267,7 +267,7 @@ export function ConvertisseurTool() {
         disabled={enCours || enAttente === 0}
         style={{
           width: '100%', padding: '13px 24px',
-          backgroundColor: enCours || enAttente === 0 ? '#C4BEB9' : 'var(--jga-orange)',
+          backgroundColor: enCours || enAttente === 0 ? '#C4BEB9' : 'var(--jga-green)',
           color: 'white', border: 'none',
           fontSize: 14, fontWeight: 600,
           cursor: enCours || enAttente === 0 ? 'not-allowed' : 'pointer',
@@ -289,8 +289,8 @@ export function ConvertisseurTool() {
             disabled={preparationZip}
             style={{
               display: 'flex', alignItems: 'center', gap: 6,
-              background: 'white', border: '0.5px solid var(--jga-orange)',
-              padding: '7px 14px', fontSize: 12, color: 'var(--jga-orange)',
+              background: 'white', border: '0.5px solid var(--jga-green)',
+              padding: '7px 14px', fontSize: 12, color: 'var(--jga-green)',
               cursor: preparationZip ? 'default' : 'pointer', fontFamily: "'Inter', sans-serif",
             }}
           >
@@ -323,7 +323,7 @@ function Statut({ fichier }) {
     case 'attente':
       return <span style={{ ...base, color: '#9C9591' }}>En attente</span>
     case 'conversion':
-      return <span style={{ ...base, color: 'var(--jga-orange)' }}>Conversion…</span>
+      return <span style={{ ...base, color: 'var(--jga-green)' }}>Conversion…</span>
     case 'fait':
       return (
         <span style={{ ...base, color: '#22C55E' }}>

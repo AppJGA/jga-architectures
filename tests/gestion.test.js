@@ -6,7 +6,7 @@ import { test } from 'node:test'
 
 import {
   vendrediSemaineIso, rendus, grilleMois, parJour, prochaines, ecartJours,
-  affairesModifiables, mesAffaires, groupesTaches, initiales, equipeParAffaire,
+  affairesModifiables, mesAffaires, groupesTaches, initiales, equipeParAffaire, semaineIso,
 } from '../src/gestion/gestionLogique.js'
 
 test('vendredi d’une semaine ISO', () => {
@@ -135,4 +135,26 @@ test('PDF d’un mois : grille, détail trié, échappement, rien des autres moi
   assert.ok(html.indexOf('ven. 16 octobre') < html.indexOf('mar. 20 octobre'))
   assert.match(html, /Étude · S42/)
   assert.match(html, /Anne-Lise Aumeunier <i>\(propriétaire\)<\/i>/)
+})
+
+test('semaine ISO d’une date, aller et retour avec le vendredi', () => {
+  assert.deepEqual(semaineIso('2026-10-16'), { semaine: 42, annee: 2026 })
+  assert.deepEqual(semaineIso('2026-10-12'), { semaine: 42, annee: 2026 })
+  assert.deepEqual(semaineIso('2026-10-18'), { semaine: 42, annee: 2026 })
+  assert.deepEqual(semaineIso('2025-12-29'), { semaine: 1, annee: 2026 })
+  assert.deepEqual(semaineIso('2021-01-01'), { semaine: 53, annee: 2020 })
+  assert.deepEqual(semaineIso('2026-03-29'), { semaine: 13, annee: 2026 }) // dimanche du passage à l’heure d’été
+  for (const d of ['2026-01-09', '2026-06-19', '2027-12-31', '2028-01-03']) {
+    const { semaine, annee } = semaineIso(d)
+    assert.equal(semaineIso(vendrediSemaineIso(semaine, annee)).semaine, semaine, d)
+  }
+})
+
+test('rendus : identifiant du jalon, accroche et origine « direction »', () => {
+  const ev = rendus(
+    [{ id: 7, affaire_id: 'a2', label: 'OPR', date: '2026-10-20', ancre_tache_id: 4, fixe_direction: true }],
+    [{ id: 8, affaire_id: 'a1', label: 'APD', semaine: 42, annee: 2026 }],
+    affaires,
+  )
+  assert.deepEqual(ev.map((e) => [e.jalonId, e.ancre, e.fixeDirection]), [[8, false, false], [7, true, true]])
 })

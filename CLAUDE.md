@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 867 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude)
+npm test         # 869 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -134,7 +134,7 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
   anglais d'Outlook (marque UTF-8) — l'Outlook classique ne retient que le
   premier contact d'un .vcf. Une icône par fiche donne la carte seule. La
   note de chaque contact porte l'affaire et le rôle.
-- **Base** : `supabase/migrations/`, numérotées, 69 fichiers, **passées à la
+- **Base** : `supabase/migrations/`, numérotées, 70 fichiers, **passées à la
   main** dans le SQL Editor de Supabase : un code qui dépend d'une nouvelle
   colonne doit tolérer son absence tant que la migration n'est pas faite. La photo de
   couverture d'une affaire est `affaires.photo_url` (migration 014, bucket
@@ -614,6 +614,19 @@ associés, sur toutes les pages sauf Gestion d'agence elle-même.
   **initiales de l'équipe** de chaque affaire (`equipeParAffaire` :
   propriétaire et collaborateurs, **sans les associés** ni les extérieurs ;
   prénom composé en entier + initiale du nom), noms complets au survol.
+- **Jalons posés depuis le calendrier** (migration 070, `ModaleJalon.jsx`) :
+  « + Jalon » ou clic sur un jour vide pour créer (affaire, planning d'étude
+  ou chantier proposé d'après la phase, libellé, date, couleur), clic sur un
+  jalon pour le modifier ou le supprimer (lien « Ouvrir le planning »). Ils
+  s'écrivent dans `planning_jalons` (au jour) ou `planning_etude_jalons` (à
+  la semaine ISO de la date, `semaineIso`) : les deux sens passent par les
+  mêmes lignes. La 070 ouvre **les seuls jalons** aux associés et à
+  l'administrateur (`acces_gestion()` dans les règles restrictives de ces
+  deux tables), le reste du planning restant aux collaborateurs. Un jalon
+  créé ainsi porte `fixe_direction` : petite mallette dans son étiquette et
+  « fixé par la direction » au survol, dans les deux plannings ; il reste
+  modifiable par l'équipe. Un jalon accroché garde sa date (elle suit la
+  barre). Suppression comptée en lignes (un refus RLS ne rend pas d'erreur).
 - L'envoi des jalons vers Notion reste prévu, à part (décision du
   2026-10-09 : les deux).
 

@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronLeft, ChevronRight, FileDown } from 'lucide-react'
+import { ChevronLeft, ChevronRight, FileDown, Plus } from 'lucide-react'
 import { useAuth } from '../core/auth/useAuth'
 import { rendus, grilleMois, parJour, prochaines, ecartJours, mesAffaires, equipeParAffaire } from './gestionLogique'
 import { chargerCalendrier } from './gestionDonnees'
 import { exporterCalendrierMois } from './exportCalendrier'
+import { ModaleJalon } from './ModaleJalon'
 import { ACCENT, aujourdhuiLocal } from './manifest'
 
 // ─── Calendrier des rendus ───────────────────────────────────────────────────
@@ -12,7 +13,10 @@ import { ACCENT, aujourdhuiLocal } from './manifest'
 // Tous les jalons des plannings, mois par mois : ceux du chantier à leur
 // date, ceux de l'étude le vendredi de leur semaine (« S42 »), avec les
 // initiales de l'équipe de l'affaire (sans les associés). À côté, les
-// échéances des 30 prochains jours. Un jalon mène au planning de son affaire.
+// échéances des 30 prochains jours. Les associés y posent, modifient ou
+// retirent les jalons de chaque affaire (migration 070, `ModaleJalon`) : un
+// jour vide ou « + Jalon » pour en créer un, un jalon pour le modifier ; ils
+// s'écrivent dans le planning de l'affaire, qui en retour nourrit le calendrier.
 
 const JOURS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim']
 const PAR_CASE = 3
@@ -67,7 +71,7 @@ function Jalon({ ev, equipe = [], compact, onOuvrir }) {
   const titre = `${ev.affaire.code_affaire ?? ''} · ${ev.affaire.nom ?? ''} — ${ev.libelle}${ev.semaine ? ` (S${ev.semaine})` : ''}`
     + (equipe.length ? `\nÉquipe : ${equipe.map((p) => p.nom).join(', ')}` : '')
   return (
-    <button type="button" onClick={() => onOuvrir(ev)} title={titre}
+    <button type="button" onClick={(e) => { e.stopPropagation(); onOuvrir(ev) }} title={titre}
       style={{
         display: 'flex', flexDirection: compact ? 'column' : 'row', alignItems: compact ? 'stretch' : 'center', gap: compact ? 1 : 8,
         width: '100%', minWidth: 0, textAlign: 'left', cursor: 'pointer',
@@ -97,10 +101,11 @@ export default function CalendrierRendus() {
   const [portee, setPortee] = useState('toutes')
   const [origines, setOrigines] = useState({ etude: true, chantier: true })
   const [jourOuvert, setJourOuvert] = useState(null)
+  // null | { evenement } (modifier) | { dateInitiale } (créer)
+  const [modale, setModale] = useState(null)
 
-  useEffect(() => {
-    chargerCalendrier().then(setDonnees).catch((e) => setErreur(e?.message ?? String(e)))
-  }, [])
+  const recharger = () => chargerCalendrier().then(setDonnees).catch((e) => setErreur(e?.message ?? String(e)))
+  useEffect(() => { recharger() }, [])
 
   const evenements = useMemo(() => {
     if (!donnees) return []
@@ -125,7 +130,8 @@ export default function CalendrierRendus() {
       origines.etude && origines.chantier ? 'étude et chantier' : origines.etude ? 'étude seulement' : origines.chantier ? 'chantier seulement' : 'aucun planning'].join(', '),
     edition: new Date().toLocaleDateString('fr-FR'),
   })
-  const ouvrir = (ev) => navigate(`/affaires/${ev.affaire.id}/${ev.origine === 'etude' ? 'planning-etude' : 'planning-chantier'}`)
+  const ouvrir = (ev) => setModale({ evenement: ev })
+  const allerAuPlanning = (ev) => navigate(`/affaires/${ev.affaire.id}/${ev.origine === 'etude' ? 'planning-etude' : 'planning-chantier'}`)
 
   if (erreur) return <p role="alert" style={{ fontSize: 13, color: '#B8412C' }}>Lecture impossible : {erreur}</p>
   if (!donnees) return <p style={{ fontSize: 13, color: '#9C9591' }}>Chargement…</p>
@@ -146,6 +152,10 @@ export default function CalendrierRendus() {
         <section style={{ flex: '1 1 640px', minWidth: 0, background: 'white', border: '0.5px solid rgba(0,0,0,0.08)' }}>
           <header style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 14px', borderBottom: '0.5px solid rgba(0,0,0,0.08)' }}>
             <h2 style={{ flex: 1, margin: 0, fontSize: 16, fontWeight: 600, color: '#1F1B17', textTransform: 'capitalize' }}>{nomMois(mois.annee, mois.mois)}</h2>
+            <button type="button" onClick={() => setModale({ dateInitiale: aujourdhui })} title="Poser un jalon dans le planning d’une affaire"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minHeight: 36, padding: '0 12px', border: `1px solid ${ACCENT}`, background: 'rgba(122,78,156,0.10)', color: ACCENT, cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>
+              <Plus size={15} /> Jalon
+            </button>
             <button type="button" onClick={exporter} title="Exporter ce mois en PDF"
               style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minHeight: 36, padding: '0 12px', marginRight: 8, border: 'none', background: ACCENT, color: 'white', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>
               <FileDown size={15} /> Exporter le PDF
@@ -165,8 +175,10 @@ export default function CalendrierRendus() {
               const estAujourdhui = c.date === aujourdhui
               const weekEnd = i % 7 >= 5
               return (
-                <div key={c.date} role="gridcell" aria-label={dateLongue(c.date)}
+                <div key={c.date} role="gridcell" aria-label={dateLongue(c.date)} title="Cliquer pour poser un jalon ce jour"
+                  onClick={() => setModale({ dateInitiale: c.date })}
                   style={{
+                    cursor: 'copy',
                     minHeight: 96, padding: 4, display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0,
                     borderRight: i % 7 < 6 ? '0.5px solid rgba(0,0,0,0.06)' : 'none', borderBottom: '0.5px solid rgba(0,0,0,0.06)',
                     background: weekEnd ? '#FAF7F2' : 'white', opacity: c.duMois ? 1 : 0.45,
@@ -176,8 +188,10 @@ export default function CalendrierRendus() {
                     fontSize: 12, fontWeight: estAujourdhui ? 700 : 500, color: estAujourdhui ? 'white' : '#5E5854', background: estAujourdhui ? ACCENT : 'transparent',
                   }}>{+c.date.slice(8, 10)}</span>
                   {visibles.map((ev) => <Jalon key={ev.id} ev={ev} equipe={equipes.get(ev.affaire.id)} compact onOuvrir={ouvrir} />)}
+                  {/* Le reste de la case : un jalon à ce jour */}
+                  <span style={{ flex: 1, minHeight: 8 }} />
                   {evs.length > PAR_CASE && (
-                    <button type="button" onClick={() => setJourOuvert(ouvert ? null : c.date)}
+                    <button type="button" onClick={(e) => { e.stopPropagation(); setJourOuvert(ouvert ? null : c.date) }}
                       style={{ border: 'none', background: 'none', padding: '2px 4px', fontSize: 11, color: ACCENT, cursor: 'pointer', textAlign: 'left', fontWeight: 600 }}>
                       {ouvert ? 'Réduire' : `+ ${evs.length - PAR_CASE} autre${evs.length - PAR_CASE > 1 ? 's' : ''}`}
                     </button>
@@ -217,6 +231,13 @@ export default function CalendrierRendus() {
           </div>
         </aside>
       </div>
+
+      {modale && (
+        <ModaleJalon evenement={modale.evenement ?? null} dateInitiale={modale.dateInitiale} affaires={donnees.affaires}
+          onFermer={() => setModale(null)}
+          onEnregistre={() => { setModale(null); recharger() }}
+          onOuvrirPlanning={allerAuPlanning} />
+      )}
     </div>
   )
 }

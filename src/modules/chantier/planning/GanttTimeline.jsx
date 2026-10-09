@@ -288,6 +288,20 @@ function hexToRgba(hex, alpha) {
 }
 
 // Signe d'un jalon accroché, dans son étiquette (blanc sur la couleur du jalon)
+// Jalon fixé par la direction depuis la gestion d'agence (migration 070) : la
+// mallette, discrète, dans son étiquette ; il reste modifiable par l'équipe
+// (dessin réduit de la mallette : à 11 px, l'icône de l'accueil serait trop fine)
+function IconeDirection() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="white" strokeWidth="1.5"
+      strokeLinecap="round" strokeLinejoin="round" role="img" aria-label="fixé par la direction">
+      <path d="M4.5 3.5V2.5a1 1 0 0 1 1-1h1a1 1 0 0 1 1 1v1" />
+      <rect x="1.25" y="3.5" width="9.5" height="7" rx="1" />
+      <path d="M1.25 6.5h9.5" />
+    </svg>
+  )
+}
+
 function IconeLien() {
   return (
     <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor"
@@ -1650,7 +1664,7 @@ export function GanttTimeline({
                 position: 'absolute', left: x - 10, width: 22, top: 0, bottom: 0,
                 zIndex: 15, pointerEvents: drawMode ? 'none' : 'auto', cursor: 'pointer',
               }}
-              title={`${jalon.label} — ${new Date(jalon.date + 'T00:00:00').toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })}${jalon.ancre ? ' · accroché à une barre' : ''}`}
+              title={`${jalon.label} — ${new Date(jalon.date + 'T00:00:00').toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })}${jalon.ancre ? ' · accroché à une barre' : ''}${jalon.fixe_direction ? ' · fixé par la direction' : ''}`}
               onClick={(e) => { e.stopPropagation(); toucherJalon(jalon, labelTop, scrollRef?.current?.scrollTop ?? 0) }}
             >
               <div style={{
@@ -1667,6 +1681,7 @@ export function GanttTimeline({
                 whiteSpace: 'nowrap', letterSpacing: '0.02em',
                 boxShadow: '0 1px 4px rgba(0,0,0,0.15)', userSelect: 'none',
               }}>
+                {jalon.fixe_direction && <IconeDirection />}
                 {jalon.ancre && <IconeLien />}
                 {jalon.label}
               </div>

@@ -7,6 +7,7 @@
 // Testé sans navigateur (tests/gestion.test.js).
 
 import { tachesTriees, enRetard } from '../modules/etude/todo/todoLogique.js'
+import { estAncre } from '../shared/planning/ancrage.js'
 
 const JOUR = 86400000
 const iso = (ms) => new Date(ms).toISOString().slice(0, 10)
@@ -22,6 +23,18 @@ export function vendrediSemaineIso(semaine, annee) {
   return iso(lundi1 + ((semaine - 1) * 7 + 4) * JOUR)
 }
 
+/** La semaine ISO d'une date : un jalon d'étude posé depuis le calendrier. */
+export function semaineIso(dateIso) {
+  // Le jeudi de la semaine décide de l'année ISO ; la semaine 1 commence le
+  // lundi de la semaine du 4 janvier
+  const jour = ms(dateIso)
+  const jeudi = jour + (3 - ((new Date(jour).getUTCDay() + 6) % 7)) * JOUR
+  const annee = new Date(jeudi).getUTCFullYear()
+  const quatre = Date.UTC(annee, 0, 4)
+  const lundi1 = quatre - ((new Date(quatre).getUTCDay() + 6) % 7) * JOUR
+  return { semaine: 1 + Math.floor((jeudi - lundi1) / (7 * JOUR)), annee }
+}
+
 /**
  * Jalons des deux plannings, ramenés à une date, avec leur affaire.
  * Un jalon dont l'affaire n'est pas lue (droits, affaire supprimée) est écarté.
@@ -31,12 +44,14 @@ export function rendus(jalonsChantier, jalonsEtude, affaires) {
   const ev = []
   for (const j of jalonsChantier ?? []) {
     const affaire = parId.get(j.affaire_id)
-    if (affaire && j.date) ev.push({ id: `chantier-${j.id}`, date: j.date, libelle: j.label, couleur: j.couleur, affaire, origine: 'chantier' })
+    if (affaire && j.date) {
+      ev.push({ id: `chantier-${j.id}`, jalonId: j.id, date: j.date, libelle: j.label, couleur: j.couleur, affaire, origine: 'chantier', ancre: estAncre(j), fixeDirection: !!j.fixe_direction })
+    }
   }
   for (const j of jalonsEtude ?? []) {
     const affaire = parId.get(j.affaire_id)
     if (affaire && j.semaine && j.annee) {
-      ev.push({ id: `etude-${j.id}`, date: vendrediSemaineIso(j.semaine, j.annee), libelle: j.label, couleur: j.couleur, affaire, origine: 'etude', semaine: j.semaine })
+      ev.push({ id: `etude-${j.id}`, jalonId: j.id, date: vendrediSemaineIso(j.semaine, j.annee), libelle: j.label, couleur: j.couleur, affaire, origine: 'etude', semaine: j.semaine, ancre: estAncre(j), fixeDirection: !!j.fixe_direction })
     }
   }
   return ev.sort((a, b) => a.date.localeCompare(b.date) || (a.affaire.code_affaire ?? '').localeCompare(b.affaire.code_affaire ?? ''))

@@ -568,9 +568,16 @@ Espace des **associés** (conception :
 `docs/superpowers/specs/2026-10-09-gestion-agence-design.md`), bulle 04 de
 l'accueil, routes `/gestion-agence[/:outil]` gardées par `AssocieSeul`
 (attend tant que `estAssocie` vaut `null` : profil pas encore lu). Outils
-déclarés dans `src/gestion/manifest.js` (une entrée = une tuile et une
-adresse) : calendrier des rendus, suivi des tâches, associés. Violet
-`#7A4E9C`, passé aux composants de la to-do list par `--affaire-accent`.
+déclarés dans `src/gestion/manifest.js` (une entrée = une tuile du tableau
+de bord, une entrée de la colonne et une adresse) : calendrier des rendus,
+suivi des tâches, associés. **Présenté comme une affaire**, à la demande de
+l'agence (`GestionPage.jsx`) : colonne latérale avec « Tableau de bord » mis
+en évidence puis les outils, tableau de bord à tuiles résumées
+(`TableauBordGestion.jsx` ; un outil sans résumé montre sa description),
+titre d'outil comme `TitreModule`. Violet `#7A4E9C`, passé aux composants
+de la to-do list par `--affaire-accent`. Bouton violet « Revenir à la
+gestion d'agence » dans `Topbar`, à côté de la cloche, pour les seuls
+associés, sur toutes les pages (plein quand on y est).
 
 - **Associé** (migration 067) : `profiles.est_associe`, `est_associe()`,
   verrou par déclencheur ; on désigne par `designer_associe(compte,

@@ -1,15 +1,18 @@
 import { useState, useEffect, useContext } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { Bell } from 'lucide-react'
 import { RetourCourant } from './RetourCourant'
 import { TemoinEnvoi } from './TemoinEnvoi'
 import { RetourContexte } from './retourContexte'
 import { useAuth } from '../auth/useAuth'
 import { supabase } from '../supabase/client'
+import { IconeGestionAgence } from '../../shared/icones/IconesAffaire'
 
 export function Topbar() {
-  const { user, signOut } = useAuth()
+  const { user, signOut, estAssocie } = useAuth()
   const navigate = useNavigate()
+  const { pathname } = useLocation()
+  const dansGestion = pathname.startsWith('/gestion-agence')
   const [profile, setProfile] = useState(null)
 
   const { titre } = useContext(RetourContexte)
@@ -77,6 +80,26 @@ export function Topbar() {
       {/* Actions à droite */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <TemoinEnvoi />
+        {/* Associés seulement (migration 067) : retour en un geste au tableau
+            de bord de Gestion d'agence, de n'importe quelle page. Plein quand
+            on y est déjà. */}
+        {estAssocie === true && (
+          <button
+            type="button"
+            onClick={() => navigate('/gestion-agence')}
+            aria-current={dansGestion ? 'page' : undefined}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 7,
+              padding: '5px 12px', borderRadius: 3, cursor: 'pointer',
+              border: '1px solid #7A4E9C', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap',
+              backgroundColor: dansGestion ? '#7A4E9C' : 'rgba(122,78,156,0.10)',
+              color: dansGestion ? 'white' : '#7A4E9C',
+            }}
+          >
+            <IconeGestionAgence size={16} />
+            <span>Revenir à la gestion d’agence</span>
+          </button>
+        )}
         <button
           style={{
             display: 'flex', alignItems: 'center', gap: 6,

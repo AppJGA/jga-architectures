@@ -1,4 +1,5 @@
 import { lazy } from 'react'
+import { CalendarDays, ListChecks, Users } from 'lucide-react'
 
 // Le violet de la bulle « Gestion d'agence » de l'accueil
 export const ACCENT = '#7A4E9C'
@@ -10,26 +11,27 @@ export function aujourdhuiLocal() {
 }
 
 // Outils de Gestion d'agence (associés seulement). Ajouter un outil, c'est
-// une entrée ici : la page d'accueil de l'espace et ses routes en découlent.
+// une entrée ici : sa tuile du tableau de bord, son entrée dans la colonne et
+// son adresse en découlent.
 export const outilsGestion = [
   {
     id: 'calendrier',
     label: 'Calendrier des rendus',
-    icon: 'CalendarDays',
+    Icone: CalendarDays,
     description: 'Les jalons de toutes les affaires, mois par mois, et les prochaines échéances',
     component: lazy(() => import('./CalendrierRendus')),
   },
   {
     id: 'taches',
     label: 'Suivi des tâches',
-    icon: 'ListChecks',
+    Icone: ListChecks,
     description: 'Les tâches à faire de toutes les affaires, et en ajouter',
     component: lazy(() => import('./SuiviTaches')),
   },
   {
     id: 'associes',
     label: 'Associés',
-    icon: 'Users',
+    Icone: Users,
     description: 'Qui a accès à la gestion d’agence',
     component: lazy(() => import('./Associes')),
   },

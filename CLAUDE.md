@@ -583,7 +583,7 @@ indice).
 Espace des **associés** (conception :
 `docs/superpowers/specs/2026-10-09-gestion-agence-design.md`), bulle 04 de
 l'accueil, routes `/gestion-agence[/:outil]` gardées par `AssocieSeul`
-(attend tant que `estAssocie` vaut `null` : profil pas encore lu). Outils
+(sur `accesGestion` ; attend tant qu'il vaut `null` : profil pas encore lu). Outils
 déclarés dans `src/gestion/manifest.js` (une entrée = une tuile du tableau
 de bord, une entrée de la colonne et une adresse) : calendrier des rendus,
 suivi des tâches, associés. **Présenté comme une affaire**, à la demande de
@@ -621,12 +621,13 @@ associés, sur toutes les pages sauf Gestion d'agence elle-même.
   Logique pure dans `gestionLogique.js` (testé) : jalon d'étude au
   **vendredi** de sa semaine ISO (`vendrediSemaineIso`, dates en UTC),
   `grilleMois`, `prochaines` (30 jours), `affairesModifiables` (= règle de
-  `peut_modifier_affaire`), `groupesTaches`. Le calendrier porte les
-  **initiales de l'équipe** de chaque affaire (`equipeParAffaire` :
-  propriétaire et collaborateurs, **sans les associés** ni les extérieurs ;
-  prénom composé en entier + initiale du nom), noms complets au survol.
+  `peut_modifier_affaire`), `groupesTaches`. Le calendrier porte l'**équipe**
+  de chaque affaire en **ronds d'initiales**, comme la page d'une affaire
+  (`equipeParAffaire` : propriétaire en couleur puis collaborateurs en gris,
+  **sans les associés** ni les extérieurs ; initiales = prénom + nom), noms
+  complets au survol.
 - **Jalons posés depuis le calendrier** (migration 070, `ModaleJalon.jsx`) :
-  « + Jalon » ou clic sur un jour vide pour créer (affaire, planning d'étude
+  « + Échéance » ou clic sur un jour vide pour créer (affaire, planning d'étude
   ou chantier proposé d'après la phase, libellé, date, couleur), clic sur un
   jalon pour le modifier ou le supprimer (lien « Ouvrir le planning »). Ils
   s'écrivent dans `planning_jalons` (au jour) ou `planning_etude_jalons` (à
@@ -635,9 +636,23 @@ associés, sur toutes les pages sauf Gestion d'agence elle-même.
   l'administrateur (`acces_gestion()` dans les règles restrictives de ces
   deux tables), le reste du planning restant aux collaborateurs. Un jalon
   créé ainsi porte `fixe_direction` : petite mallette dans son étiquette et
-  « fixé par la direction » au survol, dans les deux plannings ; il reste
+  « fixée par la direction » au survol, dans les deux plannings ; il reste
   modifiable par l'équipe. Un jalon accroché garde sa date (elle suit la
   barre). Suppression comptée en lignes (un refus RLS ne rend pas d'erreur).
+  L'affaire se choisit par `ChoixAffaire` (recherche), comme dans le suivi
+  des tâches.
+- **PDF d'un mois** (`exportCalendrier.js`, gabarit pur `htmlCalendrierMois`,
+  testé) : page HTML imprimée par le navigateur, comme les plannings, en **A4
+  ou A3 paysage** (menu du bouton). La grille tient **toujours sur une seule
+  page** (demande de l'agence) : page de la taille exacte de la feuille, et
+  un script dans la fenêtre (`SCRIPT_AJUSTEMENT`) qui donne aux semaines leur
+  hauteur naturelle, répartit la place restante entre les moins chargées, ou
+  élargit puis réduit la grille à l'échelle (`transform: scale`) si le mois
+  déborde — essai : 8 échéances le même jour, A3 sans réduction, A4 à 66 %.
+  Il tourne dès la fin de la page : dans une fenêtre écrite par
+  `document.write`, `load` n'arrive pas toujours. Le détail des rendus suit
+  sur des pages à part (date, affaire, rendu, planning, équipe), filtres de
+  l'écran rappelés ; tout texte passe par `echapperHtml`.
 - L'envoi des jalons vers Notion reste prévu, à part (décision du
   2026-10-09 : les deux).
 

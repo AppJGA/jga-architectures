@@ -95,7 +95,7 @@ export function Topbar() {
             }}
           >
             <IconeGestionAgence size={16} />
-            <span>Revenir à la gestion d’agence</span>
+            <span>Aller à la gestion d’agence</span>
           </button>
         )}
         <button

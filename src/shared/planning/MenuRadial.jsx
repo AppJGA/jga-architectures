@@ -26,8 +26,13 @@ const ICONES = {
   detacher: <><path d="M18.8 13.2l1.7-1.7a5 5 0 0 0-7-7l-1.7 1.7" /><path d="M5.2 10.8l-1.7 1.7a5 5 0 0 0 7 7l1.7-1.7" /><path d="M8 2v3M2 8h3M16 22v-3M22 16h-3" /></>,
 }
 
-// « la tâche », « la phase », mais « le segment », « le jalon »
-const article = (objet) => (objet === 'segment' || objet === 'jalon' ? 'le' : 'la')
+// « la tâche », « la phase », « le segment », mais « l’échéance » : élision
+// devant une voyelle, donc l'article se colle au nom au lieu d'être suivi
+// d'une espace
+const avecArticle = (objet) => {
+  if (/^[aeéèêiouh]/i.test(objet)) return `l’${objet}`
+  return `${objet === 'segment' ? 'le' : 'la'} ${objet}`
+}
 
 function Icone({ nom, taille = 20, couleur = '#1F1B17', epaisseur = 1.6 }) {
   return (
@@ -60,7 +65,7 @@ const DISQUE = 68
  * @param barre { left, width, haut, hauteurLigne, barPad, fond, fragments? }
  *              `fond` : valeurs CSS de remplissage de la barre ; `fragments` :
  *              [{ left, width }] quand des fermetures coupent la barre
- * @param objet 'tâche' | 'phase' | 'segment' | 'jalon', pour les libellés d'accessibilité
+ * @param objet 'tâche' | 'phase' | 'segment' | 'échéance', pour les libellés d'accessibilité
  * @param actions actions proposées, dans l'ordre d'ACTIONS ; par défaut celles d'une barre
  */
 export function MenuRadial({ barre, numero, duree, objet = 'tâche', actions = null, onAction, onFermer }) {
@@ -98,7 +103,7 @@ export function MenuRadial({ barre, numero, duree, objet = 'tâche', actions = n
 
       <div
         role="menu"
-        aria-label={`Actions sur ${article(objet)} ${objet} ${numero}`}
+        aria-label={`Actions sur ${avecArticle(objet)} ${numero}`}
         style={{ position: 'absolute', left: centreX, top: centreY, width: 0, height: 0, zIndex: 60 }}
       >
         <div className="jga-disque" style={{
@@ -166,7 +171,7 @@ export function EditionBarre({ barre, mode, ecart, objet = 'tâche', onPoigneeDo
 
       {mode === 'move' ? (
         <div
-          aria-label={`Glisser pour déplacer ${article(objet)} ${objet}`}
+          aria-label={`Glisser pour déplacer ${avecArticle(objet)}`}
           onPointerDown={(e) => onPoigneeDown(e, 'move')}
           style={{ ...poignee, left: barre.left + barre.width / 2 - 34, width: 68, gap: 3 }}
         >

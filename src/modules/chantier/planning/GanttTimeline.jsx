@@ -294,7 +294,7 @@ function hexToRgba(hex, alpha) {
 function IconeDirection() {
   return (
     <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="white" strokeWidth="1.5"
-      strokeLinecap="round" strokeLinejoin="round" role="img" aria-label="fixé par la direction">
+      strokeLinecap="round" strokeLinejoin="round" role="img" aria-label="fixée par la direction">
       <path d="M4.5 3.5V2.5a1 1 0 0 1 1-1h1a1 1 0 0 1 1 1v1" />
       <rect x="1.25" y="3.5" width="9.5" height="7" rx="1" />
       <path d="M1.25 6.5h9.5" />
@@ -305,7 +305,7 @@ function IconeDirection() {
 function IconeLien() {
   return (
     <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor"
-      strokeWidth="2.6" strokeLinecap="round" aria-label="accroché">
+      strokeWidth="2.6" strokeLinecap="round" aria-label="accrochée">
       <path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7" />
       <path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7" />
     </svg>
@@ -1138,7 +1138,7 @@ export function GanttTimeline({
       if (!drag || e.type === 'pointercancel') return
       const date = dateSous(drag, e.clientX)
       const jalon = jalons.find((j) => j.id === drag.jalonId)
-      if (jalon && date !== jalon.date) onJalonModif?.(drag.jalonId, { date }, `Déplacement du jalon « ${jalon.label} »`)
+      if (jalon && date !== jalon.date) onJalonModif?.(drag.jalonId, { date }, `Déplacement de l’échéance « ${jalon.label} »`)
     }
     window.addEventListener('pointermove', handleMove)
     window.addEventListener('pointerup', handleUp)
@@ -1664,7 +1664,7 @@ export function GanttTimeline({
                 position: 'absolute', left: x - 10, width: 22, top: 0, bottom: 0,
                 zIndex: 15, pointerEvents: drawMode ? 'none' : 'auto', cursor: 'pointer',
               }}
-              title={`${jalon.label} — ${new Date(jalon.date + 'T00:00:00').toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })}${jalon.ancre ? ' · accroché à une barre' : ''}${jalon.fixe_direction ? ' · fixé par la direction' : ''}`}
+              title={`${jalon.label} — ${new Date(jalon.date + 'T00:00:00').toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })}${jalon.ancre ? ' · accrochée à une barre' : ''}${jalon.fixe_direction ? ' · fixée par la direction' : ''}`}
               onClick={(e) => { e.stopPropagation(); toucherJalon(jalon, labelTop, scrollRef?.current?.scrollTop ?? 0) }}
             >
               <div style={{
@@ -2018,10 +2018,10 @@ export function GanttTimeline({
             return (
               <MenuRadial
                 barre={barre}
-                objet="jalon"
+                objet="échéance"
                 actions={actionsJalon(jalonSelectionne.ancre)}
                 numero={jourMois}
-                duree={jalonSelectionne.ancre ? 'accroché' : 'jalon'}
+                duree={jalonSelectionne.ancre ? 'accrochée' : 'échéance'}
                 onAction={actionMenuJalon}
                 onFermer={() => setSelectionJalon(null)}
               />
@@ -2032,7 +2032,7 @@ export function GanttTimeline({
             <EditionBarre
               barre={barre}
               mode="move"
-              objet="jalon"
+              objet="échéance"
               ecart={ecart === 0 ? '±0 j' : `${ecart > 0 ? '+' : ''}${ecart} j`}
               onPoigneeDown={startJalonDrag}
               onTerminer={() => setSelectionJalon(null)}

@@ -295,7 +295,7 @@ describe('PDF chantier — légende et groupement', () => {
 
   test('les conventions restent présentes dans tous les modes', () => {
     generatePlanningChantierPdf(paramsPdfChantier({ colorMode: 'zone', groupMode: 'zone' }))
-    for (const conv of ['Avancement', 'Délai avant / après', 'Segment', 'Période bloquante', 'en pause', 'Jalon']) {
+    for (const conv of ['Avancement', 'Délai avant / après', 'Segment', 'Période bloquante', 'en pause', 'Échéance']) {
       assert.ok(legendePdf().includes(conv), conv)
     }
     assert.equal((htmlGenere.match(/<div class="legend">/g) ?? []).length, 1)

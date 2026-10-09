@@ -488,7 +488,7 @@ export function exporterPlanningChantierExcel({
   // ── Jalons ──
   if (jalons && jalons.length > 0) {
     setCell(0, rowIdx, '', { border: borderThin })
-    setCell(1, rowIdx, 'JALONS', { font: { bold: true, sz: fontSize }, border: borderThin })
+    setCell(1, rowIdx, 'ÉCHÉANCES', { font: { bold: true, sz: fontSize }, border: borderThin })
     rowIdx++
 
     jalons.forEach((jalon) => {

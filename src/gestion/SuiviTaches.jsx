@@ -5,6 +5,7 @@ import { useAuth } from '../core/auth/useAuth'
 import { enRetard, nomPersonne } from '../modules/etude/todo/todoLogique'
 import { ajouterTache, modifierElement } from '../modules/etude/todo/todoDonnees'
 import { CaseACocher } from '../modules/etude/todo/LigneArticle'
+import { ChoixAffaire } from '../shared/components/ChoixAffaire'
 import { groupesTaches, affairesModifiables, mesAffaires } from './gestionLogique'
 import { chargerTaches } from './gestionDonnees'
 import { ACCENT, aujourdhuiLocal } from './manifest'
@@ -39,10 +40,10 @@ function FormAjout({ affaires, personnesDe, onAjouter }) {
   }
   return (
     <section style={{ background: 'white', border: '0.5px solid rgba(0,0,0,0.08)', padding: '14px 18px', display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
-      <select value={affaireId} onChange={(e) => { setAffaireId(e.target.value); setResponsable('') }} aria-label="Affaire" style={{ ...champ, flex: '0 1 240px' }}>
-        <option value="">Affaire…</option>
-        {affaires.map((a) => <option key={a.id} value={a.id}>{a.code_affaire} · {a.nom}</option>)}
-      </select>
+      <div style={{ flex: '1 1 280px', minWidth: 0 }}>
+        <ChoixAffaire affaires={affaires} valeur={affaireId} accent={ACCENT}
+          onChange={(id) => { setAffaireId(id); setResponsable('') }} />
+      </div>
       <input value={texte} onChange={(e) => setTexte(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') valider() }}
         placeholder="Nouvelle tâche" aria-label="Tâche" style={{ ...champ, flex: '1 1 260px', minWidth: 0 }} />
       <select value={responsable} onChange={(e) => setResponsable(e.target.value)} aria-label="Personne chargée" style={{ ...champ, flex: '0 1 180px' }}>

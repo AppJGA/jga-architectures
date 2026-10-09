@@ -84,7 +84,7 @@ export async function modifierJalon(evenement, valeurs) {
 export async function supprimerJalon(evenement) {
   const { data, error } = await supabase.from(TABLE_JALONS[evenement.origine]).delete().eq('id', evenement.jalonId).select('id')
   if (error) throw error
-  if (!data?.length) throw Object.assign(new Error('Aucun jalon supprimé'), { code: 'PGRST116' })
+  if (!data?.length) throw Object.assign(new Error('Aucune échéance supprimée'), { code: 'PGRST116' })
 }
 
 /** @returns { disponible (migration 066 passée), affaires, collaborateurs, taches, profils } */

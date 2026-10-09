@@ -358,7 +358,7 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
       const lignes = [`${resume.phases} phase${resume.phases > 1 ? 's' : ''}`]
       if (resume.segments) lignes.push(`${resume.segments} segment${resume.segments > 1 ? 's' : ''}`)
       if (resume.liaisons) lignes.push(`${resume.liaisons} liaison${resume.liaisons > 1 ? 's' : ''}`)
-      if (resume.jalons) lignes.push(`${resume.jalons} jalon${resume.jalons > 1 ? 's' : ''}`)
+      if (resume.jalons) lignes.push(`${resume.jalons} échéance${resume.jalons > 1 ? 's' : ''}`)
       return lignes
     },
     avertissements: () => [],
@@ -686,7 +686,7 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
     const { error: err } = await supabase.from('planning_etude_jalons').update(changes).eq('id', id)
     if (err) {
       retirerDernier()
-      signalerErreur(`Jalon non enregistré — ${err.message}`)
+      signalerErreur(`Échéance non enregistrée — ${err.message}`)
       await refetch()
     }
   }, [saveSnapshot, takeSnapshot, setJalons, retirerDernier, signalerErreur, refetch])
@@ -696,14 +696,14 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
     if (!jalon) return
     const champs = champsAccrocheEtude(cible, bord)
     const position = semaineAncre({ ...jalon, ...champs }, { phases, segments, periodes })
-    handleJalonModif(id, { ...champs, ...(position ?? {}) }, `Accroche du jalon « ${jalon.label} »`)
+    handleJalonModif(id, { ...champs, ...(position ?? {}) }, `Accroche de l’échéance « ${jalon.label} »`)
   }, [jalons, phases, segments, periodes, handleJalonModif])
 
   const handleJalonSupprime = useCallback(async (jalon) => {
-    if (!window.confirm(`Supprimer le jalon « ${jalon.label} » ?`)) return
+    if (!window.confirm(`Supprimer l’échéance « ${jalon.label} » ?`)) return
     setJalons((prev) => prev.filter((j) => j.id !== jalon.id))
     const { error: err } = await supabase.from('planning_etude_jalons').delete().eq('id', jalon.id)
-    if (err) { signalerErreur(`Suppression du jalon impossible — ${err.message}`); await refetch() }
+    if (err) { signalerErreur(`Suppression de l’échéance impossible — ${err.message}`); await refetch() }
   }, [setJalons, signalerErreur, refetch])
 
   // Un jalon accroché suit sa barre, quel que soit le chemin (glissement,
@@ -723,7 +723,7 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
       const resultats = await Promise.all(aRecaler.map((r) =>
         supabase.from('planning_etude_jalons').update({ semaine: r.semaine, annee: r.annee }).eq('id', r.id)))
       const echec = resultats.find((r) => r.error)
-      if (echec) signalerErreur(`Jalon accroché non recalé — ${echec.error.message}`)
+      if (echec) signalerErreur(`Échéance accrochée non recalée — ${echec.error.message}`)
     }, 300)
     return () => clearTimeout(minuteur)
   }, [jalons, phases, segments, periodes, loading, segmentsEnChargement, periodesEnChargement, setJalons, signalerErreur])
@@ -964,11 +964,11 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
             peutAccrocher={peutAccrocher}
             onJalonModif={handleJalonModif}
             onJalonAccroche={handleJalonAccroche}
-            onJalonDetache={(j) => handleJalonModif(j.id, CHAMPS_DETACHE_ETUDE, `Détachement du jalon « ${j.label} »`)}
+            onJalonDetache={(j) => handleJalonModif(j.id, CHAMPS_DETACHE_ETUDE, `Détachement de l’échéance « ${j.label} »`)}
             onJalonSupprime={handleJalonSupprime}
             onJalonReglages={(j) => { setJalonReglages(j.id); setShowJalonsModal(true) }}
             onAccrochageIndisponible={() => signalerErreur(
-              'Accrocher un jalon demande la mise à jour 053 de la base (Supabase → SQL Editor).')}
+              'Accrocher une échéance demande la mise à jour 053 de la base (Supabase → SQL Editor).')}
             onPhaseClick={p => { setEditingPhase(p); setPhaseModalMode('edit'); setShowPhaseModal(true) }}
             onPhaseUpdate={handlePhaseUpdate}
             onDependencyCreate={handleDependencyCreate}

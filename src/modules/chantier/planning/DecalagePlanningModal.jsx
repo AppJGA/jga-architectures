@@ -75,7 +75,7 @@ export function DecalagePlanningModal({
           <h2 style={{ fontSize: 16, fontWeight: 600, color: '#1F1B17' }}>Décaler le planning</h2>
         </div>
         <p style={{ fontSize: 13, color: '#5E5854', lineHeight: 1.5, marginBottom: 18 }}>
-          Toutes les tâches, leurs segments et les jalons se décalent ensemble, liés ou non.
+          Toutes les tâches, leurs segments et les échéances se décalent ensemble, liés ou non.
           Les durées ne changent pas ; les congés et fermetures restent à leurs dates.
         </p>
 
@@ -132,7 +132,7 @@ export function DecalagePlanningModal({
                 <strong>Planning {sens} de {pluriel(semaines, 'semaine')}</strong>
                 <span style={{ color: '#9C9591' }}> ({pluriel(Math.abs(plan.ecart), 'jour')} ouvré{Math.abs(plan.ecart) > 1 ? 's' : ''})</span>
                 <br />
-                {pluriel(plan.resume.taches, 'tâche')} · {pluriel(plan.resume.segments, 'segment')} · {pluriel(plan.resume.jalons, 'jalon')}
+                {pluriel(plan.resume.taches, 'tâche')} · {pluriel(plan.resume.segments, 'segment')} · {pluriel(plan.resume.jalons, 'échéance')}
                 {plan.resume.allongees.length > 0 && (
                   <p style={{ marginTop: 8, fontSize: 12, color: '#B8412C' }}>
                     Traverse{plan.resume.allongees.length > 1 ? 'nt' : ''} désormais une période de congés et s’allonge{plan.resume.allongees.length > 1 ? 'nt' : ''} d’autant :{' '}
@@ -144,7 +144,7 @@ export function DecalagePlanningModal({
           </div>
 
           <p style={{ fontSize: 11, color: '#9C9591', fontStyle: 'italic' }}>
-            « Annuler » dans la barre d’outils (⌘Z) remet le planning et les jalons en place.
+            « Annuler » dans la barre d’outils (⌘Z) remet le planning et les échéances en place.
             {avecAffaire && datesAffaire ? ' Les dates de l’affaire, elles, se corrigent dans sa fiche.' : ''}
           </p>
         </div>

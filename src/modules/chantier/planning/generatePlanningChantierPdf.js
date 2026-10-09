@@ -723,7 +723,7 @@ ${pied ? `<div class="texte-pied">${pied}</div>` : ''}
   </div>` : ''}
   <div class="leg-item">
     <div style="width:8mm;border-top:2px solid #E8602C"></div>
-    Jalon
+    Échéance
   </div>
   ${legNoteHtml}
 </div>

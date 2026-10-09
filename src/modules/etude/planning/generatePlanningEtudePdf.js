@@ -432,7 +432,7 @@ ${pied ? `<div class="texte-pied">${pied}</div>` : ''}
   <div class="leg-item"><div class="leg-swatch" style="background:${fondPeriode(exemplePeriode)};border-left:${traitPeriode(exemplePeriode)};border-right:${traitPeriode(exemplePeriode)}"></div>Période bloquante</div>
   <div class="leg-item"><div class="leg-swatch" style="background:${fondPeriode({ ...exemplePeriode, est_bloquante: false })}"></div>Période informative</div>
   <div class="leg-item"><div class="leg-swatch" style="${stylePause('#5E5854', exemplePeriode)}"></div>Phase en pause pendant une période (semaines non comptées)</div>
-  <div class="leg-item"><div style="width:8mm;border-top:2px solid #8B5CF6"></div>Jalon</div>
+  <div class="leg-item"><div style="width:8mm;border-top:2px solid #8B5CF6"></div>Échéance</div>
 </div>
 
 <div class="footer">

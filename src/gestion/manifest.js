@@ -18,7 +18,7 @@ export const outilsGestion = [
     id: 'calendrier',
     label: 'Calendrier des rendus',
     Icone: CalendarDays,
-    description: 'Les jalons de toutes les affaires, mois par mois, et les prochaines échéances',
+    description: 'Les échéances de toutes les affaires, mois par mois, et celles qui approchent',
     component: lazy(() => import('./CalendrierRendus')),
   },
   {

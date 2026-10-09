@@ -94,7 +94,7 @@ export function htmlCalendrierMois({ annee, mois, evenements, equipes, filtres =
     <div><h1>${e(titre)}</h1><div class="sous">${[filtres, `${duMois.length} rendu${duMois.length > 1 ? 's' : ''}`, `édité le ${edition}`].filter(Boolean).map(e).join(' · ')}</div></div>
   </header>
   <table class="grille"><thead><tr>${JOURS.map((j) => `<th>${j}</th>`).join('')}</tr></thead><tbody>${cellules}</tbody></table>
-  <div class="legende"><span>${ronds([{ initiales: 'AB', nom: 'Propriétaire', proprietaire: true }], accent)} propriétaire de l’affaire</span><span>${ronds([{ initiales: 'AB', nom: 'Collaborateur' }], accent)} collaborateur</span><span>Jalon d’étude : le vendredi de sa semaine (S42)</span></div>
+  <div class="legende"><span>${ronds([{ initiales: 'AB', nom: 'Propriétaire', proprietaire: true }], accent)} propriétaire de l’affaire</span><span>${ronds([{ initiales: 'AB', nom: 'Collaborateur' }], accent)} collaborateur</span><span>Échéance d’étude : le vendredi de sa semaine (S42)</span></div>
 </div>
 <div class="feuille detail">
   <h2>Détail des rendus — ${e(titreMois(annee, mois))}</h2>

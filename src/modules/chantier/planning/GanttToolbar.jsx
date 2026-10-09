@@ -177,7 +177,7 @@ export function GanttToolbar({
           Dépendances
         </button>
         {!lectureSeule && <button style={BTN} onClick={onOpenJalons}>
-          <Flag size={13} /> Jalons
+          <Flag size={13} /> Échéances
         </button>}
         {onOpenDecalage && !lectureSeule && (
           <button style={BTN} onClick={onOpenDecalage} title="Reporter ou avancer tout le planning">

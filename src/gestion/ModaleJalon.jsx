@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { X, Trash2, ExternalLink, Link2 } from 'lucide-react'
 import { ModaleConfirmation } from '../shared/components/ModaleConfirmation'
+import { ChoixAffaire } from '../shared/components/ChoixAffaire'
 import { periodeAffaire } from '../affaire/phaseAffaire'
 import { semaineIso, vendrediSemaineIso } from './gestionLogique'
 import { creerJalon, modifierJalon, supprimerJalon } from './gestionDonnees'
@@ -47,7 +48,6 @@ export function ModaleJalon({ evenement = null, affaires, dateInitiale, onFermer
     return () => window.removeEventListener('keydown', echap)
   }, [onFermer, aSupprimer, enCours])
 
-  const affairesTriees = useMemo(() => [...(affaires ?? [])].sort((a, b) => (a.code_affaire ?? '').localeCompare(b.code_affaire ?? '')), [affaires])
   const semaine = date ? semaineIso(date) : null
   const pret = affaireId && libelle.trim() && date && !enCours
 
@@ -75,10 +75,10 @@ export function ModaleJalon({ evenement = null, affaires, dateInitiale, onFermer
 
   return createPortal(
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(20,18,16,0.38)', zIndex: 300, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 'calc(env(safe-area-inset-top) + 24px) 16px 24px', overflowY: 'auto' }}>
-      <div role="dialog" aria-modal="true" aria-label={creation ? 'Nouveau jalon' : 'Modifier le jalon'}
+      <div role="dialog" aria-modal="true" aria-label={creation ? 'Nouvelle échéance' : 'Modifier l’échéance'}
         style={{ background: 'white', width: '100%', maxWidth: 520, borderTop: `3px solid ${ACCENT}`, boxShadow: '0 24px 60px -24px rgba(31,27,23,0.55)' }}>
         <header style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '16px 20px', borderBottom: '0.5px solid rgba(0,0,0,0.08)' }}>
-          <p style={{ flex: 1, margin: 0, fontSize: 16, fontWeight: 600, color: '#1F1B17' }}>{creation ? 'Nouveau jalon' : 'Modifier le jalon'}</p>
+          <p style={{ flex: 1, margin: 0, fontSize: 16, fontWeight: 600, color: '#1F1B17' }}>{creation ? 'Nouvelle échéance' : 'Modifier l’échéance'}</p>
           <button type="button" onClick={onFermer} aria-label="Fermer" style={{ width: 34, height: 34, border: 'none', background: 'none', cursor: 'pointer', color: '#5E5854', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><X size={18} /></button>
         </header>
 
@@ -86,10 +86,7 @@ export function ModaleJalon({ evenement = null, affaires, dateInitiale, onFermer
           <div>
             <label style={etiquette} htmlFor="jalon-affaire">Affaire</label>
             {creation ? (
-              <select id="jalon-affaire" value={affaireId} onChange={(e) => choisirAffaire(e.target.value)} style={champ}>
-                <option value="">Choisir une affaire…</option>
-                {affairesTriees.map((a) => <option key={a.id} value={a.id}>{a.code_affaire} · {a.nom}</option>)}
-              </select>
+              <ChoixAffaire id="jalon-affaire" affaires={affaires} valeur={affaireId} onChange={choisirAffaire} accent={ACCENT} />
             ) : (
               <p style={{ margin: 0, fontSize: 14, color: '#1F1B17' }}><strong>{evenement.affaire.code_affaire}</strong> {evenement.affaire.nom}</p>
             )}
@@ -121,14 +118,14 @@ export function ModaleJalon({ evenement = null, affaires, dateInitiale, onFermer
             <label style={etiquette} htmlFor="jalon-date">Date</label>
             {evenement?.ancre ? (
               <p style={{ margin: 0, fontSize: 13, color: '#5E5854', display: 'flex', alignItems: 'center', gap: 6 }}>
-                <Link2 size={14} /> Accroché à une barre du planning : sa date suit la barre ({dateLongue(evenement.date)}).
+                <Link2 size={14} /> Accrochée à une barre du planning : sa date suit la barre ({dateLongue(evenement.date)}).
               </p>
             ) : (
               <>
                 <input id="jalon-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} style={champ} />
                 {origine === 'etude' && semaine && (
                   <p style={{ margin: '5px 0 0', fontSize: 12, color: '#5E5854' }}>
-                    Posé en <strong>S{semaine.semaine} {semaine.annee}</strong> au planning d’étude, soit au plus tard le {dateLongue(vendrediSemaineIso(semaine.semaine, semaine.annee))}.
+                    Posée en <strong>S{semaine.semaine} {semaine.annee}</strong> au planning d’étude, soit au plus tard le {dateLongue(vendrediSemaineIso(semaine.semaine, semaine.annee))}.
                   </p>
                 )}
               </>
@@ -169,8 +166,8 @@ export function ModaleJalon({ evenement = null, affaires, dateInitiale, onFermer
       </div>
 
       {aSupprimer && (
-        <ModaleConfirmation danger titre="Supprimer ce jalon ?" libelle="Supprimer"
-          texte={`« ${evenement.libelle} » sera retiré du ${evenement.origine === 'etude' ? 'planning d’étude' : 'planning chantier'} de ${evenement.affaire.code_affaire}.`}
+        <ModaleConfirmation danger titre="Supprimer cette échéance ?" libelle="Supprimer"
+          texte={`L’échéance « ${evenement.libelle} » sera retirée du ${evenement.origine === 'etude' ? 'planning d’étude' : 'planning chantier'} de ${evenement.affaire.code_affaire}.`}
           onAnnuler={() => setASupprimer(false)}
           onConfirmer={async () => {
             try { await supprimerJalon(evenement); onEnregistre() } catch (e) { setErreur(expliquer(e)); setASupprimer(false) }

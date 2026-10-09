@@ -139,7 +139,7 @@ export function GanttEtudeToolbar({
         </button>}
 
         {!lectureSeule && <button style={{ ...BTN, whiteSpace: 'nowrap' }} onClick={onOpenJalons}>
-          <Flag size={13} /> Jalons
+          <Flag size={13} /> Échéances
         </button>}
 
         {onOpenImport && !lectureSeule && (

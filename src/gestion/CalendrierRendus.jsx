@@ -152,9 +152,9 @@ export default function CalendrierRendus() {
         <section style={{ flex: '1 1 640px', minWidth: 0, background: 'white', border: '0.5px solid rgba(0,0,0,0.08)' }}>
           <header style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 14px', borderBottom: '0.5px solid rgba(0,0,0,0.08)' }}>
             <h2 style={{ flex: 1, margin: 0, fontSize: 16, fontWeight: 600, color: '#1F1B17', textTransform: 'capitalize' }}>{nomMois(mois.annee, mois.mois)}</h2>
-            <button type="button" onClick={() => setModale({ dateInitiale: aujourdhui })} title="Poser un jalon dans le planning d’une affaire"
+            <button type="button" onClick={() => setModale({ dateInitiale: aujourdhui })} title="Poser une échéance dans le planning d’une affaire"
               style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minHeight: 36, padding: '0 12px', border: `1px solid ${ACCENT}`, background: 'rgba(122,78,156,0.10)', color: ACCENT, cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>
-              <Plus size={15} /> Jalon
+              <Plus size={15} /> Échéance
             </button>
             <button type="button" onClick={exporter} title="Exporter ce mois en PDF"
               style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minHeight: 36, padding: '0 12px', marginRight: 8, border: 'none', background: ACCENT, color: 'white', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>
@@ -175,7 +175,7 @@ export default function CalendrierRendus() {
               const estAujourdhui = c.date === aujourdhui
               const weekEnd = i % 7 >= 5
               return (
-                <div key={c.date} role="gridcell" aria-label={dateLongue(c.date)} title="Cliquer pour poser un jalon ce jour"
+                <div key={c.date} role="gridcell" aria-label={dateLongue(c.date)} title="Cliquer pour poser une échéance ce jour"
                   onClick={() => setModale({ dateInitiale: c.date })}
                   style={{
                     cursor: 'copy',

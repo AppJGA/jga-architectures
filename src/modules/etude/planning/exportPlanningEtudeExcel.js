@@ -327,7 +327,7 @@ export function exportPlanningEtudeExcel({
   // ── Jalons ──
   if (jalons.length > 0) {
     noteHauteur(rowIdx, dens.headerRow)
-    setCell(0, rowIdx, 'JALONS', { font: { bold: true, sz: fontSize }, border: borderThin })
+    setCell(0, rowIdx, 'ÉCHÉANCES', { font: { bold: true, sz: fontSize }, border: borderThin })
     setCell(1, rowIdx, '', { border: borderThin })
     weeks.forEach((_, i) => setCell(FIXED_COLS + i, rowIdx, '', { border: borderThin }))
     rowIdx++

@@ -860,7 +860,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
       const lignes = [`${resume.taches} tâche${resume.taches > 1 ? 's' : ''}`]
       if (resume.segments) lignes.push(`${resume.segments} segment${resume.segments > 1 ? 's' : ''}`)
       if (resume.liaisons + resume.dependances) lignes.push(`${resume.liaisons + resume.dependances} liaison${resume.liaisons + resume.dependances > 1 ? 's' : ''}`)
-      if (resume.jalons) lignes.push(`${resume.jalons} jalon${resume.jalons > 1 ? 's' : ''}`)
+      if (resume.jalons) lignes.push(`${resume.jalons} échéance${resume.jalons > 1 ? 's' : ''}`)
       return lignes
     },
     avertissements: (plan) => {
@@ -980,7 +980,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
     ecrituresEnCours.current++
     const { error } = await supabase.from('planning_jalons').update(changes).eq('id', id)
     ecrituresEnCours.current--
-    if (error) { retirerDernier(); await signalerEchec('Jalon non enregistré', error.message) }
+    if (error) { retirerDernier(); await signalerEchec('Échéance non enregistrée', error.message) }
   }, [saveSnapshot, takeSnapshot, retirerDernier, signalerEchec])
 
   const handleJalonAccroche = useCallback((id, cible, bord) => {
@@ -988,14 +988,14 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
     if (!jalon) return
     const champs = champsAccroche(cible, bord)
     const date = dateAncre({ ...jalon, ...champs }, { tasks, segments, periodes })
-    handleJalonModif(id, { ...champs, ...(date ? { date } : {}) }, `Accroche du jalon « ${jalon.label} »`)
+    handleJalonModif(id, { ...champs, ...(date ? { date } : {}) }, `Accroche de l’échéance « ${jalon.label} »`)
   }, [jalons, tasks, segments, periodes, handleJalonModif])
 
   const handleJalonSupprime = useCallback(async (jalon) => {
-    if (!window.confirm(`Supprimer le jalon « ${jalon.label} » ?`)) return
+    if (!window.confirm(`Supprimer l’échéance « ${jalon.label} » ?`)) return
     setJalons((prev) => prev.filter((j) => j.id !== jalon.id))
     const { error } = await supabase.from('planning_jalons').delete().eq('id', jalon.id)
-    if (error) await signalerEchec('Suppression du jalon impossible', error.message)
+    if (error) await signalerEchec('Suppression de l’échéance impossible', error.message)
   }, [signalerEchec])
 
   // Un jalon accroché suit sa barre, quelle que soit la façon dont elle a bougé
@@ -1016,7 +1016,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
         supabase.from('planning_jalons').update({ date: r.date }).eq('id', r.id)))
       ecrituresEnCours.current--
       const echec = resultats.find((r) => r.error)
-      if (echec) setErreurEcriture(`Jalon accroché non recalé : ${echec.error.message}`)
+      if (echec) setErreurEcriture(`Échéance accrochée non recalée : ${echec.error.message}`)
     }, 300)
     return () => clearTimeout(minuteur)
   }, [jalons, tasks, segments, periodes, isLoading, segmentsEnChargement, periodesEnChargement, gesteSegment])
@@ -1357,11 +1357,11 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
             peutAccrocher={peutAccrocher}
             onJalonModif={handleJalonModif}
             onJalonAccroche={handleJalonAccroche}
-            onJalonDetache={(j) => handleJalonModif(j.id, CHAMPS_DETACHE, `Détachement du jalon « ${j.label} »`)}
+            onJalonDetache={(j) => handleJalonModif(j.id, CHAMPS_DETACHE, `Détachement de l’échéance « ${j.label} »`)}
             onJalonSupprime={handleJalonSupprime}
             onJalonReglages={(j) => { setJalonReglages(j.id); setShowJalonsModal(true) }}
             onAccrochageIndisponible={() => setErreurEcriture(
-              'Accrocher un jalon demande la mise à jour 053 de la base (Supabase → SQL Editor).')}
+              'Accrocher une échéance demande la mise à jour 053 de la base (Supabase → SQL Editor).')}
             onTaskClick={(t) => handleOpenTaskModal(t, 'edit')}
             onTaskUpdate={handleTaskUpdate}
             onTaskDuplicate={handleDuplicateTask}

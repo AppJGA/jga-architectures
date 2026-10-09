@@ -27,7 +27,7 @@ export const phases = [
         path: 'planning-etude',
         component: lazy(() => import('./etude/planning')),
         enabled: true,
-        description: "Planification des phases et jalons d'étude",
+        description: "Planification des phases et échéances d'étude",
       },
       {
         id: 'financier-etude',

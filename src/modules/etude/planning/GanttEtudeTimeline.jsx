@@ -59,7 +59,7 @@ function isFirstWeekOfMonth(semaine, annee) {
 function IconeDirection() {
   return (
     <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="white" strokeWidth="1.5"
-      strokeLinecap="round" strokeLinejoin="round" role="img" aria-label="fixé par la direction">
+      strokeLinecap="round" strokeLinejoin="round" role="img" aria-label="fixée par la direction">
       <path d="M4.5 3.5V2.5a1 1 0 0 1 1-1h1a1 1 0 0 1 1 1v1" />
       <rect x="1.25" y="3.5" width="9.5" height="7" rx="1" />
       <path d="M1.25 6.5h9.5" />
@@ -70,7 +70,7 @@ function IconeDirection() {
 function IconeLien() {
   return (
     <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor"
-      strokeWidth="2.6" strokeLinecap="round" aria-label="accroché">
+      strokeWidth="2.6" strokeLinecap="round" aria-label="accrochée">
       <path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7" />
       <path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7" />
     </svg>
@@ -634,7 +634,7 @@ export function GanttEtudeTimeline({
       const { semaine, annee } = semaineSous(drag, e.clientX)
       const jalon = jalons.find((j) => j.id === drag.jalonId)
       if (jalon && (semaine !== jalon.semaine || annee !== jalon.annee)) {
-        onJalonModif?.(drag.jalonId, { semaine, annee }, `Déplacement du jalon « ${jalon.label} »`)
+        onJalonModif?.(drag.jalonId, { semaine, annee }, `Déplacement de l’échéance « ${jalon.label} »`)
       }
     }
     window.addEventListener('pointermove', handleMove)
@@ -953,7 +953,7 @@ export function GanttEtudeTimeline({
                 position: 'absolute', left: j.left - 10, width: 22, top: 0, bottom: 0,
                 zIndex: 15, pointerEvents: drawMode ? 'none' : 'auto', cursor: 'pointer',
               }}
-              title={`${j.label} — S${j.semaine} ${j.annee}${j.ancre ? ' · accroché à une barre' : ''}${j.fixe_direction ? ' · fixé par la direction' : ''}`}
+              title={`${j.label} — S${j.semaine} ${j.annee}${j.ancre ? ' · accrochée à une barre' : ''}${j.fixe_direction ? ' · fixée par la direction' : ''}`}
               onClick={(e) => { e.stopPropagation(); toucherJalon(j, scrollRef?.current?.scrollTop ?? 0) }}
             >
               <div style={{
@@ -1186,10 +1186,10 @@ export function GanttEtudeTimeline({
             return (
               <MenuRadial
                 barre={barre}
-                objet="jalon"
+                objet="échéance"
                 actions={actionsJalon(jalonSelectionne.ancre)}
                 numero={`S${jalonSelectionne.semaine}`}
-                duree={jalonSelectionne.ancre ? 'accroché' : 'jalon'}
+                duree={jalonSelectionne.ancre ? 'accrochée' : 'échéance'}
                 onAction={actionMenuJalon}
                 onFermer={() => setSelectionJalon(null)}
               />
@@ -1201,7 +1201,7 @@ export function GanttEtudeTimeline({
             <EditionBarre
               barre={barre}
               mode="move"
-              objet="jalon"
+              objet="échéance"
               ecart={ecart === 0 ? '±0 sem.' : `${ecart > 0 ? '+' : ''}${ecart} sem.`}
               onPoigneeDown={startJalonDrag}
               onTerminer={() => setSelectionJalon(null)}

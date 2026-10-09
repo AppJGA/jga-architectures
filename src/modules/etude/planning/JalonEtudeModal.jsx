@@ -92,7 +92,7 @@ function JalonRow({ jalon, onUpdate, onDelete, editionInitiale = false }) {
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
         <input type="number" min={1} max={53} placeholder="Sem." value={draft.semaine}
           onChange={e => setDraft(d => ({ ...d, semaine: e.target.value }))}
-          disabled={ancre} title={ancre ? 'Accroché à une barre : la semaine suit la barre' : undefined}
+          disabled={ancre} title={ancre ? 'Accrochée à une barre : la semaine suit la barre' : undefined}
           style={{ ...INPUT, width: 70, opacity: ancre ? 0.6 : 1 }}
         />
         <input type="number" min={2020} max={2040} placeholder="Année" value={draft.annee}
@@ -121,7 +121,7 @@ function JalonRow({ jalon, onUpdate, onDelete, editionInitiale = false }) {
         {jalon.label}
       </span>
       {ancre && (
-        <span title="Accroché à une barre : il la suit" style={{ display: 'flex', color: '#9C9591', flexShrink: 0 }}>
+        <span title="Accrochée à une barre : elle la suit" style={{ display: 'flex', color: '#9C9591', flexShrink: 0 }}>
           <Link2 size={13} />
         </span>
       )}
@@ -201,7 +201,7 @@ export function JalonEtudeModal({ open, onClose, jalons, affaireId, onRefetch, j
               <Flag size={16} style={{ color: '#8B5CF6' }} />
             </div>
             <div>
-              <h2 style={{ fontSize: 15, fontWeight: 500, color: '#1F1B17' }}>Jalons du planning d'étude</h2>
+              <h2 style={{ fontSize: 15, fontWeight: 500, color: '#1F1B17' }}>Échéances du planning d'étude</h2>
               <p style={{ fontSize: 11, color: '#9C9591', marginTop: 1 }}>Dates clés en semaines ISO</p>
             </div>
           </div>
@@ -213,7 +213,7 @@ export function JalonEtudeModal({ open, onClose, jalons, affaireId, onRefetch, j
         <div style={{ flex: 1, overflowY: 'auto', marginBottom: 16 }}>
           {jalons.length === 0 ? (
             <p style={{ fontSize: 13, color: '#9C9591', textAlign: 'center', padding: '24px 0' }}>
-              Aucun jalon — ajoutez des dates clés ci-dessous.
+              Aucune échéance — ajoutez des dates clés ci-dessous.
             </p>
           ) : (
             jalons.map(j => (
@@ -223,7 +223,7 @@ export function JalonEtudeModal({ open, onClose, jalons, affaireId, onRefetch, j
         </div>
 
         <div style={{ borderTop: '0.5px solid rgba(0,0,0,0.08)', paddingTop: 16, flexShrink: 0 }}>
-          <p style={LABEL_STYLE}>Ajouter un jalon</p>
+          <p style={LABEL_STYLE}>Ajouter une échéance</p>
           <form onSubmit={handleCreate}>
             <datalist id="jalon-etude-suggeres">
               {JALONS_SUGGERES.map(s => <option key={s} value={s} />)}

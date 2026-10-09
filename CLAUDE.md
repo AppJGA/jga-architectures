@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 869 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude)
+npm test         # 876 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -162,6 +162,17 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
   l'action elle-même la ferment ; le fond ne porte aucun `onClick`. Les menus
   déroulants et sélecteurs (date, couleur) gardent, eux, la fermeture au
   clic extérieur.
+- **Vocabulaire : « échéance », jamais « jalon » à l'écran** (demande de
+  l'agence, 2026-10-09) — boutons, titres, messages, exports PDF et Excel,
+  au féminin (« une échéance accrochée », « l'échéance »). Le code, les
+  tables (`planning_jalons`, `planning_etude_jalons`), les identifiants et
+  les commentaires gardent « jalon ». `MenuRadial` reçoit `objet="échéance"`
+  et élide l'article (`avecArticle`).
+- **Choisir une affaire** se fait par `ChoixAffaire`
+  (`shared/components/ChoixAffaire.jsx`) : barre de recherche dont la liste
+  se resserre à chaque lettre, code ou nom (ou maître d'ouvrage), sans
+  majuscules ni accents (`filtrerAffaires`, `choixAffaireLogique.js`, testé),
+  ↑ ↓ Entrée Échap, lignes de 44 px. Pas de `<select>` d'affaires.
 - Les commentaires expliquent **pourquoi**, pas quoi. Un commentaire qui
   paraphrase la ligne suivante est du bruit.
 

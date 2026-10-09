@@ -207,7 +207,7 @@ export function ImportPlanningModal({ moteur, affaires = [], onValider, onAnnule
 
         <p style={{ fontSize: 11, color: '#9C9591', fontStyle: 'italic', lineHeight: 1.6 }}>
           « Annuler » dans la barre d’outils (⌘Z) retire les tâches, segments et liaisons
-          importés. Les jalons, lots et zones créés restent : d’autres écrans s’en servent
+          importés. Les échéances, lots et zones créés restent : d’autres écrans s’en servent
           peut-être déjà.
         </p>
 

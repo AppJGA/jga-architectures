@@ -119,13 +119,10 @@ export function groupesTaches(taches, affaires, filtres = {}, aujourdhui) {
     .sort((a, b) => (b.enRetard > 0) - (a.enRetard > 0) || (a.affaire.code_affaire ?? '').localeCompare(b.affaire.code_affaire ?? ''))
 }
 
-/** Initiales d'un compte : chaque partie du prénom (Anne-Lise → AL), puis la première lettre du nom. */
+/** Initiales d'un compte, comme sur la page d'une affaire : prénom puis nom. */
 export function initiales(profil) {
   if (!profil) return ''
-  const prenom = (profil.prenom ?? '').trim()
-  const nom = (profil.nom ?? '').trim()
-  const lettres = [...prenom.split(/[\s-]+/), nom.split(/[\s-]+/)[0]]
-    .filter(Boolean).map((m) => m[0].toUpperCase()).join('')
+  const lettres = `${(profil.prenom ?? '').trim().charAt(0)}${(profil.nom ?? '').trim().charAt(0)}`.toUpperCase()
   return lettres || (profil.email ?? '').trim().charAt(0).toUpperCase()
 }
 
@@ -134,7 +131,7 @@ export function initiales(profil) {
  * et collaborateurs de l'agence, sans les associés (ils lisent le calendrier)
  * ni les extérieurs. Un compte dont le profil n'est pas lu est passé.
  * @param profils { [id]: profil }
- * @returns Map affaireId → [{ id, initiales, nom }]
+ * @returns Map affaireId → [{ id, initiales, nom, proprietaire }] — propriétaire d'abord
  */
 export function equipeParAffaire(collaborateurs, profils) {
   const m = new Map()
@@ -144,9 +141,9 @@ export function equipeParAffaire(collaborateurs, profils) {
     if (!m.has(c.affaire_id)) m.set(c.affaire_id, [])
     const liste = m.get(c.affaire_id)
     if (!liste.some((x) => x.id === c.user_id)) {
-      liste.push({ id: c.user_id, initiales: initiales(p), nom: [p.prenom, p.nom].filter(Boolean).join(' ').trim() || p.email || '' })
+      liste.push({ id: c.user_id, initiales: initiales(p), nom: [p.prenom, p.nom].filter(Boolean).join(' ').trim() || p.email || '', proprietaire: c.role === 'proprietaire' })
     }
   }
-  for (const liste of m.values()) liste.sort((a, b) => a.initiales.localeCompare(b.initiales))
+  for (const liste of m.values()) liste.sort((a, b) => (b.proprietaire - a.proprietaire) || a.initiales.localeCompare(b.initiales))
   return m
 }

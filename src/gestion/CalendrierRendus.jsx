@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { ChevronLeft, ChevronRight, FileDown } from 'lucide-react'
 import { useAuth } from '../core/auth/useAuth'
 import { rendus, grilleMois, parJour, prochaines, ecartJours, mesAffaires, equipeParAffaire } from './gestionLogique'
 import { chargerCalendrier } from './gestionDonnees'
+import { exporterCalendrierMois } from './exportCalendrier'
 import { ACCENT, aujourdhuiLocal } from './manifest'
 
 // ─── Calendrier des rendus ───────────────────────────────────────────────────
@@ -40,23 +41,43 @@ function Bascule({ actif, onClick, children }) {
   )
 }
 
+// Les ronds d'initiales, comme sur la page d'une affaire : propriétaire en
+// couleur, collaborateurs en gris, légèrement chevauchés
+function Ronds({ equipe, taille }) {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', flexShrink: 0 }}>
+      {equipe.map((p, i) => (
+        <span key={p.id} title={`${p.nom}${p.proprietaire ? ' (propriétaire)' : ''}`}
+          style={{
+            width: taille, height: taille, borderRadius: '50%', flexShrink: 0,
+            background: p.proprietaire ? ACCENT : '#9C9591', color: 'white',
+            fontSize: Math.round(taille * 0.42), fontWeight: 600, lineHeight: 1,
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            border: '1.5px solid white', marginLeft: i === 0 ? 0 : -Math.round(taille * 0.3),
+            position: 'relative', zIndex: equipe.length - i,
+          }}>
+          {p.initiales}
+        </span>
+      ))}
+    </span>
+  )
+}
+
 function Jalon({ ev, equipe = [], compact, onOuvrir }) {
   const titre = `${ev.affaire.code_affaire ?? ''} · ${ev.affaire.nom ?? ''} — ${ev.libelle}${ev.semaine ? ` (S${ev.semaine})` : ''}`
     + (equipe.length ? `\nÉquipe : ${equipe.map((p) => p.nom).join(', ')}` : '')
   return (
     <button type="button" onClick={() => onOuvrir(ev)} title={titre}
       style={{
-        display: compact ? 'block' : 'flex', alignItems: 'baseline', gap: 5, width: '100%', minWidth: 0, textAlign: 'left', cursor: 'pointer',
-        padding: compact ? '2px 4px' : '6px 8px', border: 'none', borderLeft: `3px solid ${ev.couleur || ACCENT}`,
+        display: 'flex', flexDirection: compact ? 'column' : 'row', alignItems: compact ? 'stretch' : 'center', gap: compact ? 1 : 8,
+        width: '100%', minWidth: 0, textAlign: 'left', cursor: 'pointer',
+        padding: compact ? '3px 4px' : '6px 8px', border: 'none', borderLeft: `3px solid ${ev.couleur || ACCENT}`,
         background: 'rgba(0,0,0,0.03)', fontSize: compact ? 11 : 12, color: '#1F1B17', lineHeight: 1.3,
       }}>
-      <span style={{ fontWeight: 700, flexShrink: 0 }}>{ev.affaire.code_affaire}</span>
-      {equipe.length > 0 && (
-        <span style={{ flexShrink: 0, fontSize: compact ? 10 : 11, fontWeight: 600, color: ACCENT }}>
-          {compact && ' '}{equipe.map((p) => p.initiales).join(', ')}
-        </span>
-      )}
-      {compact && ' '}
+      <span style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
+        <span style={{ fontWeight: 700, flexShrink: 0 }}>{ev.affaire.code_affaire}</span>
+        {equipe.length > 0 && <Ronds equipe={equipe} taille={compact ? 18 : 22} />}
+      </span>
       <span style={compact
         ? { color: '#5E5854', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }
         : { color: '#5E5854' }}>
@@ -98,6 +119,12 @@ export default function CalendrierRendus() {
     const d = new Date(annee, m - 1 + n, 1)
     return { annee: d.getFullYear(), mois: d.getMonth() + 1 }
   })
+  const exporter = () => exporterCalendrierMois({
+    annee: mois.annee, mois: mois.mois, evenements, equipes,
+    filtres: [portee === 'mes' ? 'Mes affaires' : 'Toutes les affaires',
+      origines.etude && origines.chantier ? 'étude et chantier' : origines.etude ? 'étude seulement' : origines.chantier ? 'chantier seulement' : 'aucun planning'].join(', '),
+    edition: new Date().toLocaleDateString('fr-FR'),
+  })
   const ouvrir = (ev) => navigate(`/affaires/${ev.affaire.id}/${ev.origine === 'etude' ? 'planning-etude' : 'planning-chantier'}`)
 
   if (erreur) return <p role="alert" style={{ fontSize: 13, color: '#B8412C' }}>Lecture impossible : {erreur}</p>
@@ -119,6 +146,10 @@ export default function CalendrierRendus() {
         <section style={{ flex: '1 1 640px', minWidth: 0, background: 'white', border: '0.5px solid rgba(0,0,0,0.08)' }}>
           <header style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 14px', borderBottom: '0.5px solid rgba(0,0,0,0.08)' }}>
             <h2 style={{ flex: 1, margin: 0, fontSize: 16, fontWeight: 600, color: '#1F1B17', textTransform: 'capitalize' }}>{nomMois(mois.annee, mois.mois)}</h2>
+            <button type="button" onClick={exporter} title="Exporter ce mois en PDF"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minHeight: 36, padding: '0 12px', marginRight: 8, border: 'none', background: ACCENT, color: 'white', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>
+              <FileDown size={15} /> Exporter le PDF
+            </button>
             <button type="button" onClick={() => decaler(-1)} aria-label="Mois précédent" style={{ width: 36, height: 36, border: '0.5px solid rgba(0,0,0,0.15)', background: 'white', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><ChevronLeft size={18} /></button>
             <button type="button" onClick={() => setMois({ annee: +aujourdhui.slice(0, 4), mois: +aujourdhui.slice(5, 7) })} style={{ minHeight: 36, padding: '0 12px', border: '0.5px solid rgba(0,0,0,0.15)', background: 'white', cursor: 'pointer', fontSize: 12 }}>Aujourd’hui</button>
             <button type="button" onClick={() => decaler(1)} aria-label="Mois suivant" style={{ width: 36, height: 36, border: '0.5px solid rgba(0,0,0,0.15)', background: 'white', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><ChevronRight size={18} /></button>

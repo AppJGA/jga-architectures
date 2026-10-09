@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { Mail, Lock, Eye, EyeOff, ArrowRight } from 'lucide-react'
 import { useAuth } from './useAuth'
 
@@ -82,6 +82,7 @@ function InputField({ label, type, value, onChange, placeholder, icon: Icon, rig
 export function LoginPage() {
   const { signIn } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -97,7 +98,9 @@ export function LoginPage() {
     if (err) {
       setError('Identifiants incorrects. Vérifiez votre email et mot de passe.')
     } else {
-      navigate('/home')
+      // Retour à la page demandée (lien partagé), seulement à l'intérieur de l'app
+      const depuis = location.state?.depuis
+      navigate(typeof depuis === 'string' && depuis.startsWith('/') && !depuis.startsWith('//') ? depuis : '/home')
     }
   }
 

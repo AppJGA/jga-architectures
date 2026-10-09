@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 844 tests node --test (plannings, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude)
+npm test         # 858 tests node --test (plannings, to-do list, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -133,7 +133,7 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
   anglais d'Outlook (marque UTF-8) — l'Outlook classique ne retient que le
   premier contact d'un .vcf. Une icône par fiche donne la carte seule. La
   note de chaque contact porte l'affaire et le rôle.
-- **Base** : `supabase/migrations/`, numérotées, 65 fichiers, **passées à la
+- **Base** : `supabase/migrations/`, numérotées, 66 fichiers, **passées à la
   main** dans le SQL Editor de Supabase : un code qui dépend d'une nouvelle
   colonne doit tolérer son absence tant que la migration n'est pas faite. La photo de
   couverture d'une affaire est `affaires.photo_url` (migration 014, bucket
@@ -533,6 +533,31 @@ du mode Visite, hors ligne). Conception :
   (CCTP commun, chaque lot, Excel) et s'arrête proprement sur « Continue » si
   la réponse est trop longue. Le message à coller commence par le code de
   l'affaire : claude.ai titre la conversation d'après lui.
+
+## To-do list (`src/modules/etude/todo/`)
+
+Conception : `docs/superpowers/specs/2026-10-09-todo-list-design.md`. Même
+module dans les deux phases du manifeste (objet `TODO`, un seul `lazy`).
+Trois onglets : **Mission** (phases Engagement → AOR, la phase en cours de
+l'affaire ouverte d'office par `phaseParDefaut`), **Quotidien** (tâches :
+personne chargée, échéance, retards en rouge), **Contenu des plans** (à
+recommencer pour chaque indice).
+
+- **La liste type est en base, jamais dans le code** (demande de l'agence) :
+  `todo_modele` (migration 066, remplie au départ depuis la section 7 de la
+  conception), modifiable par « Modifier la liste type ». Une affaire ne la
+  recopie pas : `todo_elements` ne garde que ce qu'elle a touché (type
+  `modele`, upsert sur `(affaire_id, modele_id)`), ses articles propres
+  (`article`) et ses tâches (`tache`). Fusion dans `articlesAffiches`
+  (`todoLogique.js`, testé).
+- Un article de la liste type n'est **jamais effacé** : `supprime_le`. Il
+  disparaît des affaires, sauf là où il a été coché, annoté ou « sans
+  objet » (grisé, « Retiré de la liste type », hors compteur).
+- Toute coche note `fait_le` / `fait_par` (« Fait par Victor le 09/10 »).
+- Liens de partage : `/affaires/<id>/todo?onglet=…&phase=…&tache=…`
+  (`lienPartage` / `lireLien`). `RequireAuth` passe l'adresse demandée à la
+  connexion (`state.depuis`), qui y ramène : un lien reçu mène au bon endroit.
+- Tuile du tableau de bord : `resumeTuile` (phase en cours, tâches en retard).
 
 ## Suivi financier d'étude
 

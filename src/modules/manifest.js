@@ -1,5 +1,18 @@
 import { lazy } from 'react'
 
+// La to-do list suit toute la mission, de l'esquisse à la réception : même
+// module dans les deux phases, chargé une seule fois
+const TodoModule = lazy(() => import('./etude/todo'))
+const TODO = {
+  id: 'todo',
+  label: 'To-do list',
+  icon: 'CheckSquare',
+  path: 'todo',
+  component: TodoModule,
+  enabled: true,
+  description: 'Mission phase par phase, tâches du quotidien, contenu des plans',
+}
+
 export const phases = [
   {
     id: 'etude',
@@ -34,15 +47,7 @@ export const phases = [
         enabled: true,
         description: 'CCTP découpés en articles, cherchables au bureau et en visite',
       },
-      {
-        id: 'todo',
-        label: 'To-do list',
-        icon: 'CheckSquare',
-        path: 'todo',
-        component: lazy(() => import('./etude/todo')),
-        enabled: false,
-        description: "Tâches par phase d'étude",
-      },
+      TODO,
     ],
   },
   {
@@ -114,6 +119,7 @@ export const phases = [
         layout: 'fullbleed',
         description: 'Plus et moins-values, situations de travaux',
       },
+      TODO,
     ],
   },
 ]

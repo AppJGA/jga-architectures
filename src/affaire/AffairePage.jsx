@@ -9,6 +9,8 @@ import { RetourCourant } from '../core/layout/RetourCourant'
 import { BandeauVisite } from '../modules/chantier/comptes-rendus/BandeauVisite'
 import { CollabModal } from './CollabModal'
 import { phasesPour, getAllModules } from '../modules/manifest'
+import { chargerTodo } from '../modules/etude/todo/todoDonnees'
+import { resumeTuile } from '../modules/etude/todo/todoLogique'
 import { PHASES_AFFAIRE, periodeAffaire, libellePhase, variablesPhase, phasesDuTableau } from './phaseAffaire'
 
 import { AffaireFormModal } from '../dashboard/AffaireFormModal'
@@ -45,6 +47,12 @@ function formatEuro(v) {
   return formatEuros(v)
 }
 
+// Date du jour à l'heure locale (toISOString passerait à la veille le soir)
+function aujourdhuiIso() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 function fmtDate(d) {
   if (!d) return null
   return new Date(d).toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' })
@@ -53,7 +61,7 @@ function fmtDate(d) {
 // ─── Stats overview ───────────────────────────────────────────────────────────
 function useAffaireStats(affaireId) {
   const [stats, setStats] = useState({
-    comptesRendus: 0, reserves: 0, todos: 0, todosDone: 0,
+    comptesRendus: 0, reserves: 0, todo: null,
     lots: 0, lotsAttributed: 0, lotsTotalHt: 0,
     financierSupplementsHt: 0, financierAleasHt: 0, financierDeltaPct: 0, financierAleasPct: 0,
     planningTaches: 0, planningAvancement: 0, planningDateFin: null, prochainJalon: null,
@@ -67,7 +75,8 @@ function useAffaireStats(affaireId) {
     Promise.all([
       supabase.from('comptes_rendus').select('id, statut, date_reunion, date_prochaine_reunion').eq('affaire_id', affaireId).order('numero', { ascending: false }),
       supabase.from('cr_remarques').select('cr_id, parent_id, statut, est_clos').eq('affaire_id', affaireId).eq('est_clos', false),
-      supabase.from('todos').select('id, fait').eq('affaire_id', affaireId),
+      // Sans la migration 066, la tuile se tait plutôt que de bloquer les autres chiffres
+      chargerTodo(affaireId).catch(() => null),
       supabase.from('lots').select('id', { count: 'exact', head: true }).eq('affaire_id', affaireId),
       supabase.from('lot_entreprises').select('montant_marche_ht').eq('affaire_id', affaireId),
       supabase.from('lignes_financieres').select('montant_ht, categorie, statut').eq('affaire_id', affaireId),
@@ -143,8 +152,7 @@ function useAffaireStats(affaireId) {
         // reprise. Seul le dernier CR fait foi, et sans les suivis.
         remarquesAFaire: (remAFaire.data ?? [])
           .filter(r => r.cr_id === crRows[0]?.id && !r.parent_id && infosStatut(r).famille === 'rouge').length,
-        todos: t.data?.length ?? 0,
-        todosDone: t.data?.filter(x => x.fait).length ?? 0,
+        todo: t?.disponible ? t : null,
         lots: lots.count ?? 0,
         lotsAttributed: le.data?.length ?? 0,
         lotsTotalHt,
@@ -902,15 +910,25 @@ function PhaseSection({ phase, affaire, stats, affaireId, navigate, rangBase }) 
                 )
               )}
 
-              {isEtude && mod.id === 'todo' && !mod.enabled && (
-                stats.todos === 0 ? (
-                  <p style={{ fontSize: 12, color: 'var(--jga-beige)' }}>Aucune tâche</p>
-                ) : (
-                  <p style={{ fontSize: 12, color: 'var(--jga-beige)' }}>
-                    {stats.todos} tâche{stats.todos > 1 ? 's' : ''} · {stats.todosDone} faite{stats.todosDone > 1 ? 's' : ''}
-                  </p>
+              {mod.id === 'todo' && stats.todo && (() => {
+                const r = resumeTuile(stats.todo.modele, stats.todo.elements, affaire?.phase, aujourdhuiIso())
+                return (
+                  <>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 2 }}>
+                      <p style={{ fontSize: 22, fontWeight: 500, color: '#1F1B17' }}>{r.faits}/{r.total}</p>
+                      <span style={{ fontSize: 12, color: '#5E5854' }}>{r.court}</span>
+                    </div>
+                    <p style={{ fontSize: 12, color: 'var(--jga-beige)' }}>
+                      {r.tachesAFaire === 0 ? 'Aucune tâche en cours' : `${r.tachesAFaire} tâche${r.tachesAFaire > 1 ? 's' : ''} à faire`}
+                    </p>
+                    {r.tachesEnRetard > 0 && (
+                      <p style={{ fontSize: 11, color: '#B8412C', marginTop: 4 }}>
+                        {r.tachesEnRetard} en retard
+                      </p>
+                    )}
+                  </>
                 )
-              )}
+              })()}
 
               {isChantier && mod.id === 'planning-chantier' && mod.enabled && (
                 stats.planningTaches === 0 ? (

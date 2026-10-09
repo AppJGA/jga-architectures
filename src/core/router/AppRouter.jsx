@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react'
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
 import { LoginPage } from '../auth/LoginPage'
 import { AppShell } from '../layout/AppShell'
@@ -27,10 +27,13 @@ function Wrap({ children }) {
   return <Suspense fallback={<Spinner />}>{children}</Suspense>
 }
 
+// L'adresse demandée suit jusqu'à la connexion : un lien partagé (une
+// to-do list, une tâche) y mène une fois connecté, pas à l'accueil
 function RequireAuth({ children }) {
   const { user, loading } = useAuth()
+  const location = useLocation()
   if (loading) return <Spinner />
-  return user ? children : <Navigate to="/login" replace />
+  return user ? children : <Navigate to="/login" replace state={{ depuis: location.pathname + location.search }} />
 }
 
 // Écrans réservés à l'agence. La base refuse déjà leurs données à un compte

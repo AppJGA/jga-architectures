@@ -118,3 +118,35 @@ export function groupesTaches(taches, affaires, filtres = {}, aujourdhui) {
     .map(([id, liste]) => ({ affaire: parId.get(id), taches: tachesTriees(liste).aFaire, enRetard: liste.filter((t) => enRetard(t, aujourdhui)).length }))
     .sort((a, b) => (b.enRetard > 0) - (a.enRetard > 0) || (a.affaire.code_affaire ?? '').localeCompare(b.affaire.code_affaire ?? ''))
 }
+
+/** Initiales d'un compte : chaque partie du prénom (Anne-Lise → AL), puis la première lettre du nom. */
+export function initiales(profil) {
+  if (!profil) return ''
+  const prenom = (profil.prenom ?? '').trim()
+  const nom = (profil.nom ?? '').trim()
+  const lettres = [...prenom.split(/[\s-]+/), nom.split(/[\s-]+/)[0]]
+    .filter(Boolean).map((m) => m[0].toUpperCase()).join('')
+  return lettres || (profil.email ?? '').trim().charAt(0).toUpperCase()
+}
+
+/**
+ * Équipe de chaque affaire, telle que le calendrier l'annonce : propriétaire
+ * et collaborateurs de l'agence, sans les associés (ils lisent le calendrier)
+ * ni les extérieurs. Un compte dont le profil n'est pas lu est passé.
+ * @param profils { [id]: profil }
+ * @returns Map affaireId → [{ id, initiales, nom }]
+ */
+export function equipeParAffaire(collaborateurs, profils) {
+  const m = new Map()
+  for (const c of collaborateurs ?? []) {
+    const p = profils?.[c.user_id]
+    if (!p || p.est_associe || (c.role !== 'proprietaire' && c.role !== 'collaborateur')) continue
+    if (!m.has(c.affaire_id)) m.set(c.affaire_id, [])
+    const liste = m.get(c.affaire_id)
+    if (!liste.some((x) => x.id === c.user_id)) {
+      liste.push({ id: c.user_id, initiales: initiales(p), nom: [p.prenom, p.nom].filter(Boolean).join(' ').trim() || p.email || '' })
+    }
+  }
+  for (const liste of m.values()) liste.sort((a, b) => a.initiales.localeCompare(b.initiales))
+  return m
+}

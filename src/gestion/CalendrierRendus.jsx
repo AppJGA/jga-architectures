@@ -2,14 +2,15 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { useAuth } from '../core/auth/useAuth'
-import { rendus, grilleMois, parJour, prochaines, ecartJours, mesAffaires } from './gestionLogique'
+import { rendus, grilleMois, parJour, prochaines, ecartJours, mesAffaires, equipeParAffaire } from './gestionLogique'
 import { chargerCalendrier } from './gestionDonnees'
 import { ACCENT, aujourdhuiLocal } from './manifest'
 
 // ─── Calendrier des rendus ───────────────────────────────────────────────────
 //
 // Tous les jalons des plannings, mois par mois : ceux du chantier à leur
-// date, ceux de l'étude le vendredi de leur semaine (« S42 »). À côté, les
+// date, ceux de l'étude le vendredi de leur semaine (« S42 »), avec les
+// initiales de l'équipe de l'affaire (sans les associés). À côté, les
 // échéances des 30 prochains jours. Un jalon mène au planning de son affaire.
 
 const JOURS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim']
@@ -39,8 +40,9 @@ function Bascule({ actif, onClick, children }) {
   )
 }
 
-function Jalon({ ev, compact, onOuvrir }) {
+function Jalon({ ev, equipe = [], compact, onOuvrir }) {
   const titre = `${ev.affaire.code_affaire ?? ''} · ${ev.affaire.nom ?? ''} — ${ev.libelle}${ev.semaine ? ` (S${ev.semaine})` : ''}`
+    + (equipe.length ? `\nÉquipe : ${equipe.map((p) => p.nom).join(', ')}` : '')
   return (
     <button type="button" onClick={() => onOuvrir(ev)} title={titre}
       style={{
@@ -48,7 +50,13 @@ function Jalon({ ev, compact, onOuvrir }) {
         padding: compact ? '2px 4px' : '6px 8px', border: 'none', borderLeft: `3px solid ${ev.couleur || ACCENT}`,
         background: 'rgba(0,0,0,0.03)', fontSize: compact ? 11 : 12, color: '#1F1B17', lineHeight: 1.3,
       }}>
-      <span style={{ fontWeight: 700, flexShrink: 0 }}>{ev.affaire.code_affaire}</span>{compact && ' '}
+      <span style={{ fontWeight: 700, flexShrink: 0 }}>{ev.affaire.code_affaire}</span>
+      {equipe.length > 0 && (
+        <span style={{ flexShrink: 0, fontSize: compact ? 10 : 11, fontWeight: 600, color: ACCENT }}>
+          {compact && ' '}{equipe.map((p) => p.initiales).join(', ')}
+        </span>
+      )}
+      {compact && ' '}
       <span style={compact
         ? { color: '#5E5854', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }
         : { color: '#5E5854' }}>
@@ -79,6 +87,9 @@ export default function CalendrierRendus() {
     return rendus(donnees.jalonsChantier, donnees.jalonsEtude, donnees.affaires)
       .filter((e) => origines[e.origine] && (portee === 'toutes' || miennes.has(e.affaire.id)))
   }, [donnees, user?.id, portee, origines])
+  const equipes = useMemo(() => equipeParAffaire(
+    donnees?.collaborateurs, Object.fromEntries((donnees?.profils ?? []).map((p) => [p.id, p])),
+  ), [donnees])
   const jours = useMemo(() => parJour(evenements), [evenements])
   const aVenir = useMemo(() => prochaines(evenements, aujourdhui, 30), [evenements, aujourdhui])
   const grille = grilleMois(mois.annee, mois.mois)
@@ -133,7 +144,7 @@ export default function CalendrierRendus() {
                     alignSelf: 'flex-start', minWidth: 22, height: 22, padding: '0 4px', borderRadius: 11, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                     fontSize: 12, fontWeight: estAujourdhui ? 700 : 500, color: estAujourdhui ? 'white' : '#5E5854', background: estAujourdhui ? ACCENT : 'transparent',
                   }}>{+c.date.slice(8, 10)}</span>
-                  {visibles.map((ev) => <Jalon key={ev.id} ev={ev} compact onOuvrir={ouvrir} />)}
+                  {visibles.map((ev) => <Jalon key={ev.id} ev={ev} equipe={equipes.get(ev.affaire.id)} compact onOuvrir={ouvrir} />)}
                   {evs.length > PAR_CASE && (
                     <button type="button" onClick={() => setJourOuvert(ouvert ? null : c.date)}
                       style={{ border: 'none', background: 'none', padding: '2px 4px', fontSize: 11, color: ACCENT, cursor: 'pointer', textAlign: 'left', fontWeight: 600 }}>
@@ -162,8 +173,10 @@ export default function CalendrierRendus() {
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                     {evs.map((ev) => (
                       <div key={ev.id}>
-                        <Jalon ev={ev} onOuvrir={ouvrir} />
-                        <p style={{ margin: '2px 0 0 11px', fontSize: 11, color: '#9C9591' }}>{ev.affaire.nom} · {ev.origine === 'etude' ? 'planning d’étude' : 'planning chantier'}</p>
+                        <Jalon ev={ev} equipe={equipes.get(ev.affaire.id)} onOuvrir={ouvrir} />
+                        <p style={{ margin: '2px 0 0 11px', fontSize: 11, color: '#9C9591' }}>
+                          {[ev.affaire.nom, (equipes.get(ev.affaire.id) ?? []).map((p) => p.nom).join(', '), ev.origine === 'etude' ? 'planning d’étude' : 'planning chantier'].filter(Boolean).join(' · ')}
+                        </p>
                       </div>
                     ))}
                   </div>

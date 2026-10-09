@@ -19,14 +19,16 @@ const affairesEtCollaborateurs = () => Promise.all([
 ])
 
 export async function chargerCalendrier() {
-  const [[affaires, collaborateurs], jalonsChantier, jalonsEtude] = await Promise.all([
+  const [[affaires, collaborateurs], jalonsChantier, jalonsEtude, profils] = await Promise.all([
     affairesEtCollaborateurs(),
     supabase.from('planning_jalons').select('id, affaire_id, label, date, couleur'),
     supabase.from('planning_etude_jalons').select('id, affaire_id, label, semaine, annee, couleur'),
+    // Les initiales de l'équipe ; `est_associe` (067) pour en retirer les associés
+    supabase.from('profiles').select('*').eq('type_compte', 'agence'),
   ])
   return {
     affaires: verifier(affaires), collaborateurs: verifier(collaborateurs),
-    jalonsChantier: verifier(jalonsChantier), jalonsEtude: verifier(jalonsEtude),
+    jalonsChantier: verifier(jalonsChantier), jalonsEtude: verifier(jalonsEtude), profils: verifier(profils),
   }
 }
 

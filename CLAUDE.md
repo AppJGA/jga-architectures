@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 864 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude)
+npm test         # 866 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -584,7 +584,10 @@ adresse) : calendrier des rendus, suivi des tâches, associés. Violet
   Logique pure dans `gestionLogique.js` (testé) : jalon d'étude au
   **vendredi** de sa semaine ISO (`vendrediSemaineIso`, dates en UTC),
   `grilleMois`, `prochaines` (30 jours), `affairesModifiables` (= règle de
-  `peut_modifier_affaire`), `groupesTaches`.
+  `peut_modifier_affaire`), `groupesTaches`. Le calendrier porte les
+  **initiales de l'équipe** de chaque affaire (`equipeParAffaire` :
+  propriétaire et collaborateurs, **sans les associés** ni les extérieurs ;
+  prénom composé en entier + initiale du nom), noms complets au survol.
 - L'envoi des jalons vers Notion reste prévu, à part (décision du
   2026-10-09 : les deux).
 

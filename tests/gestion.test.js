@@ -6,7 +6,7 @@ import { test } from 'node:test'
 
 import {
   vendrediSemaineIso, rendus, grilleMois, parJour, prochaines, ecartJours,
-  affairesModifiables, mesAffaires, groupesTaches,
+  affairesModifiables, mesAffaires, groupesTaches, initiales, equipeParAffaire,
 } from '../src/gestion/gestionLogique.js'
 
 test('vendredi d’une semaine ISO', () => {
@@ -88,4 +88,27 @@ test('groupes de tâches : retards en tête, filtres', () => {
   assert.deepEqual(groupesTaches(taches, affaires, { enRetard: true }, '2026-10-09').map((x) => x.taches.map((y) => y.id)), [['t2']])
   assert.deepEqual(groupesTaches(taches, affaires, { personne: 'moi' }, '2026-10-09').map((x) => x.affaire.id), ['a1'])
   assert.deepEqual(groupesTaches(taches, affaires, { affaires: new Set(['a2']) }, '2026-10-09').map((x) => x.affaire.id), ['a2'])
+})
+
+test('initiales : prénom composé en entier, première lettre du nom', () => {
+  assert.equal(initiales({ prenom: 'Anne-Lise', nom: 'Aumeunier' }), 'ALA')
+  assert.equal(initiales({ prenom: 'Véronique', nom: 'Durafour-Soro' }), 'VD')
+  assert.equal(initiales({ prenom: ' anthonin ', nom: 'bridon' }), 'AB')
+  assert.equal(initiales({ prenom: '', nom: '', email: 'claire@exemple.fr' }), 'C')
+  assert.equal(initiales(null), '')
+})
+
+test('équipe d’une affaire : ni associés ni extérieurs, dans l’ordre des initiales', () => {
+  const profils = {
+    p1: { prenom: 'Anthonin', nom: 'Bridon' }, p2: { prenom: 'Anne-Lise', nom: 'Aumeunier' },
+    as: { prenom: 'Cédric', nom: 'Thomas', est_associe: true }, ex: { prenom: 'Bureau', nom: 'Études' },
+  }
+  const collabs = [
+    { affaire_id: 'a1', user_id: 'p1', role: 'collaborateur' }, { affaire_id: 'a1', user_id: 'p2', role: 'proprietaire' },
+    { affaire_id: 'a1', user_id: 'as', role: 'proprietaire' }, { affaire_id: 'a1', user_id: 'ex', role: 'exterieur' },
+    { affaire_id: 'a2', user_id: 'inconnu', role: 'collaborateur' },
+  ]
+  const equipe = equipeParAffaire(collabs, profils)
+  assert.deepEqual(equipe.get('a1'), [{ id: 'p1', initiales: 'AB', nom: 'Anthonin Bridon' }, { id: 'p2', initiales: 'ALA', nom: 'Anne-Lise Aumeunier' }])
+  assert.equal(equipe.has('a2'), false)
 })

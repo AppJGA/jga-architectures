@@ -7,7 +7,7 @@ import { test } from 'node:test'
 import {
   PHASES_MISSION, RUBRIQUES_PLANS, groupesDe, articlesAffiches, estGrise, compteur,
   parGroupe, phaseParDefaut, enRetard, tachesTriees, lienPartage, lireLien,
-  nomPersonne, libelleFait, ordreSuivant, resumeTuile,
+  nomPersonne, libelleFait, ordreSuivant, resumeTuile, deplacer,
 } from '../src/modules/etude/todo/todoLogique.js'
 
 const m = (id, groupe, ordre, extra = {}) => ({ id, liste: 'mission', groupe, texte: `Article ${id}`, ordre, supprime_le: null, ...extra })
@@ -147,4 +147,14 @@ test('résumé de la tuile : phase en cours et tâches en retard', () => {
   assert.deepEqual(resumeTuile(modele, elements, 'avp', '2026-10-09'), {
     phase: 'apd', court: 'APD', faits: 1, total: 2, tachesAFaire: 2, tachesEnRetard: 1,
   })
+})
+
+test('déplacer un article de la liste type : renumérote, ne rend que ce qui bouge', () => {
+  const lignes = [{ id: 'a', ordre: 1 }, { id: 'b', ordre: 2 }, { id: 'c', ordre: 3 }]
+  assert.deepEqual(deplacer(lignes, 2, -1), [{ id: 'c', ordre: 2 }, { id: 'b', ordre: 3 }])
+  assert.deepEqual(deplacer(lignes, 0, -1), [])
+  assert.deepEqual(deplacer(lignes, 2, 1), [])
+  // Deux articles au même rang : l'échange les sépare bel et bien
+  const egaux = [{ id: 'a', ordre: 5 }, { id: 'b', ordre: 5 }]
+  assert.deepEqual(deplacer(egaux, 0, 1), [{ id: 'b', ordre: 1 }, { id: 'a', ordre: 2 }])
 })

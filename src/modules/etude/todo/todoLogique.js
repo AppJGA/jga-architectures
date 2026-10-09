@@ -177,3 +177,18 @@ export function resumeTuile(modele, elements, phaseAffaire, aujourdhui) {
     tachesAFaire: taches.length, tachesEnRetard: taches.filter((t) => enRetard(t, aujourdhui)).length,
   }
 }
+
+/**
+ * Monter (-1) ou descendre (+1) un article de la liste type dans son groupe.
+ * Le groupe est renuméroté 1, 2, 3… (deux articles pouvaient partager un
+ * rang) ; seules les lignes dont le rang change sont rendues.
+ * @param lignes articles du groupe, dans l'ordre affiché
+ * @returns [{ id, ordre }]
+ */
+export function deplacer(lignes, index, sens) {
+  const cible = index + sens
+  if (cible < 0 || cible >= lignes.length) return []
+  const suite = [...lignes]
+  ;[suite[index], suite[cible]] = [suite[cible], suite[index]]
+  return suite.map((l, i) => ({ id: l.id, ordre: i + 1, avant: l.ordre })).filter((l) => l.ordre !== l.avant).map(({ id, ordre }) => ({ id, ordre }))
+}

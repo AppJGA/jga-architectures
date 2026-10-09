@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Plus, Search, Trash2, Lock } from 'lucide-react'
 import { useAffaires } from '../shared/hooks/useAffaires'
+import { useAuth } from '../core/auth/useAuth'
 import { AffaireCard } from './AffaireCard'
 import { AffaireFormModal } from './AffaireFormModal'
 
@@ -13,6 +14,9 @@ const delai = (rang) => `${(Math.min(rang, RANG_MAX) * CADENCE).toFixed(3)}s`
 
 export function DashboardPage() {
   const { affaires, affairesNonAutorisees, loading, error, horsLigne, createAffaire, deleteAffaire } = useAffaires()
+  // L'administrateur (068, 069) voit le portail d'un collaborateur, mais les
+  // affaires des autres ne lui sont pas fermées
+  const { estAdmin } = useAuth()
   const [search, setSearch] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
   const [deletingAffaire, setDeletingAffaire] = useState(null)
@@ -177,7 +181,7 @@ export function DashboardPage() {
                 letterSpacing: '0.05em', textTransform: 'uppercase',
                 display: 'flex', alignItems: 'center', gap: 6,
               }}>
-                <Lock size={11} />
+                {!estAdmin && <Lock size={11} />}
                 Autres affaires de l'agence ({affairesNonAutorisees.length})
               </span>
               <div style={{ flex: 1, height: '0.5px', background: 'rgba(0,0,0,0.1)' }} />
@@ -193,6 +197,7 @@ export function DashboardPage() {
                   key={affaire.id}
                   affaire={affaire}
                   isAuthorized={false}
+                  modifiable={estAdmin}
                   delai={delai(affaires.length + 1 + i)}
                 />
               ))}

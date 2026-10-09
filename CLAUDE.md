@@ -602,8 +602,9 @@ associés, sur toutes les pages sauf Gestion d'agence elle-même.
   Associés, personne ne touche à sa propre ligne.
   **L'administrateur écrit partout** (migration 069) : `peut_modifier_affaire`
   et les règles de modification / suppression d'`affaires` l'admettent ;
-  `canEdit` vaut toujours vrai pour lui, et le portail lui ouvre toutes les
-  affaires.
+  `canEdit` vaut toujours vrai pour lui. Le portail lui est présenté comme
+  à un collaborateur (ses affaires d'abord, les autres en gris), sans la
+  mention « LECTURE SEULE » ni le cadenas (`modifiable` d'`AffaireCard`).
 - **Rien n'est recopié** : calendrier et suivi lisent les plannings et
   `todo_elements` de toute l'agence (droits de lecture inchangés).
   Logique pure dans `gestionLogique.js` (testé) : jalon d'étude au

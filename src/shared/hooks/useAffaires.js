@@ -95,11 +95,12 @@ export function useAffaires() {
     }
 
     // 5. Enrichissement + flag isAuthorized
-    // L'administrateur (migrations 068, 069) a la main sur toutes les
-    // affaires ; supprimer reste au responsable, comme le veut la base
+    // Le portail range les affaires comme pour tout collaborateur (les
+    // siennes d'abord, les autres en gris), administrateur compris ; la
+    // corbeille suit la base : responsable, ou administrateur (069)
     const enriched = allAffaires.map(a => ({
       ...a,
-      isAuthorized: estAdmin || authorizedIds.has(a.id),
+      isAuthorized: authorizedIds.has(a.id),
       peutSupprimer: estAdmin || (collabData ?? []).some(c => c.affaire_id === a.id && c.user_id === userId && c.role === 'proprietaire'),
       affaire_collaborateurs: (collabData ?? [])
         .filter(c => c.affaire_id === a.id)

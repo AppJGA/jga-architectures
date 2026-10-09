@@ -70,7 +70,7 @@ function AvatarsStack({ collaborateurs }) {
   )
 }
 
-export function AffaireCard({ affaire, onDeleteRequest, isAuthorized = true, delai }) {
+export function AffaireCard({ affaire, onDeleteRequest, isAuthorized = true, modifiable = false, delai }) {
   const navigate = useNavigate()
   const [hovered, setHovered] = useState(false)
   const topColor = TOP_COLORS[affaire.phase] ?? 'var(--jga-beige)'
@@ -117,8 +117,10 @@ export function AffaireCard({ affaire, onDeleteRequest, isAuthorized = true, del
         animationDelay: delai,
       }}
     >
-      {/* Badge lecture seule */}
-      {!isAuthorized && (
+      {/* Badge lecture seule — pas pour qui peut modifier toute affaire
+          (administrateur) : grisée parce qu'elle n'est pas la sienne, pas
+          parce qu'elle lui est fermée */}
+      {!isAuthorized && !modifiable && (
         <div style={{
           position: 'absolute', top: 8, right: 8, zIndex: 20,
           background: 'rgba(0,0,0,0.6)', color: 'white',

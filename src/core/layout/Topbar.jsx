@@ -9,7 +9,7 @@ import { supabase } from '../supabase/client'
 import { IconeGestionAgence } from '../../shared/icones/IconesAffaire'
 
 export function Topbar() {
-  const { user, signOut, estAssocie } = useAuth()
+  const { user, signOut, accesGestion } = useAuth()
   const navigate = useNavigate()
   const { pathname } = useLocation()
   const dansGestion = pathname.startsWith('/gestion-agence')
@@ -80,10 +80,10 @@ export function Topbar() {
       {/* Actions à droite */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <TemoinEnvoi />
-        {/* Associés seulement (migration 067) : retour en un geste au tableau
+        {/* Associés et administrateur (067, 068) : en un geste au tableau
             de bord de Gestion d'agence, de n'importe quelle page — sauf
             depuis Gestion d'agence elle-même, où il n'a pas de sens */}
-        {estAssocie === true && !dansGestion && (
+        {accesGestion === true && !dansGestion && (
           <button
             type="button"
             onClick={() => navigate('/gestion-agence')}

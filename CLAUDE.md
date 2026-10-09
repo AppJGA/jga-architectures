@@ -134,7 +134,7 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
   anglais d'Outlook (marque UTF-8) — l'Outlook classique ne retient que le
   premier contact d'un .vcf. Une icône par fiche donne la carte seule. La
   note de chaque contact porte l'affaire et le rôle.
-- **Base** : `supabase/migrations/`, numérotées, 67 fichiers, **passées à la
+- **Base** : `supabase/migrations/`, numérotées, 68 fichiers, **passées à la
   main** dans le SQL Editor de Supabase : un code qui dépend d'une nouvelle
   colonne doit tolérer son absence tant que la migration n'est pas faite. La photo de
   couverture d'une affaire est `affaires.photo_url` (migration 014, bucket
@@ -591,6 +591,15 @@ associés, sur toutes les pages sauf Gestion d'agence elle-même.
   email in (…)` dans l'éditeur SQL — **aucun nom dans le dépôt**.
   `AuthProvider` lit le profil en `select('*')` et garde le statut sur
   l'appareil.
+- **Administrateur** (migration 068, `profiles.est_admin`, `est_admin()`,
+  `acces_gestion()` = associé ou administrateur) : les accès d'un associé
+  (bulle, bouton du bandeau, outils, désigner les associés) **sans en avoir
+  le titre** — jamais listé ni compté comme associé, ses initiales restent
+  celles d'un collaborateur dans le calendrier. Ne se coche que dans
+  l'éditeur SQL (déclencheur `profiles_verrou_admin`). Côté écran : `estAdmin`
+  et `accesGestion` (null tant que le profil n'est pas lu) ; l'accès passe
+  toujours par `accesGestion`, jamais par `estAssocie` seul. Sur la page
+  Associés, personne ne touche à sa propre ligne.
 - **Rien n'est recopié** : calendrier et suivi lisent les plannings et
   `todo_elements` de toute l'agence (droits de lecture inchangés).
   Logique pure dans `gestionLogique.js` (testé) : jalon d'étude au

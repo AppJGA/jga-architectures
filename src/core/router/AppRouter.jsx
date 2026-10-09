@@ -44,12 +44,12 @@ function AgenceSeule({ children }) {
   return estAgence ? children : <Navigate to="/dashboard" replace />
 }
 
-// Gestion d'agence : associés seulement (migration 067). Tant que le profil
-// n'est pas lu, on attend plutôt que de renvoyer un associé à l'accueil.
+// Gestion d'agence : associés et administrateur (migrations 067, 068). Tant
+// que le profil n'est pas lu, on attend plutôt que de renvoyer à l'accueil.
 function AssocieSeul({ children }) {
-  const { estAssocie } = useAuth()
-  if (estAssocie === null) return <Spinner />
-  return estAssocie ? children : <Navigate to="/home" replace />
+  const { accesGestion } = useAuth()
+  if (accesGestion === null) return <Spinner />
+  return accesGestion ? children : <Navigate to="/home" replace />
 }
 
 function PlaceholderSettings() {

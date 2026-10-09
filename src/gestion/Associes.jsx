@@ -5,9 +5,11 @@ import { ACCENT } from './manifest'
 
 // ─── Associés ────────────────────────────────────────────────────────────────
 //
-// Qui a accès à la gestion d'agence. La base décide (migration 067,
-// `designer_associe`) : seul un associé coche ou décoche, et personne ne se
-// retire soi-même — l'interrupteur est donc grisé sur sa propre ligne.
+// Qui a accès à la gestion d'agence. La base décide (migrations 067, 068,
+// `designer_associe`) : un associé (ou l'administrateur) coche ou décoche,
+// et personne ne touche à sa propre ligne — un associé ne se retire pas,
+// l'administrateur ne se fait pas associé par mégarde. L'administrateur
+// n'apparaît pas comme tel : il est ici un compte comme les autres.
 
 function Interrupteur({ actif, desactive, onClick, libelle }) {
   return (
@@ -49,7 +51,7 @@ export default function Associes() {
   return (
     <div style={{ maxWidth: 720, display: 'flex', flexDirection: 'column', gap: 12 }}>
       <p style={{ margin: 0, fontSize: 13, color: '#5E5854', lineHeight: 1.5 }}>
-        Les associés voient la bulle « Gestion d’agence » sur l’accueil et ses outils. Un associé peut en désigner un autre ; personne ne peut se retirer soi-même.
+        Les associés voient la bulle « Gestion d’agence » sur l’accueil et ses outils. Un associé peut en désigner un autre ; personne ne modifie sa propre ligne.
       </p>
       {erreur && <p role="alert" style={{ margin: 0, fontSize: 13, color: '#B8412C' }}>Non enregistré : {erreur}</p>}
       <ul style={{ listStyle: 'none', margin: 0, padding: 0, background: 'white', border: '0.5px solid rgba(0,0,0,0.08)' }}>
@@ -63,7 +65,7 @@ export default function Associes() {
                 <p style={{ margin: '2px 0 0', fontSize: 12, color: '#9C9591' }}>{c.email}</p>
               </div>
               <span style={{ fontSize: 12, color: c.est_associe ? ACCENT : '#9C9591', fontWeight: c.est_associe ? 600 : 400 }}>{c.est_associe ? 'Associé' : '—'}</span>
-              <Interrupteur actif={!!c.est_associe} desactive={(moi && c.est_associe) || enCours === c.id} onClick={() => basculer(c)}
+              <Interrupteur actif={!!c.est_associe} desactive={moi || enCours === c.id} onClick={() => basculer(c)}
                 libelle={`${nom} associé`} />
             </li>
           )

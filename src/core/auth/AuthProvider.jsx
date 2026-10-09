@@ -23,9 +23,10 @@ function lireGarde(userId) {
 const typeGarde = (userId) => lireGarde(userId)?.type ?? null
 // null : jamais su sur cet appareil (profil pas encore lu)
 const associeGarde = (userId) => (typeof lireGarde(userId)?.associe === 'boolean' ? lireGarde(userId).associe : null)
+const adminGarde = (userId) => lireGarde(userId)?.admin === true
 
-function garderType(userId, type, associe) {
-  try { localStorage.setItem(CLE_TYPE, JSON.stringify({ id: userId, type, associe })) } catch { /* navigation privée */ }
+function garderType(userId, type, associe, admin) {
+  try { localStorage.setItem(CLE_TYPE, JSON.stringify({ id: userId, type, associe, admin })) } catch { /* navigation privée */ }
 }
 
 export function AuthProvider({ children }) {
@@ -90,8 +91,9 @@ export function AuthProvider({ children }) {
         // de l'agence, comme avant.
         const type = error || !data ? (typeGarde(user.id) ?? 'agence') : (data.type_compte ?? 'agence')
         const associe = error || !data ? (associeGarde(user.id) ?? false) : (data.est_associe === true && type === 'agence')
-        garderType(user.id, type, associe)
-        setProfilCharge({ ...(data ?? { id: user.id }), type_compte: type, est_associe: associe })
+        const admin = error || !data ? adminGarde(user.id) : (data.est_admin === true && type === 'agence')
+        garderType(user.id, type, associe, admin)
+        setProfilCharge({ ...(data ?? { id: user.id }), type_compte: type, est_associe: associe, est_admin: admin })
       })
     return () => { abandon = true }
   }, [user])
@@ -104,6 +106,11 @@ export function AuthProvider({ children }) {
   // ni l'appareil ne le disent — une route réservée attend alors au lieu de
   // renvoyer à l'accueil
   const estAssocie = !user ? false : (profil ? profil.est_associe === true : associeGarde(user.id))
+  // Administrateur (migration 068) : les accès d'un associé, sans en avoir
+  // le titre — jamais présenté ni compté comme associé
+  const estAdmin = !user ? false : (profil ? profil.est_admin === true : adminGarde(user.id))
+  // Qui entre dans Gestion d'agence ; null tant qu'on ne sait pas
+  const accesGestion = estAssocie === true || estAdmin ? true : estAssocie
 
   const signIn = (email, password) =>
     supabase.auth.signInWithPassword({ email, password })
@@ -117,7 +124,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, profil, estAgence, estAssocie, signIn, signOut }}>
+    <AuthContext.Provider value={{ user, loading, profil, estAgence, estAssocie, estAdmin, accesGestion, signIn, signOut }}>
       {children}
     </AuthContext.Provider>
   )

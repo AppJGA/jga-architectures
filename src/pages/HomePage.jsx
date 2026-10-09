@@ -47,7 +47,7 @@ const MODULES = [
     label: "Gestion d'agence",
     description: 'Calendrier des rendus, suivi des tâches. Réservé aux associés.',
     path: '/gestion-agence',
-    // Visible des seuls associés (migration 067)
+    // Visible des associés et de l'administrateur (migrations 067, 068)
     associe: true,
     Icon: IconeGestionAgence,
     accent: '#7A4E9C',
@@ -223,9 +223,9 @@ function CarteModule({ module, rang, reduit, onOpen }) {
 
 export default function HomePage() {
   const navigate = useNavigate()
-  const { user, estAgence, estAssocie } = useAuth()
+  const { user, estAgence, accesGestion } = useAuth()
   const quatreDeFront = useLargeurSuffit(1100)
-  const visibles = MODULES.filter(m => (estAgence || m.exterieur) && (!m.associe || estAssocie === true))
+  const visibles = MODULES.filter(m => (estAgence || m.exterieur) && (!m.associe || accesGestion === true))
   const [prenom, setPrenom] = useState('')
   const reduit = useMouvementReduit()
 

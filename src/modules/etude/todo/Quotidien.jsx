@@ -6,7 +6,7 @@ import { ajouterTache, modifierElement, supprimerElement } from './todoDonnees'
 import { CaseACocher, MenuActions, EditeurNote } from './LigneArticle'
 import { copierDansPressePapiers } from './pressePapiers'
 
-// ─── Onglet « Quotidien » ────────────────────────────────────────────────────
+// ─── Onglet « À faire » (tâches du quotidien) ────────────────────────────────
 //
 // Les tâches courantes de l'affaire (« Reprendre la façade nord suite à la
 // réunion MOA ») : qui s'en charge, pour quand, et — une fois cochée — qui
@@ -151,7 +151,7 @@ export function Quotidien({ elements, affaireId, profils, personnes, utilisateur
       <section style={{ background: 'white', border: '0.5px solid rgba(0,0,0,0.08)', padding: '6px 18px 12px' }}>
         <header style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 0' }}>
           <h3 style={{ flex: 1, margin: 0, fontSize: 15, fontWeight: 600, color: '#1F1B17' }}>
-            À faire <span style={{ fontSize: 12, fontWeight: 400, color: '#9C9591' }}>· {aFaire.length}</span>
+            En cours <span style={{ fontSize: 12, fontWeight: 400, color: '#9C9591' }}>· {aFaire.length}</span>
           </h3>
           <label data-consultation="libre" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#5E5854', cursor: 'pointer' }}>
             <input type="checkbox" checked={miennes} onChange={(e) => setMiennes(e.target.checked)} style={{ minHeight: 0 }} />

@@ -15,13 +15,15 @@ import { CopierLien } from './CopierLien'
 // ─── To-do list d'une affaire ────────────────────────────────────────────────
 //
 // Conception : docs/superpowers/specs/2026-10-09-todo-list-design.md.
-// Trois onglets : la mission phase par phase (liste type de l'agence), les
-// tâches du quotidien, le contenu des plans. Un lien partagé
+// Trois onglets : les tâches à faire (ouvertes d'office), la mission phase
+// par phase (liste type de l'agence), le contenu des plans. Un lien partagé
 // (`?onglet=…&phase=…&tache=…`) ouvre directement la bonne vue.
 
+// « À faire » (les tâches du quotidien) d'abord et mis en avant : c'est ce
+// que l'agence consulte le plus. Le code `quotidien` reste celui des liens.
 const ONGLETS = [
+  { code: 'quotidien', libelle: 'À faire', enAvant: true },
   { code: 'mission', libelle: 'Mission' },
-  { code: 'quotidien', libelle: 'Quotidien' },
   { code: 'plans', libelle: 'Contenu des plans' },
 ]
 
@@ -37,7 +39,7 @@ export default function TodoModule({ lectureSeule = false }) {
 
   // L'onglet choisi à l'écran vaut pour l'adresse où il a été choisi : un
   // nouveau lien ouvert dans la page reprend la main
-  const [choix, setChoix] = useState({ onglet: lien.onglet ?? 'mission', search })
+  const [choix, setChoix] = useState({ onglet: lien.onglet ?? 'quotidien', search })
   const onglet = choix.search === search ? choix.onglet : (lien.onglet ?? choix.onglet)
   const setOnglet = (o) => setChoix({ onglet: o, search })
   const [donnees, setDonnees] = useState(null) // { disponible, modele, elements }
@@ -106,19 +108,40 @@ export default function TodoModule({ lectureSeule = false }) {
       )}
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <div role="tablist" aria-label="Listes" style={{ display: 'flex', gap: 4, flex: 1, flexWrap: 'wrap' }}>
+        <div role="tablist" aria-label="Listes" style={{ display: 'flex', alignItems: 'center', gap: 4, flex: 1, flexWrap: 'wrap' }}>
           {ONGLETS.map((o) => {
             const actif = onglet === o.code
             const p = pastille[o.code]
+            const compte = typeof p === 'number' ? (p > 0 ? p : '') : `${p.faits}/${p.total}`
+            if (o.enAvant) {
+              return (
+                <button key={o.code} type="button" role="tab" aria-selected={actif} onClick={() => setOnglet(o.code)} data-consultation="libre"
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 8, minHeight: 40, padding: '0 16px', marginRight: 8, cursor: 'pointer',
+                    borderRadius: 4, border: '1px solid var(--affaire-accent, #E8602C)',
+                    background: actif ? 'var(--affaire-accent, #E8602C)' : 'var(--affaire-accent-clair, rgba(232,96,44,0.10))',
+                    color: actif ? 'white' : 'var(--affaire-accent, #E8602C)', fontSize: 14, fontWeight: 700,
+                  }}>
+                  {o.libelle}
+                  {compte !== '' && (
+                    <span style={{
+                      minWidth: 20, height: 20, padding: '0 6px', borderRadius: 10, fontSize: 11, fontWeight: 700,
+                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                      background: actif ? 'white' : 'var(--affaire-accent, #E8602C)', color: actif ? 'var(--affaire-accent, #E8602C)' : 'white',
+                    }}>{compte}</span>
+                  )}
+                </button>
+              )
+            }
             return (
               <button key={o.code} type="button" role="tab" aria-selected={actif} onClick={() => setOnglet(o.code)} data-consultation="libre"
                 style={{
-                  display: 'inline-flex', alignItems: 'baseline', gap: 6, minHeight: 40, padding: '0 16px', cursor: 'pointer',
-                  border: 'none', borderBottom: `2px solid ${actif ? 'var(--affaire-accent, #E8602C)' : 'transparent'}`, background: 'none',
+                  display: 'inline-flex', alignItems: 'center', gap: 6, minHeight: 40, padding: '0 16px', cursor: 'pointer',
+                  border: 'none', borderTop: '2px solid transparent', borderBottom: `2px solid ${actif ? 'var(--affaire-accent, #E8602C)' : 'transparent'}`, background: 'none',
                   fontSize: 14, fontWeight: actif ? 600 : 500, color: actif ? '#1F1B17' : '#5E5854',
                 }}>
                 {o.libelle}
-                <span style={{ fontSize: 11, color: '#9C9591' }}>{typeof p === 'number' ? (p > 0 ? p : '') : `${p.faits}/${p.total}`}</span>
+                <span style={{ fontSize: 11, color: '#9C9591' }}>{compte}</span>
               </button>
             )
           })}

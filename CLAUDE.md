@@ -538,10 +538,12 @@ du mode Visite, hors ligne). Conception :
 
 Conception : `docs/superpowers/specs/2026-10-09-todo-list-design.md`. Même
 module dans les deux phases du manifeste (objet `TODO`, un seul `lazy`).
-Trois onglets : **Mission** (phases Engagement → AOR, la phase en cours de
-l'affaire ouverte d'office par `phaseParDefaut`), **Quotidien** (tâches :
-personne chargée, échéance, retards en rouge), **Contenu des plans** (à
-recommencer pour chaque indice).
+Trois onglets : **À faire** en premier, encadré de couleur et ouvert
+d'office (le plus consulté, à la demande de l'agence ; code `quotidien` dans
+les liens) — tâches avec personne chargée, échéance, retards en rouge —,
+**Mission** (phases Engagement → AOR, la phase en cours de l'affaire ouverte
+par `phaseParDefaut`), **Contenu des plans** (à recommencer pour chaque
+indice).
 
 - **La liste type est en base, jamais dans le code** (demande de l'agence) :
   `todo_modele` (migration 066, remplie au départ depuis la section 7 de la

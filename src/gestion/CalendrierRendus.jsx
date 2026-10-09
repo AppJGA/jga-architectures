@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronLeft, ChevronRight, FileDown, Plus } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronDown, FileDown, Plus } from 'lucide-react'
 import { useAuth } from '../core/auth/useAuth'
 import { rendus, grilleMois, parJour, prochaines, ecartJours, mesAffaires, equipeParAffaire } from './gestionLogique'
 import { chargerCalendrier } from './gestionDonnees'
@@ -91,6 +91,37 @@ function Jalon({ ev, equipe = [], compact, onOuvrir }) {
   )
 }
 
+// Le format du PDF : la grille du mois tient sur une page A4 ou A3 paysage.
+// Menu déroulant : il se referme au clic à côté.
+function BoutonExport({ onExporter }) {
+  const [ouvert, setOuvert] = useState(false)
+  const boite = useRef(null)
+  useEffect(() => {
+    if (!ouvert) return
+    const dehors = (e) => { if (!boite.current?.contains(e.target)) setOuvert(false) }
+    document.addEventListener('pointerdown', dehors)
+    return () => document.removeEventListener('pointerdown', dehors)
+  }, [ouvert])
+  return (
+    <div ref={boite} style={{ position: 'relative', marginRight: 8 }}>
+      <button type="button" onClick={() => setOuvert((o) => !o)} aria-expanded={ouvert} title="Exporter ce mois en PDF"
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minHeight: 36, padding: '0 12px', border: 'none', background: ACCENT, color: 'white', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>
+        <FileDown size={15} /> Exporter le PDF <ChevronDown size={14} />
+      </button>
+      {ouvert && (
+        <div role="menu" style={{ position: 'absolute', right: 0, top: 40, zIndex: 50, minWidth: 210, background: 'white', border: '0.5px solid rgba(0,0,0,0.12)', boxShadow: '0 12px 30px -12px rgba(31,27,23,0.35)', padding: 4 }}>
+          {[['A4', 'A4 paysage'], ['A3', 'A3 paysage (plus lisible)']].map(([format, libelle]) => (
+            <button key={format} type="button" role="menuitem" onClick={() => { setOuvert(false); onExporter(format) }}
+              style={{ display: 'block', width: '100%', textAlign: 'left', minHeight: 40, padding: '0 12px', border: 'none', background: 'none', fontSize: 13, color: '#1F1B17', cursor: 'pointer' }}>
+              {libelle}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function CalendrierRendus() {
   const navigate = useNavigate()
   const { user } = useAuth()
@@ -124,8 +155,8 @@ export default function CalendrierRendus() {
     const d = new Date(annee, m - 1 + n, 1)
     return { annee: d.getFullYear(), mois: d.getMonth() + 1 }
   })
-  const exporter = () => exporterCalendrierMois({
-    annee: mois.annee, mois: mois.mois, evenements, equipes,
+  const exporter = (format) => exporterCalendrierMois({
+    annee: mois.annee, mois: mois.mois, evenements, equipes, format,
     filtres: [portee === 'mes' ? 'Mes affaires' : 'Toutes les affaires',
       origines.etude && origines.chantier ? 'étude et chantier' : origines.etude ? 'étude seulement' : origines.chantier ? 'chantier seulement' : 'aucun planning'].join(', '),
     edition: new Date().toLocaleDateString('fr-FR'),
@@ -156,10 +187,7 @@ export default function CalendrierRendus() {
               style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minHeight: 36, padding: '0 12px', border: `1px solid ${ACCENT}`, background: 'rgba(122,78,156,0.10)', color: ACCENT, cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>
               <Plus size={15} /> Échéance
             </button>
-            <button type="button" onClick={exporter} title="Exporter ce mois en PDF"
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minHeight: 36, padding: '0 12px', marginRight: 8, border: 'none', background: ACCENT, color: 'white', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>
-              <FileDown size={15} /> Exporter le PDF
-            </button>
+            <BoutonExport onExporter={exporter} />
             <button type="button" onClick={() => decaler(-1)} aria-label="Mois précédent" style={{ width: 36, height: 36, border: '0.5px solid rgba(0,0,0,0.15)', background: 'white', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><ChevronLeft size={18} /></button>
             <button type="button" onClick={() => setMois({ annee: +aujourdhui.slice(0, 4), mois: +aujourdhui.slice(5, 7) })} style={{ minHeight: 36, padding: '0 12px', border: '0.5px solid rgba(0,0,0,0.15)', background: 'white', cursor: 'pointer', fontSize: 12 }}>Aujourd’hui</button>
             <button type="button" onClick={() => decaler(1)} aria-label="Mois suivant" style={{ width: 36, height: 36, border: '0.5px solid rgba(0,0,0,0.15)', background: 'white', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><ChevronRight size={18} /></button>

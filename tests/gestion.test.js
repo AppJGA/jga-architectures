@@ -158,3 +158,21 @@ test('rendus : identifiant du jalon, accroche et origine « direction »', () =>
   )
   assert.deepEqual(ev.map((e) => [e.jalonId, e.ancre, e.fixeDirection]), [[8, false, false], [7, true, true]])
 })
+
+test('PDF d’un mois : la grille a la taille exacte de la feuille, A4 ou A3', async () => {
+  const { htmlCalendrierMois, FORMATS } = await import('../src/gestion/exportCalendrier.js')
+  const base = { annee: 2026, mois: 10, evenements: [], equipes: new Map(), edition: '09/10/2026' }
+  const a4 = htmlCalendrierMois(base)
+  assert.match(a4, /@page \{ size: A4 landscape/)
+  assert.match(a4, /\.page-grille \{ height: 210mm/)
+  assert.match(a4, /width: 297mm/)
+  const a3 = htmlCalendrierMois({ ...base, format: 'A3' })
+  assert.match(a3, /@page \{ size: A3 landscape/)
+  assert.match(a3, /\.page-grille \{ height: 297mm/)
+  assert.match(a3, /width: 420mm/)
+  assert.match(htmlCalendrierMois({ ...base, format: 'Z9' }), /size: A4 landscape/)
+  assert.deepEqual(Object.keys(FORMATS), ['A4', 'A3'])
+  // Le script qui fait tenir la grille est dans la page, avant l’impression
+  assert.match(a4, /function ajusterGrille\(\)/)
+  assert.ok(a4.indexOf('ajusterGrille()') < a4.indexOf('window.print()'))
+})

@@ -81,19 +81,17 @@ export function Topbar() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <TemoinEnvoi />
         {/* Associés seulement (migration 067) : retour en un geste au tableau
-            de bord de Gestion d'agence, de n'importe quelle page. Plein quand
-            on y est déjà. */}
-        {estAssocie === true && (
+            de bord de Gestion d'agence, de n'importe quelle page — sauf
+            depuis Gestion d'agence elle-même, où il n'a pas de sens */}
+        {estAssocie === true && !dansGestion && (
           <button
             type="button"
             onClick={() => navigate('/gestion-agence')}
-            aria-current={dansGestion ? 'page' : undefined}
             style={{
               display: 'flex', alignItems: 'center', gap: 7,
               padding: '5px 12px', borderRadius: 3, cursor: 'pointer',
               border: '1px solid #7A4E9C', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap',
-              backgroundColor: dansGestion ? '#7A4E9C' : 'rgba(122,78,156,0.10)',
-              color: dansGestion ? 'white' : '#7A4E9C',
+              backgroundColor: 'rgba(122,78,156,0.10)', color: '#7A4E9C',
             }}
           >
             <IconeGestionAgence size={16} />

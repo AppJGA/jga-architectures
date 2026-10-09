@@ -577,7 +577,7 @@ en évidence puis les outils, tableau de bord à tuiles résumées
 titre d'outil comme `TitreModule`. Violet `#7A4E9C`, passé aux composants
 de la to-do list par `--affaire-accent`. Bouton violet « Revenir à la
 gestion d'agence » dans `Topbar`, à côté de la cloche, pour les seuls
-associés, sur toutes les pages (plein quand on y est).
+associés, sur toutes les pages sauf Gestion d'agence elle-même.
 
 - **Associé** (migration 067) : `profiles.est_associe`, `est_associe()`,
   verrou par déclencheur ; on désigne par `designer_associe(compte,

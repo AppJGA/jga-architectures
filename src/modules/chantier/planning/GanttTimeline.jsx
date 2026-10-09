@@ -3,6 +3,7 @@ import { GitBranch } from 'lucide-react'
 import { MenuRadial, EditionBarre, BandeauLien } from '../../../shared/planning/MenuRadial'
 import { ACTIONS_SEGMENT, actionsJalon } from '../../../shared/planning/positionsPetales'
 import { estAncre, bordTouche } from '../../../shared/planning/ancrage'
+import { ReperesAccroche } from '../../../shared/planning/ReperesAccroche'
 import { dateAncre } from './jalonsAncres'
 import { recadrerSurBarre, arreterRecadrageAuPincement } from '../../../shared/planning/recadrage'
 import {
@@ -1018,6 +1019,12 @@ export function GanttTimeline({
     setSelectionJalon(null)
   }, [selectionJalon, onJalonAccroche])
 
+  // Un repère de bout de barre (ReperesAccroche) : le bord est dit, pas deviné
+  const accrocherBord = useCallback((cible, bord) => {
+    onJalonAccroche?.(selectionJalon.jalonId, cible, bord)
+    setSelectionJalon(null)
+  }, [selectionJalon, onJalonAccroche])
+
   // Toucher (ou clic sans glisser) une barre de tâche
   const toucherBarre = useCallback((taskId, clientX) => {
     if (selectionJalon?.mode === 'accroche') {
@@ -1692,6 +1699,7 @@ export function GanttTimeline({
                 task={tacheAffichee(row.task)} lot={rowLot}
                 enEdition={selectionTache?.id === row.task.id && ['move', 'resize'].includes(selection?.mode)}
                 onSegmentTap={toucherSegment}
+                enAccroche={enAccroche} onAccrocherBord={accrocherBord}
                 segmentEnEditionId={['move', 'resize'].includes(selectionSeg?.mode) ? selectionSeg.segmentId : null}
                 barColor={getBarColor(row.task, rowLot, zones, colorMode)}
                 rowHeight={rowHeight} geo={geo}
@@ -1732,6 +1740,7 @@ export function GanttTimeline({
                     task={tacheAffichee(task)} lot={lot}
                         enEdition={selectionTache?.id === task.id && ['move', 'resize'].includes(selection?.mode)}
                     onSegmentTap={toucherSegment}
+                enAccroche={enAccroche} onAccrocherBord={accrocherBord}
                 segmentEnEditionId={['move', 'resize'].includes(selectionSeg?.mode) ? selectionSeg.segmentId : null}
                     barColor={getBarColor(task, lot, zones, colorMode)}
                     rowHeight={rowHeight} geo={geo}
@@ -1770,6 +1779,7 @@ export function GanttTimeline({
                     task={tacheAffichee(task)} lot={null}
                         enEdition={selectionTache?.id === task.id && ['move', 'resize'].includes(selection?.mode)}
                     onSegmentTap={toucherSegment}
+                enAccroche={enAccroche} onAccrocherBord={accrocherBord}
                 segmentEnEditionId={['move', 'resize'].includes(selectionSeg?.mode) ? selectionSeg.segmentId : null}
                     barColor={getBarColor(task, null, zones, colorMode)}
                     rowHeight={rowHeight} geo={geo}
@@ -2047,7 +2057,7 @@ export function GanttTimeline({
       {selection?.mode === 'lien' && selectionTache && <BandeauLien onAnnuler={() => setSelection(null)} />}
       {enAccroche && (
         <BandeauLien
-          texte="Touchez une barre près de son début ou de sa fin"
+          texte="Touchez le rond de début ou de fin d’une barre"
           onAnnuler={() => setSelectionJalon(null)}
         />
       )}
@@ -2138,6 +2148,7 @@ function TaskBarRow({
   onSegmentResizeStart, resizingSegmentId,
   onBarDragStart, onBarClick, onConnectionPointClick, onConnectionPointHover,
   enEdition = false, onSegmentTap, segmentEnEditionId = null,
+  enAccroche = false, onAccrocherBord,
 }) {
   const [isHovered, setIsHovered] = useState(false)
   const color = barColor ?? lot?.couleur ?? '#94a3b8'
@@ -2176,6 +2187,11 @@ function TaskBarRow({
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
+      {/* Mode Accrocher d'un jalon : un rond à chaque bout de la barre */}
+      {enAccroche && showMainBar && (
+        <ReperesAccroche left={left} width={width} y={rowHeight / 2} nom={`« ${task.nom} »`}
+          onChoisir={(bord) => onAccrocherBord?.({ type: 'task', id: task.id }, bord)} />
+      )}
       {/* ── Barre principale ─────────────────────────────────────── */}
       {showMainBar && <div
         data-taskid={task.id}
@@ -2297,6 +2313,10 @@ function TaskBarRow({
         const segEdite = segmentEnEditionId === seg.id
         return (
           <div key={seg.id}>
+            {enAccroche && (
+              <ReperesAccroche left={segGeo.left} width={segGeo.width} y={rowHeight / 2} nom={`un segment de « ${task.nom} »`}
+                onChoisir={(bord) => onAccrocherBord?.({ type: 'segment', id: seg.id }, bord)} />
+            )}
             <div
               data-segmentid={seg.id}
               title={`${task.nom} — segment`}

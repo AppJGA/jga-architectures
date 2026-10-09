@@ -1056,8 +1056,12 @@ ligne », plus haut).
 - **Jalons accrochés** (migration 053, les deux plannings) : toucher un jalon
   ouvre sa roue (`actionsJalon` : Réglages, Déplacer, Accrocher, Supprimer ;
   Détacher s'il est accroché — un jalon accroché ne se déplace pas à la main).
-  Accrocher : on touche ensuite une barre ou un segment, moitié gauche = début,
-  moitié droite = fin (`bordTouche`). La **date reste stockée** (exports, page
+  Accrocher : chaque barre et chaque segment montrent alors **un rond à
+  chaque bout** (`shared/planning/ReperesAccroche.jsx`, posé à côté de la
+  barre — elle coupe ce qui dépasse ; zone sensible de 36 px pour le doigt ;
+  une phase coupée par des congés n'a qu'un rond au tout début et au tout
+  bout) : toucher un rond dit le bord. Toucher la barre ailleurs garde la
+  règle des moitiés, gauche = début, droite = fin (`bordTouche`). La **date reste stockée** (exports, page
   de l'affaire, import la lisent telle quelle) et se **recale par comparaison
   après coup** : `jalonsARecaler` (chantier, `jalonsAncres.js`) /
   `jalonsARecalerEtude` (étude), appliqués par un effet différé de chaque

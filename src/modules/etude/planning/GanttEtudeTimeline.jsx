@@ -3,6 +3,7 @@ import { GitBranch } from 'lucide-react'
 import { MenuRadial, EditionBarre, BandeauLien } from '../../../shared/planning/MenuRadial'
 import { ACTIONS_SEGMENT, actionsJalon } from '../../../shared/planning/positionsPetales'
 import { estAncre, bordTouche } from '../../../shared/planning/ancrage'
+import { ReperesAccroche } from '../../../shared/planning/ReperesAccroche'
 import { semaineAncre } from './jalonsAncresEtude'
 import { recadrerSurBarre, arreterRecadrageAuPincement } from '../../../shared/planning/recadrage'
 import {
@@ -485,6 +486,12 @@ export function GanttEtudeTimeline({
   // l'autre, fragments compris.
   const accrocherA = useCallback((cible, rect, clientX) => {
     const bord = rect && clientX != null ? bordTouche(clientX, rect) : 'fin'
+    onJalonAccroche?.(selectionJalon.jalonId, cible, bord)
+    setSelectionJalon(null)
+  }, [selectionJalon, onJalonAccroche])
+
+  // Un repère de bout de barre (ReperesAccroche) : le bord est dit, pas deviné
+  const accrocherBord = useCallback((cible, bord) => {
     onJalonAccroche?.(selectionJalon.jalonId, cible, bord)
     setSelectionJalon(null)
   }, [selectionJalon, onJalonAccroche])
@@ -976,6 +983,7 @@ export function GanttEtudeTimeline({
             onBarDragStart={startBarDrag}
             onBarClick={onPhaseClick}
             onSegmentTap={toucherSegment}
+            enAccroche={enAccroche} onAccrocherBord={accrocherBord}
             segmentEnEditionId={['move', 'resize'].includes(selectionSeg?.mode) ? selectionSeg.segmentId : null}
             isCritical={criticalIds?.has(phase.id) ?? false}
             segments={getSegmentsForPhase ? getSegmentsForPhase(phase.id) : []}
@@ -1190,7 +1198,7 @@ export function GanttEtudeTimeline({
       {selectionPhase && selection?.mode === 'lien' && <BandeauLien objet="phase" onAnnuler={() => setSelection(null)} />}
       {enAccroche && (
         <BandeauLien
-          texte="Touchez une barre près de son début ou de sa fin"
+          texte="Touchez le rond de début ou de fin d’une barre"
           onAnnuler={() => setSelectionJalon(null)}
         />
       )}
@@ -1240,6 +1248,7 @@ function PhaseBarRow({
   onBarDragStart, onBarClick, onSegmentTap, segmentEnEditionId = null,
   isCritical,
   segments = [], draggingSegId, onSegmentDragStart,
+  enAccroche = false, onAccrocherBord,
 }) {
   const isMoe = phase.type_tache === 'etude'
   const { barPad: barPadBase, fontSize } = rowMetrics(rowHeight)
@@ -1274,8 +1283,17 @@ function PhaseBarRow({
   // Une phase venue de Notion n'est pas en base : elle ne se glisse ni ne s'étire
   const modifiable = phase.id != null
 
+  // Bord gauche = début de la phase (premier fragment)
+  const debutLeft = weeksBetween(refSemaine, refAnnee, fragments[0].semaine_debut, fragments[0].annee_debut) * semWidth
+
   return (
     <div style={{ position: 'relative', height: rh, borderBottom: '0.5px solid rgba(0,0,0,0.05)' }}>
+      {/* Mode Accrocher d'un jalon : un rond au tout début et au tout bout de
+          la phase, même coupée par des congés (pas un par fragment) */}
+      {enAccroche && modifiable && (
+        <ReperesAccroche left={debutLeft} width={finLeft - debutLeft} y={rh / 2} nom={`« ${phase.nom} »`}
+          onChoisir={(bord) => onAccrocherBord?.({ type: 'phase', id: phase.id }, bord)} />
+      )}
       {/* ── Barres de phase — un fragment par plage travaillée ───────────
           Les semaines couvertes par une période bloquante coupent la barre :
           la durée travaillée est conservée, la fin effective recule. */}
@@ -1413,6 +1431,10 @@ function PhaseBarRow({
         const isDraggingSeg = draggingSegId === seg.id
         return (
           <div key={seg.id}>
+            {enAccroche && (
+              <ReperesAccroche left={segLeft} width={segWidth} y={rh / 2} nom={`un segment de « ${phase.nom} »`}
+                onChoisir={(bord) => onAccrocherBord?.({ type: 'segment', id: seg.id }, bord)} />
+            )}
             <div
               data-segid={seg.id}
               title={`${seg.nom ?? phase.nom} — segment · S${seg.semaine_debut} ${seg.annee_debut}, ${seg.duree_semaines} sem.`}

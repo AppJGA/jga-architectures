@@ -7,7 +7,7 @@
 
 /**
  * @returns { libelle, icone, vers } ou null (accueil, connexion)
- *   icone : 'accueil' | 'portail' | 'outils' | 'tableau' | 'visites' | 'opr'
+ *   icone : 'accueil' | 'portail' | 'outils' | 'gestion' | 'tableau' | 'visites' | 'opr'
  */
 export function retourParDefaut(chemin = '', recherche = '') {
   const params = new URLSearchParams(recherche)
@@ -25,7 +25,8 @@ export function retourParDefaut(chemin = '', recherche = '') {
     return { libelle: 'Tableau de bord de l’affaire', icone: 'tableau', vers: `/affaires/${id}` }
   }
   if (racine === 'tools' && id) return { libelle: 'Boîte à outils', icone: 'outils', vers: '/tools' }
-  if (['dashboard', 'carnet-adresses', 'tools', 'heures', 'settings'].includes(racine)) {
+  if (racine === 'gestion-agence' && id) return { libelle: 'Gestion d’agence', icone: 'gestion', vers: '/gestion-agence' }
+  if (['dashboard', 'carnet-adresses', 'tools', 'heures', 'settings', 'gestion-agence'].includes(racine)) {
     return { libelle: 'Accueil', icone: 'accueil', vers: '/home' }
   }
   return null

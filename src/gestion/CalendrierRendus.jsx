@@ -1,0 +1,178 @@
+import { useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { useAuth } from '../core/auth/useAuth'
+import { rendus, grilleMois, parJour, prochaines, ecartJours, mesAffaires } from './gestionLogique'
+import { chargerCalendrier } from './gestionDonnees'
+import { ACCENT, aujourdhuiLocal } from './manifest'
+
+// ─── Calendrier des rendus ───────────────────────────────────────────────────
+//
+// Tous les jalons des plannings, mois par mois : ceux du chantier à leur
+// date, ceux de l'étude le vendredi de leur semaine (« S42 »). À côté, les
+// échéances des 30 prochains jours. Un jalon mène au planning de son affaire.
+
+const JOURS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim']
+const PAR_CASE = 3
+
+const nomMois = (annee, mois) => new Date(annee, mois - 1, 1).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })
+const dateLongue = (iso) => {
+  const t = new Date(`${iso}T00:00:00`).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' })
+  return t.charAt(0).toUpperCase() + t.slice(1)
+}
+
+function delai(jours) {
+  if (jours === 0) return 'aujourd’hui'
+  if (jours === 1) return 'demain'
+  return `dans ${jours} j`
+}
+
+function Bascule({ actif, onClick, children }) {
+  return (
+    <button type="button" onClick={onClick} aria-pressed={actif}
+      style={{
+        minHeight: 34, padding: '0 12px', borderRadius: 17, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+        border: actif ? 'none' : '0.5px solid rgba(0,0,0,0.15)', background: actif ? ACCENT : 'white', color: actif ? 'white' : '#5E5854',
+      }}>
+      {children}
+    </button>
+  )
+}
+
+function Jalon({ ev, compact, onOuvrir }) {
+  const titre = `${ev.affaire.code_affaire ?? ''} · ${ev.affaire.nom ?? ''} — ${ev.libelle}${ev.semaine ? ` (S${ev.semaine})` : ''}`
+  return (
+    <button type="button" onClick={() => onOuvrir(ev)} title={titre}
+      style={{
+        display: compact ? 'block' : 'flex', alignItems: 'baseline', gap: 5, width: '100%', minWidth: 0, textAlign: 'left', cursor: 'pointer',
+        padding: compact ? '2px 4px' : '6px 8px', border: 'none', borderLeft: `3px solid ${ev.couleur || ACCENT}`,
+        background: 'rgba(0,0,0,0.03)', fontSize: compact ? 11 : 12, color: '#1F1B17', lineHeight: 1.3,
+      }}>
+      <span style={{ fontWeight: 700, flexShrink: 0 }}>{ev.affaire.code_affaire}</span>{compact && ' '}
+      <span style={compact
+        ? { color: '#5E5854', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }
+        : { color: '#5E5854' }}>
+        {ev.libelle}{ev.semaine ? ` · S${ev.semaine}` : ''}
+      </span>
+    </button>
+  )
+}
+
+export default function CalendrierRendus() {
+  const navigate = useNavigate()
+  const { user } = useAuth()
+  const aujourdhui = aujourdhuiLocal()
+  const [mois, setMois] = useState(() => ({ annee: +aujourdhui.slice(0, 4), mois: +aujourdhui.slice(5, 7) }))
+  const [donnees, setDonnees] = useState(null)
+  const [erreur, setErreur] = useState(null)
+  const [portee, setPortee] = useState('toutes')
+  const [origines, setOrigines] = useState({ etude: true, chantier: true })
+  const [jourOuvert, setJourOuvert] = useState(null)
+
+  useEffect(() => {
+    chargerCalendrier().then(setDonnees).catch((e) => setErreur(e?.message ?? String(e)))
+  }, [])
+
+  const evenements = useMemo(() => {
+    if (!donnees) return []
+    const miennes = mesAffaires(donnees.collaborateurs, user?.id)
+    return rendus(donnees.jalonsChantier, donnees.jalonsEtude, donnees.affaires)
+      .filter((e) => origines[e.origine] && (portee === 'toutes' || miennes.has(e.affaire.id)))
+  }, [donnees, user?.id, portee, origines])
+  const jours = useMemo(() => parJour(evenements), [evenements])
+  const aVenir = useMemo(() => prochaines(evenements, aujourdhui, 30), [evenements, aujourdhui])
+  const grille = grilleMois(mois.annee, mois.mois)
+
+  const decaler = (n) => setMois(({ annee, mois: m }) => {
+    const d = new Date(annee, m - 1 + n, 1)
+    return { annee: d.getFullYear(), mois: d.getMonth() + 1 }
+  })
+  const ouvrir = (ev) => navigate(`/affaires/${ev.affaire.id}/${ev.origine === 'etude' ? 'planning-etude' : 'planning-chantier'}`)
+
+  if (erreur) return <p role="alert" style={{ fontSize: 13, color: '#B8412C' }}>Lecture impossible : {erreur}</p>
+  if (!donnees) return <p style={{ fontSize: 13, color: '#9C9591' }}>Chargement…</p>
+
+  const parDate = parJour(aVenir)
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+        <Bascule actif={portee === 'toutes'} onClick={() => setPortee('toutes')}>Toutes les affaires</Bascule>
+        <Bascule actif={portee === 'mes'} onClick={() => setPortee('mes')}>Mes affaires</Bascule>
+        <span style={{ width: 1, height: 20, background: 'rgba(0,0,0,0.12)', margin: '0 4px' }} />
+        <Bascule actif={origines.etude} onClick={() => setOrigines((o) => ({ ...o, etude: !o.etude }))}>Étude</Bascule>
+        <Bascule actif={origines.chantier} onClick={() => setOrigines((o) => ({ ...o, chantier: !o.chantier }))}>Chantier</Bascule>
+      </div>
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20, alignItems: 'flex-start' }}>
+        <section style={{ flex: '1 1 640px', minWidth: 0, background: 'white', border: '0.5px solid rgba(0,0,0,0.08)' }}>
+          <header style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 14px', borderBottom: '0.5px solid rgba(0,0,0,0.08)' }}>
+            <h2 style={{ flex: 1, margin: 0, fontSize: 16, fontWeight: 600, color: '#1F1B17', textTransform: 'capitalize' }}>{nomMois(mois.annee, mois.mois)}</h2>
+            <button type="button" onClick={() => decaler(-1)} aria-label="Mois précédent" style={{ width: 36, height: 36, border: '0.5px solid rgba(0,0,0,0.15)', background: 'white', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><ChevronLeft size={18} /></button>
+            <button type="button" onClick={() => setMois({ annee: +aujourdhui.slice(0, 4), mois: +aujourdhui.slice(5, 7) })} style={{ minHeight: 36, padding: '0 12px', border: '0.5px solid rgba(0,0,0,0.15)', background: 'white', cursor: 'pointer', fontSize: 12 }}>Aujourd’hui</button>
+            <button type="button" onClick={() => decaler(1)} aria-label="Mois suivant" style={{ width: 36, height: 36, border: '0.5px solid rgba(0,0,0,0.15)', background: 'white', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><ChevronRight size={18} /></button>
+          </header>
+          <div role="grid" aria-label="Calendrier du mois" style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))' }}>
+            {JOURS.map((j) => (
+              <div key={j} role="columnheader" style={{ padding: '6px 6px', fontSize: 11, fontWeight: 600, color: '#9C9591', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '0.5px solid rgba(0,0,0,0.08)' }}>{j}</div>
+            ))}
+            {grille.flat().map((c, i) => {
+              const evs = jours.get(c.date) ?? []
+              const ouvert = jourOuvert === c.date
+              const visibles = ouvert ? evs : evs.slice(0, PAR_CASE)
+              const estAujourdhui = c.date === aujourdhui
+              const weekEnd = i % 7 >= 5
+              return (
+                <div key={c.date} role="gridcell" aria-label={dateLongue(c.date)}
+                  style={{
+                    minHeight: 96, padding: 4, display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0,
+                    borderRight: i % 7 < 6 ? '0.5px solid rgba(0,0,0,0.06)' : 'none', borderBottom: '0.5px solid rgba(0,0,0,0.06)',
+                    background: weekEnd ? '#FAF7F2' : 'white', opacity: c.duMois ? 1 : 0.45,
+                  }}>
+                  <span style={{
+                    alignSelf: 'flex-start', minWidth: 22, height: 22, padding: '0 4px', borderRadius: 11, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 12, fontWeight: estAujourdhui ? 700 : 500, color: estAujourdhui ? 'white' : '#5E5854', background: estAujourdhui ? ACCENT : 'transparent',
+                  }}>{+c.date.slice(8, 10)}</span>
+                  {visibles.map((ev) => <Jalon key={ev.id} ev={ev} compact onOuvrir={ouvrir} />)}
+                  {evs.length > PAR_CASE && (
+                    <button type="button" onClick={() => setJourOuvert(ouvert ? null : c.date)}
+                      style={{ border: 'none', background: 'none', padding: '2px 4px', fontSize: 11, color: ACCENT, cursor: 'pointer', textAlign: 'left', fontWeight: 600 }}>
+                      {ouvert ? 'Réduire' : `+ ${evs.length - PAR_CASE} autre${evs.length - PAR_CASE > 1 ? 's' : ''}`}
+                    </button>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </section>
+
+        <aside style={{ flex: '1 1 280px', maxWidth: 420, background: 'white', border: '0.5px solid rgba(0,0,0,0.08)', padding: '12px 14px' }}>
+          <h2 style={{ margin: '0 0 10px', fontSize: 15, fontWeight: 600, color: '#1F1B17' }}>
+            Prochaines échéances <span style={{ fontSize: 12, fontWeight: 400, color: '#9C9591' }}>· 30 jours</span>
+          </h2>
+          {aVenir.length === 0 && <p style={{ margin: 0, fontSize: 13, color: '#9C9591' }}>Aucun rendu prévu dans les 30 jours.</p>}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {[...parDate.entries()].map(([date, evs]) => {
+              const d = ecartJours(aujourdhui, date)
+              return (
+                <div key={date}>
+                  <p style={{ margin: '0 0 4px', fontSize: 12, fontWeight: 600, color: d <= 7 ? '#B8412C' : '#5E5854' }}>
+                    {dateLongue(date)} · {delai(d)}
+                  </p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    {evs.map((ev) => (
+                      <div key={ev.id}>
+                        <Jalon ev={ev} onOuvrir={ouvrir} />
+                        <p style={{ margin: '2px 0 0 11px', fontSize: 11, color: '#9C9591' }}>{ev.affaire.nom} · {ev.origine === 'etude' ? 'planning d’étude' : 'planning chantier'}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </aside>
+      </div>
+    </div>
+  )
+}

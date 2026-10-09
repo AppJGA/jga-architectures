@@ -13,15 +13,19 @@ export const AuthContext = createContext(null)
 // chantier), l'écran ne se réduit pas faute d'avoir pu lire le profil.
 const CLE_TYPE = 'jga.type_compte'
 
-function typeGarde(userId) {
+function lireGarde(userId) {
   try {
     const garde = JSON.parse(localStorage.getItem(CLE_TYPE) ?? 'null')
-    return garde?.id === userId ? garde.type : null
+    return garde?.id === userId ? garde : null
   } catch { return null }
 }
 
-function garderType(userId, type) {
-  try { localStorage.setItem(CLE_TYPE, JSON.stringify({ id: userId, type })) } catch { /* navigation privée */ }
+const typeGarde = (userId) => lireGarde(userId)?.type ?? null
+// null : jamais su sur cet appareil (profil pas encore lu)
+const associeGarde = (userId) => (typeof lireGarde(userId)?.associe === 'boolean' ? lireGarde(userId).associe : null)
+
+function garderType(userId, type, associe) {
+  try { localStorage.setItem(CLE_TYPE, JSON.stringify({ id: userId, type, associe })) } catch { /* navigation privée */ }
 }
 
 export function AuthProvider({ children }) {
@@ -78,14 +82,16 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     if (!user) return
     let abandon = false
-    supabase.from('profiles').select('id, prenom, nom, email, type_compte').eq('id', user.id).maybeSingle()
+    // Toutes les colonnes : `est_associe` (migration 067) peut manquer encore
+    supabase.from('profiles').select('*').eq('id', user.id).maybeSingle()
       .then(({ data, error }) => {
         if (abandon) return
         // Colonne absente (migration 050 pas encore passée) : tout le monde est
         // de l'agence, comme avant.
         const type = error || !data ? (typeGarde(user.id) ?? 'agence') : (data.type_compte ?? 'agence')
-        garderType(user.id, type)
-        setProfilCharge({ ...(data ?? { id: user.id }), type_compte: type })
+        const associe = error || !data ? (associeGarde(user.id) ?? false) : (data.est_associe === true && type === 'agence')
+        garderType(user.id, type, associe)
+        setProfilCharge({ ...(data ?? { id: user.id }), type_compte: type, est_associe: associe })
       })
     return () => { abandon = true }
   }, [user])
@@ -94,6 +100,10 @@ export function AuthProvider({ children }) {
   // déconnexion, il est simplement ignoré.
   const profil = profilCharge?.id === user?.id ? profilCharge : null
   const estAgence = !user || (profil ? profil.type_compte === 'agence' : (typeGarde(user.id) ?? 'agence') === 'agence')
+  // Associé (migration 067, Gestion d'agence) ; null tant que ni le profil
+  // ni l'appareil ne le disent — une route réservée attend alors au lieu de
+  // renvoyer à l'accueil
+  const estAssocie = !user ? false : (profil ? profil.est_associe === true : associeGarde(user.id))
 
   const signIn = (email, password) =>
     supabase.auth.signInWithPassword({ email, password })
@@ -107,7 +117,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, profil, estAgence, signIn, signOut }}>
+    <AuthContext.Provider value={{ user, loading, profil, estAgence, estAssocie, signIn, signOut }}>
       {children}
     </AuthContext.Provider>
   )

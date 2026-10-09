@@ -20,6 +20,7 @@ export function AppShell() {
     !location.pathname.startsWith('/affaires/') &&
     !location.pathname.startsWith('/home') &&
     !location.pathname.startsWith('/carnet-adresses') &&
+    !location.pathname.startsWith('/gestion-agence') &&
     // La boîte à outils tient sur une page : la barre latérale y égarait plus
     // qu'elle n'aidait (à reprendre quand les outils seront nombreux)
     !location.pathname.startsWith('/tools')

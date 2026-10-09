@@ -11,6 +11,7 @@ import { tools } from '../../tools/manifest'
 const Heures = lazy(() => import('../../tools/heures'))
 const HomePage = lazy(() => import('../../pages/HomePage'))
 const CarnetAdresses = lazy(() => import('../../pages/CarnetAdressesPage'))
+const GestionAgence = lazy(() => import('../../gestion/GestionPage'))
 
 function Spinner() {
   return (
@@ -41,6 +42,14 @@ function RequireAuth({ children }) {
 function AgenceSeule({ children }) {
   const { estAgence } = useAuth()
   return estAgence ? children : <Navigate to="/dashboard" replace />
+}
+
+// Gestion d'agence : associés seulement (migration 067). Tant que le profil
+// n'est pas lu, on attend plutôt que de renvoyer un associé à l'accueil.
+function AssocieSeul({ children }) {
+  const { estAssocie } = useAuth()
+  if (estAssocie === null) return <Spinner />
+  return estAssocie ? children : <Navigate to="/home" replace />
 }
 
 function PlaceholderSettings() {
@@ -86,6 +95,8 @@ export function AppRouter() {
           <Route path="affaires/:affaireId/:moduleId" element={<AffairePage />} />
 
           <Route path="carnet-adresses" element={<AgenceSeule><Wrap><CarnetAdresses /></Wrap></AgenceSeule>} />
+          <Route path="gestion-agence" element={<AssocieSeul><Wrap><GestionAgence /></Wrap></AssocieSeul>} />
+          <Route path="gestion-agence/:outil" element={<AssocieSeul><Wrap><GestionAgence /></Wrap></AssocieSeul>} />
           <Route path="heures" element={<AgenceSeule><Wrap><Heures /></Wrap></AgenceSeule>} />
 
           {/* Tools */}

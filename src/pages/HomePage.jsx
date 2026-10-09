@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowRight } from 'lucide-react'
-import { IconePortail, IconeBoiteOutils, IconeCarnet } from '../shared/icones/IconesAffaire'
+import { IconePortail, IconeBoiteOutils, IconeCarnet, IconeGestionAgence } from '../shared/icones/IconesAffaire'
 import { useAuth } from '../core/auth/useAuth'
 import { supabase } from '../core/supabase/client'
 
@@ -42,7 +42,35 @@ const MODULES = [
     gradient: 'linear-gradient(135deg, #1B3A5C 0%, #60A5FA 100%)',
     halo: 'rgba(27,58,92,0.14)',
   },
+  {
+    numero: '04',
+    label: "Gestion d'agence",
+    description: 'Calendrier des rendus, suivi des tâches. Réservé aux associés.',
+    path: '/gestion-agence',
+    // Visible des seuls associés (migration 067)
+    associe: true,
+    Icon: IconeGestionAgence,
+    accent: '#7A4E9C',
+    bordure: '#C4A3DE',
+    gradient: 'linear-gradient(135deg, #7A4E9C 0%, #C4A3DE 100%)',
+    halo: 'rgba(122,78,156,0.14)',
+  },
 ]
+
+// Quatre bulles (un associé) : une ligne sur grand écran, sinon deux par deux —
+// la grille automatique en mettait trois, et la quatrième seule dessous
+function useLargeurSuffit(minPx) {
+  const requete = `(min-width: ${minPx}px)`
+  const [ok, setOk] = useState(() => window.matchMedia?.(requete).matches ?? true)
+  useEffect(() => {
+    const mq = window.matchMedia?.(requete)
+    if (!mq) return
+    const suivre = (e) => setOk(e.matches)
+    mq.addEventListener('change', suivre)
+    return () => mq.removeEventListener('change', suivre)
+  }, [requete])
+  return ok
+}
 
 // Le composant d'origine exposait une case « animations » ; côté application,
 // c'est le réglage système qui fait foi.
@@ -195,7 +223,9 @@ function CarteModule({ module, rang, reduit, onOpen }) {
 
 export default function HomePage() {
   const navigate = useNavigate()
-  const { user, estAgence } = useAuth()
+  const { user, estAgence, estAssocie } = useAuth()
+  const quatreDeFront = useLargeurSuffit(1100)
+  const visibles = MODULES.filter(m => (estAgence || m.exterieur) && (!m.associe || estAssocie === true))
   const [prenom, setPrenom] = useState('')
   const reduit = useMouvementReduit()
 
@@ -319,12 +349,14 @@ export default function HomePage() {
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(268px, 1fr))',
+            gridTemplateColumns: visibles.length === 4
+              ? (quatreDeFront ? 'repeat(4, minmax(0, 1fr))' : 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))')
+              : 'repeat(auto-fit, minmax(268px, 1fr))',
             gap: 24,
             width: '100%',
           }}
         >
-          {MODULES.filter(m => estAgence || m.exterieur).map((module, rang) => (
+          {visibles.map((module, rang) => (
             <CarteModule
               key={module.path}
               module={module}

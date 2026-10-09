@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 858 tests node --test (plannings, to-do list, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude)
+npm test         # 864 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -33,6 +33,7 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
 | Portail des affaires | `src/dashboard/DashboardPage.jsx` + `AffaireCard.jsx` |
 | Tableau de bord d'une affaire | `src/affaire/AffairePage.jsx` |
 | Carnet d'adresses | `src/pages/CarnetAdressesPage.jsx` |
+| Gestion d'agence (associés) | `src/gestion/` (outils dans `manifest.js`) |
 | Outils | `src/tools/` (manifeste dans `manifest.js`) |
 
 - **Routes** : `src/core/router/AppRouter.jsx`. Tout est sous `RequireAuth` +
@@ -133,7 +134,7 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
   anglais d'Outlook (marque UTF-8) — l'Outlook classique ne retient que le
   premier contact d'un .vcf. Une icône par fiche donne la carte seule. La
   note de chaque contact porte l'affaire et le rôle.
-- **Base** : `supabase/migrations/`, numérotées, 66 fichiers, **passées à la
+- **Base** : `supabase/migrations/`, numérotées, 67 fichiers, **passées à la
   main** dans le SQL Editor de Supabase : un code qui dépend d'une nouvelle
   colonne doit tolérer son absence tant que la migration n'est pas faite. La photo de
   couverture d'une affaire est `affaires.photo_url` (migration 014, bucket
@@ -560,6 +561,32 @@ indice).
   (`lienPartage` / `lireLien`). `RequireAuth` passe l'adresse demandée à la
   connexion (`state.depuis`), qui y ramène : un lien reçu mène au bon endroit.
 - Tuile du tableau de bord : `resumeTuile` (phase en cours, tâches en retard).
+
+## Gestion d'agence (`src/gestion/`)
+
+Espace des **associés** (conception :
+`docs/superpowers/specs/2026-10-09-gestion-agence-design.md`), bulle 04 de
+l'accueil, routes `/gestion-agence[/:outil]` gardées par `AssocieSeul`
+(attend tant que `estAssocie` vaut `null` : profil pas encore lu). Outils
+déclarés dans `src/gestion/manifest.js` (une entrée = une tuile et une
+adresse) : calendrier des rendus, suivi des tâches, associés. Violet
+`#7A4E9C`, passé aux composants de la to-do list par `--affaire-accent`.
+
+- **Associé** (migration 067) : `profiles.est_associe`, `est_associe()`,
+  verrou par déclencheur ; on désigne par `designer_associe(compte,
+  valeur)` (un compte ne modifie que sa propre fiche), jamais soi-même
+  retiré. Premiers associés : `update profiles set est_associe = true where
+  email in (…)` dans l'éditeur SQL — **aucun nom dans le dépôt**.
+  `AuthProvider` lit le profil en `select('*')` et garde le statut sur
+  l'appareil.
+- **Rien n'est recopié** : calendrier et suivi lisent les plannings et
+  `todo_elements` de toute l'agence (droits de lecture inchangés).
+  Logique pure dans `gestionLogique.js` (testé) : jalon d'étude au
+  **vendredi** de sa semaine ISO (`vendrediSemaineIso`, dates en UTC),
+  `grilleMois`, `prochaines` (30 jours), `affairesModifiables` (= règle de
+  `peut_modifier_affaire`), `groupesTaches`.
+- L'envoi des jalons vers Notion reste prévu, à part (décision du
+  2026-10-09 : les deux).
 
 ## Suivi financier d'étude
 

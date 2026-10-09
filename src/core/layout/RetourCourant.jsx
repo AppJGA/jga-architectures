@@ -1,12 +1,12 @@
 import { useContext } from 'react'
 import { useLocation } from 'react-router-dom'
 import { RetourPage } from '../../shared/components/RetourPage'
-import { IconeAccueil, IconePortail, IconeBoiteOutils, IconeTableauDeBord, IconeVisitesChantier, IconeOpr } from '../../shared/icones/IconesAffaire'
+import { IconeAccueil, IconePortail, IconeBoiteOutils, IconeGestionAgence, IconeTableauDeBord, IconeVisitesChantier, IconeOpr } from '../../shared/icones/IconesAffaire'
 import { retourParDefaut } from './retourLogique'
 import { RetourContexte } from './retourContexte'
 
 const ICONES_RETOUR = {
-  accueil: IconeAccueil, portail: IconePortail, outils: IconeBoiteOutils,
+  accueil: IconeAccueil, portail: IconePortail, outils: IconeBoiteOutils, gestion: IconeGestionAgence,
   tableau: IconeTableauDeBord, visites: IconeVisitesChantier, opr: IconeOpr,
 }
 

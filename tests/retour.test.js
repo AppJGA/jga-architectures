@@ -18,6 +18,8 @@ test('pages de premier niveau : vers l’accueil ; l’accueil, rien', () => {
 
 test('un outil : vers la boîte à outils', () => {
   assert.deepEqual(r('/tools/convertisseur'), ['Boîte à outils', 'outils', '/tools'])
+  assert.deepEqual(r('/gestion-agence'), ['Accueil', 'accueil', '/home'])
+  assert.deepEqual(r('/gestion-agence/calendrier'), ['Gestion d’agence', 'gestion', '/gestion-agence'])
 })
 
 test('une affaire, ses modules et leurs sous-pages', () => {

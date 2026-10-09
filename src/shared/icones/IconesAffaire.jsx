@@ -173,6 +173,11 @@ export function IconeSuite(props) {
   return <Icone {...props}><path d="M11 6h42a4 4 0 0 1 4 4v20a4 4 0 0 1-4 4h-3v7l-8-7H11a4 4 0 0 1-4-4V10a4 4 0 0 1 4-4z"/><path d="M15 15h34M15 23h20"/><path d="M50 41v6a6 6 0 0 1-6 6H22"/><path d="M27.5 47.5L22 53l5.5 5.5"/></Icone>
 }
 
+// Gestion d'agence : la mallette des associés
+export function IconeGestionAgence(props) {
+  return <Icone {...props}><path d="M24 19v-5a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3v5"/><rect x="5" y="19" width="54" height="36" rx="4"/><path d="M5 33h22M37 33h22"/><rect x="27" y="29" width="10" height="9" rx="1.5"/></Icone>
+}
+
 export function IconeAccueil(props) {
   return <Icone {...props}><path d="M4 29L32 6l28 23"/><path d="M10 24.5V56h44V24.5"/><path d="M26 56V41a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v15"/><path d="M44 15.9V9h6v11.8"/></Icone>
 }

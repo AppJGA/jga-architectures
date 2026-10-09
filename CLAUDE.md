@@ -134,7 +134,7 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
   anglais d'Outlook (marque UTF-8) — l'Outlook classique ne retient que le
   premier contact d'un .vcf. Une icône par fiche donne la carte seule. La
   note de chaque contact porte l'affaire et le rôle.
-- **Base** : `supabase/migrations/`, numérotées, 68 fichiers, **passées à la
+- **Base** : `supabase/migrations/`, numérotées, 69 fichiers, **passées à la
   main** dans le SQL Editor de Supabase : un code qui dépend d'une nouvelle
   colonne doit tolérer son absence tant que la migration n'est pas faite. La photo de
   couverture d'une affaire est `affaires.photo_url` (migration 014, bucket
@@ -600,6 +600,10 @@ associés, sur toutes les pages sauf Gestion d'agence elle-même.
   et `accesGestion` (null tant que le profil n'est pas lu) ; l'accès passe
   toujours par `accesGestion`, jamais par `estAssocie` seul. Sur la page
   Associés, personne ne touche à sa propre ligne.
+  **L'administrateur écrit partout** (migration 069) : `peut_modifier_affaire`
+  et les règles de modification / suppression d'`affaires` l'admettent ;
+  `canEdit` vaut toujours vrai pour lui, et le portail lui ouvre toutes les
+  affaires.
 - **Rien n'est recopié** : calendrier et suivi lisent les plannings et
   `todo_elements` de toute l'agence (droits de lecture inchangés).
   Logique pure dans `gestionLogique.js` (testé) : jalon d'étude au
@@ -758,6 +762,19 @@ ensemble :
   Un geste refusé affiche « Lecture seule… Rien n'a été modifié »
   (seulement juste après un geste : les écritures automatiques au
   chargement sont refusées sans bruit).
+- **La fiche de l'affaire** (`affaires` : photo, phase, montants, dates)
+  reste au **responsable** — ou à tous si l'affaire n'en a pas, et à
+  l'administrateur (règle de la 050, élargie par la 069) ; un collaborateur
+  modifie tout le reste. Une écriture refusée par une règle RLS ne rend pas
+  d'erreur : la photo d'un collaborateur partait au stockage sans que son
+  lien s'enregistre. D'où `peutModifierFiche` (`useAffaireCollaborateurs`) :
+  « Modifier » de l'en-tête et de la carte d'informations, choix de la
+  phase, enveloppe du suivi financier d'étude, paramètres du suivi
+  financier chantier, dates de l'affaire suivant un décalage du planning
+  (prop `peutModifierFiche` des modules) ; corbeille du portail
+  (`peutSupprimer` : responsable ou administrateur). Sans droit sur la
+  fiche, « Gérer les interlocuteurs » ouvre `ModaleContacts` (les seuls
+  interlocuteurs, table à part, modifiables par les collaborateurs).
 - **Écran** : chaque module reçoit `lectureSeule`. Boutons de modification
   masqués (barres d'outils des plannings, suivi financier, lots, fiche FTM
   consultable sans enregistrer) ; là où l'édition est partout (gestes des

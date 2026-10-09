@@ -15,6 +15,7 @@ import { PHASES_AFFAIRE, periodeAffaire, libellePhase, variablesPhase, phasesDuT
 
 import { AffaireFormModal } from '../dashboard/AffaireFormModal'
 import { ContactsAffaire } from './ContactsAffaire'
+import { ModaleContacts } from './ModaleContacts'
 import { supabase, verrouillerEcritures, deverrouillerEcritures, surEcritureRefusee } from '../core/supabase/client'
 import { infosStatut } from '../modules/chantier/comptes-rendus/crLogique'
 import { dernierePhaseRenseignee, nomPhase } from '../modules/etude/financier/phases'
@@ -213,9 +214,9 @@ function TitreModule({ mod, pleinePage }) {
   )
 }
 
-function ModuleRenderer({ mod, lectureSeule }) {
+function ModuleRenderer({ mod, lectureSeule, peutModifierFiche }) {
   const Comp = mod.component
-  return <Suspense fallback={<Spinner />}><Comp lectureSeule={lectureSeule} /></Suspense>
+  return <Suspense fallback={<Spinner />}><Comp lectureSeule={lectureSeule} peutModifierFiche={peutModifierFiche} /></Suspense>
 }
 
 // ─── Photo de l'affaire ───────────────────────────────────────────────────────
@@ -353,7 +354,7 @@ function ChoixPhase({ phase, canEdit, onChanger }) {
   )
 }
 
-function AffaireHeader({ affaire, onEdit, onChangerPhase, collaborateurs, canEdit, collabLoading, isProprietaire, onCollabClick, onSelfAssign }) {
+function AffaireHeader({ affaire, onEdit, onChangerPhase, collaborateurs, canEdit, peutModifierFiche, collabLoading, isProprietaire, onCollabClick, onSelfAssign }) {
   return (
     <div style={{
       backgroundColor: 'white',
@@ -371,7 +372,7 @@ function AffaireHeader({ affaire, onEdit, onChangerPhase, collaborateurs, canEdi
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
-        <ChoixPhase phase={affaire.phase} canEdit={canEdit} onChanger={onChangerPhase} />
+        <ChoixPhase phase={affaire.phase} canEdit={peutModifierFiche} onChanger={onChangerPhase} />
 
         {!collabLoading && collaborateurs.length > 0 && (
           <div
@@ -420,7 +421,9 @@ function AffaireHeader({ affaire, onEdit, onChangerPhase, collaborateurs, canEdi
           </button>
         )}
 
-        {canEdit && (
+        {/* La fiche (photo, phase, montants) : responsable ou administrateur,
+            comme la base l'impose (migrations 050, 069) */}
+        {peutModifierFiche && (
           <button
             onClick={onEdit}
             style={{
@@ -973,7 +976,7 @@ function PhaseSection({ phase, affaire, stats, affaireId, navigate, rangBase }) 
   )
 }
 
-function AffaireOverview({ affaire, stats, affaireId, onEdit, onGererContacts, versionContacts, canEdit }) {
+function AffaireOverview({ affaire, stats, affaireId, onEdit, onGererContacts, versionContacts, canEdit, peutModifierFiche }) {
   const navigate = useNavigate()
   const { estAgence } = useAuth()
   // Seulement la phase en cours : la colonne de gauche garde tous les modules
@@ -1022,7 +1025,7 @@ function AffaireOverview({ affaire, stats, affaireId, onEdit, onGererContacts, v
       }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
           <span style={{ fontSize: 13, fontWeight: 500, color: '#1F1B17' }}>Informations de l'affaire</span>
-          {canEdit && (
+          {peutModifierFiche && (
             <button
               onClick={onEdit}
               style={{
@@ -1079,12 +1082,13 @@ export function AffairePage() {
   // Les interlocuteurs s'enregistrent depuis la fiche : la carte des contacts
   // se recharge à sa fermeture
   const [versionContacts, setVersionContacts] = useState(0)
+  const [contactsSeulsOuverts, setContactsSeulsOuverts] = useState(false)
   const [showCollabModal, setShowCollabModal] = useState(false)
   const stats = useAffaireStats(affaireId)
 
   const {
     collaborateurs, loading: collabLoading,
-    canEdit, isProprietaire,
+    canEdit, isProprietaire, peutModifierFiche,
     addCollaborateur, removeCollaborateur,
     refetch: refetchCollabs,
   } = useAffaireCollaborateurs(affaireId)
@@ -1209,6 +1213,7 @@ export function AffairePage() {
           onChangerPhase={changerPhase}
           collaborateurs={collaborateurs}
           canEdit={canEdit}
+          peutModifierFiche={peutModifierFiche}
           collabLoading={collabLoading}
           isProprietaire={isProprietaire}
           onCollabClick={() => setShowCollabModal(true)}
@@ -1257,12 +1262,16 @@ export function AffairePage() {
               // Sous le titre, le module garde toute la hauteur restante : un
               // module plein écran (planning, suivi financier) remplit sa boîte
               ? <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-                  <ModuleRenderer mod={activeModule} lectureSeule={!collabLoading && !canEdit} />
+                  <ModuleRenderer mod={activeModule} lectureSeule={!collabLoading && !canEdit} peutModifierFiche={!collabLoading && peutModifierFiche} />
                 </div>
               : <AffaireOverview
-                  affaire={affaire} stats={stats} affaireId={affaireId} canEdit={canEdit}
+                  affaire={affaire} stats={stats} affaireId={affaireId} canEdit={canEdit} peutModifierFiche={peutModifierFiche}
                   onEdit={() => setEditOpen(true)}
-                  onGererContacts={() => { setSectionEdition('interlocuteurs'); setEditOpen(true) }}
+                  onGererContacts={() => {
+                    // Sans droit sur la fiche, les interlocuteurs seuls
+                    if (peutModifierFiche) { setSectionEdition('interlocuteurs'); setEditOpen(true) }
+                    else setContactsSeulsOuverts(true)
+                  }}
                   versionContacts={versionContacts}
                 />
             }
@@ -1278,6 +1287,10 @@ export function AffairePage() {
         }}>
           <Lock size={14} /> Lecture seule : vous ne faites pas partie des collaborateurs de cette affaire. Rien n’a été modifié.
         </div>
+      )}
+
+      {contactsSeulsOuverts && (
+        <ModaleContacts affaireId={affaireId} onFermer={() => { setContactsSeulsOuverts(false); setVersionContacts((v) => v + 1) }} />
       )}
 
       {editOpen && (

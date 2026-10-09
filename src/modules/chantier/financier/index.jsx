@@ -610,7 +610,7 @@ function TotalsRow({ totaux }) {
 
 // En lecture seule (affaire dont on n'est pas collaborateur) : le tableau et
 // les fiches se consultent, aucun bouton ne modifie.
-export default function FinancierChantierModule({ lectureSeule = false }) {
+export default function FinancierChantierModule({ lectureSeule = false, peutModifierFiche = true }) {
   const { affaireId } = useParams()
   const navigate = useNavigate()
   const { affaire, loading: affaireLoading } = useAffaire(affaireId)
@@ -751,7 +751,8 @@ export default function FinancierChantierModule({ lectureSeule = false }) {
           <span style={{ fontSize: 11, color: '#9C9591' }}>Seuil aléas contractuels :</span>
           <span style={{ fontSize: 11, fontWeight: 500, color: '#1F1B17' }}>{seuilPct} %</span>
           <div style={{ flex: 1 }} />
-          {!lectureSeule && <button
+          {/* Paramètres = champs de la fiche : responsable ou administrateur */}
+          {!lectureSeule && peutModifierFiche && <button
             onClick={() => setEditAffaireOpen(true)}
             style={{ fontSize: 11, color: 'var(--jga-orange)', background: 'none', border: 'none', cursor: 'pointer' }}
           >

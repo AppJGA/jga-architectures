@@ -154,7 +154,8 @@ export function DashboardPage() {
                 affaire={affaire}
                 isAuthorized={true}
                 delai={delai(rangs.get(affaire.id) ?? 0)}
-                onDeleteRequest={setDeletingAffaire}
+                // La corbeille : responsable ou administrateur, la base refusant les autres
+                onDeleteRequest={affaire.peutSupprimer ? setDeletingAffaire : undefined}
               />
             ))}
           </div>

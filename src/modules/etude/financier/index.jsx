@@ -680,7 +680,8 @@ function EnveloppeGlobale({ affaire, onModifier }) {
         <p style={{ fontSize: 11, fontWeight: 500, color: '#9C9591', textTransform: 'uppercase', letterSpacing: '0.05em', margin: 0 }}>
           Enveloppe globale initiale
         </p>
-        {brouillon == null && valeur != null && (
+        {/* Sans `onModifier` (fiche réservée au responsable), on lit seulement */}
+        {onModifier && brouillon == null && valeur != null && (
           <button
             type="button"
             onClick={() => { setBrouillon(valeur); setErreur(null) }}
@@ -728,7 +729,7 @@ function EnveloppeGlobale({ affaire, onModifier }) {
           <div style={{ marginBottom: 4 }}><MontantHT ht={valeur} tva={tva} taille={19} /></div>
           <p style={{ fontSize: 11, color: '#9C9591' }}>Aussi dans les informations de l’affaire</p>
         </>
-      ) : (
+      ) : onModifier ? (
         <button
           type="button"
           onClick={() => { setBrouillon(''); setErreur(null) }}
@@ -736,6 +737,8 @@ function EnveloppeGlobale({ affaire, onModifier }) {
         >
           Renseigner →
         </button>
+      ) : (
+        <p style={{ fontSize: 12, color: '#9C9591', margin: 0 }}>Non renseignée</p>
       )}
       {erreur && <p style={{ fontSize: 11, color: '#B8412C', marginTop: 6 }}>{erreur}</p>}
     </div>
@@ -1184,7 +1187,7 @@ function Spinner() {
 
 // En lecture seule (affaire dont on n'est pas collaborateur), la page se lit :
 // la zone de consultation arrête tout geste qui modifierait.
-export default function FinancierEtudeModule({ lectureSeule = false }) {
+export default function FinancierEtudeModule({ lectureSeule = false, peutModifierFiche = true }) {
   const { affaireId } = useParams()
   const { affaire, loading: affaireLoading, updateAffaire } = useAffaire(affaireId)
 
@@ -1256,7 +1259,8 @@ export default function FinancierEtudeModule({ lectureSeule = false }) {
       <EnveloppeBandeau
         affaire={affaire}
         suiviParPhase={suiviParPhase}
-        onModifierEnveloppe={(montant) => updateAffaire({ enveloppe_ht: montant, enveloppe_ttc: ttcDe(montant, tvaAffaire(affaire)) })}
+        // L'enveloppe est un champ de la fiche : responsable ou administrateur
+        onModifierEnveloppe={peutModifierFiche ? (montant) => updateAffaire({ enveloppe_ht: montant, enveloppe_ttc: ttcDe(montant, tvaAffaire(affaire)) }) : undefined}
       />
 
       {/* ── Timeline des phases ── */}

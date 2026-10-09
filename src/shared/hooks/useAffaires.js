@@ -38,7 +38,7 @@ function buildPayload(formData) {
 export function useAffaires() {
   // L'utilisateur est lu sur l'appareil (useAuth), pas demandé au serveur :
   // sans réseau, la liste gardée doit pouvoir s'afficher
-  const { estAgence, user } = useAuth()
+  const { estAgence, estAdmin, user } = useAuth()
   const userId = user?.id
   const [affaires, setAffaires] = useState([])
   const [loading, setLoading] = useState(true)
@@ -95,9 +95,12 @@ export function useAffaires() {
     }
 
     // 5. Enrichissement + flag isAuthorized
+    // L'administrateur (migrations 068, 069) a la main sur toutes les
+    // affaires ; supprimer reste au responsable, comme le veut la base
     const enriched = allAffaires.map(a => ({
       ...a,
-      isAuthorized: authorizedIds.has(a.id),
+      isAuthorized: estAdmin || authorizedIds.has(a.id),
+      peutSupprimer: estAdmin || (collabData ?? []).some(c => c.affaire_id === a.id && c.user_id === userId && c.role === 'proprietaire'),
       affaire_collaborateurs: (collabData ?? [])
         .filter(c => c.affaire_id === a.id)
         .map(c => ({
@@ -108,7 +111,7 @@ export function useAffaires() {
 
     setAffaires(enriched)
     setError(null)
-  }, [estAgence, userId])
+  }, [estAgence, estAdmin, userId])
 
   useEffect(() => {
     refetch().finally(() => setLoading(false))

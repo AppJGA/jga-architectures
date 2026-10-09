@@ -5,7 +5,7 @@ import { useAuth } from '../../core/auth/useAuth'
 export function useAffaireCollaborateurs(affaireId) {
   // L'utilisateur est celui de l'appareil : demandé au serveur, il manquait
   // sans réseau, et l'affaire passait en lecture seule en pleine visite
-  const { user } = useAuth()
+  const { user, estAdmin } = useAuth()
   const currentUserId = user?.id ?? null
   const [collaborateurs, setCollaborateurs] = useState([])
   const [loading, setLoading] = useState(true)
@@ -66,7 +66,11 @@ export function useAffaireCollaborateurs(affaireId) {
   )
   const hasAnyCollab = collaborateurs.length > 0
   // Si aucun collab défini → accès libre (évite le blocage au démarrage)
-  const canEdit = estExterieur ? false : (hasAnyCollab ? (isProprietaire || isCollaborateur) : true)
+  const canEdit = estAdmin ? true : estExterieur ? false : (hasAnyCollab ? (isProprietaire || isCollaborateur) : true)
+  // La fiche de l'affaire (photo, phase, montants) : son responsable, ou tout
+  // compte de l'agence si elle n'en a pas — règle de la base (migration 050) ;
+  // l'administrateur partout (069). Un collaborateur modifie le reste.
+  const peutModifierFiche = estAdmin || (!estExterieur && (isProprietaire || !collaborateurs.some((c) => c.role === 'proprietaire')))
 
   const addCollaborateur = useCallback(async (userId, role = 'collaborateur') => {
     const { error } = await supabase
@@ -102,7 +106,7 @@ export function useAffaireCollaborateurs(affaireId) {
 
   return {
     collaborateurs, loading, currentUserId,
-    isProprietaire, isCollaborateur, estExterieur, canEdit,
+    isProprietaire, isCollaborateur, estExterieur, canEdit, peutModifierFiche,
     addCollaborateur, removeCollaborateur, searchProfiles,
     refetch: fetchData,
   }

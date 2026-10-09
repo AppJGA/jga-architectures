@@ -580,7 +580,7 @@ l'agence (`GestionPage.jsx`) : colonne latérale avec « Tableau de bord » mis
 en évidence puis les outils, tableau de bord à tuiles résumées
 (`TableauBordGestion.jsx` ; un outil sans résumé montre sa description),
 titre d'outil comme `TitreModule`. Violet `#7A4E9C`, passé aux composants
-de la to-do list par `--affaire-accent`. Bouton violet « Revenir à la
+de la to-do list par `--affaire-accent`. Bouton violet « Aller à la
 gestion d'agence » dans `Topbar`, à côté de la cloche, pour les seuls
 associés, sur toutes les pages sauf Gestion d'agence elle-même.
 

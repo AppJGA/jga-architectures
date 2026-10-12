@@ -86,11 +86,14 @@ export function lireCarte(titre, creeLe) {
 
 export const formatDateCarte = (iso) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(2, 4)}`
 
+/** Libellé écrit dans une carte : « 1/2 » se lirait comme une seconde date. */
+export function libellePourCarte(libelle) {
+  return (String(libelle ?? '').trim() || 'Échéance').replace(/(?<=\d)\/(?=\d)/g, '-')
+}
+
 /** Carte créée par l'app, au format de l'agence : « 2699 ABC – Rendu PRO 16/10/26 ». */
 export function titreCarte({ code, libelle, date }) {
-  // « 1/2 » dans un libellé se lirait comme une seconde date
-  const texte = (String(libelle ?? '').trim() || 'Échéance').replace(/(\d)\/(\d)/g, '$1-$2')
-  return `${codeCarte(code)} – ${texte} ${formatDateCarte(date)}`
+  return `${codeCarte(code)} – ${libellePourCarte(libelle)} ${formatDateCarte(date)}`
 }
 
 function formatComme(d, iso) {

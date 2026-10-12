@@ -10,7 +10,7 @@
 
 import { periodeAffaire } from '../../affaire/phaseAffaire.js'
 import {
-  lireCarte, numeroAffaire, codeCarte, titreCarte, remplacerDate, remplacerLibelle,
+  lireCarte, numeroAffaire, codeCarte, titreCarte, libellePourCarte, remplacerDate, remplacerLibelle,
   champsJalon, memePosition, dateDuJalon, nomAffaireNotion,
 } from './echeancesNotionLogique.js'
 import { COULEUR_NOTION } from './codesAffaire.js'
@@ -177,7 +177,7 @@ export function planSynchro({
         }
       }
       if (libelleAppBouge) {
-        titre = remplacerLibelle(titre, d.libelle, j.label)
+        titre = remplacerLibelle(titre, d.libelle, libellePourCarte(j.label))
           ?? titreCarte({ code: affaire?.code_affaire ?? l.reference ?? lue.numero, libelle: j.label, date: nouvelleDate })
       }
       if (titre !== carte.titre) plan.cartes.push({ action: 'modifier', pageId: carte.id, titre, semaine: nouvelleDate })
@@ -229,7 +229,7 @@ export function planSynchro({
     const titre = titreCarte({ code: affaire.code_affaire, libelle: j.label, date })
     const relue = lireCarte(titre, aujourdhui).dates[0]
     const nouvelle = {
-      ...(attente ?? { id: nouvelId() }), page_id: null, rang: 0, numero: n, reference: null, affaire_id: affaire.id,
+      ...(attente ?? { id: nouvelId() }), page_id: null, rang: 0, numero: n, reference: referenceDe(n, titre), affaire_id: affaire.id,
       origine: j.origine, jalon_id: j.id, libelle: relue?.libelle ?? j.label, libelle_app: j.label, date_synchro: date,
       texte_carte: titre, nb_dates: 1, notion_modifie_le: null,
     }

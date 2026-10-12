@@ -7,7 +7,7 @@ import { test } from 'node:test'
 
 import { planSynchro } from '../src/shared/notion/synchroNotionLogique.js'
 import {
-  numeroAffaire, codeCarte, datesDuTexte, lireCarte, titreCarte, formatDateCarte,
+  numeroAffaire, codeCarte, datesDuTexte, lireCarte, titreCarte, libellePourCarte, formatDateCarte,
   remplacerDate, remplacerLibelle, dateEtude, memePosition, dateDuJalon, champsJalon, nomAffaireNotion,
 } from '../src/shared/notion/echeancesNotionLogique.js'
 
@@ -71,6 +71,11 @@ test('titre d’une carte : une fraction du libellé n’est pas une seconde dat
   const titre = titreCarte({ code: '2698-XYZ', libelle: 'Rendu lot 1/2', date: '2026-10-20' })
   assert.equal(titre, '2698 XYZ – Rendu lot 1-2 20/10/26')
   assert.equal(lireCarte(titre, '2026-10-12T00:00:00Z').dates.length, 1)
+})
+
+test('libellé pour une carte : fractions en tirets, vide = Échéance', () => {
+  assert.equal(libellePourCarte(' Lot 1/2/3 '), 'Lot 1-2-3')
+  assert.equal(libellePourCarte('  '), 'Échéance')
 })
 
 test('remplacer une date : même format, reste intact', () => {
@@ -376,4 +381,11 @@ test('synchro : horodatages comparés comme des instants (Notion « Z », Supaba
   }))
   assert.equal(p.cartes[0]?.action, 'modifier')
   assert.deepEqual(p.jalons, [])
+})
+
+test('synchro : échéance renommée « Rendu lot 1/2 » dans l’app → carte à une seule date, stable', () => {
+  const p = stable(base({
+    registre: [ligne()], jalons: [jalonC({ label: 'Rendu lot 1/2' })], cartes: [carte('p1', '2698 XYZ : Rendu 20/10/26')],
+  }))
+  assert.equal(p.cartes[0].titre, '2698 XYZ : Rendu lot 1-2 20/10/26')
 })

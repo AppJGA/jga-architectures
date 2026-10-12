@@ -67,6 +67,12 @@ test('titre d’une carte de l’app, relu à l’identique', () => {
   assert.equal(formatDateCarte('2027-01-05'), '05/01/27')
 })
 
+test('titre d’une carte : une fraction du libellé n’est pas une seconde date', () => {
+  const titre = titreCarte({ code: '2698-XYZ', libelle: 'Rendu lot 1/2', date: '2026-10-20' })
+  assert.equal(titre, '2698 XYZ – Rendu lot 1-2 20/10/26')
+  assert.equal(lireCarte(titre, '2026-10-12T00:00:00Z').dates.length, 1)
+})
+
 test('remplacer une date : même format, reste intact', () => {
   const titre = '!!2699 ABC : Rendu  APD 16/10 - présentation'
   const c = lireCarte(titre, '2026-10-01T00:00:00Z')
@@ -256,4 +262,118 @@ test('synchro d’un planning : rien hors de son affaire', () => {
     registre: [ligne()], jalons: [jalonC()], cartes: [carte('p7', '2697 QRS : Dépôt 16/10')],
   }))
   assert.deepEqual(p, { jalons: [], cartes: [], registre: { ecrire: [], supprimer: [] } })
+})
+
+// ─── Passages successifs : un plan appliqué, puis relu, ne demande plus rien ──
+
+const VIDE = { jalons: [], cartes: [], registre: { ecrire: [], supprimer: [] } }
+
+// Applique un plan à l'état (cartes, registre, jalons) comme le ferait l'application
+function appliquer(entree, plan) {
+  let suivant = 1000
+  const registre = entree.registre.filter((l) => !plan.registre.supprimer.includes(l.id))
+  const jalons = entree.jalons.filter((j) => !plan.jalons.some((a) => a.action === 'supprimer' && a.origine === j.origine && a.id === j.id))
+    .map((j) => {
+      const a = plan.jalons.find((x) => x.origine === j.origine && x.id === j.id && x.action !== 'supprimer' && x.action !== 'creer')
+      if (!a) return j
+      const { action, ...reste } = a
+      return { ...j, ...(action === 'deplacer' ? { date: undefined, semaine: undefined, annee: undefined } : {}), ...reste, ancre: a.decrocher ? false : j.ancre }
+    })
+  const ids = new Map()
+  for (const a of plan.jalons.filter((x) => x.action === 'creer')) {
+    const { ligneId, ...reste } = a
+    delete reste.action
+    const id = suivant++
+    ids.set(ligneId, id)
+    jalons.push({ id, ancre: false, modifie_le: '2026-10-12T00:00:00Z', ...reste })
+  }
+  const cartes = entree.cartes.map((c) => {
+    const m = plan.cartes.find((x) => x.action === 'modifier' && x.pageId === c.id)
+    return m ? { ...c, titre: m.titre } : c
+  }).filter((c) => !plan.cartes.some((x) => x.action === 'corbeille' && x.pageId === c.id))
+  const pages = new Map()
+  for (const a of plan.cartes.filter((x) => x.action === 'creer')) {
+    const id = `pn${suivant++}`
+    pages.set(a.ligneId, id)
+    cartes.push({ id, titre: a.titre, creeLe: entree.aujourdhui, modifieLe: entree.aujourdhui })
+  }
+  for (const { ligne } of plan.registre.ecrire) {
+    const l = { ...ligne }
+    if (ids.has(l.id)) l.jalon_id = ids.get(l.id)
+    if (pages.has(l.id)) l.page_id = pages.get(l.id)
+    const i = registre.findIndex((x) => x.id === l.id)
+    if (i >= 0) registre[i] = l; else registre.push(l)
+  }
+  return { ...entree, cartes, registre, jalons }
+}
+const stable = (entree) => {
+  const premier = planSynchro(entree)
+  const deuxieme = appliquer(entree, premier)
+  const second = planSynchro(deuxieme)
+  // Le registre peut encore noter la référence et l'heure de la carte
+  // (une écriture, sans effet sur Notion ni sur les plannings), puis plus rien
+  assert.deepEqual({ ...second, registre: VIDE.registre }, VIDE)
+  assert.deepEqual(planSynchro(appliquer(deuxieme, second)), VIDE)
+  return premier
+}
+
+test('synchro : date lointaine sans année poussée par l’app → écrite avec son année, sans retour en arrière', () => {
+  const p = stable(base({
+    registre: [ligne()], jalons: [jalonC({ date: '2027-05-04', modifie_le: '2026-10-11T00:00:00Z' })],
+    cartes: [{ ...carte('p1', '2698 XYZ : Rendu 20/10'), creeLe: '2026-10-01T08:00:00Z' }],
+  }))
+  assert.equal(p.cartes[0].titre, '2698 XYZ : Rendu 04/05/27')
+})
+
+test('synchro : ligne sans affaire, l’affaire arrive avec une échéance au même endroit → reliées, pas de doublon', () => {
+  const p = stable(base({
+    registre: [ligne({ affaire_id: null, origine: null, jalon_id: null, libelle_app: null })],
+    jalons: [jalonC()], cartes: [carte('p1', '2698 XYZ : Rendu 20/10/26')],
+  }))
+  assert.deepEqual(p.jalons, [])
+  assert.deepEqual(p.cartes, [])
+  assert.equal(p.registre.ecrire[0].ligne.jalon_id, 7)
+})
+
+test('synchro : échéance absente des données lues → carte jamais mise à la corbeille', () => {
+  const horsDonnees = planSynchro(base({
+    numero: '2699', affaires: [{ id: 'a-def', code_affaire: '2699-DEF', phase: 'chantier' }],
+    registre: [ligne({ numero: '2699', affaire_id: 'a-abc' })], jalons: [], cartes: [carte('p1', '2699 ABC : Rendu 20/10/26')],
+  }))
+  assert.deepEqual(horsDonnees, VIDE)
+  const sansAffaire = planSynchro(base({
+    registre: [ligne({ affaire_id: null })], jalons: [], cartes: [carte('p1', '2698 XYZ : Rendu 20/10/26')],
+  }))
+  assert.deepEqual(sansAffaire.cartes, [])
+})
+
+test('synchro : premier passage d’une carte créée par l’app → rien à renommer ensuite', () => {
+  const p = stable(base({
+    affaires: [...AFF, { id: 'a-long', code_affaire: '2697 - Exemple Long', phase: 'chantier' }],
+    jalons: [jalonC({ id: 9, affaire_id: 'a-long', label: 'OPR' }), jalonC({ id: 10, label: '', date: '2026-10-22' })],
+  }))
+  assert.equal(p.cartes.length, 2)
+})
+
+test('synchro : libellé modifié dans l’app → titre réécrit relu à l’identique', () => {
+  stable(base({
+    affaires: [{ id: 'a-long', code_affaire: '2697 - Exemple Long', phase: 'chantier' }],
+    registre: [ligne({ numero: '2697', affaire_id: 'a-long' })], jalons: [jalonC({ affaire_id: 'a-long', label: 'Levée des réserves' })],
+    cartes: [carte('p1', '2697 Exemple : Rendu 20/10/26')],
+  }))
+})
+
+test('synchro : ligne en attente de carte dont l’échéance a été supprimée → ligne retirée (affaire lue seulement)', () => {
+  const attente = ligne({ page_id: null })
+  assert.deepEqual(planSynchro(base({ registre: [attente], jalons: [] })).registre.supprimer, ['l1'])
+  assert.deepEqual(planSynchro(base({ registre: [ligne({ page_id: null, affaire_id: 'ailleurs' })], jalons: [] })).registre.supprimer, [])
+})
+
+test('synchro : horodatages comparés comme des instants (Notion « Z », Supabase « +00:00 »)', () => {
+  const p = planSynchro(base({
+    registre: [ligne()], jalons: [jalonC({ date: '2026-10-27', modifie_le: '2026-10-11T12:00:00.500+00:00' })],
+    cartes: [carte('p1', '2698 XYZ : Rendu 23/10/26', '2026-10-11T12:00:00Z')],
+  }))
+  assert.equal(p.cartes[0]?.action, 'modifier')
+  assert.deepEqual(p.jalons, [])
 })

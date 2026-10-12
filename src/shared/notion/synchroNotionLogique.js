@@ -114,14 +114,29 @@ export function planSynchro({
       if (j) jalonsLies.add(cle(j.origine, j.id))
 
       if (!j) {
+        const chargee = l.affaire_id ? affaireParId.has(l.affaire_id) : false
+        // Affaire de la ligne hors des données lues (synchro d'un autre
+        // planning, plafond de lignes) : l'échéance n'est pas « supprimée »,
+        // elle est seulement absente — on ne touche à rien
+        if (l.jalon_id != null && l.affaire_id && !chargee) continue
         // Supprimée dans l'app : la carte part à la corbeille — sauf une
-        // carte à plusieurs dates, où Notion fait foi
-        if (l.jalon_id != null && affaire && !plusieurs) {
+        // carte à plusieurs dates, où Notion fait foi. Une ligne sans affaire
+        // (affaire supprimée de l'app) ne prouve rien : jamais de corbeille.
+        if (l.jalon_id != null && chargee && !plusieurs) {
           plan.cartes.push({ action: 'corbeille', pageId: carte.id })
           plan.registre.supprimer.push(l.id)
           continue
         }
         if (affaire) {
+          // Affaire arrivée dans l'app après la carte : si son planning a déjà
+          // l'échéance au même endroit, on les relie au lieu de les doubler
+          const existant = jalons.find((x) => x.affaire_id === affaire.id && !jalonsLies.has(cle(x.origine, x.id))
+            && memePosition(x, d.date) && !lignes.some((o) => o.id !== l.id && o.jalon_id === x.id && o.origine === x.origine))
+          if (existant) {
+            jalonsLies.add(cle(existant.origine, existant.id))
+            ecrire({ ...ligneCarte, affaire_id: affaire.id, origine: existant.origine, jalon_id: existant.id, libelle: d.libelle, libelle_app: existant.label, date_synchro: d.date }, l)
+            continue
+          }
           const origine = periodeAffaire(affaire.phase)
           plan.jalons.push({ action: 'creer', ligneId: l.id, origine, affaire_id: affaire.id, label: d.libelle, ...champsJalon(origine, d.date) })
           ecrire({ ...ligneCarte, affaire_id: affaire.id, origine, jalon_id: null, libelle: d.libelle, libelle_app: d.libelle, date_synchro: d.date }, l)
@@ -137,7 +152,8 @@ export function planSynchro({
       const libelleAppBouge = j.label !== l.libelle_app
       const notionChange = notionBouge || libelleNotionBouge
       const appChange = appBouge || libelleAppBouge
-      const notionPlusRecent = !j.modifie_le || (carte.modifieLe ?? '') >= j.modifie_le
+      // Date.parse : Notion écrit « …00.000Z », Supabase « …00+00:00 »
+      const notionPlusRecent = !j.modifie_le || (Date.parse(carte.modifieLe) || 0) >= (Date.parse(j.modifie_le) || 0)
       const notionGagne = plusieurs || !appChange || (notionChange && notionPlusRecent)
 
       if (notionGagne) {
@@ -150,14 +166,25 @@ export function planSynchro({
       }
 
       const nouvelleDate = dateDuJalon(j, l.date_synchro)
-      let titre = nouvelleDate !== d.date ? remplacerDate(carte.titre, d, nouvelleDate) : carte.titre
-      let libelle = d.libelle
+      let titre = carte.titre
+      if (nouvelleDate !== d.date) {
+        titre = remplacerDate(titre, d, nouvelleDate)
+        // Sans année, la date se relirait au plus près de la création de la
+        // carte : une date lointaine reviendrait un an à côté. On l'écrit
+        // alors avec son année.
+        if (lireCarte(titre, carte.creeLe).dates[d.rang]?.date !== nouvelleDate) {
+          titre = remplacerDate(carte.titre, { ...d, avecAnnee: true, anneeCourte: true }, nouvelleDate)
+        }
+      }
       if (libelleAppBouge) {
         titre = remplacerLibelle(titre, d.libelle, j.label)
           ?? titreCarte({ code: affaire?.code_affaire ?? l.reference ?? lue.numero, libelle: j.label, date: nouvelleDate })
-        libelle = j.label
       }
       if (titre !== carte.titre) plan.cartes.push({ action: 'modifier', pageId: carte.id, titre, semaine: nouvelleDate })
+      // Le libellé gardé est celui que Notion relira dans ce titre, sinon le
+      // passage suivant y verrait un renommage venu de Notion
+      const relue = lireCarte(titre, carte.creeLe)
+      const libelle = (relue.dates[d.rang] ?? relue.dates[0])?.libelle ?? d.libelle
       ecrire({ ...ligneCarte, texte_carte: titre, libelle, libelle_app: j.label, date_synchro: nouvelleDate }, l)
     }
 
@@ -200,13 +227,20 @@ export function planSynchro({
       continue
     }
     const titre = titreCarte({ code: affaire.code_affaire, libelle: j.label, date })
+    const relue = lireCarte(titre, aujourdhui).dates[0]
     const nouvelle = {
       ...(attente ?? { id: nouvelId() }), page_id: null, rang: 0, numero: n, reference: null, affaire_id: affaire.id,
-      origine: j.origine, jalon_id: j.id, libelle: j.label, libelle_app: j.label, date_synchro: date,
+      origine: j.origine, jalon_id: j.id, libelle: relue?.libelle ?? j.label, libelle_app: j.label, date_synchro: date,
       texte_carte: titre, nb_dates: 1, notion_modifie_le: null,
     }
     ecrire(nouvelle, attente)
     plan.cartes.push({ action: 'creer', ligneId: nouvelle.id, titre, semaine: date })
+  }
+
+  // Ligne en attente de carte dont l'échéance a été supprimée dans l'app
+  // (affaire lue, sinon on ne sait rien)
+  for (const [k, l] of enAttente) {
+    if (!jalonParCle.has(k) && l.affaire_id && affaireParId.has(l.affaire_id)) plan.registre.supprimer.push(l.id)
   }
 
   // Dates de cartes restées libres : une échéance du planning si l'affaire

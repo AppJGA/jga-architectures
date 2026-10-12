@@ -88,7 +88,9 @@ export const formatDateCarte = (iso) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/
 
 /** Carte créée par l'app, au format de l'agence : « 2699 ABC – Rendu PRO 16/10/26 ». */
 export function titreCarte({ code, libelle, date }) {
-  return `${codeCarte(code)} – ${String(libelle ?? '').trim() || 'Échéance'} ${formatDateCarte(date)}`
+  // « 1/2 » dans un libellé se lirait comme une seconde date
+  const texte = (String(libelle ?? '').trim() || 'Échéance').replace(/(\d)\/(\d)/g, '$1-$2')
+  return `${codeCarte(code)} – ${texte} ${formatDateCarte(date)}`
 }
 
 function formatComme(d, iso) {

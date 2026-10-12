@@ -15,6 +15,16 @@ export function filtreEcheances(numero) {
   return { and: [colonne, { property: PROPRIETES.titre, title: { contains: numero } }] }
 }
 
+/** Base des affaires : en entier pour le calendrier, le seul numéro pour un planning. */
+export function filtreAtelier(numero) {
+  return numero ? { property: PROPRIETES.reference, title: { contains: numero } } : null
+}
+
+/** La carte est-elle toujours dans la colonne « ECHEANCES RENDUS » ? */
+export function dansColonne(page) {
+  return (page?.properties?.[PROPRIETES.jour]?.multi_select ?? []).some((o) => o?.name === COLONNE_ECHEANCES)
+}
+
 const texteTitre = (prop) => (prop?.title ?? []).map((t) => t.plain_text ?? '').join('')
 
 export function carteDepuisPage(page) {
@@ -40,6 +50,28 @@ export const proprietesNouvelleCarte = (valeurs) => ({
 })
 
 const ID_PAGE = /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i
+
+const PAGES_CONNUES_MAX = 200
+
+/**
+ * Cartes déjà liées que la lecture d'un planning doit retrouver même si leur
+ * titre ne contient plus le numéro (en cours de frappe, numéro changé) : sans
+ * elles, la carte paraîtrait supprimée. Identifiants contrôlés, sans doublon.
+ */
+export function pagesAVerifier(liste) {
+  if (!Array.isArray(liste)) return []
+  const vues = new Set()
+  const pages = []
+  for (const id of liste) {
+    if (typeof id !== 'string' || !ID_PAGE.test(id)) continue
+    const cleId = id.replace(/-/g, '').toLowerCase()
+    if (vues.has(cleId)) continue
+    vues.add(cleId)
+    pages.push(id)
+    if (pages.length === PAGES_CONNUES_MAX) break
+  }
+  return pages
+}
 
 /** Une opération reçue du navigateur n'entre ni dans une adresse ni dans Notion sans ce contrôle. */
 export function operationValide(op) {

@@ -1,26 +1,19 @@
 // ─── Échéances partagées avec Notion : lectures, écritures, orchestration ────
 //
 // `synchroniser` lit Notion par le passeur (api/notion.js), lit le registre et
-// les échéances, calcule le plan (synchroNotionLogique.js) puis l'applique :
-// échéances, réservations (nouvelles lignes), cartes, puis le reste du
-// registre : une ligne dont l'écriture liée a échoué reste telle quelle, pour
-// que le passage suivant reprenne la même décision. Une seule
-// synchronisation à la fois sur l'appareil (Web Locks). Sans réseau, sans la
-// migration 071 ou sans Notion, rien ne part et rien ne crie : le passage
-// suivant rattrape (conception, §5.4).
+// les échéances, calcule le plan (synchroNotionLogique.js) puis l'applique
+// (appliquerSynchro.js). Une seule synchronisation à la fois sur l'appareil
+// (Web Locks). Sans réseau, sans la migration 071 ou sans Notion, rien ne
+// part et rien ne crie : le passage suivant rattrape (conception, §5.4).
 
 import { supabase } from '../../core/supabase/client'
 import { estAncre } from '../planning/ancrage'
-import { CHAMPS_DETACHE } from '../../modules/chantier/planning/jalonsAncres'
-import { CHAMPS_DETACHE_ETUDE } from '../../modules/etude/planning/jalonsAncresEtude'
 import { titreCarte, lireCarte, remplacerDate, remplacerLibelle, libellePourCarte, formatDateCarte } from './echeancesNotionLogique'
-import { numeroAffaire, codeCarte, COULEUR_NOTION } from './codesAffaire'
+import { numeroAffaire, codeCarte } from './codesAffaire'
 import { planSynchro } from './synchroNotionLogique'
+import { appliquerPlan } from './appliquerSynchro'
 
-const TABLE = { etude: 'planning_etude_jalons', chantier: 'planning_jalons' }
-const DETACHE = { etude: CHAMPS_DETACHE_ETUDE, chantier: CHAMPS_DETACHE }
 const absente = (error) => error?.code === 'PGRST205' || error?.code === '42P01'
-const BAIL_MS = 2 * 60 * 1000
 const aujourdhui = () => {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -43,18 +36,22 @@ async function appelerNotion(corps) {
 
 const TAILLE_PAGE = 1000
 
-// Supabase plafonne une lecture à 1000 lignes : on lit page après page.
+// Supabase plafonne une lecture à 1000 lignes : on lit page après page, par
+// identifiant croissant (« après le dernier lu ») et non par rang : une ligne
+// supprimée entre deux pages décalerait les rangs et en ferait sauter une.
 // `synchro` : lecture « fraîche ». Le service worker garde les réponses de la
-// base (NetworkFirst, 6 s) et deux pages `.range` partagent une adresse ; un
-// alias de colonne change l'adresse, et vite.config.js exclut ces adresses de
-// la mémoire. Une synchronisation qui lirait du vieux annulerait les gestes.
+// base (NetworkFirst, 6 s) ; un alias de colonne change l'adresse, et
+// vite.config.js exclut ces adresses de la mémoire. Une synchronisation qui
+// lirait du vieux annulerait les gestes.
 async function lireTout(table, filtres = {}, { synchro = false } = {}) {
   const vues = new Set()
   const lignes = []
-  for (let debut = 0; ; debut += TAILLE_PAGE) {
+  let dernier = null
+  for (;;) {
     let requete = supabase.from(table).select(synchro ? '*, synchro_id:id' : '*')
     for (const [colonne, valeur] of Object.entries(filtres)) requete = requete.eq(colonne, valeur)
-    const { data, error } = await requete.order('id').range(debut, debut + TAILLE_PAGE - 1)
+    if (dernier != null) requete = requete.gt('id', dernier)
+    const { data, error } = await requete.order('id').limit(TAILLE_PAGE)
     if (error) return { error, data: null }
     for (const l of data ?? []) {
       if (vues.has(l.id)) continue
@@ -63,6 +60,7 @@ async function lireTout(table, filtres = {}, { synchro = false } = {}) {
       lignes.push(l)
     }
     if ((data ?? []).length < TAILLE_PAGE) return { error: null, data: lignes }
+    dernier = data[data.length - 1].id
   }
 }
 
@@ -97,112 +95,6 @@ function avecVerrou(action) {
   return suite
 }
 
-async function appliquer(plan) {
-  const erreurs = []
-  let changementsApp = 0
-  const echecs = new Set()   // lignes du registre dont une écriture liée a échoué : on n'y touche pas
-
-  // (i) Échéances des plannings
-  const jalonCree = new Map()   // ligneId → id de l'échéance créée
-  for (const op of plan.jalons) {
-    const table = TABLE[op.origine]
-    let reponse
-    if (op.action === 'creer') {
-      const champs = { affaire_id: op.affaire_id, label: op.label, couleur: COULEUR_NOTION, ordre: 0 }
-      if (op.origine === 'etude') Object.assign(champs, { semaine: op.semaine, annee: op.annee })
-      else champs.date = op.date
-      reponse = await supabase.from(table).insert(champs).select('id').single()
-      if (!reponse.error) jalonCree.set(op.ligneId, reponse.data.id)
-    } else if (op.action === 'deplacer') {
-      const champs = op.origine === 'etude' ? { semaine: op.semaine, annee: op.annee } : { date: op.date }
-      reponse = await supabase.from(table).update({ ...champs, ...(op.decrocher ? DETACHE[op.origine] : {}) }).eq('id', op.id).select('id')
-    } else if (op.action === 'renommer') {
-      reponse = await supabase.from(table).update({ label: op.label }).eq('id', op.id).select('id')
-    } else {
-      reponse = await supabase.from(table).delete().eq('id', op.id).select('id')
-    }
-    // Un refus RLS ne rend pas d'erreur : seule une ligne rendue prouve l'écriture
-    const touchee = op.action === 'creer' ? !reponse.error : (reponse.data?.length ?? 0) > 0
-    if (reponse.error) erreurs.push(reponse.error.message)
-    if (touchee) changementsApp++
-    else if (op.action !== 'supprimer' || reponse.error) { if (op.ligneId != null) echecs.add(op.ligneId) }
-  }
-
-  const ligneAvecJalon = (ligne) => (jalonCree.has(ligne.id) ? { ...ligne, jalon_id: jalonCree.get(ligne.id) } : ligne)
-
-  // (ii) Réservations : les lignes nouvelles, avant toute carte
-  const reservees = new Set()
-  const existantes = []
-  for (const { ligne, nouvelle } of plan.registre.ecrire) {
-    if (echecs.has(ligne.id)) continue
-    const l = ligneAvecJalon(ligne)
-    if (!nouvelle) { existantes.push(l); continue }
-    const { error } = await supabase.from('notion_echeances').insert(l)
-    // 23505 : un autre appareil a déjà réservé cette échéance ; il crée la carte
-    if (error && error.code !== '23505') erreurs.push(error.message)
-    if (!error) reservees.add(l.id)
-  }
-
-  // (iii) Cartes. Une carte à créer exige une ligne qu'on vient d'insérer ou
-  // une ligne en attente prise à bail (deux minutes) : sans cela, deux
-  // appareils créeraient chacun la leur.
-  const ecrites = new Map(existantes.map((l) => [l.id, l]))
-  const bailPris = new Set()
-  const operations = []
-  for (const c of plan.cartes) {
-    if (c.action !== 'creer') { operations.push(c); continue }
-    if (echecs.has(c.ligneId) || echecsCreation(plan, jalonCree, c.ligneId)) continue
-    if (reservees.has(c.ligneId)) { operations.push(c); continue }
-    const champs = ecrites.get(c.ligneId) ?? { texte_carte: c.titre }
-    const sansId = { ...champs }
-    delete sansId.id
-    const limite = new Date(Date.now() - BAIL_MS).toISOString()
-    const { data, error } = await supabase.from('notion_echeances').update(sansId).eq('id', c.ligneId).is('page_id', null).lt('updated_at', limite).select('id')
-    if (error) { erreurs.push(error.message); continue }
-    if (data?.length === 1) { bailPris.add(c.ligneId); operations.push(c) }
-  }
-  const resultats = operations.length ? await ecrireCartes(operations) : []
-  const crees = []
-  operations.forEach((c, i) => {
-    const r = resultats[i]
-    if (!r?.ok) {
-      erreurs.push(r?.erreur ?? 'carte')
-      if (c.action === 'creer') echecs.add(c.ligneId)
-      else (c.ligneIds ?? []).forEach((id) => echecs.add(id))
-    } else if (c.action === 'creer') crees.push({ c, r })
-  })
-
-  // (iv) Le reste du registre, sauf les lignes dont une écriture liée a échoué
-  const aSupprimer = plan.registre.supprimer.filter((id) => !echecs.has(id))
-  if (aSupprimer.length) {
-    const { error } = await supabase.from('notion_echeances').delete().in('id', aSupprimer)
-    if (error) erreurs.push(error.message)
-  }
-  const aMettreAJour = existantes.filter((l) => !echecs.has(l.id) && !bailPris.has(l.id)
-    && !plan.cartes.some((c) => c.action === 'creer' && c.ligneId === l.id))
-  if (aMettreAJour.length) {
-    const { error } = await supabase.from('notion_echeances').upsert(aMettreAJour, { onConflict: 'id' })
-    if (error) erreurs.push(error.message)
-  }
-
-  // (v) Adresse des cartes créées : seulement si la ligne attend encore la sienne
-  for (const { c, r } of crees) {
-    const { data, error } = await supabase.from('notion_echeances').update({ page_id: r.id, notion_modifie_le: r.modifieLe })
-      .eq('id', c.ligneId).is('page_id', null).select('id')
-    if (error) { erreurs.push(error.message); continue }
-    if (!data?.length) {
-      // Un autre appareil a gagné : la carte qu'on vient de créer est de trop
-      const [retrait] = await ecrireCartes([{ action: 'corbeille', pageId: r.id }])
-      if (!retrait?.ok) erreurs.push(retrait?.erreur ?? 'carte en double')
-    }
-  }
-  return { erreurs, changementsApp }
-}
-
-// Création d'échéance ratée : sa ligne n'a pas d'échéance, donc pas de carte
-const echecsCreation = (plan, jalonCree, ligneId) =>
-  plan.jalons.some((o) => o.action === 'creer' && o.ligneId === ligneId) && !jalonCree.has(ligneId)
-
 /** Compare Notion et l'app, pour toute l'agence ou une affaire, et met les deux d'accord. */
 export function synchroniser({ affaireId = null } = {}) {
   return avecVerrou(async () => {
@@ -222,7 +114,11 @@ export function synchroniser({ affaireId = null } = {}) {
       const registre = lectureRegistre.data
 
       let notion
-      try { notion = await appelerNotion({ action: 'lire', numero }) } catch (e) {
+      // Lecture d'un planning : Notion ne rend que les cartes dont le titre
+      // contient le numéro. Les cartes déjà liées sont redemandées par leur
+      // identifiant : un numéro en cours de frappe ne les fait pas disparaître.
+      const pages = numero ? [...new Set(registre.map((l) => l.page_id).filter(Boolean))] : undefined
+      try { notion = await appelerNotion({ action: 'lire', numero, pages }) } catch (e) {
         if (e.code === 'notion-non-configure') return { etat: 'indisponible' }
         return { etat: e.code === 'hors-ligne' ? 'hors-ligne' : 'injoignable', erreurs: [e.message] }
       }
@@ -239,9 +135,10 @@ export function synchroniser({ affaireId = null } = {}) {
 
       const plan = planSynchro({
         cartes: notion.cartes, lectureComplete: notion.complete, registre, jalons, affaires,
-        references: notion.references, numero, aujourdhui: aujourdhui(), nouvelId: () => crypto.randomUUID(),
+        references: notion.references, numero, aujourdhui: aujourdhui(), maintenant: new Date().toISOString(),
+        nouvelId: () => crypto.randomUUID(),
       })
-      const { erreurs, changementsApp } = await appliquer(plan)
+      const { erreurs, changementsApp } = await appliquerPlan(plan, { base: supabase, ecrireCartes })
       return { etat: 'ok', lectureLe: new Date().toISOString(), changementsApp, erreurs, references: notion.references }
     } catch (e) {
       return { etat: e.code === 'hors-ligne' ? 'hors-ligne' : 'injoignable', erreurs: [e.message] }

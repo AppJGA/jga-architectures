@@ -19,6 +19,21 @@ export { COULEUR_NOTION }
 
 const cle = (origine, id) => `${origine}:${id}`
 
+/**
+ * Bail d'une ligne en attente de carte (`page_id` nul) : l'appareil qui l'a
+ * réservée crée la carte et y écrit son adresse dans ce délai. Les autres n'y
+ * touchent pas jusque-là — sinon ils la relieraient à la carte qu'il vient de
+ * créer, et il mettrait cette carte à la corbeille comme un doublon.
+ */
+export const BAIL_MS = 2 * 60 * 1000
+
+/**
+ * Une carte modifiée il y a moins de 3 minutes est peut-être en cours de
+ * frappe (numéro ou date effacés le temps de les retaper) : rien de
+ * destructif n'est décidé d'après elle pendant ce délai.
+ */
+export const GRACE_MS = 3 * 60 * 1000
+
 // Une date retrouvée dans la carte : même date d'abord, puis même rang (une
 // date changée dans Notion garde sa place ; une date ajoutée au milieu ne
 // décale pas les autres)
@@ -44,10 +59,14 @@ const CHAMPS_COMPARES = ['page_id', 'rang', 'numero', 'reference', 'affaire_id',
 
 export function planSynchro({
   cartes = [], lectureComplete = false, registre = [], jalons = [], affaires = [], references = [],
-  numero = null, aujourdhui, nouvelId,
+  numero = null, aujourdhui, maintenant = new Date().toISOString(), nouvelId,
 }) {
   const plan = { jalons: [], cartes: [], registre: { ecrire: [], supprimer: [] } }
   const dansPortee = (n) => !numero || n === numero
+  const instant = Date.parse(maintenant)
+  // Date.parse : Notion écrit « …00.000Z », Supabase « …00+00:00 »
+  const sousBail = (l) => !l.page_id && (Date.parse(l.updated_at) || 0) > instant - BAIL_MS
+  const enCoursDeFrappe = (carte) => (Date.parse(carte.modifieLe) || 0) > instant - GRACE_MS
 
   const affaireParId = new Map(affaires.map((a) => [a.id, a]))
   const affaireParNumero = new Map()
@@ -83,9 +102,16 @@ export function planSynchro({
 
   for (const carte of cartes) {
     const lue = lireCarte(carte.titre, carte.creeLe)
-    if (!lue.numero || !dansPortee(lue.numero)) continue
-    pagesVues.add(carte.id)
     const existantes = parPage.get(carte.id) ?? []
+    const recente = enCoursDeFrappe(carte)
+    if (!lue.numero || !dansPortee(lue.numero)) {
+      // Numéro effacé ou changé : ses lignes d'ici seront retirées comme
+      // celles d'une carte disparue — pas tant qu'elle est en cours de frappe.
+      // Une carte d'un autre numéro sans ligne ici ne concerne pas cette lecture.
+      if (existantes.length && recente) pagesVues.add(carte.id)
+      continue
+    }
+    pagesVues.add(carte.id)
     const aDaterAvant = existantes.find((l) => !l.date_synchro)
     const actives = existantes.filter((l) => l.date_synchro)
     const affaire = affaireParNumero.get(lue.numero) ?? null
@@ -95,6 +121,9 @@ export function planSynchro({
     }
 
     if (lue.aDater) {
+      // Date effacée le temps de la retaper : l'échéance garde sa couleur,
+      // son accroche, sa marque de la direction
+      if (recente && actives.length) continue
       actives.forEach(retirer)
       ecrire({
         ...(aDaterAvant ?? { id: nouvelId() }), ...commun, rang: 0, affaire_id: affaire?.id ?? null,
@@ -102,9 +131,11 @@ export function planSynchro({
       }, aDaterAvant ?? null)
       continue
     }
-    if (aDaterAvant) plan.registre.supprimer.push(aDaterAvant.id)
-
     const { paires, nouvelles, disparues } = apparier(lue.dates, actives)
+    // Une date disparue d'une carte en cours de frappe : toute la carte
+    // attend le passage suivant, lignes intactes
+    if (recente && disparues.length) continue
+    if (aDaterAvant) plan.registre.supprimer.push(aDaterAvant.id)
     disparues.forEach(retirer)
     const plusieurs = lue.dates.length > 1
 
@@ -152,7 +183,6 @@ export function planSynchro({
       const libelleAppBouge = j.label !== l.libelle_app
       const notionChange = notionBouge || libelleNotionBouge
       const appChange = appBouge || libelleAppBouge
-      // Date.parse : Notion écrit « …00.000Z », Supabase « …00+00:00 »
       const notionPlusRecent = !j.modifie_le || (Date.parse(carte.modifieLe) || 0) >= (Date.parse(j.modifie_le) || 0)
       const notionGagne = plusieurs || !appChange || (notionChange && notionPlusRecent)
 
@@ -213,6 +243,12 @@ export function planSynchro({
     if (!n || !dansPortee(n)) continue
     const attente = enAttente.get(k) ?? null
     const i = notionLibres.findIndex((x) => x.lue.numero === n && memePosition(j, x.d.date))
+    if (attente && sousBail(attente)) {
+      // Un autre appareil crée la carte de cette échéance : la date libre qui
+      // lui correspond est sans doute la sienne, on ne la prend pas non plus
+      if (i >= 0) notionLibres.splice(i, 1)
+      continue
+    }
     if (i >= 0) {
       const { lue, d, commun } = notionLibres.splice(i, 1)[0]
       ecrire({
@@ -240,7 +276,7 @@ export function planSynchro({
   // Ligne en attente de carte dont l'échéance a été supprimée dans l'app
   // (affaire lue, sinon on ne sait rien)
   for (const [k, l] of enAttente) {
-    if (!jalonParCle.has(k) && l.affaire_id && affaireParId.has(l.affaire_id)) plan.registre.supprimer.push(l.id)
+    if (!jalonParCle.has(k) && !sousBail(l) && l.affaire_id && affaireParId.has(l.affaire_id)) plan.registre.supprimer.push(l.id)
   }
 
   // Dates de cartes restées libres : une échéance du planning si l'affaire

@@ -142,18 +142,26 @@ export default function CalendrierRendus() {
   // null | { evenement } (modifier) | { dateInitiale } (créer)
   const [modale, setModale] = useState(null)
 
-  const [notion, setNotion] = useState({ etat: 'encours', lectureLe: null, references: [] })
+  // null tant que la première lecture n'a pas dit si Notion est en service
+  // (migration, configuration) : ni bouton ni état avant de le savoir
+  const [notion, setNotion] = useState(null)
 
   const recharger = useCallback(() => chargerCalendrier().then(setDonnees).catch((e) => setErreur(e?.message ?? String(e))), [])
   useEffect(() => { recharger() }, [recharger])
 
   // Lit Notion et met les deux côtés d'accord ; le calendrier se relit ensuite
   const lireNotion = useCallback(() => synchroniser().then((r) => {
-    setNotion((n) => ({ etat: r.etat, lectureLe: r.lectureLe ?? n.lectureLe, references: r.references ?? n.references }))
+    setNotion((n) => ({
+      etat: r.etat, lectureLe: r.lectureLe ?? n?.lectureLe ?? null, references: r.references ?? n?.references ?? [],
+      echecs: r.etat === 'ok' ? (r.erreurs?.length ?? 0) : 0,
+    }))
     if (r.etat === 'ok') recharger()
   }), [recharger])
   useEffect(() => { lireNotion() }, [lireNotion])
-  const actualiserNotion = () => { setNotion((n) => ({ ...n, etat: 'encours' })); return lireNotion() }
+  const actualiserNotion = () => {
+    setNotion((n) => (n && n.etat !== 'indisponible' ? { ...n, etat: 'encours' } : n))
+    return lireNotion()
+  }
 
   const evenements = useMemo(() => {
     if (!donnees) return []
@@ -171,8 +179,8 @@ export default function CalendrierRendus() {
   const aVenir = useMemo(() => prochaines(evenements, aujourdhui, 30), [evenements, aujourdhui])
   const cartesADater = useMemo(() => aDater(donnees?.registre), [donnees])
   const affairesChoix = useMemo(
-    () => [...(donnees?.affaires ?? []), ...affairesNotionSeules(notion.references, donnees?.affaires)],
-    [donnees, notion.references],
+    () => [...(donnees?.affaires ?? []), ...affairesNotionSeules(notion?.references ?? [], donnees?.affaires)],
+    [donnees, notion?.references],
   )
   const grille = grilleMois(mois.annee, mois.mois)
 
@@ -208,7 +216,7 @@ export default function CalendrierRendus() {
         <section style={{ flex: '1 1 640px', minWidth: 0, background: 'white', border: '0.5px solid rgba(0,0,0,0.08)' }}>
           <header style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 14px', borderBottom: '0.5px solid rgba(0,0,0,0.08)' }}>
             <h2 style={{ flex: 1, margin: 0, fontSize: 16, fontWeight: 600, color: '#1F1B17', textTransform: 'capitalize' }}>{nomMois(mois.annee, mois.mois)}</h2>
-            {notion.etat !== 'indisponible' && (
+            {notion && notion.etat !== 'indisponible' && (
               <>
                 <span aria-live="polite" style={{ fontSize: 11, color: notion.etat === 'injoignable' ? '#B8412C' : '#9C9591' }}>
                   {notion.etat === 'encours' ? 'Lecture de Notion…'
@@ -216,6 +224,11 @@ export default function CalendrierRendus() {
                       : notion.etat === 'hors-ligne' ? 'Hors ligne'
                         : notion.etat === 'ok' && notion.lectureLe ? `Notion lu à ${new Date(notion.lectureLe).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}` : ''}
                 </span>
+                {notion.etat === 'ok' && notion.echecs > 0 && (
+                  <span title="Ces écritures seront retentées à la prochaine lecture de Notion" style={{ fontSize: 11, color: '#B8412C' }}>
+                    {notion.echecs} écriture{notion.echecs > 1 ? 's' : ''} Notion en échec
+                  </span>
+                )}
                 <button type="button" onClick={actualiserNotion} disabled={notion.etat === 'encours'} title="Relire les cartes de Notion et mettre les plannings d’accord"
                   style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minHeight: 36, padding: '0 12px', border: '0.5px solid rgba(0,0,0,0.15)', background: 'white', color: '#37352F', cursor: 'pointer', fontSize: 12, fontWeight: 600, opacity: notion.etat === 'encours' ? 0.6 : 1 }}>
                   <RefreshCw size={14} /> Actualiser depuis Notion

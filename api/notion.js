@@ -9,13 +9,15 @@
 
 import { verifierAgence, jetonDe } from './_agence.js'
 import {
-  filtreEcheances, carteDepuisPage, referenceDepuisPage, proprietesCarte, proprietesNouvelleCarte, operationValide,
+  filtreEcheances, filtreAtelier, carteDepuisPage, referenceDepuisPage, proprietesCarte, proprietesNouvelleCarte, operationValide,
+  dansColonne, pagesAVerifier,
 } from '../src/shared/notion/notionApiLogique.js'
 
 const NOTION = 'https://api.notion.com/v1'
 const VERSION = '2025-09-03'
 const PAGES_MAX = 20            // 2 000 cartes : au-delà, la lecture est déclarée incomplète
 const OPERATIONS_MAX = 10
+const VERIFICATIONS_MAX = 25    // cartes connues relues une à une ; au-delà, lecture déclarée incomplète
 const pause = (ms) => new Promise((r) => setTimeout(r, ms))
 
 async function appelNotion(jeton, chemin, { methode = 'GET', corps } = {}) {
@@ -49,6 +51,26 @@ async function toutLire(jeton, source, filtre) {
     await pause(350)   // 3 requêtes par seconde au plus
   }
   return { pages, complete: false }
+}
+
+// Lecture d'un planning : les cartes déjà liées que le filtre sur le numéro
+// n'a pas rendues (numéro effacé le temps de le retaper, changé) sont relues
+// une à une. Une carte introuvable, à la corbeille ou sortie de la colonne
+// est bien partie ; un échec rend la lecture incomplète (rien ne sera retiré).
+async function cartesConnues(jeton, pagesLues, connues) {
+  const lues = new Set(pagesLues.map((p) => p.id.replace(/-/g, '').toLowerCase()))
+  const manquantes = connues.filter((id) => !lues.has(id.replace(/-/g, '').toLowerCase()))
+  if (manquantes.length > VERIFICATIONS_MAX) return { pages: [], complete: false }
+  const pages = []
+  for (const id of manquantes) {
+    const r = await appelNotion(jeton, `/pages/${id}`)
+    if (r.status === 404) continue
+    if (!r.ok) return { pages, complete: false }
+    const page = await r.json()
+    if (!page.in_trash && !page.archived && dansColonne(page)) pages.push(page)
+    await pause(350)
+  }
+  return { pages, complete: true }
 }
 
 async function executer(jeton, source, op) {
@@ -91,11 +113,12 @@ export default async function handler(req, res) {
   try {
     if (corps.action === 'lire') {
       const numero = /^\d{4}$/.test(corps.numero ?? '') ? corps.numero : null
-      const [cartes, affaires] = await Promise.all([toutLire(jeton, planning, filtreEcheances(numero)), toutLire(jeton, atelier, null)])
+      const [cartes, affaires] = await Promise.all([toutLire(jeton, planning, filtreEcheances(numero)), toutLire(jeton, atelier, filtreAtelier(numero))])
+      const connues = numero ? await cartesConnues(jeton, cartes.pages, pagesAVerifier(corps.pages)) : { pages: [], complete: true }
       res.status(200).json({
-        cartes: cartes.pages.filter((p) => !p.in_trash && !p.archived).map(carteDepuisPage),
+        cartes: [...cartes.pages, ...connues.pages].filter((p) => !p.in_trash && !p.archived).map(carteDepuisPage),
         references: affaires.pages.map(referenceDepuisPage).filter((r) => r.numero),
-        complete: cartes.complete,
+        complete: cartes.complete && connues.complete,
       })
       return
     }

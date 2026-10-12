@@ -11,7 +11,9 @@ import {
   remplacerDate, remplacerLibelle, dateEtude, memePosition, dateDuJalon, champsJalon, nomAffaireNotion,
 } from '../src/shared/notion/echeancesNotionLogique.js'
 
-import { filtreEcheances, carteDepuisPage, referenceDepuisPage, proprietesCarte, operationValide } from '../src/shared/notion/notionApiLogique.js'
+import {
+  filtreEcheances, filtreAtelier, carteDepuisPage, referenceDepuisPage, proprietesCarte, operationValide, dansColonne, pagesAVerifier,
+} from '../src/shared/notion/notionApiLogique.js'
 
 test('numéro d’affaire : premier nombre de 4 chiffres, pas une année de date', () => {
   assert.equal(numeroAffaire('!!! 2699 ABC : Rendu PRO 16/10/2026'), '2699')
@@ -123,7 +125,7 @@ const REFS = [{ numero: '2697', reference: '2697 - QRS Exemple' }]
 let compteur = 0
 const base = (extra = {}) => ({
   cartes: [], lectureComplete: true, registre: [], jalons: [], affaires: AFF, references: REFS,
-  numero: null, aujourdhui: '2026-10-12', nouvelId: () => `n${++compteur}`, ...extra,
+  numero: null, aujourdhui: '2026-10-12', maintenant: '2026-10-12T12:00:00.000Z', nouvelId: () => `n${++compteur}`, ...extra,
 })
 const carte = (id, titre, modifieLe = '2026-10-10T10:00:00Z') => ({ id, titre, creeLe: '2026-10-01T08:00:00Z', modifieLe })
 const ligne = (extra) => ({
@@ -392,12 +394,117 @@ test('synchro : échéance renommée « Rendu lot 1/2 » dans l’app → carte 
   assert.equal(p.cartes[0].titre, '2698 XYZ : Rendu lot 1-2 20/10/26')
 })
 
+// ─── Deux appareils : la ligne en attente de carte appartient à celui qui la crée ──
+
+test('synchro : ligne en attente sous bail + carte libre au même endroit → ni liaison ni écriture', () => {
+  const p = planSynchro(base({
+    registre: [ligne({ page_id: null, updated_at: '2026-10-12T11:59:00+00:00' })],
+    jalons: [jalonC()], cartes: [carte('p1', '2698 XYZ – Rendu 20/10/26')],
+  }))
+  // L'autre appareil vient de créer cette carte et va y écrire son adresse :
+  // ni la relier ici, ni en faire une nouvelle échéance
+  assert.deepEqual(p, VIDE)
+})
+
+test('synchro : ligne en attente au bail échu + carte libre au même endroit → reliées', () => {
+  const p = planSynchro(base({
+    registre: [ligne({ page_id: null, updated_at: '2026-10-12T11:50:00+00:00' })],
+    jalons: [jalonC()], cartes: [carte('p1', '2698 XYZ – Rendu 20/10/26')],
+  }))
+  assert.deepEqual(p.jalons, [])
+  assert.deepEqual(p.cartes, [])
+  assert.equal(p.registre.ecrire.length, 1)
+  assert.equal(p.registre.ecrire[0].nouvelle, false)
+  assert.equal(p.registre.ecrire[0].ligne.id, 'l1')
+  assert.equal(p.registre.ecrire[0].ligne.page_id, 'p1')
+})
+
+test('synchro : ligne en attente sous bail sans carte → ni carte créée ni ligne retirée', () => {
+  const attente = ligne({ page_id: null, updated_at: '2026-10-12T11:59:30+00:00' })
+  assert.deepEqual(planSynchro(base({ registre: [attente], jalons: [jalonC()] })), VIDE)
+  // Échéance supprimée entre-temps : la ligne attend la fin du bail
+  assert.deepEqual(planSynchro(base({ registre: [attente], jalons: [] })), VIDE)
+  // Bail échu : la carte est à créer, par celui qui reprendra le bail
+  const echu = planSynchro(base({ registre: [{ ...attente, updated_at: '2026-10-12T11:00:00+00:00' }], jalons: [jalonC()] }))
+  assert.equal(echu.cartes[0]?.action, 'creer')
+  assert.equal(echu.cartes[0].ligneId, 'l1')
+})
+
+// ─── États passagers de Notion : une carte en cours de frappe n'efface rien ──
+
+const RECENTE = '2026-10-12T11:58:00.000Z'   // deux minutes avant `maintenant`
+const ANCIENNE = '2026-10-12T11:50:00.000Z'
+
+test('synchro : numéro effacé à l’instant → lignes intactes ; effacé depuis longtemps → échéance retirée', () => {
+  const entree = (modifieLe) => base({ registre: [ligne()], jalons: [jalonC()], cartes: [carte('p1', 'XYZ : Rendu 20/10/26', modifieLe)] })
+  assert.deepEqual(planSynchro(entree(RECENTE)), VIDE)
+  const ancienne = planSynchro(entree(ANCIENNE))
+  assert.deepEqual(ancienne.jalons, [{ action: 'supprimer', origine: 'chantier', id: 7, ligneId: 'l1' }])
+  assert.deepEqual(ancienne.registre.supprimer, ['l1'])
+})
+
+test('synchro d’un planning : carte passée à un autre numéro à l’instant → intacte ; une carte d’un autre numéro sans ligne ici → ignorée', () => {
+  const entree = (modifieLe) => base({
+    numero: '2698', registre: [ligne()], jalons: [jalonC()], cartes: [carte('p1', '2697 XYZ : Rendu 20/10/26', modifieLe)],
+  })
+  assert.deepEqual(planSynchro(entree(RECENTE)), VIDE)
+  assert.deepEqual(planSynchro(entree(ANCIENNE)).registre.supprimer, ['l1'])
+  // Carte d'un autre numéro, ses lignes hors de la lecture : rien, récente ou non
+  const autre = (modifieLe) => planSynchro(base({
+    numero: '2699', registre: [ligne()], jalons: [jalonC()], cartes: [carte('p1', '2698 XYZ : Rendu 20/10/26', modifieLe)],
+  }))
+  assert.deepEqual(autre(RECENTE), VIDE)
+  assert.deepEqual(autre(ANCIENNE), VIDE)
+})
+
+test('synchro : date effacée à l’instant (carte « à dater ») → échéance gardée telle quelle', () => {
+  const entree = (modifieLe) => base({ registre: [ligne()], jalons: [jalonC({ couleur: '#123456' })], cartes: [carte('p1', '2698 XYZ : Rendu 2', modifieLe)] })
+  assert.deepEqual(planSynchro(entree(RECENTE)), VIDE)
+  // Restée sans date : l'échéance à venir part, la carte va dans « À dater »
+  const ancienne = planSynchro(entree(ANCIENNE))
+  assert.deepEqual(ancienne.jalons, [{ action: 'supprimer', origine: 'chantier', id: 7, ligneId: 'l1' }])
+  assert.equal(ancienne.registre.ecrire[0].ligne.date_synchro, null)
+})
+
+test('synchro : une date d’une carte à plusieurs dates effacée à l’instant → toute la carte attend', () => {
+  const entree = (modifieLe) => base({
+    registre: [ligne({ nb_dates: 2 }), ligne({ id: 'l2', rang: 1, jalon_id: 8, date_synchro: '2026-11-20', libelle: 'DCE', libelle_app: 'DCE', nb_dates: 2 })],
+    jalons: [jalonC(), jalonC({ id: 8, label: 'DCE', date: '2026-11-20' })],
+    cartes: [carte('p1', '2698 XYZ - Rendu 20/10/26 - DCE', modifieLe)],
+  })
+  assert.deepEqual(planSynchro(entree(RECENTE)), VIDE)
+  // Restée ainsi : la date disparue retire son échéance à venir
+  const ancienne = planSynchro(entree(ANCIENNE))
+  assert.deepEqual(ancienne.jalons.filter((a) => a.action === 'supprimer'), [{ action: 'supprimer', origine: 'chantier', id: 8, ligneId: 'l2' }])
+})
+
+test('synchro : une carte récente sans rien de destructif est traitée tout de suite', () => {
+  const p = planSynchro(base({ registre: [ligne()], jalons: [jalonC()], cartes: [carte('p1', '2698 XYZ : Rendu 23/10/26', RECENTE)] }))
+  assert.equal(p.jalons[0]?.action, 'deplacer')
+})
+
 test('API Notion : filtre de la colonne, avec ou sans numéro', () => {
   assert.deepEqual(filtreEcheances(null), { property: 'Jour', multi_select: { contains: 'ECHEANCES RENDUS' } })
   assert.deepEqual(filtreEcheances('2699'), { and: [
     { property: 'Jour', multi_select: { contains: 'ECHEANCES RENDUS' } },
     { property: 'N° Affaire', title: { contains: '2699' } },
   ] })
+})
+
+test('API Notion : base des affaires lue en entier, ou pour un numéro seulement', () => {
+  assert.equal(filtreAtelier(null), null)
+  assert.deepEqual(filtreAtelier('2699'), { property: 'Référence', title: { contains: '2699' } })
+})
+
+test('API Notion : carte encore dans la colonne, cartes connues à vérifier', () => {
+  const page = (noms) => ({ properties: { Jour: { multi_select: noms.map((name) => ({ name })) } } })
+  assert.equal(dansColonne(page(['Lundi', 'ECHEANCES RENDUS'])), true)
+  assert.equal(dansColonne(page(['Dossiers en veille'])), false)
+  assert.equal(dansColonne({}), false)
+  const id = '0a1b2c3d-0000-4000-8000-0123456789ab'
+  assert.deepEqual(pagesAVerifier([id, id.replace(/-/g, ''), '../x', 3, null]), [id])
+  assert.deepEqual(pagesAVerifier('non'), [])
+  assert.equal(pagesAVerifier(Array.from({ length: 300 }, (_, i) => `0a1b2c3d-0000-4000-8000-${String(i).padStart(12, '0')}`)).length, 200)
 })
 
 test('API Notion : page lue en carte, en référence ; carte écrite', () => {

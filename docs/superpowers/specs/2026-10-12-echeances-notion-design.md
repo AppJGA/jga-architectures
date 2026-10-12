@@ -110,8 +110,11 @@ Seul détenteur de `NOTION_TOKEN`. Vérifie la session Supabase et
 - `lire` : toutes les cartes « ECHEANCES RENDUS » (requête de la source de
   données filtrée sur Jour, pages de 100 suivies jusqu'au bout), avec id,
   titre brut, Semaine, `created_time`, `last_edited_time`, et les
-  références d'Atelier (titre seul). Option `numero` : cartes dont le titre
-  contient ce numéro (ouverture d'un planning). La réponse dit si la lecture
+  références d'Atelier (titre seul). Option `numero` : cartes et références
+  dont le titre contient ce numéro (ouverture d'un planning), plus les
+  cartes déjà liées (`pages`) que ce filtre n'a pas rendues, relues une à
+  une — un numéro effacé le temps de le retaper ne fait pas croire à une
+  carte supprimée. La réponse dit si la lecture
   est **complète** : une lecture interrompue ne doit jamais faire croire à
   des cartes supprimées.
 - `ecrire` : une liste d'opérations (`creer`, `modifier` titre + Semaine,

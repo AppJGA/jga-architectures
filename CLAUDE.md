@@ -668,8 +668,11 @@ serveur `api/notion.js` (+ `api/_agence.js`) ; migration 071.
   Semaine ; la base des affaires donne la « Référence ». L'affaire se
   reconnaît **aux 4 chiffres seuls** (`codesAffaire.js`, `numeroAffaire`).
   Les dates se lisent dans le texte (`datesDuTexte`, `lireCarte` : l'année
-  la plus proche de la création de la carte) ; une date déplacée par l'app
-  s'écrit avec l'année sur 2 chiffres (`formatDateCarte`).
+  la plus proche de la création de la carte). Une date déplacée par l'app
+  garde **son format d'origine** (`remplacerDate`) et ne reçoit une année sur
+  2 chiffres que si, relue sans elle, elle tomberait une autre année ;
+  `formatDateCarte` sert aux cartes nouvelles (`titreCarte`) et à la date
+  ajoutée à une carte « à dater ».
 - **Règles de rapprochement** (`planSynchro`, pur, dans
   `synchroNotionLogique.js`, testé sur cartes inventées) : une carte à
   **plusieurs dates est en lecture seule dans l'app** (Notion l'emporte) ;
@@ -679,32 +682,52 @@ serveur `api/notion.js` (+ `api/_agence.js`) ; migration 071.
   semaine de la carte est gardé (`dateEtude`) ; **pas de doublon à la
   première liaison** ; une échéance de l'app déjà passée ne crée aucune
   carte. Une échéance née dans Notion est **grise** (`COULEUR_NOTION`),
-  repérée par `MarqueNotion.jsx`.
+  repérée par `MarqueNotion.jsx`. **Carte en cours de frappe** : modifiée
+  moins de 3 minutes avant `maintenant` (`GRACE_MS`), elle ne décide rien de
+  destructif — numéro effacé ou changé, date disparue, carte devenue « à
+  dater » : ses lignes restent telles quelles pour ce passage (sinon
+  l'échéance repartirait grise, sans couleur, accroche ni mallette). Une
+  ligne en attente **sous bail** (`BAIL_MS`, d'après son `updated_at`) n'est
+  ni reliée, ni retirée, et la date libre qui lui correspond n'est pas prise :
+  l'appareil qui crée la carte s'en charge.
 - **Registre `notion_echeances`** (migration 071) : `date_synchro` = la
   date sur laquelle les deux côtés se sont accordés ; `libelle` (côté
   Notion) et `libelle_app` (côté app) distincts. Chaque opération porte
   l'id de sa ligne de registre : **le registre n'est écrit qu'après
-  réussite de l'opération liée** (`echeancesNotion.js`), sinon la passe
+  réussite de l'opération liée** (`appliquerPlan`, `appliquerSynchro.js`,
+  testé avec une base et un Notion simulés), sinon la passe
   suivante défairait le geste de l'utilisateur. Les lignes en attente
-  (`page_id` nul) sont réservées par un **bail de 2 minutes** ; l'écriture
-  de `page_id` est conditionnelle, et la carte en double perdante est
-  mise à la corbeille.
+  (`page_id` nul) sont réservées par un **bail de 2 minutes**, pris juste
+  avant chaque **lot de 10 cartes** ; l'adresse (`page_id`) des cartes
+  créées est notée **après chaque lot**, pas à la fin (un premier passage de
+  centaines de cartes dépasserait le bail). Écriture conditionnelle
+  (`page_id` encore nul) ; si elle ne touche rien, la ligne est relue et la
+  carte ne part à la corbeille que si la ligne a disparu ou désigne **une
+  autre** carte — un autre appareil a pu la relier à la nôtre.
 - **Lectures fraîches** : les lectures de la synchro prennent l'alias
   `synchro_id:id` dans leur `select`, **exclu du cache `supabase-api` du
   service worker** (`vite.config.js`) : un repli NetworkFirst nourrirait
   des décisions destructrices avec des données périmées. Pagination par
-  1 000.
+  1 000 **par identifiant** (`gt('id', dernier)`, pas de rang : une ligne
+  supprimée entre deux pages en ferait sauter une).
 - **Passeur `api/notion.js`** : vérifie le compte agence (`_agence.js`),
   ne relaie que des opérations validées (`operationValide`,
   `notionApiLogique.js`), API Notion `2025-09-03`, `maxDuration: 60`
-  (`vercel.json`). Variables Vercel `NOTION_TOKEN`,
+  (`vercel.json`). Lecture d'un planning (`numero`) : cartes et base des
+  affaires filtrées sur le numéro (`filtreEcheances`, `filtreAtelier`), et
+  les cartes déjà liées que le filtre n'a pas rendues sont relues une à une
+  (`pages`, `pagesAVerifier`, 25 au plus, sinon lecture incomplète) : un
+  numéro effacé ne fait pas croire à une carte supprimée. Variables Vercel `NOTION_TOKEN`,
   `NOTION_PLANNING_SOURCE`, `NOTION_ATELIER_SOURCE` — **jamais `VITE_`**.
-- **Déclenchement** (`useEcheancesNotion`) : calendrier à l'ouverture et
-  par « Actualiser depuis Notion » (`CalendrierRendus.jsx`,
-  `ModaleJalon.jsx`) ; chaque planning à l'ouverture et **3 s après tout
-  changement de ses échéances** (signature comparée). Jamais pour un
-  compte en lecture seule ; silencieux hors ligne ou sans la migration
-  (état `indisponible`).
+- **Déclenchement** : le calendrier appelle `synchroniser` lui-même, à
+  l'ouverture, par « Actualiser depuis Notion » et après la fenêtre
+  d'échéance (`CalendrierRendus.jsx`, `ModaleJalon.jsx`) ; rien n'y
+  s'affiche tant que la première lecture n'a pas dit si Notion est en
+  service, puis « Notion lu à HH:MM » et, s'il y en a, « N écritures Notion
+  en échec ». Les plannings passent par `useEcheancesNotion` : à
+  l'ouverture et **3 s après tout changement de leurs échéances**
+  (signature comparée). Jamais pour un compte en lecture seule ;
+  silencieux hors ligne ou sans la migration (état `indisponible`).
 - **Limites connues** : ⌘Z juste après une synchro peut défaire un
   changement de Notion qu'elle venait de rapporter. L'ancienne synchro des
   phases (`useNotionSync`, `useNotionGantt`, `notion-sync-server.mjs`,

@@ -187,7 +187,7 @@ test('synchro : date changée dans Notion → l’échéance suit, décrochée s
   const p = planSynchro(base({
     registre: [ligne()], jalons: [jalonC({ ancre: true })], cartes: [carte('p1', '2698 XYZ : Rendu 23/10/26')],
   }))
-  assert.deepEqual(p.jalons, [{ action: 'deplacer', origine: 'chantier', id: 7, date: '2026-10-23', decrocher: true }])
+  assert.deepEqual(p.jalons, [{ action: 'deplacer', origine: 'chantier', id: 7, ligneId: 'l1', date: '2026-10-23', decrocher: true }])
   assert.equal(p.registre.ecrire[0].ligne.date_synchro, '2026-10-23')
 })
 
@@ -195,7 +195,7 @@ test('synchro : date changée dans l’app → la date est réécrite dans la ca
   const p = planSynchro(base({
     registre: [ligne({ libelle: 'Rendu suite' })], jalons: [jalonC({ date: '2026-10-27' })], cartes: [carte('p1', '!! 2698 XYZ : Rendu 20/10/26 suite')],
   }))
-  assert.deepEqual(p.cartes, [{ action: 'modifier', pageId: 'p1', titre: '!! 2698 XYZ : Rendu 27/10/26 suite', semaine: '2026-10-27' }])
+  assert.deepEqual(p.cartes, [{ action: 'modifier', pageId: 'p1', titre: '!! 2698 XYZ : Rendu 27/10/26 suite', semaine: '2026-10-27', ligneIds: ['l1'] }])
   assert.equal(p.registre.ecrire[0].ligne.date_synchro, '2026-10-27')
 })
 
@@ -215,12 +215,12 @@ test('synchro : carte à plusieurs dates → Notion fait foi, l’échéance est
     cartes: [carte('p1', '2698 XYZ - Rendu 20/10/26 - DCE 20/11/26')],
   }))
   assert.deepEqual(p.cartes, [])
-  assert.deepEqual(p.jalons, [{ action: 'deplacer', origine: 'chantier', id: 7, date: '2026-10-20', decrocher: false }])
+  assert.deepEqual(p.jalons, [{ action: 'deplacer', origine: 'chantier', id: 7, ligneId: 'l1', date: '2026-10-20', decrocher: false }])
 })
 
 test('synchro : libellé changé dans Notion → l’échéance est renommée', () => {
   const p = planSynchro(base({ registre: [ligne()], jalons: [jalonC()], cartes: [carte('p1', '2698 XYZ : Réception 20/10/26')] }))
-  assert.deepEqual(p.jalons, [{ action: 'renommer', origine: 'chantier', id: 7, label: 'Réception' }])
+  assert.deepEqual(p.jalons, [{ action: 'renommer', origine: 'chantier', id: 7, ligneId: 'l1', label: 'Réception' }])
 })
 
 test('synchro : libellé changé dans l’app → réécrit dans la carte', () => {
@@ -230,7 +230,7 @@ test('synchro : libellé changé dans l’app → réécrit dans la carte', () =
 
 test('synchro : carte disparue → échéance à venir supprimée, passée gardée ; lecture partielle → rien', () => {
   const futur = planSynchro(base({ registre: [ligne()], jalons: [jalonC()] }))
-  assert.deepEqual(futur.jalons, [{ action: 'supprimer', origine: 'chantier', id: 7 }])
+  assert.deepEqual(futur.jalons, [{ action: 'supprimer', origine: 'chantier', id: 7, ligneId: 'l1' }])
   assert.deepEqual(futur.registre.supprimer, ['l1'])
   const passe = planSynchro(base({ registre: [ligne({ date_synchro: '2026-09-01' })], jalons: [jalonC({ date: '2026-09-01' })] }))
   assert.deepEqual(passe.jalons, [])
@@ -242,7 +242,7 @@ test('synchro : carte disparue → échéance à venir supprimée, passée gard�
 
 test('synchro : échéance supprimée dans l’app → carte à la corbeille', () => {
   const p = planSynchro(base({ registre: [ligne()], cartes: [carte('p1', '2698 XYZ : Rendu 20/10/26')] }))
-  assert.deepEqual(p.cartes, [{ action: 'corbeille', pageId: 'p1' }])
+  assert.deepEqual(p.cartes, [{ action: 'corbeille', pageId: 'p1', ligneIds: ['l1'] }])
   assert.deepEqual(p.registre.supprimer, ['l1'])
 })
 

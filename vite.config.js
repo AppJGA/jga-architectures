@@ -66,7 +66,11 @@ export default defineConfig({
             },
           },
           {
-            urlPattern: ({ url }) => url.hostname.includes('supabase.co') && !url.pathname.startsWith('/storage/'),
+            // Les lectures de synchronisation avec Notion (alias `synchro_id`)
+            // passent toujours par le réseau : une réponse gardée leur ferait
+            // voir un état ancien et annulerait les gestes de l'utilisateur.
+            urlPattern: ({ url }) => url.hostname.includes('supabase.co') && !url.pathname.startsWith('/storage/')
+              && !(url.searchParams.get('select') ?? '').includes('synchro_id'),
             handler: 'NetworkFirst',
             options: {
               cacheName: 'supabase-api',

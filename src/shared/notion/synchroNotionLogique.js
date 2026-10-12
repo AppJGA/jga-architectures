@@ -74,7 +74,7 @@ export function planSynchro({
   const retirer = (l) => {
     plan.registre.supprimer.push(l.id)
     const j = l.jalon_id != null ? jalonParCle.get(cle(l.origine, l.jalon_id)) : null
-    if (j && l.date_synchro && l.date_synchro >= aujourdhui) plan.jalons.push({ action: 'supprimer', origine: j.origine, id: j.id })
+    if (j && l.date_synchro && l.date_synchro >= aujourdhui) plan.jalons.push({ action: 'supprimer', origine: j.origine, id: j.id, ligneId: l.id })
   }
 
   const notionLibres = []
@@ -123,7 +123,7 @@ export function planSynchro({
         // carte à plusieurs dates, où Notion fait foi. Une ligne sans affaire
         // (affaire supprimée de l'app) ne prouve rien : jamais de corbeille.
         if (l.jalon_id != null && chargee && !plusieurs) {
-          plan.cartes.push({ action: 'corbeille', pageId: carte.id })
+          plan.cartes.push({ action: 'corbeille', pageId: carte.id, ligneIds: [l.id] })
           plan.registre.supprimer.push(l.id)
           continue
         }
@@ -157,10 +157,10 @@ export function planSynchro({
       const notionGagne = plusieurs || !appChange || (notionChange && notionPlusRecent)
 
       if (notionGagne) {
-        if (!memePosition(j, d.date)) plan.jalons.push({ action: 'deplacer', origine: j.origine, id: j.id, ...champsJalon(j.origine, d.date), decrocher: !!j.ancre })
+        if (!memePosition(j, d.date)) plan.jalons.push({ action: 'deplacer', origine: j.origine, id: j.id, ligneId: l.id, ...champsJalon(j.origine, d.date), decrocher: !!j.ancre })
         // Le libellé de Notion ne remplace celui de l'app que s'il a changé
         const label = libelleNotionBouge ? d.libelle : j.label
-        if (label !== j.label) plan.jalons.push({ action: 'renommer', origine: j.origine, id: j.id, label })
+        if (label !== j.label) plan.jalons.push({ action: 'renommer', origine: j.origine, id: j.id, ligneId: l.id, label })
         ecrire({ ...ligneCarte, libelle: d.libelle, libelle_app: label, date_synchro: d.date }, l)
         continue
       }
@@ -180,7 +180,7 @@ export function planSynchro({
         titre = remplacerLibelle(titre, d.libelle, libellePourCarte(j.label))
           ?? titreCarte({ code: affaire?.code_affaire ?? l.reference ?? lue.numero, libelle: j.label, date: nouvelleDate })
       }
-      if (titre !== carte.titre) plan.cartes.push({ action: 'modifier', pageId: carte.id, titre, semaine: nouvelleDate })
+      if (titre !== carte.titre) plan.cartes.push({ action: 'modifier', pageId: carte.id, titre, semaine: nouvelleDate, ligneIds: [l.id] })
       // Le libellé gardé est celui que Notion relira dans ce titre, sinon le
       // passage suivant y verrait un renommage venu de Notion
       const relue = lireCarte(titre, carte.creeLe)

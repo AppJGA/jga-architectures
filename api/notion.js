@@ -10,7 +10,7 @@
 import { verifierAgence, jetonDe } from './_agence.js'
 import {
   filtreEcheances, filtreAtelier, carteDepuisPage, referenceDepuisPage, proprietesCarte, proprietesNouvelleCarte, operationValide,
-  dansColonne, pagesAVerifier,
+  dansColonne, pagesAVerifier, sourceEquipe, membreEquipeDepuisPage, relationEquipe,
 } from '../src/shared/notion/notionApiLogique.js'
 
 const NOTION = 'https://api.notion.com/v1'
@@ -73,12 +73,29 @@ async function cartesConnues(jeton, pagesLues, connues) {
   return { pages, complete: true }
 }
 
+// Fiches de la base « Equipe JGA », retrouvée par la colonne équipe du
+// Planning. Facultatif : sans elles, les cartes partent sans équipe.
+async function equipe(jeton, planning) {
+  try {
+    const r = await appelNotion(jeton, `/data_sources/${planning}`)
+    if (!r.ok) return []
+    const source = sourceEquipe(await r.json())
+    if (!source) return []
+    const { pages } = await toutLire(jeton, source, null)
+    return pages.filter((p) => !p.in_trash && !p.archived).map(membreEquipeDepuisPage)
+  } catch {
+    return []
+  }
+}
+
 async function executer(jeton, source, op) {
   let r
   if (op.action === 'creer') {
     r = await appelNotion(jeton, '/pages', { methode: 'POST', corps: { parent: { type: 'data_source_id', data_source_id: source }, properties: proprietesNouvelleCarte(op) } })
   } else if (op.action === 'modifier') {
     r = await appelNotion(jeton, `/pages/${op.pageId}`, { methode: 'PATCH', corps: { properties: proprietesCarte(op) } })
+  } else if (op.action === 'equipe') {
+    r = await appelNotion(jeton, `/pages/${op.pageId}`, { methode: 'PATCH', corps: { properties: relationEquipe(op.equipe) } })
   } else if (op.action === 'corbeille') {
     r = await appelNotion(jeton, `/pages/${op.pageId}`, { methode: 'PATCH', corps: { in_trash: true } })
     // Déjà partie : le but est atteint
@@ -115,7 +132,9 @@ export default async function handler(req, res) {
       const numero = /^\d{4}$/.test(corps.numero ?? '') ? corps.numero : null
       const [cartes, affaires] = await Promise.all([toutLire(jeton, planning, filtreEcheances(numero)), toutLire(jeton, atelier, filtreAtelier(numero))])
       const connues = numero ? await cartesConnues(jeton, cartes.pages, pagesAVerifier(corps.pages)) : { pages: [], complete: true }
+      const membres = await equipe(jeton, planning)
       res.status(200).json({
+        equipe: membres,
         cartes: [...cartes.pages, ...connues.pages].filter((p) => !p.in_trash && !p.archived).map(carteDepuisPage),
         references: affaires.pages.map(referenceDepuisPage).filter((r) => r.numero),
         complete: cartes.complete && connues.complete,

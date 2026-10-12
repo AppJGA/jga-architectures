@@ -11,6 +11,7 @@ import { estAncre } from '../planning/ancrage'
 import { titreCarte, lireCarte, remplacerDate, remplacerLibelle, libellePourCarte, formatDateCarte } from './echeancesNotionLogique'
 import { numeroAffaire, codeCarte } from './codesAffaire'
 import { planSynchro } from './synchroNotionLogique'
+import { equipesNotion, ajouterEquipe } from './equipeNotionLogique'
 import { appliquerPlan } from './appliquerSynchro'
 
 const absente = (error) => error?.code === 'PGRST205' || error?.code === '42P01'
@@ -95,6 +96,17 @@ function avecVerrou(action) {
   return suite
 }
 
+// Équipe de chaque affaire, en fiches de la base « Equipe JGA ». Une lecture
+// ratée ne bloque rien : les cartes partent sans équipe, complétées plus tard.
+async function equipesDesAffaires(affaireId, membres) {
+  if (!membres?.length) return new Map()
+  let requete = supabase.from('affaire_collaborateurs').select('affaire_id, user_id, role')
+  if (affaireId) requete = requete.eq('affaire_id', affaireId)
+  const [collaborateurs, profils] = await Promise.all([requete, supabase.from('profiles').select('*').eq('type_compte', 'agence')])
+  if (collaborateurs.error || profils.error) return new Map()
+  return equipesNotion(collaborateurs.data ?? [], Object.fromEntries((profils.data ?? []).map((p) => [p.id, p])), membres)
+}
+
 /** Compare Notion et l'app, pour toute l'agence ou une affaire, et met les deux d'accord. */
 export function synchroniser({ affaireId = null } = {}) {
   return avecVerrou(async () => {
@@ -138,6 +150,7 @@ export function synchroniser({ affaireId = null } = {}) {
         references: notion.references, numero, aujourdhui: aujourdhui(), maintenant: new Date().toISOString(),
         nouvelId: () => crypto.randomUUID(),
       })
+      ajouterEquipe(plan, { cartes: notion.cartes, registre, equipes: await equipesDesAffaires(affaireId, notion.equipe) })
       const { erreurs, changementsApp } = await appliquerPlan(plan, { base: supabase, ecrireCartes })
       return { etat: 'ok', lectureLe: new Date().toISOString(), changementsApp, erreurs, references: notion.references }
     } catch (e) {

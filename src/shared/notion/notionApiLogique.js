@@ -6,7 +6,11 @@
 
 import { COLONNE_ECHEANCES, numeroAffaire } from './echeancesNotionLogique.js'
 
-export const PROPRIETES = { titre: 'N° Affaire', jour: 'Jour', semaine: 'Semaine', reference: 'Référence' }
+export const PROPRIETES = { titre: 'N° Affaire', jour: 'Jour', semaine: 'Semaine', reference: 'Référence', equipe: '👤 Equipe JGA' }
+
+// Fiches de la base « Equipe JGA », reliée aux cartes par la colonne équipe
+const FICHE = { nom: 'Nom', role: 'Role', actif: 'Actif' }
+const EQUIPE_MAX = 30
 
 const colonne = { property: PROPRIETES.jour, multi_select: { contains: COLONNE_ECHEANCES } }
 
@@ -28,8 +32,23 @@ export function dansColonne(page) {
 const texteTitre = (prop) => (prop?.title ?? []).map((t) => t.plain_text ?? '').join('')
 
 export function carteDepuisPage(page) {
-  return { id: page.id, titre: texteTitre(page.properties?.[PROPRIETES.titre]), creeLe: page.created_time, modifieLe: page.last_edited_time }
+  return {
+    id: page.id, titre: texteTitre(page.properties?.[PROPRIETES.titre]), creeLe: page.created_time, modifieLe: page.last_edited_time,
+    equipe: (page.properties?.[PROPRIETES.equipe]?.relation ?? []).map((r) => r.id),
+  }
 }
+
+/** La base « Equipe JGA » se retrouve par la colonne équipe du Planning : aucune variable de plus. */
+export function sourceEquipe(sourcePlanning) {
+  return sourcePlanning?.properties?.[PROPRIETES.equipe]?.relation?.data_source_id ?? null
+}
+
+export function membreEquipeDepuisPage(page) {
+  const p = page.properties ?? {}
+  return { id: page.id, nom: texteTitre(p[FICHE.nom]).trim(), role: p[FICHE.role]?.select?.name ?? null, actif: p[FICHE.actif]?.checkbox === true }
+}
+
+export const relationEquipe = (equipe) => ({ [PROPRIETES.equipe]: { relation: equipe.map((id) => ({ id })) } })
 
 export function referenceDepuisPage(page) {
   const reference = texteTitre(page.properties?.[PROPRIETES.reference]).trim()
@@ -47,6 +66,7 @@ export function proprietesCarte({ titre, semaine }) {
 export const proprietesNouvelleCarte = (valeurs) => ({
   ...proprietesCarte(valeurs),
   [PROPRIETES.jour]: { multi_select: [{ name: COLONNE_ECHEANCES }] },
+  ...(valeurs.equipe?.length ? relationEquipe(valeurs.equipe) : {}),
 })
 
 const ID_PAGE = /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i
@@ -74,11 +94,16 @@ export function pagesAVerifier(liste) {
 }
 
 /** Une opération reçue du navigateur n'entre ni dans une adresse ni dans Notion sans ce contrôle. */
+const equipeValide = (equipe) => Array.isArray(equipe) && equipe.length > 0 && equipe.length <= EQUIPE_MAX
+  && equipe.every((id) => typeof id === 'string' && ID_PAGE.test(id))
+
 export function operationValide(op) {
   if (!op || typeof op !== 'object' || Array.isArray(op)) return false
-  if (!['creer', 'modifier', 'corbeille'].includes(op.action)) return false
+  if (!['creer', 'modifier', 'corbeille', 'equipe'].includes(op.action)) return false
   if (op.action !== 'creer' && !(typeof op.pageId === 'string' && ID_PAGE.test(op.pageId))) return false
   if (op.action === 'corbeille') return true
+  if (op.action === 'equipe') return equipeValide(op.equipe)
+  if (op.equipe != null && !equipeValide(op.equipe)) return false
   if (typeof op.titre !== 'string' || !op.titre || op.titre.length > 2000) return false
   return op.semaine == null || (typeof op.semaine === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(op.semaine))
 }

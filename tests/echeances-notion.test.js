@@ -512,7 +512,7 @@ test('API Notion : page lue en carte, en référence ; carte écrite', () => {
     id: 'p1', created_time: '2026-10-01T08:00:00.000Z', last_edited_time: '2026-10-02T08:00:00.000Z',
     properties: { 'N° Affaire': { type: 'title', title: [{ plain_text: '2699 ABC : ' }, { plain_text: 'Rendu 16/10' }] } },
   }
-  assert.deepEqual(carteDepuisPage(page), { id: 'p1', titre: '2699 ABC : Rendu 16/10', creeLe: '2026-10-01T08:00:00.000Z', modifieLe: '2026-10-02T08:00:00.000Z' })
+  assert.deepEqual(carteDepuisPage(page), { id: 'p1', titre: '2699 ABC : Rendu 16/10', creeLe: '2026-10-01T08:00:00.000Z', modifieLe: '2026-10-02T08:00:00.000Z', equipe: [] })
   assert.deepEqual(referenceDepuisPage({ properties: { 'Référence': { title: [{ plain_text: '2697 - QRS' }] } } }), { numero: '2697', reference: '2697 - QRS' })
   assert.deepEqual(proprietesCarte({ titre: 'T', semaine: '2026-10-16' }), {
     'N° Affaire': { title: [{ type: 'text', text: { content: 'T' } }] },

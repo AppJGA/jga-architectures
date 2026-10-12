@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 937 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion)
+npm test         # 944 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -728,6 +728,18 @@ serveur `api/notion.js` (+ `api/_agence.js`) ; migration 071.
   l'ouverture et **3 s après tout changement de leurs échéances**
   (signature comparée). Jamais pour un compte en lecture seule ;
   silencieux hors ligne ou sans la migration (état `indisponible`).
+- **Équipe des cartes** (`equipeNotionLogique.js`, testé) : une carte créée
+  par l'app reçoit dans « 👤 Equipe JGA » l'équipe de l'affaire (responsable
+  et collaborateurs) — sans quoi elle manquait aux vues par personne du
+  Planning. **Jamais les associés** (ni `est_associe` dans l'app, ni rôle
+  « Associé » dans Notion), ni extérieurs, ni fiches inactives. Rapprochement
+  par le **prénom** (`clePrenom` : sans majuscules, accents, tirets ni
+  espaces ; un seul candidat, sinon rien). La base « Equipe JGA » se retrouve
+  par la colonne équipe du Planning (`sourceEquipe`) : aucune variable de
+  plus. Une carte de l'app (`estCarteApp`, format de `titreCarte`) dont la
+  colonne est vide est complétée au passage suivant (action `equipe` du
+  passeur) ; une carte écrite à la main, ou déjà remplie, n'est jamais
+  touchée.
 - **Limites connues** : ⌘Z juste après une synchro peut défaire un
   changement de Notion qu'elle venait de rapporter. L'ancienne synchro des
   phases (`useNotionSync`, `useNotionGantt`, `notion-sync-server.mjs`,

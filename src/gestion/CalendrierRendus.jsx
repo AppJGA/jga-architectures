@@ -148,11 +148,10 @@ export default function CalendrierRendus() {
   useEffect(() => { recharger() }, [recharger])
 
   // Lit Notion et met les deux côtés d'accord ; le calendrier se relit ensuite
-  const lireNotion = useCallback(async () => {
-    const r = await synchroniser()
+  const lireNotion = useCallback(() => synchroniser().then((r) => {
     setNotion((n) => ({ etat: r.etat, lectureLe: r.lectureLe ?? n.lectureLe, references: r.references ?? n.references }))
     if (r.etat === 'ok') recharger()
-  }, [recharger])
+  }), [recharger])
   useEffect(() => { lireNotion() }, [lireNotion])
   const actualiserNotion = () => { setNotion((n) => ({ ...n, etat: 'encours' })); return lireNotion() }
 

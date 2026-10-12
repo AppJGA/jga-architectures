@@ -38,3 +38,15 @@ export const proprietesNouvelleCarte = (valeurs) => ({
   ...proprietesCarte(valeurs),
   [PROPRIETES.jour]: { multi_select: [{ name: COLONNE_ECHEANCES }] },
 })
+
+const ID_PAGE = /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i
+
+/** Une opération reçue du navigateur n'entre ni dans une adresse ni dans Notion sans ce contrôle. */
+export function operationValide(op) {
+  if (!op || typeof op !== 'object' || Array.isArray(op)) return false
+  if (!['creer', 'modifier', 'corbeille'].includes(op.action)) return false
+  if (op.action !== 'creer' && !(typeof op.pageId === 'string' && ID_PAGE.test(op.pageId))) return false
+  if (op.action === 'corbeille') return true
+  if (typeof op.titre !== 'string' || !op.titre || op.titre.length > 2000) return false
+  return op.semaine == null || (typeof op.semaine === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(op.semaine))
+}

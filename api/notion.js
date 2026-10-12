@@ -9,7 +9,7 @@
 
 import { verifierAgence, jetonDe } from './_agence.js'
 import {
-  filtreEcheances, carteDepuisPage, referenceDepuisPage, proprietesCarte, proprietesNouvelleCarte,
+  filtreEcheances, carteDepuisPage, referenceDepuisPage, proprietesCarte, proprietesNouvelleCarte, operationValide,
 } from '../src/shared/notion/notionApiLogique.js'
 
 const NOTION = 'https://api.notion.com/v1'
@@ -27,7 +27,8 @@ async function appelNotion(jeton, chemin, { methode = 'GET', corps } = {}) {
   let reponse = await envoyer()
   // Notion admet 3 requêtes par seconde : on attend ce qu'il demande, une fois
   if (reponse.status === 429) {
-    await pause(Math.min(5000, 1000 * Number(reponse.headers.get('retry-after') ?? 1)))
+    const attente = Number(reponse.headers.get('retry-after') ?? 1)
+    await pause(Math.min(5000, 1000 * (Number.isFinite(attente) ? attente : 1)))
     reponse = await envoyer()
   }
   return reponse
@@ -45,6 +46,7 @@ async function toutLire(jeton, source, filtre) {
     pages.push(...(json.results ?? []))
     if (!json.has_more) return { pages, complete: true }
     curseur = json.next_cursor
+    await pause(350)   // 3 requêtes par seconde au plus
   }
   return { pages, complete: false }
 }
@@ -80,7 +82,12 @@ export default async function handler(req, res) {
   const atelier = process.env.NOTION_ATELIER_SOURCE
   if (!jeton || !planning || !atelier) { res.status(503).json({ erreur: 'notion-non-configure' }); return }
 
-  const corps = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body ?? {})
+  let corps
+  try {
+    corps = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body ?? {})
+  } catch {
+    res.status(400).json({ erreur: 'requete' }); return
+  }
   try {
     if (corps.action === 'lire') {
       const numero = /^\d{4}$/.test(corps.numero ?? '') ? corps.numero : null
@@ -92,10 +99,16 @@ export default async function handler(req, res) {
       })
       return
     }
-    if (corps.action === 'ecrire' && Array.isArray(corps.operations) && corps.operations.length <= OPERATIONS_MAX) {
+    if (corps.action === 'ecrire' && Array.isArray(corps.operations)
+      && corps.operations.length > 0 && corps.operations.length <= OPERATIONS_MAX && corps.operations.every(operationValide)) {
       const resultats = []
       for (const op of corps.operations) {
-        resultats.push(await executer(jeton, planning, op))
+        // Une opération qui échoue n'emporte pas celles déjà faites
+        try {
+          resultats.push(await executer(jeton, planning, op))
+        } catch (e) {
+          resultats.push({ ok: false, erreur: String(e?.message ?? e).slice(0, 200) })
+        }
         await pause(350)
       }
       res.status(200).json({ resultats })

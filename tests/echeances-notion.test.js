@@ -11,7 +11,7 @@ import {
   remplacerDate, remplacerLibelle, dateEtude, memePosition, dateDuJalon, champsJalon, nomAffaireNotion,
 } from '../src/shared/notion/echeancesNotionLogique.js'
 
-import { filtreEcheances, carteDepuisPage, referenceDepuisPage, proprietesCarte } from '../src/shared/notion/notionApiLogique.js'
+import { filtreEcheances, carteDepuisPage, referenceDepuisPage, proprietesCarte, operationValide } from '../src/shared/notion/notionApiLogique.js'
 
 test('numéro d’affaire : premier nombre de 4 chiffres, pas une année de date', () => {
   assert.equal(numeroAffaire('!!! 2699 ABC : Rendu PRO 16/10/2026'), '2699')
@@ -411,4 +411,23 @@ test('API Notion : page lue en carte, en référence ; carte écrite', () => {
     'N° Affaire': { title: [{ type: 'text', text: { content: 'T' } }] },
     Semaine: { date: { start: '2026-10-16' } },
   })
+})
+
+test('API Notion : validation des opérations reçues', () => {
+  const id = '0a1b2c3d-0000-4000-8000-0123456789ab'
+  assert.equal(operationValide({ action: 'creer', titre: 'T', semaine: '2026-10-16' }), true)
+  assert.equal(operationValide({ action: 'creer', titre: 'T', semaine: null }), true)
+  assert.equal(operationValide({ action: 'creer', titre: 'T' }), true)
+  assert.equal(operationValide({ action: 'modifier', pageId: id, titre: 'T', semaine: '2026-10-16' }), true)
+  assert.equal(operationValide({ action: 'modifier', pageId: id.replace(/-/g, ''), titre: 'T' }), true)
+  assert.equal(operationValide({ action: 'corbeille', pageId: id }), true)
+  assert.equal(operationValide({ action: 'corbeille', pageId: '../users' }), false)
+  assert.equal(operationValide({ action: 'modifier', pageId: id, semaine: '2026-10-16' }), false)
+  assert.equal(operationValide({ action: 'creer', titre: '' }), false)
+  assert.equal(operationValide({ action: 'creer', titre: 'x'.repeat(2001) }), false)
+  assert.equal(operationValide({ action: 'creer', titre: 'T', semaine: '16/10/2026' }), false)
+  assert.equal(operationValide({ action: 'autre' }), false)
+  assert.equal(operationValide(null), false)
+  assert.equal(operationValide('creer'), false)
+  assert.equal(operationValide([]), false)
 })

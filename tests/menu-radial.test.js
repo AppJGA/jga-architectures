@@ -49,6 +49,8 @@ describe('roue d’un jalon', async () => {
   test('un jalon libre se déplace et s’accroche ; un jalon accroché se détache seulement', () => {
     assert.deepEqual(actionsJalon(false), ['params', 'move', 'accrocher', 'del'])
     assert.deepEqual(actionsJalon(true), ['params', 'detacher', 'del'])
+    assert.deepEqual(actionsJalon(false, true), ['params'])
+    assert.deepEqual(actionsJalon(true, true), ['params'])
   })
 
   test('les barres gardent leurs sept actions, sans celles des jalons', () => {

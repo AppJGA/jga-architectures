@@ -1,6 +1,7 @@
 import { useMemo, useRef, useCallback, useState, useEffect, useLayoutEffect } from 'react'
 import { GitBranch } from 'lucide-react'
 import { MenuRadial, EditionBarre, BandeauLien } from '../../../shared/planning/MenuRadial'
+import { MarqueNotion } from '../../../shared/notion/MarqueNotion'
 import { ACTIONS_SEGMENT, actionsJalon } from '../../../shared/planning/positionsPetales'
 import { estAncre, bordTouche } from '../../../shared/planning/ancrage'
 import { ReperesAccroche } from '../../../shared/planning/ReperesAccroche'
@@ -1664,7 +1665,7 @@ export function GanttTimeline({
                 position: 'absolute', left: x - 10, width: 22, top: 0, bottom: 0,
                 zIndex: 15, pointerEvents: drawMode ? 'none' : 'auto', cursor: 'pointer',
               }}
-              title={`${jalon.label} — ${new Date(jalon.date + 'T00:00:00').toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })}${jalon.ancre ? ' · accrochée à une barre' : ''}${jalon.fixe_direction ? ' · fixée par la direction' : ''}`}
+              title={`${jalon.label} — ${new Date(jalon.date + 'T00:00:00').toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })}${jalon.ancre ? ' · accrochée à une barre' : ''}${jalon.fixe_direction ? ' · fixée par la direction' : ''}${jalon.notion ? ' · liée à Notion' : ''}${jalon.notionVerrou ? ' (plusieurs dates : à modifier dans Notion)' : ''}`}
               onClick={(e) => { e.stopPropagation(); toucherJalon(jalon, labelTop, scrollRef?.current?.scrollTop ?? 0) }}
             >
               <div style={{
@@ -1682,6 +1683,7 @@ export function GanttTimeline({
                 boxShadow: '0 1px 4px rgba(0,0,0,0.15)', userSelect: 'none',
               }}>
                 {jalon.fixe_direction && <IconeDirection />}
+                {jalon.notion && <MarqueNotion size={10} title={jalon.notionVerrou ? 'Carte Notion à plusieurs dates · à modifier dans Notion' : 'Liée à une carte Notion'} />}
                 {jalon.ancre && <IconeLien />}
                 {jalon.label}
               </div>
@@ -2019,7 +2021,7 @@ export function GanttTimeline({
               <MenuRadial
                 barre={barre}
                 objet="échéance"
-                actions={actionsJalon(jalonSelectionne.ancre)}
+                actions={actionsJalon(jalonSelectionne.ancre, jalonSelectionne.notionVerrou)}
                 numero={jourMois}
                 duree={jalonSelectionne.ancre ? 'accrochée' : 'échéance'}
                 onAction={actionMenuJalon}

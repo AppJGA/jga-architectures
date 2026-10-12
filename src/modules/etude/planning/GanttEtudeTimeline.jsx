@@ -1,6 +1,7 @@
 import { useMemo, useRef, useCallback, useState, useEffect, useLayoutEffect } from 'react'
 import { GitBranch } from 'lucide-react'
 import { MenuRadial, EditionBarre, BandeauLien } from '../../../shared/planning/MenuRadial'
+import { MarqueNotion } from '../../../shared/notion/MarqueNotion'
 import { ACTIONS_SEGMENT, actionsJalon } from '../../../shared/planning/positionsPetales'
 import { estAncre, bordTouche } from '../../../shared/planning/ancrage'
 import { ReperesAccroche } from '../../../shared/planning/ReperesAccroche'
@@ -953,7 +954,7 @@ export function GanttEtudeTimeline({
                 position: 'absolute', left: j.left - 10, width: 22, top: 0, bottom: 0,
                 zIndex: 15, pointerEvents: drawMode ? 'none' : 'auto', cursor: 'pointer',
               }}
-              title={`${j.label} — S${j.semaine} ${j.annee}${j.ancre ? ' · accrochée à une barre' : ''}${j.fixe_direction ? ' · fixée par la direction' : ''}`}
+              title={`${j.label} — S${j.semaine} ${j.annee}${j.ancre ? ' · accrochée à une barre' : ''}${j.fixe_direction ? ' · fixée par la direction' : ''}${j.notion ? ' · liée à Notion' : ''}${j.notionVerrou ? ' (plusieurs dates : à modifier dans Notion)' : ''}`}
               onClick={(e) => { e.stopPropagation(); toucherJalon(j, scrollRef?.current?.scrollTop ?? 0) }}
             >
               <div style={{
@@ -969,6 +970,7 @@ export function GanttEtudeTimeline({
                 userSelect: 'none',
               }}>
                 {j.fixe_direction && <IconeDirection />}
+                {j.notion && <MarqueNotion size={10} title={j.notionVerrou ? 'Carte Notion à plusieurs dates · à modifier dans Notion' : 'Liée à une carte Notion'} />}
                 {j.ancre && <IconeLien />}
                 {j.label}
               </div>
@@ -1187,7 +1189,7 @@ export function GanttEtudeTimeline({
               <MenuRadial
                 barre={barre}
                 objet="échéance"
-                actions={actionsJalon(jalonSelectionne.ancre)}
+                actions={actionsJalon(jalonSelectionne.ancre, jalonSelectionne.notionVerrou)}
                 numero={`S${jalonSelectionne.semaine}`}
                 duree={jalonSelectionne.ancre ? 'accrochée' : 'échéance'}
                 onAction={actionMenuJalon}

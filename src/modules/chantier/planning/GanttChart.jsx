@@ -1,6 +1,7 @@
 import { DecalagePlanningModal } from './DecalagePlanningModal'
 import { ImportPlanningModal } from '../../../shared/planning/ImportPlanningModal'
 import { listerAffairesSources } from '../../../shared/planning/sourcesImport'
+import { useEcheancesNotion } from '../../../shared/notion/useEcheancesNotion'
 import { preparerImport } from './importPlanning'
 import { chargerPlanningSource, ecrireImport } from './importEcriture'
 import { usePincementZoom } from '../../../shared/planning/usePincementZoom'
@@ -399,6 +400,17 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
     dejaCharge.current = false
     fetchAllData()
   }, [affaireId, fetchAllData])
+
+  // Échéances partagées avec Notion (migration 071) : synchronisées à
+  // l'ouverture et après chaque changement ; une carte à plusieurs dates
+  // verrouille son échéance (elle se modifie dans Notion)
+  const notion = useEcheancesNotion({
+    affaireId, codeAffaire: affaire?.code_affaire, origine: 'chantier', jalons,
+    pret: !isLoading && !lectureSeule, onChangementsApp: fetchAllData,
+  })
+  const jalonsAffiches = useMemo(() => jalons.map((j) => ({
+    ...j, notion: notion.lies.has(j.id), notionVerrou: notion.verrouilles.has(j.id),
+  })), [jalons, notion])
 
   // Recharge tout ce qu'une écriture ratée a pu laisser faux en local
   const rechargerTout = useCallback(async () => {
@@ -1353,7 +1365,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
             onDrawCreate={handleDrawCreate}
             rowHeight={rowHeight}
             showConnections={showConnections}
-            jalons={jalons}
+            jalons={jalonsAffiches}
             peutAccrocher={peutAccrocher}
             onJalonModif={handleJalonModif}
             onJalonAccroche={handleJalonAccroche}
@@ -1769,7 +1781,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
 
       {showDecalage && (
         <DecalagePlanningModal
-          tasks={tasks} segments={segments} jalons={jalons} dependances={dependances}
+          tasks={tasks} segments={segments} jalons={jalons.filter((j) => !notion.verrouilles.has(j.id))} dependances={dependances}
           periodes={periodes} affaire={affaire}
           onValider={handleDecalage}
           onAnnuler={() => setShowDecalage(false)}
@@ -1789,6 +1801,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
         open={showJalonsModal}
         onClose={() => { setShowJalonsModal(false); setJalonReglages(null) }}
         jalons={jalons}
+        verrouilles={notion.verrouilles}
         affaireId={affaireId}
         onRefetch={fetchAllData}
         jalonInitialId={jalonReglages}

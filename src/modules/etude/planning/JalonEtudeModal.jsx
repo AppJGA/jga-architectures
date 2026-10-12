@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { X, Flag, Pencil, Check, Trash2, Plus, Link2 } from 'lucide-react'
+import { MarqueNotion } from '../../../shared/notion/MarqueNotion'
 import { supabase } from '../../../core/supabase/client'
 import { getWeekStart, normaliserSemaine } from './types'
 import { estAncre } from '../../../shared/planning/ancrage'
@@ -59,7 +60,7 @@ function ColorPicker({ value, onChange }) {
   )
 }
 
-function JalonRow({ jalon, onUpdate, onDelete, editionInitiale = false }) {
+function JalonRow({ jalon, onUpdate, onDelete, editionInitiale = false, verrou = false }) {
   const [editing, setEditing] = useState(editionInitiale)
   const ancre = estAncre(jalon)
   const [draft, setDraft] = useState({ label: jalon.label, semaine: jalon.semaine, annee: jalon.annee, couleur: jalon.couleur })
@@ -128,6 +129,13 @@ function JalonRow({ jalon, onUpdate, onDelete, editionInitiale = false }) {
       <span style={{ fontSize: 11, color: '#9C9591', flexShrink: 0 }}>
         S{jalon.semaine} {jalon.annee} · {fmtSemaine(jalon.semaine, jalon.annee)}
       </span>
+      {verrou && (
+        <span title="Carte Notion à plusieurs dates" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#9C9591', flexShrink: 0 }}>
+          <MarqueNotion size={11} /> à modifier dans Notion
+        </span>
+      )}
+      {!verrou && (
+        <>
       <button type="button" onClick={() => { setEditing(true); setConfirming(false) }}
         style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9C9591', padding: 4, borderRadius: 3, display: 'flex' }}
         onMouseEnter={e => e.currentTarget.style.color = '#E8602C'}
@@ -149,11 +157,13 @@ function JalonRow({ jalon, onUpdate, onDelete, editionInitiale = false }) {
         <Trash2 size={12} />
         {confirming && 'Confirmer'}
       </button>
+        </>
+      )}
     </div>
   )
 }
 
-export function JalonEtudeModal({ open, onClose, jalons, affaireId, onRefetch, jalonInitialId = null }) {
+export function JalonEtudeModal({ open, onClose, jalons, affaireId, onRefetch, jalonInitialId = null, verrouilles = new Set() }) {
   const [newLabel, setNewLabel] = useState('')
   const [newSemaine, setNewSemaine] = useState('')
   const [newAnnee, setNewAnnee] = useState(new Date().getFullYear())
@@ -217,7 +227,7 @@ export function JalonEtudeModal({ open, onClose, jalons, affaireId, onRefetch, j
             </p>
           ) : (
             jalons.map(j => (
-              <JalonRow key={j.id} jalon={j} onUpdate={handleUpdate} onDelete={handleDelete} editionInitiale={j.id === jalonInitialId} />
+              <JalonRow key={j.id} jalon={j} onUpdate={handleUpdate} onDelete={handleDelete} editionInitiale={j.id === jalonInitialId && !verrouilles.has(j.id)} verrou={verrouilles.has(j.id)} />
             ))
           )}
         </div>

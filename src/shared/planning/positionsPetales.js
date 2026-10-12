@@ -30,6 +30,9 @@ export const ACTIONS_BARRE = ['params', 'move', 'resize', 'segment', 'dep', 'dup
 
 // Couronne d'un jalon. Accroché, il suit sa barre : le déplacer à la main ou
 // le raccrocher ailleurs passe d'abord par « Détacher », jamais par mégarde.
-export function actionsJalon(ancre) {
+// Venu d'une carte Notion à plusieurs dates, il se modifie dans Notion : il
+// ne reste que ses réglages (lecture).
+export function actionsJalon(ancre, verrouNotion = false) {
+  if (verrouNotion) return ['params']
   return ancre ? ['params', 'detacher', 'del'] : ['params', 'move', 'accrocher', 'del']
 }

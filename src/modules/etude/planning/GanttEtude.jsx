@@ -32,6 +32,7 @@ import { PeriodesBloqueesModal } from '../../chantier/planning/PeriodesBloqueesM
 import { exportPlanningEtudeExcel } from './exportPlanningEtudeExcel'
 import { Toast } from '../../../shared/components/Toast'
 import { ZoneConsultation } from '../../../shared/components/ZoneConsultation'
+import { useEcheancesNotion } from '../../../shared/notion/useEcheancesNotion'
 
 // Densité des lignes du planning
 const ROW_HEIGHT_OPTIONS = [
@@ -678,6 +679,17 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
   // Déplacer, accrocher et détacher : une étape d'historique chacun. Créer,
   // renommer, supprimer restent hors historique, comme dans leur fenêtre.
   const [jalonReglages, setJalonReglages] = useState(null)
+  // Échéances partagées avec Notion (migration 071) : synchronisées à
+  // l'ouverture et après chaque changement ; une carte à plusieurs dates
+  // verrouille son échéance (elle se modifie dans Notion)
+  const notion = useEcheancesNotion({
+    affaireId, codeAffaire: affaire?.code_affaire, origine: 'etude', jalons,
+    pret: !loading && !lectureSeule, onChangementsApp: refetch,
+  })
+  const jalonsAffiches = useMemo(() => jalons.map((j) => ({
+    ...j, notion: notion.lies.has(j.id), notionVerrou: notion.verrouilles.has(j.id),
+  })), [jalons, notion])
+
   const peutAccrocher = ancrageDisponible(jalons)
 
   const handleJalonModif = useCallback(async (id, changes, label) => {
@@ -960,7 +972,7 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
             phases={sortedPhases}
             semWidth={semWidth}
             showConnections={showConnections}
-            jalons={jalons}
+            jalons={jalonsAffiches}
             peutAccrocher={peutAccrocher}
             onJalonModif={handleJalonModif}
             onJalonAccroche={handleJalonAccroche}
@@ -1224,6 +1236,7 @@ export function GanttEtude({ affaireId, affaireNumero = '', affaireTitre = '', a
         open={showJalonsModal}
         onClose={() => { setShowJalonsModal(false); setJalonReglages(null) }}
         jalons={jalons}
+        verrouilles={notion.verrouilles}
         affaireId={affaireId}
         onRefetch={refetch}
         jalonInitialId={jalonReglages}

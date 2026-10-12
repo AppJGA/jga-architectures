@@ -96,7 +96,7 @@ export function htmlCalendrierMois({ annee, mois, evenements, equipes, filtres =
       <td class="date">${dateDetail(ev.date)}</td>
       <td><span class="pastille" style="background:${e(ev.couleur || accent)}"></span><b>${e(ev.affaire.code_affaire)}</b> ${e(ev.affaire.nom)}</td>
       <td>${e(ev.libelle)}</td>
-      <td>${ev.origine === 'etude' ? `Étude · S${ev.semaine}` : 'Chantier'}</td>
+      <td>${ev.origine === 'notion' ? 'Notion' : ev.origine === 'etude' ? `Étude · S${ev.semaine}` : 'Chantier'}</td>
       <td>${equipe.length ? equipe.map((p) => `${ronds([p], accent)} ${e(p.nom)}${p.proprietaire ? ' <i>(propriétaire)</i>' : ''}`).join('<br>') : '<span class="vide">—</span>'}</td>
     </tr>`
   }).join('')

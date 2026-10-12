@@ -1,8 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronLeft, ChevronRight, ChevronDown, FileDown, Plus } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronDown, FileDown, Plus, RefreshCw } from 'lucide-react'
 import { useAuth } from '../core/auth/useAuth'
-import { rendus, grilleMois, parJour, prochaines, ecartJours, mesAffaires, equipeParAffaire } from './gestionLogique'
+import {
+  rendus, grilleMois, parJour, prochaines, ecartJours, mesAffaires, equipeParAffaire,
+  marquerNotion, rendusNotion, aDater, affairesNotionSeules,
+} from './gestionLogique'
+import { MarqueNotion } from '../shared/notion/MarqueNotion'
+import { synchroniser, lienCarte } from '../shared/notion/echeancesNotion'
 import { chargerCalendrier } from './gestionDonnees'
 import { exporterCalendrierMois } from './exportCalendrier'
 import { ModaleJalon } from './ModaleJalon'
@@ -70,6 +75,7 @@ function Ronds({ equipe, taille }) {
 function Jalon({ ev, equipe = [], compact, onOuvrir }) {
   const titre = `${ev.affaire.code_affaire ?? ''} · ${ev.affaire.nom ?? ''} — ${ev.libelle}${ev.semaine ? ` (S${ev.semaine})` : ''}`
     + (equipe.length ? `\nÉquipe : ${equipe.map((p) => p.nom).join(', ')}` : '')
+    + (ev.notion?.nbDates > 1 ? ' · carte Notion à plusieurs dates, à modifier dans Notion' : '')
   return (
     <button type="button" onClick={(e) => { e.stopPropagation(); onOuvrir(ev) }} title={titre}
       style={{
@@ -80,6 +86,7 @@ function Jalon({ ev, equipe = [], compact, onOuvrir }) {
       }}>
       <span style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
         <span style={{ fontWeight: 700, flexShrink: 0 }}>{ev.affaire.code_affaire}</span>
+        {ev.notion && <MarqueNotion size={compact ? 10 : 12} title={ev.notion.nbDates > 1 ? 'Carte Notion à plusieurs dates · à modifier dans Notion' : 'Liée à une carte Notion'} />}
         {equipe.length > 0 && <Ronds equipe={equipe} taille={compact ? 18 : 22} />}
       </span>
       <span style={compact
@@ -135,20 +142,39 @@ export default function CalendrierRendus() {
   // null | { evenement } (modifier) | { dateInitiale } (créer)
   const [modale, setModale] = useState(null)
 
-  const recharger = () => chargerCalendrier().then(setDonnees).catch((e) => setErreur(e?.message ?? String(e)))
-  useEffect(() => { recharger() }, [])
+  const [notion, setNotion] = useState({ etat: 'encours', lectureLe: null, references: [] })
+
+  const recharger = useCallback(() => chargerCalendrier().then(setDonnees).catch((e) => setErreur(e?.message ?? String(e))), [])
+  useEffect(() => { recharger() }, [recharger])
+
+  // Lit Notion et met les deux côtés d'accord ; le calendrier se relit ensuite
+  const lireNotion = useCallback(async () => {
+    const r = await synchroniser()
+    setNotion((n) => ({ etat: r.etat, lectureLe: r.lectureLe ?? n.lectureLe, references: r.references ?? n.references }))
+    if (r.etat === 'ok') recharger()
+  }, [recharger])
+  useEffect(() => { lireNotion() }, [lireNotion])
+  const actualiserNotion = () => { setNotion((n) => ({ ...n, etat: 'encours' })); return lireNotion() }
 
   const evenements = useMemo(() => {
     if (!donnees) return []
     const miennes = mesAffaires(donnees.collaborateurs, user?.id)
-    return rendus(donnees.jalonsChantier, donnees.jalonsEtude, donnees.affaires)
-      .filter((e) => origines[e.origine] && (portee === 'toutes' || miennes.has(e.affaire.id)))
+    const tous = [
+      ...marquerNotion(rendus(donnees.jalonsChantier, donnees.jalonsEtude, donnees.affaires), donnees.registre),
+      ...rendusNotion(donnees.registre, donnees.affaires),
+    ].sort((a, b) => a.date.localeCompare(b.date) || (a.affaire.code_affaire ?? '').localeCompare(b.affaire.code_affaire ?? ''))
+    return tous.filter((e) => (origines[e.origine] ?? true) && (portee === 'toutes' || (!e.affaire.horsApp && miennes.has(e.affaire.id))))
   }, [donnees, user?.id, portee, origines])
   const equipes = useMemo(() => equipeParAffaire(
     donnees?.collaborateurs, Object.fromEntries((donnees?.profils ?? []).map((p) => [p.id, p])),
   ), [donnees])
   const jours = useMemo(() => parJour(evenements), [evenements])
   const aVenir = useMemo(() => prochaines(evenements, aujourdhui, 30), [evenements, aujourdhui])
+  const cartesADater = useMemo(() => aDater(donnees?.registre), [donnees])
+  const affairesChoix = useMemo(
+    () => [...(donnees?.affaires ?? []), ...affairesNotionSeules(notion.references, donnees?.affaires)],
+    [donnees, notion.references],
+  )
   const grille = grilleMois(mois.annee, mois.mois)
 
   const decaler = (n) => setMois(({ annee, mois: m }) => {
@@ -162,7 +188,7 @@ export default function CalendrierRendus() {
     edition: new Date().toLocaleDateString('fr-FR'),
   })
   const ouvrir = (ev) => setModale({ evenement: ev })
-  const allerAuPlanning = (ev) => navigate(`/affaires/${ev.affaire.id}/${ev.origine === 'etude' ? 'planning-etude' : 'planning-chantier'}`)
+  const allerAuPlanning = (ev) => !ev.affaire.horsApp && navigate(`/affaires/${ev.affaire.id}/${ev.origine === 'etude' ? 'planning-etude' : 'planning-chantier'}`)
 
   if (erreur) return <p role="alert" style={{ fontSize: 13, color: '#B8412C' }}>Lecture impossible : {erreur}</p>
   if (!donnees) return <p style={{ fontSize: 13, color: '#9C9591' }}>Chargement…</p>
@@ -183,6 +209,20 @@ export default function CalendrierRendus() {
         <section style={{ flex: '1 1 640px', minWidth: 0, background: 'white', border: '0.5px solid rgba(0,0,0,0.08)' }}>
           <header style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 14px', borderBottom: '0.5px solid rgba(0,0,0,0.08)' }}>
             <h2 style={{ flex: 1, margin: 0, fontSize: 16, fontWeight: 600, color: '#1F1B17', textTransform: 'capitalize' }}>{nomMois(mois.annee, mois.mois)}</h2>
+            {notion.etat !== 'indisponible' && (
+              <>
+                <span aria-live="polite" style={{ fontSize: 11, color: notion.etat === 'injoignable' ? '#B8412C' : '#9C9591' }}>
+                  {notion.etat === 'encours' ? 'Lecture de Notion…'
+                    : notion.etat === 'injoignable' ? 'Notion injoignable'
+                      : notion.etat === 'hors-ligne' ? 'Hors ligne'
+                        : notion.etat === 'ok' && notion.lectureLe ? `Notion lu à ${new Date(notion.lectureLe).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}` : ''}
+                </span>
+                <button type="button" onClick={actualiserNotion} disabled={notion.etat === 'encours'} title="Relire les cartes de Notion et mettre les plannings d’accord"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minHeight: 36, padding: '0 12px', border: '0.5px solid rgba(0,0,0,0.15)', background: 'white', color: '#37352F', cursor: 'pointer', fontSize: 12, fontWeight: 600, opacity: notion.etat === 'encours' ? 0.6 : 1 }}>
+                  <RefreshCw size={14} /> Actualiser depuis Notion
+                </button>
+              </>
+            )}
             <button type="button" onClick={() => setModale({ dateInitiale: aujourdhui })} title="Poser une échéance dans le planning d’une affaire"
               style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minHeight: 36, padding: '0 12px', border: `1px solid ${ACCENT}`, background: 'rgba(122,78,156,0.10)', color: ACCENT, cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>
               <Plus size={15} /> Échéance
@@ -228,6 +268,20 @@ export default function CalendrierRendus() {
               )
             })}
           </div>
+          {cartesADater.length > 0 && (
+            <div style={{ padding: '12px 14px', borderTop: '0.5px solid rgba(0,0,0,0.08)' }}>
+              <h3 style={{ margin: '0 0 4px', fontSize: 14, fontWeight: 600, color: '#1F1B17' }}>À dater</h3>
+              <p style={{ margin: '0 0 8px', fontSize: 12, color: '#5E5854' }}>Cartes de la colonne ECHEANCES RENDUS dont la date n’a pas pu être lue.</p>
+              <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {cartesADater.map((c) => (
+                  <li key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: '#1F1B17' }}>
+                    <span style={{ flex: 1, minWidth: 0 }}>{c.texte || c.reference}</span>
+                    <a href={lienCarte(c.pageId)} target="_blank" rel="noreferrer" style={{ color: ACCENT, fontWeight: 600, fontSize: 12, flexShrink: 0 }}>Ouvrir dans Notion</a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </section>
 
         <aside style={{ flex: '1 1 280px', maxWidth: 420, background: 'white', border: '0.5px solid rgba(0,0,0,0.08)', padding: '12px 14px' }}>
@@ -248,7 +302,7 @@ export default function CalendrierRendus() {
                       <div key={ev.id}>
                         <Jalon ev={ev} equipe={equipes.get(ev.affaire.id)} onOuvrir={ouvrir} />
                         <p style={{ margin: '2px 0 0 11px', fontSize: 11, color: '#9C9591' }}>
-                          {[ev.affaire.nom, (equipes.get(ev.affaire.id) ?? []).map((p) => p.nom).join(', '), ev.origine === 'etude' ? 'planning d’étude' : 'planning chantier'].filter(Boolean).join(' · ')}
+                          {[ev.affaire.nom, (equipes.get(ev.affaire.id) ?? []).map((p) => p.nom).join(', '), ev.origine === 'notion' ? 'Notion' : ev.origine === 'etude' ? 'planning d’étude' : 'planning chantier'].filter(Boolean).join(' · ')}
                         </p>
                       </div>
                     ))}
@@ -261,9 +315,9 @@ export default function CalendrierRendus() {
       </div>
 
       {modale && (
-        <ModaleJalon evenement={modale.evenement ?? null} dateInitiale={modale.dateInitiale} affaires={donnees.affaires}
+        <ModaleJalon evenement={modale.evenement ?? null} dateInitiale={modale.dateInitiale} affaires={affairesChoix}
           onFermer={() => setModale(null)}
-          onEnregistre={() => { setModale(null); recharger() }}
+          onEnregistre={() => { setModale(null); recharger(); actualiserNotion() }}
           onOuvrirPlanning={allerAuPlanning} />
       )}
     </div>

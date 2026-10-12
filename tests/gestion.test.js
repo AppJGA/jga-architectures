@@ -7,6 +7,7 @@ import { test } from 'node:test'
 import {
   vendrediSemaineIso, rendus, grilleMois, parJour, prochaines, ecartJours,
   affairesModifiables, mesAffaires, groupesTaches, initiales, equipeParAffaire, semaineIso,
+  marquerNotion, rendusNotion, aDater, affairesNotionSeules,
 } from '../src/gestion/gestionLogique.js'
 
 test('vendredi d’une semaine ISO', () => {
@@ -175,4 +176,24 @@ test('PDF d’un mois : la grille a la taille exacte de la feuille, A4 ou A3', a
   // Le script qui fait tenir la grille est dans la page, avant l’impression
   assert.match(a4, /function ajusterGrille\(\)/)
   assert.ok(a4.indexOf('ajusterGrille()') < a4.indexOf('window.print()'))
+})
+
+test('Notion : échéances liées marquées, affaires absentes de l’app en plus, cartes à dater', () => {
+  const registre = [
+    { id: 'r1', origine: 'chantier', jalon_id: 1, affaire_id: 'a2', page_id: 'p1', nb_dates: 2, date_synchro: '2026-10-20', numero: '2606' },
+    { id: 'r2', origine: null, jalon_id: null, affaire_id: null, page_id: 'p2', nb_dates: 1, date_synchro: '2026-10-22', numero: '2697', reference: '2697 - QRS', libelle: 'Dépôt PC' },
+    { id: 'r3', origine: null, jalon_id: null, affaire_id: null, page_id: 'p3', nb_dates: 0, date_synchro: null, numero: '2697', reference: '2697 - QRS', texte_carte: '2697 QRS fin novembre' },
+  ]
+  const ev = marquerNotion(rendus([{ id: 1, affaire_id: 'a2', label: 'OPR', date: '2026-10-20' }], [], affaires), registre)
+  assert.equal(ev[0].notion.nbDates, 2)
+  assert.equal(ev[0].notion.pageId, 'p1')
+  const seules = rendusNotion(registre, affaires)
+  assert.equal(seules.length, 1)
+  assert.equal(seules[0].origine, 'notion')
+  assert.equal(seules[0].affaire.horsApp, true)
+  assert.equal(seules[0].affaire.code_affaire, '2697 QRS')
+  assert.equal(seules[0].libelle, 'Dépôt PC')
+  assert.deepEqual(aDater(registre).map((x) => x.id), ['r3'])
+  const choix = affairesNotionSeules([{ numero: '2697', reference: '2697 - QRS' }, { numero: '2618', reference: '2618 - LVV' }], affaires)
+  assert.deepEqual(choix.map((a) => a.id), ['notion-2697'])
 })

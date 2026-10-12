@@ -6,6 +6,8 @@ import { ChoixAffaire } from '../shared/components/ChoixAffaire'
 import { periodeAffaire } from '../affaire/phaseAffaire'
 import { semaineIso, vendrediSemaineIso } from './gestionLogique'
 import { creerJalon, modifierJalon, supprimerJalon } from './gestionDonnees'
+import { MarqueNotion } from '../shared/notion/MarqueNotion'
+import { creerEcheanceNotionSeule, modifierEcheanceNotionSeule, supprimerEcheanceNotionSeule, lienCarte } from '../shared/notion/echeancesNotion'
 import { ACCENT } from './manifest'
 
 // ─── Jalon posé depuis le calendrier des rendus ──────────────────────────────
@@ -48,6 +50,11 @@ export function ModaleJalon({ evenement = null, affaires, dateInitiale, onFermer
     return () => window.removeEventListener('keydown', echap)
   }, [onFermer, aSupprimer, enCours])
 
+  const affaireChoisie = affaires.find((a) => a.id === affaireId)
+  const horsApp = !!(evenement?.affaire.horsApp || affaireChoisie?.horsApp)
+  // Une carte à plusieurs dates ne se règle que dans Notion
+  const verrouNotion = (evenement?.notion?.nbDates ?? 0) > 1
+
   const semaine = date ? semaineIso(date) : null
   const pret = affaireId && libelle.trim() && date && !enCours
 
@@ -58,7 +65,9 @@ export function ModaleJalon({ evenement = null, affaires, dateInitiale, onFermer
     if (a) setOrigine(periodeAffaire(a.phase))
   }
 
-  const expliquer = (e) => (e?.code === 'PGRST116' || e?.code === '42501'
+  const expliquer = (e) => (e?.code === 'notion-non-configure' || e?.code === 'injoignable'
+    ? 'Notion ne répond pas : rien n’a été modifié.'
+    : e?.code === 'PGRST116' || e?.code === '42501'
     ? 'La base a refusé l’enregistrement : la migration 070 est-elle passée dans Supabase ?'
     : e?.message ?? String(e))
 
@@ -67,7 +76,9 @@ export function ModaleJalon({ evenement = null, affaires, dateInitiale, onFermer
     setEnCours(true); setErreur(null)
     const valeurs = { libelle: libelle.trim(), couleur, date, semaineAnnee: semaine }
     try {
-      if (creation) await creerJalon(affaireId, origine, valeurs)
+      if (horsApp && creation) await creerEcheanceNotionSeule({ numero: affaireChoisie.numero, reference: affaireChoisie.reference, libelle: libelle.trim(), date })
+      else if (horsApp) await modifierEcheanceNotionSeule(evenement.notion.ligne, { libelle: libelle.trim(), date })
+      else if (creation) await creerJalon(affaireId, origine, valeurs)
       else await modifierJalon(evenement, valeurs)
       onEnregistre()
     } catch (e) { setErreur(expliquer(e)); setEnCours(false) }
@@ -94,7 +105,9 @@ export function ModaleJalon({ evenement = null, affaires, dateInitiale, onFermer
 
           <div>
             <span style={etiquette}>Planning</span>
-            {creation ? (
+            {horsApp ? (
+              <p style={{ margin: 0, fontSize: 13, color: '#5E5854' }}>Affaire absente de l’app : l’échéance vit dans Notion.</p>
+            ) : creation ? (
               <div role="radiogroup" aria-label="Planning" style={{ display: 'flex', gap: 6 }}>
                 {ORIGINES.map(([code, nom]) => (
                   <button key={code} type="button" role="radio" aria-checked={origine === code} onClick={() => setOrigine(code)}
@@ -110,8 +123,8 @@ export function ModaleJalon({ evenement = null, affaires, dateInitiale, onFermer
 
           <div>
             <label style={etiquette} htmlFor="jalon-libelle">Libellé</label>
-            <input id="jalon-libelle" list="jalon-suggestions" value={libelle} onChange={(e) => setLibelle(e.target.value)} placeholder="Rendu APD, réception…" style={champ} />
-            <datalist id="jalon-suggestions">{SUGGESTIONS[origine].map((s) => <option key={s} value={s} />)}</datalist>
+            <input id="jalon-libelle" list="jalon-suggestions" value={libelle} onChange={(e) => setLibelle(e.target.value)} readOnly={verrouNotion} placeholder="Rendu APD, réception…" style={champ} />
+            <datalist id="jalon-suggestions">{(SUGGESTIONS[origine] ?? SUGGESTIONS.etude).map((s) => <option key={s} value={s} />)}</datalist>
           </div>
 
           <div>
@@ -122,8 +135,8 @@ export function ModaleJalon({ evenement = null, affaires, dateInitiale, onFermer
               </p>
             ) : (
               <>
-                <input id="jalon-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} style={champ} />
-                {origine === 'etude' && semaine && (
+                <input id="jalon-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} readOnly={verrouNotion} style={champ} />
+                {origine === 'etude' && !horsApp && semaine && (
                   <p style={{ margin: '5px 0 0', fontSize: 12, color: '#5E5854' }}>
                     Posée en <strong>S{semaine.semaine} {semaine.annee}</strong> au planning d’étude, soit au plus tard le {dateLongue(vendrediSemaineIso(semaine.semaine, semaine.annee))}.
                   </p>
@@ -132,6 +145,7 @@ export function ModaleJalon({ evenement = null, affaires, dateInitiale, onFermer
             )}
           </div>
 
+          {!horsApp && !verrouNotion && (
           <div>
             <span style={etiquette}>Couleur</span>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -141,36 +155,54 @@ export function ModaleJalon({ evenement = null, affaires, dateInitiale, onFermer
               ))}
             </div>
           </div>
+          )}
+
+          {evenement?.notion && (
+            <p style={{ margin: 0, fontSize: 13, color: '#5E5854', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              <MarqueNotion size={14} />
+              {verrouNotion
+                ? 'Cette échéance vient d’une carte Notion qui porte plusieurs dates : elle se modifie dans Notion.'
+                : 'Liée à une carte Notion.'}
+              {' '}
+              <a href={lienCarte(evenement.notion.pageId)} target="_blank" rel="noreferrer" style={{ color: ACCENT, fontWeight: 600 }}>
+                {verrouNotion ? 'Ouvrir la carte dans Notion' : 'Ouvrir dans Notion'}
+              </a>
+            </p>
+          )}
 
           {erreur && <p role="alert" style={{ margin: 0, fontSize: 13, color: '#B8412C' }}>{erreur}</p>}
         </div>
 
         <footer style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 20px 16px', borderTop: '0.5px solid rgba(0,0,0,0.08)', flexWrap: 'wrap' }}>
-          {!creation && (
+          {!creation && !verrouNotion && (
             <>
               <button type="button" onClick={() => setASupprimer(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minHeight: 38, padding: '0 12px', border: '0.5px solid rgba(184,65,44,0.4)', borderRadius: 3, background: 'white', color: '#B8412C', fontSize: 13, cursor: 'pointer' }}>
                 <Trash2 size={14} /> Supprimer
               </button>
-              <button type="button" onClick={() => onOuvrirPlanning(evenement)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minHeight: 38, padding: '0 12px', border: 'none', background: 'none', color: ACCENT, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+              {!horsApp && <button type="button" onClick={() => onOuvrirPlanning(evenement)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minHeight: 38, padding: '0 12px', border: 'none', background: 'none', color: ACCENT, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
                 Ouvrir le planning <ExternalLink size={13} />
-              </button>
+              </button>}
             </>
           )}
           <span style={{ flex: 1 }} />
-          <button type="button" onClick={onFermer} style={{ minHeight: 38, padding: '0 14px', border: '0.5px solid rgba(0,0,0,0.15)', borderRadius: 3, background: 'white', color: '#374151', fontSize: 13, cursor: 'pointer' }}>Annuler</button>
-          <button type="button" onClick={enregistrer} disabled={!pret}
-            style={{ minHeight: 38, padding: '0 16px', border: 'none', borderRadius: 3, background: ACCENT, color: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer', opacity: pret ? 1 : 0.5 }}>
-            {enCours ? 'Enregistrement…' : 'Enregistrer'}
-          </button>
+          <button type="button" onClick={onFermer} style={{ minHeight: 38, padding: '0 14px', border: '0.5px solid rgba(0,0,0,0.15)', borderRadius: 3, background: 'white', color: '#374151', fontSize: 13, cursor: 'pointer' }}>{verrouNotion ? 'Fermer' : 'Annuler'}</button>
+          {!verrouNotion && (
+            <button type="button" onClick={enregistrer} disabled={!pret}
+              style={{ minHeight: 38, padding: '0 16px', border: 'none', borderRadius: 3, background: ACCENT, color: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer', opacity: pret ? 1 : 0.5 }}>
+              {enCours ? 'Enregistrement…' : 'Enregistrer'}
+            </button>
+          )}
         </footer>
       </div>
 
       {aSupprimer && (
         <ModaleConfirmation danger titre="Supprimer cette échéance ?" libelle="Supprimer"
-          texte={`L’échéance « ${evenement.libelle} » sera retirée du ${evenement.origine === 'etude' ? 'planning d’étude' : 'planning chantier'} de ${evenement.affaire.code_affaire}.`}
+          texte={horsApp
+            ? `L’échéance « ${evenement.libelle} » sera retirée de Notion (la carte part à la corbeille).`
+            : `L’échéance « ${evenement.libelle} » sera retirée du ${evenement.origine === 'etude' ? 'planning d’étude' : 'planning chantier'} de ${evenement.affaire.code_affaire}.`}
           onAnnuler={() => setASupprimer(false)}
           onConfirmer={async () => {
-            try { await supprimerJalon(evenement); onEnregistre() } catch (e) { setErreur(expliquer(e)); setASupprimer(false) }
+            try { await (horsApp ? supprimerEcheanceNotionSeule(evenement.notion.ligne) : supprimerJalon(evenement)); onEnregistre() } catch (e) { setErreur(expliquer(e)); setASupprimer(false) }
           }} />
       )}
     </div>,

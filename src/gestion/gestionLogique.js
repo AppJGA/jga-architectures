@@ -8,6 +8,8 @@
 
 import { tachesTriees, enRetard } from '../modules/etude/todo/todoLogique.js'
 import { estAncre } from '../shared/planning/ancrage.js'
+// Jamais depuis echeancesNotionLogique.js : il importe ce fichier (cycle)
+import { COULEUR_NOTION, numeroAffaire, codeCarte } from '../shared/notion/codesAffaire.js'
 
 const JOUR = 86400000
 const iso = (ms) => new Date(ms).toISOString().slice(0, 10)
@@ -161,4 +163,42 @@ export function equipeParAffaire(collaborateurs, profils) {
   }
   for (const liste of m.values()) liste.sort((a, b) => (b.proprietaire - a.proprietaire) || a.initiales.localeCompare(b.initiales))
   return m
+}
+
+// ─── Échéances partagées avec Notion (migration 071) ─────────────────────────
+
+/** Ajoute aux échéances des plannings ce que le registre sait de leur carte. */
+export function marquerNotion(evenements, registre) {
+  const parJalon = new Map((registre ?? []).filter((l) => l.jalon_id != null && l.page_id).map((l) => [`${l.origine}-${l.jalon_id}`, l]))
+  return evenements.map((e) => {
+    const l = parJalon.get(`${e.origine}-${e.jalonId}`)
+    return l ? { ...e, notion: { ligne: l, nbDates: l.nb_dates, pageId: l.page_id } } : e
+  })
+}
+
+/** Échéances des affaires qui n'existent que dans Notion. */
+export function rendusNotion(registre, affaires) {
+  const numeros = new Set((affaires ?? []).map((a) => numeroAffaire(a.code_affaire)).filter(Boolean))
+  return (registre ?? [])
+    .filter((l) => !l.affaire_id && l.date_synchro && l.page_id && !numeros.has(l.numero))
+    .map((l) => ({
+      id: `notion-${l.id}`, date: l.date_synchro, libelle: l.libelle || 'Échéance', couleur: COULEUR_NOTION, origine: 'notion',
+      affaire: { id: `notion-${l.numero}`, code_affaire: codeCarte(l.reference || l.numero), nom: l.reference ?? '', horsApp: true },
+      notion: { ligne: l, nbDates: l.nb_dates, pageId: l.page_id },
+    }))
+}
+
+/** Cartes dont aucune date n'a pu être lue. */
+export function aDater(registre) {
+  return (registre ?? []).filter((l) => !l.date_synchro && l.page_id)
+    .map((l) => ({ id: l.id, texte: l.texte_carte ?? '', pageId: l.page_id, reference: l.reference ?? l.numero }))
+}
+
+/** Affaires de la base Notion absentes de l'app, pour « + Échéance ». */
+export function affairesNotionSeules(references, affaires) {
+  const numeros = new Set((affaires ?? []).map((a) => numeroAffaire(a.code_affaire)).filter(Boolean))
+  const vus = new Set()
+  return (references ?? [])
+    .filter((r) => r.numero && !numeros.has(r.numero) && !vus.has(r.numero) && vus.add(r.numero))
+    .map((r) => ({ id: `notion-${r.numero}`, code_affaire: codeCarte(r.reference), nom: r.reference, horsApp: true, numero: r.numero, reference: r.reference }))
 }

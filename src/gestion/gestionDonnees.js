@@ -5,6 +5,7 @@
 // Supabase ne lève pas d'exception : chaque erreur est relancée ici.
 
 import { supabase } from '../core/supabase/client'
+import { lireRegistre } from '../shared/notion/echeancesNotion'
 
 function verifier({ data, error }) {
   if (error) throw error
@@ -19,17 +20,20 @@ const affairesEtCollaborateurs = () => Promise.all([
 ])
 
 export async function chargerCalendrier() {
-  const [[affaires, collaborateurs], jalonsChantier, jalonsEtude, profils] = await Promise.all([
+  const [[affaires, collaborateurs], jalonsChantier, jalonsEtude, profils, registre] = await Promise.all([
     affairesEtCollaborateurs(),
     // Toutes les colonnes : ancres (053) et `fixe_direction` (070) peuvent manquer
     supabase.from('planning_jalons').select('*'),
     supabase.from('planning_etude_jalons').select('*'),
     // Les initiales de l'équipe ; `est_associe` (067) pour en retirer les associés
     supabase.from('profiles').select('*').eq('type_compte', 'agence'),
+    // null si la migration 071 manque : le calendrier reste ce qu'il était
+    lireRegistre().catch(() => null),
   ])
   return {
     affaires: verifier(affaires), collaborateurs: verifier(collaborateurs),
     jalonsChantier: verifier(jalonsChantier), jalonsEtude: verifier(jalonsEtude), profils: verifier(profils),
+    registre,
   }
 }
 

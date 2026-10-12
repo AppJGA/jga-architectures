@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 876 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude)
+npm test         # 920 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -134,7 +134,7 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
   anglais d'Outlook (marque UTF-8) — l'Outlook classique ne retient que le
   premier contact d'un .vcf. Une icône par fiche donne la carte seule. La
   note de chaque contact porte l'affaire et le rôle.
-- **Base** : `supabase/migrations/`, numérotées, 70 fichiers, **passées à la
+- **Base** : `supabase/migrations/`, numérotées, 71 fichiers, **passées à la
   main** dans le SQL Editor de Supabase : un code qui dépend d'une nouvelle
   colonne doit tolérer son absence tant que la migration n'est pas faite. La photo de
   couverture d'une affaire est `affaires.photo_url` (migration 014, bucket
@@ -653,8 +653,62 @@ associés, sur toutes les pages sauf Gestion d'agence elle-même.
   `document.write`, `load` n'arrive pas toujours. Le détail des rendus suit
   sur des pages à part (date, affaire, rendu, planning, équipe), filtres de
   l'écran rappelés ; tout texte passe par `echapperHtml`.
-- L'envoi des jalons vers Notion reste prévu, à part (décision du
-  2026-10-09 : les deux).
+- Échéances partagées avec Notion : voir la section du même nom.
+
+## Échéances partagées avec Notion
+
+Conception : `docs/superpowers/specs/2026-10-12-echeances-notion-design.md`.
+Les échéances (jalons) des plannings et du calendrier des rendus sont les
+mêmes que les cartes « ECHEANCES RENDUS » du Planning hebdomadaire de
+Notion, dans les deux sens. Code dans `src/shared/notion/` ; passeur
+serveur `api/notion.js` (+ `api/_agence.js`) ; migration 071.
+
+- **La structure de Notion ne change jamais** (demande de l'agence). Une
+  carte est du **texte libre** : titre « N° Affaire », propriétés Jour et
+  Semaine ; la base des affaires donne la « Référence ». L'affaire se
+  reconnaît **aux 4 chiffres seuls** (`codesAffaire.js`, `numeroAffaire`).
+  Les dates se lisent dans le texte (`datesDuTexte`, `lireCarte` : l'année
+  la plus proche de la création de la carte) ; une date déplacée par l'app
+  s'écrit avec l'année sur 2 chiffres (`formatDateCarte`).
+- **Règles de rapprochement** (`planSynchro`, pur, dans
+  `synchroNotionLogique.js`, testé sur cartes inventées) : une carte à
+  **plusieurs dates est en lecture seule dans l'app** (Notion l'emporte) ;
+  une carte supprimée dans Notion ne retire que les échéances **à venir** ;
+  une **lecture partielle n'efface rien** ; **la modification la plus
+  récente l'emporte** (`modifie_le`, migration 071) ; à l'étude le jour de
+  semaine de la carte est gardé (`dateEtude`) ; **pas de doublon à la
+  première liaison** ; une échéance de l'app déjà passée ne crée aucune
+  carte. Une échéance née dans Notion est **grise** (`COULEUR_NOTION`),
+  repérée par `MarqueNotion.jsx`.
+- **Registre `notion_echeances`** (migration 071) : `date_synchro` = la
+  date sur laquelle les deux côtés se sont accordés ; `libelle` (côté
+  Notion) et `libelle_app` (côté app) distincts. Chaque opération porte
+  l'id de sa ligne de registre : **le registre n'est écrit qu'après
+  réussite de l'opération liée** (`echeancesNotion.js`), sinon la passe
+  suivante défairait le geste de l'utilisateur. Les lignes en attente
+  (`page_id` nul) sont réservées par un **bail de 2 minutes** ; l'écriture
+  de `page_id` est conditionnelle, et la carte en double perdante est
+  mise à la corbeille.
+- **Lectures fraîches** : les lectures de la synchro prennent l'alias
+  `synchro_id:id` dans leur `select`, **exclu du cache `supabase-api` du
+  service worker** (`vite.config.js`) : un repli NetworkFirst nourrirait
+  des décisions destructrices avec des données périmées. Pagination par
+  1 000.
+- **Passeur `api/notion.js`** : vérifie le compte agence (`_agence.js`),
+  ne relaie que des opérations validées (`operationValide`,
+  `notionApiLogique.js`), API Notion `2025-09-03`, `maxDuration: 60`
+  (`vercel.json`). Variables Vercel `NOTION_TOKEN`,
+  `NOTION_PLANNING_SOURCE`, `NOTION_ATELIER_SOURCE` — **jamais `VITE_`**.
+- **Déclenchement** (`useEcheancesNotion`) : calendrier à l'ouverture et
+  par « Actualiser depuis Notion » (`CalendrierRendus.jsx`,
+  `ModaleJalon.jsx`) ; chaque planning à l'ouverture et **3 s après tout
+  changement de ses échéances** (signature comparée). Jamais pour un
+  compte en lecture seule ; silencieux hors ligne ou sans la migration
+  (état `indisponible`).
+- **Limites connues** : ⌘Z juste après une synchro peut défaire un
+  changement de Notion qu'elle venait de rapporter. L'ancienne synchro des
+  phases (`useNotionSync`, `useNotionGantt`, `notion-sync-server.mjs`,
+  `VITE_GANTT_SERVER`) ne fonctionne pas sur le site ; laissée en l'état.
 
 ## Suivi financier d'étude
 

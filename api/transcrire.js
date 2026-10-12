@@ -15,6 +15,8 @@
 // Réservé à l'agence : la session Supabase de l'appelant est vérifiée, puis
 // `est_agence()` est demandé avec son propre jeton (règles de la base).
 
+import { verifierAgence } from './_agence.js'
+
 const MISTRAL = 'https://api.mistral.ai/v1/audio/transcriptions'
 const MODELE = 'voxtral-mini-latest'
 // Sous la limite de 4,5 Mo du corps d'une fonction Vercel
@@ -28,18 +30,6 @@ async function lireCorps(req) {
   const morceaux = []
   for await (const m of req) morceaux.push(m)
   return Buffer.concat(morceaux)
-}
-
-async function verifierAgence(url, cle, jeton) {
-  if (!jeton) return 401
-  const entetes = { apikey: cle, Authorization: `Bearer ${jeton}` }
-  const utilisateur = await fetch(`${url}/auth/v1/user`, { headers: entetes })
-  if (!utilisateur.ok) return 401
-  const agence = await fetch(`${url}/rest/v1/rpc/est_agence`, {
-    method: 'POST', headers: { ...entetes, 'Content-Type': 'application/json' }, body: '{}',
-  })
-  if (!agence.ok || (await agence.json()) !== true) return 403
-  return 200
 }
 
 async function appelerMistral(cle, { fichier, lien, vocabulaire }) {

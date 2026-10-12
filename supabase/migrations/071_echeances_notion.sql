@@ -51,13 +51,21 @@ alter table notion_echeances enable row level security;
 drop policy if exists "Agence" on notion_echeances;
 create policy "Agence" on notion_echeances for all to authenticated
   using (public.est_agence()) with check (public.est_agence());
--- Comme toute table d'une affaire (060) : on n'écrit que pour une affaire
--- qu'on peut modifier ; une ligne sans affaire (affaire absente de l'app)
--- reste ouverte à toute l'agence.
+-- Comme toute table d'une affaire (060) : seules les écritures sont restreintes
+-- à une affaire qu'on peut modifier ; la lecture reste ouverte à toute l'agence
+-- (une politique restrictive `for all` l'aurait fermée aussi). Une ligne sans
+-- affaire (affaire absente de l'app) reste ouverte à toute l'agence.
 drop policy if exists "Collaborateurs : écriture" on notion_echeances;
-create policy "Collaborateurs : écriture" on notion_echeances as restrictive for all to authenticated
+drop policy if exists "Collaborateurs : ajout" on notion_echeances;
+create policy "Collaborateurs : ajout" on notion_echeances as restrictive for insert to authenticated
+  with check (affaire_id is null or public.peut_modifier_affaire(affaire_id) or public.acces_gestion());
+drop policy if exists "Collaborateurs : modification" on notion_echeances;
+create policy "Collaborateurs : modification" on notion_echeances as restrictive for update to authenticated
   using (affaire_id is null or public.peut_modifier_affaire(affaire_id) or public.acces_gestion())
   with check (affaire_id is null or public.peut_modifier_affaire(affaire_id) or public.acces_gestion());
+drop policy if exists "Collaborateurs : suppression" on notion_echeances;
+create policy "Collaborateurs : suppression" on notion_echeances as restrictive for delete to authenticated
+  using (affaire_id is null or public.peut_modifier_affaire(affaire_id) or public.acces_gestion());
 
 -- Heure de modification des échéances
 alter table planning_jalons add column if not exists modifie_le timestamptz not null default now();

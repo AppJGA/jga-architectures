@@ -161,6 +161,6 @@ export function useEntreprises() {
     return { error }
   }
 
-  return { entreprises, loading, createEntreprise, updateEntreprise }
+  return { entreprises, loading, createEntreprise, updateEntreprise, refetch: fetch }
 }
 

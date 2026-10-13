@@ -282,6 +282,9 @@ function EntrepriseAssignModal({ lot, entreprises, createEntreprise, tva = 1.2, 
                 <label style={LABEL}>Interlocuteur</label>
                 <select value={interlocuteurId} onChange={e => setInterlocuteurId(e.target.value)} style={INPUT}>
                   <option value="">— Aucun —</option>
+                  {interlocuteurId && interlocuteurId !== NOUVELLE && !personnes.some(p => p.id === interlocuteurId) && (
+                    <option value={interlocuteurId}>(représentant actuel)</option>
+                  )}
                   {personnes.map(p => <option key={p.id} value={p.id}>{libellePersonne(p)}</option>)}
                   <option value={NOUVELLE}>Nouvelle personne…</option>
                 </select>
@@ -758,7 +761,7 @@ function LotDetail({ lot, onEditLot, onAssign, onEditInterlocuteur }) {
 export default function LotsEntreprisesModule({ lectureSeule = false }) {
   const { affaireId } = useParams()
   const { lots, loading, createLot, updateLot, deleteLot, assignerEntreprise, refetch } = useLotsEntreprises(affaireId)
-  const { entreprises, createEntreprise } = useEntreprises()
+  const { entreprises, createEntreprise, refetch: refetchEntreprises } = useEntreprises()
   // Taux de TVA de l'affaire : le TTC d'un marché se déduit de son HT
   const { affaire } = useAffaire(affaireId)
 
@@ -822,7 +825,7 @@ export default function LotsEntreprisesModule({ lectureSeule = false }) {
         })
       }
     }
-    await refetch()
+    await Promise.all([refetch(), refetchEntreprises()])
     setInterlocuteurModalOpen(false)
   }
 

@@ -114,6 +114,8 @@ export default function PersonnesOrganisation({ entreprise, lots, contacts, onCh
       id = res.data?.id
     }
     if (res.error) { setSaving(false); setErreur(res.error.message); return }
+    // Créée : un nouvel essai après un échec ci-dessous modifie la personne, il n'en insère pas une autre
+    if (!existante && id) setMode({ personne: { id, ...champs } })
     // Une seule personne principale par organisation
     if (form.est_principal && id) {
       const { error } = await supabase.from('interlocuteurs').update({ est_principal: false })

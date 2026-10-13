@@ -35,7 +35,8 @@ function getInitials(name) {
 
 // Colonne absente tant que la migration 072 n'est pas passée
 const colonneAbsente = (error, colonne) =>
-  !!error && (error.code === '42703' || error.code === 'PGRST204' || (error.message ?? '').includes(colonne))
+  !!error && (error.code === '42703' || error.code === 'PGRST204') &&
+  new RegExp(`['"]${colonne}['"]|\\.${colonne}\\b`).test(error.message ?? '')
 
 // Rôles d'une organisation dans une affaire, pour l'infobulle d'un badge
 const rolesDansAffaire = (usages, affaireId) =>
@@ -430,6 +431,8 @@ export default function CarnetAdressesPage() {
   const [deletingEntreprise, setDeletingEntreprise] = useState(null)
   const [personnesDe, setPersonnesDe] = useState(null) // id de l'organisation dont on gère les personnes
   const [contactsAffaire, setContactsAffaire] = useState([])
+  const [erreurLecture, setErreurLecture] = useState(null)
+  const [erreurSuppression, setErreurSuppression] = useState(null)
   const [typeFilter, setTypeFilter] = useState('all')
   const [viewMode, setViewMode] = useState(
     () => localStorage.getItem('carnet-view-mode') ?? 'grid'
@@ -440,7 +443,7 @@ export default function CarnetAdressesPage() {
   }, [viewMode])
 
   const fetchEntreprises = useCallback(async () => {
-    const [{ data }, contacts] = await Promise.all([
+    const [{ data, error }, contacts] = await Promise.all([
       supabase
         .from('entreprises')
         .select(`
@@ -448,12 +451,13 @@ export default function CarnetAdressesPage() {
           interlocuteurs(*),
           lot_entreprises(
             id, entreprise_id, interlocuteur_id,
-            lots(id, numero, numero_affiche, nom, affaires(id, nom, code_affaire, phase))
+            lots(*, affaires(id, nom, code_affaire, phase))
           )
         `)
         .order('raison_sociale'),
       lireContactsAffaire(),
     ])
+    setErreurLecture(error ? error.message : null)
     setEntreprises(data ?? [])
     setContactsAffaire(contacts)
     setLoading(false)
@@ -476,13 +480,24 @@ export default function CarnetAdressesPage() {
     setEditing(null)
   }
 
-  const handleDelete = async (id) => {
-    await supabase.from('interlocuteurs').delete().eq('entreprise_id', id)
-    await supabase.from('lot_entreprises').delete().eq('entreprise_id', id)
-    const { error } = await supabase.from('entreprises').delete().eq('id', id)
-    if (error) { console.error('Suppression:', error.message); return }
+  const handleDelete = async (entreprise) => {
+    setErreurSuppression(null)
+    // Attributions d'abord : un refus RLS (affaire non modifiable) ne rend pas d'erreur
+    const connues = entreprise.lot_entreprises?.length ?? 0
+    const { data: retirees, error: errLots } = await supabase
+      .from('lot_entreprises').delete().eq('entreprise_id', entreprise.id).select('id')
+    if (errLots) { setErreurSuppression(errLots.message); return }
+    if ((retirees?.length ?? 0) < connues) {
+      setErreurSuppression("Suppression impossible : l'organisation est attribuée à des lots d'affaires que vous ne pouvez pas modifier.")
+      await fetchEntreprises()
+      return
+    }
+    // Ses personnes partent avec elle (cascade)
+    const { data, error } = await supabase.from('entreprises').delete().eq('id', entreprise.id).select('id')
+    if (error) { setErreurSuppression(error.message); return }
+    if ((data?.length ?? 0) === 0) { setErreurSuppression('Suppression refusée par la base.'); return }
     setDeletingEntreprise(null)
-    setEntreprises(prev => prev.filter(e => e.id !== id))
+    await fetchEntreprises()
   }
 
   const donneesLiens = useMemo(() => ({
@@ -602,6 +617,10 @@ export default function CarnetAdressesPage() {
         <div style={{ display: 'flex', justifyContent: 'center', padding: '60px 0' }}>
           <div style={{ width: 28, height: 28, borderRadius: '50%', border: '2px solid var(--jga-blueprint)', borderTopColor: 'transparent', animation: 'spin 0.7s linear infinite' }} />
         </div>
+      ) : erreurLecture ? (
+        <div style={{ textAlign: 'center', padding: '60px 0', color: '#B8412C', fontSize: 13 }}>
+          Impossible de lire le carnet : {erreurLecture}
+        </div>
       ) : filtered.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '60px 0', color: '#9C9591', fontSize: 13 }}>
           {search || filter !== 'all' || typeFilter !== 'all' ? 'Aucun résultat' : 'Aucune entreprise enregistrée'}
@@ -691,15 +710,16 @@ export default function CarnetAdressesPage() {
                 </div>
               )
             })()}
+            {erreurSuppression && <p style={{ fontSize: 12, color: '#B8412C', marginBottom: 16 }}>{erreurSuppression}</p>}
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button
-                onClick={() => setDeletingEntreprise(null)}
+                onClick={() => { setDeletingEntreprise(null); setErreurSuppression(null) }}
                 style={{ padding: '8px 16px', borderRadius: 2, border: '0.5px solid rgba(0,0,0,0.15)', background: 'transparent', fontSize: 13, cursor: 'pointer', color: '#374151' }}
               >
                 Annuler
               </button>
               <button
-                onClick={() => handleDelete(deletingEntreprise.id)}
+                onClick={() => handleDelete(deletingEntreprise)}
                 style={{ padding: '8px 16px', borderRadius: 2, border: 'none', background: '#B8412C', color: 'white', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}
               >
                 Supprimer définitivement

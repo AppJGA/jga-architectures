@@ -134,7 +134,35 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
   anglais d'Outlook (marque UTF-8) — l'Outlook classique ne retient que le
   premier contact d'un .vcf. Une icône par fiche donne la carte seule. La
   note de chaque contact porte l'affaire et le rôle.
-- **Base** : `supabase/migrations/`, numérotées, 71 fichiers, **passées à la
+  **Carnet d'adresses : plusieurs interlocuteurs par organisation**
+  (migration 072, conception
+  `docs/superpowers/specs/2026-10-13-carnet-interlocuteurs-design.md`).
+  Un contact d'affaire est relié à sa personne du carnet par
+  `affaire_interlocuteurs.interlocuteur_id` (+ `entreprise_id`), mais ses
+  champs copiés restent l'**historique imprimé** dans les CR : modifier le
+  carnet ne change jamais une affaire. `lienDepuisLiaison`
+  (`comptes-rendus/carnetLogique.js`) relie d'après une correspondance de
+  valeurs **seulement** si le contact n'a pas été rempli depuis le carnet et
+  n'est pas déjà lié — sinon l'ancienne fiche remplaçait un choix fait.
+  L'organisation (`entreprises.type` : entreprise / bet / moa / autre,
+  déduit une fois par la 072, filtre dans le carnet) a ses personnes
+  (`PersonnesOrganisation.jsx`). Les **usages** (lots représentés, contacts
+  d'affaire, affaires touchées) se calculent dans
+  `shared/carnet/carnetLiensLogique.js` (testé), jamais stockés ; **une
+  personne utilisée ne se supprime pas** (`personneSupprimable`). Clé de
+  comparaison jumelle : `carnet_cle` (SQL) et `cleComparaison` (JS) à
+  modifier ensemble (ligatures œ / æ développées). Menu de la personne d'un
+  lot (`ordonnerPersonnes`, principale en tête) : remis à zéro quand
+  l'entreprise change, « (représentant actuel) » en repli si la personne
+  n'est plus dans la liste, entreprises relues après l'enregistrement d'une
+  personne. **Suppression d'une organisation** (`handleDelete`) :
+  `peut_modifier_affaire` vérifié sur chaque affaire concernée avant tout
+  retrait (un refus RLS ne rend pas d'erreur), puis les attributions de lots
+  supprimées **avec décompte des lignes**, puis l'organisation (ses
+  personnes partent par cascade). Sans la 072, le carnet et les contacts
+  tolèrent l'absence des colonnes (`type`, `interlocuteur_id`) et
+  réessaient sans elles.
+- **Base** : `supabase/migrations/`, numérotées, 72 fichiers, **passées à la
   main** dans le SQL Editor de Supabase : un code qui dépend d'une nouvelle
   colonne doit tolérer son absence tant que la migration n'est pas faite. La photo de
   couverture d'une affaire est `affaires.photo_url` (migration 014, bucket

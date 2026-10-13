@@ -19,17 +19,30 @@ alter table affaire_interlocuteurs add column if not exists interlocuteur_id uui
 create index if not exists affaire_interlocuteurs_interlocuteur on affaire_interlocuteurs (interlocuteur_id);
 create index if not exists affaire_interlocuteurs_entreprise on affaire_interlocuteurs (entreprise_id);
 
--- Supprimer une organisation emporte ses personnes (cascade) : un lot qui en
--- désignait une perd seulement son représentant
-alter table lot_entreprises drop constraint if exists lot_entreprises_interlocuteur_id_fkey;
+-- Supprimer une personne vide le représentant du lot, sans supprimer le lot.
+-- La contrainte existante est retrouvée dans pg_constraint, quel que soit son
+-- nom réel, puis remplacée par la version nommée.
+do $$
+declare c text;
+begin
+  for c in
+    select con.conname from pg_constraint con
+    join pg_attribute att on att.attrelid = con.conrelid and att.attnum = any (con.conkey)
+    where con.conrelid = 'lot_entreprises'::regclass and con.contype = 'f' and att.attname = 'interlocuteur_id'
+  loop
+    execute format('alter table lot_entreprises drop constraint %I', c);
+  end loop;
+end $$;
 alter table lot_entreprises add constraint lot_entreprises_interlocuteur_id_fkey
   foreign key (interlocuteur_id) references interlocuteurs(id) on delete set null;
 
--- Sans majuscules, accents ni ponctuation ; pas d'extension unaccent supposée
+-- Sans majuscules, accents ni ponctuation ; pas d'extension unaccent supposée.
+-- Les ligatures (œ, æ) s'écrivent en deux lettres avant la translation, pour
+-- que « Gros œuvre » et « Gros oeuvre » donnent la même clé.
 create or replace function carnet_cle(t text) returns text language sql immutable as $$
-  select btrim(regexp_replace(lower(translate(coalesce(t, ''),
-    'ÀÂÄÁÃÅàâäáãåÇçÉÈÊËéèêëÍÌÎÏíìîïÑñÓÒÔÖÕóòôöõÚÙÛÜúùûüÝýÿŒœÆæ',
-    'AAAAAAaaaaaaCcEEEEeeeeIIIIiiiiNnOOOOOoooooUUUUuuuuYyyOoAa')), '[^a-z0-9]+', ' ', 'g'))
+  select btrim(regexp_replace(lower(translate(replace(replace(replace(replace(coalesce(t, ''), 'Œ', 'OE'), 'œ', 'oe'), 'Æ', 'AE'), 'æ', 'ae'),
+    'ÀÂÄÁÃÅàâäáãåÇçÉÈÊËéèêëÍÌÎÏíìîïÑñÓÒÔÖÕóòôöõÚÙÛÜúùûüÝýÿ',
+    'AAAAAAaaaaaaCcEEEEeeeeIIIIiiiiNnOOOOOoooooUUUUuuuuYyy')), '[^a-z0-9]+', ' ', 'g'))
 $$;
 
 -- Reprise : une personne nommée, retrouvée seule dans l'organisation copiée
@@ -43,6 +56,7 @@ with candidats as (
   join interlocuteurs i
     on i.entreprise_id = e.id and carnet_cle(concat_ws(' ', i.prenom, i.nom)) = carnet_cle(concat_ws(' ', ai.prenom, ai.nom))
   where ai.interlocuteur_id is null and carnet_cle(concat_ws(' ', ai.prenom, ai.nom)) <> ''
+    and (ai.entreprise_id is null or ai.entreprise_id = i.entreprise_id)
 )
 update affaire_interlocuteurs ai
 set interlocuteur_id = c.personne_id, entreprise_id = c.entreprise_id
@@ -59,8 +73,8 @@ with candidats as (
 update affaire_interlocuteurs ai set entreprise_id = c.entreprise_id
 from candidats c where c.contact_id = ai.id and c.n = 1;
 
--- Type déduit, une fois : attributaire d'un lot, puis BET, puis MOA. Une
--- fiche déjà typée n'est pas touchée.
+-- Type déduit, une fois : attributaire d'un lot, puis BET, puis MOA.
+-- Seules les fiches encore « autre » (valeur par défaut) sont typées.
 update entreprises e set type = 'entreprise'
 where e.type = 'autre' and exists (select 1 from lot_entreprises le where le.entreprise_id = e.id);
 update entreprises e set type = 'bet'

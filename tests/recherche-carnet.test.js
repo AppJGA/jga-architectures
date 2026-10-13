@@ -50,11 +50,22 @@ test('choisir une personne remplit toute la fiche ; une organisation garde la pe
   assert.deepEqual(remplirDepuis(personne, { categorie: 'csps', prenom: '' }), {
     categorie: 'csps', prenom: 'Damien', nom: 'Vinot', fonction: 'Coordonnateur SPS', organisation: 'Apave',
     adresse: '12 rue des Prés, 01000 Bourg-en-Bresse', telephone: '06 28 20 02 06', email: 'damien.vinot@apave.com',
+    interlocuteur_id: 'dv', entreprise_id: 'apave',
   })
   const marie = filtrerOptions(options, 'marie')[0]
   assert.equal(remplirDepuis(marie, {}).telephone, '04 74 00 00 00', 'à défaut, le numéro de l’organisation')
   const orga = filtrerOptions(options, 'renaud')[0]
   assert.deepEqual(remplirDepuis(orga, { prenom: 'Bastien', nom: 'Desbleds' }), {
     prenom: 'Bastien', nom: 'Desbleds', organisation: 'RENAUD SAS', adresse: 'Mâcon', telephone: '03 85 31 01 33', email: '',
+    entreprise_id: 'renaud', interlocuteur_id: null,
   })
+})
+
+test('choisir dans le carnet garde le lien vers la fiche et la personne', () => {
+  const opts = optionsCarnet([{ id: 'e1', raison_sociale: 'Exemple BET', interlocuteurs: [{ id: 'p1', prenom: 'Alix', nom: 'Durand' }] }])
+  const personne = opts.find((o) => o.type === 'personne')
+  const fiche = opts.find((o) => o.type === 'organisation')
+  assert.deepEqual([personne.champs.interlocuteur_id, personne.champs.entreprise_id], ['p1', 'e1'])
+  const apres = remplirDepuis(fiche, { prenom: 'X', interlocuteur_id: 'p9', entreprise_id: 'e9' })
+  assert.deepEqual([apres.interlocuteur_id, apres.entreprise_id, apres.prenom], [null, 'e1', 'X'])
 })

@@ -4,6 +4,10 @@ import { supabase } from '../../core/supabase/client'
 import { CATEGORIE_META } from '../carnet/categoriesContact.js'
 export { CATEGORIE_META }
 
+// Sans la migration 072, la colonne manque : on réécrit sans elle
+const colonneAbsente = (error) => /interlocuteur_id/.test(error?.message ?? '') && ['PGRST204', '42703'].includes(error?.code)
+const sansLien = (champs) => { const reste = { ...champs }; delete reste.interlocuteur_id; return reste }
+
 export function useAffaireInterlocuteurs(affaireId) {
   const [interlocuteurs, setInterlocuteurs] = useState([])
   const [loading, setLoading] = useState(true)
@@ -24,18 +28,16 @@ export function useAffaireInterlocuteurs(affaireId) {
 
   const addInterlocuteur = useCallback(async (payload) => {
     const maxOrdre = interlocuteurs.reduce((m, i) => Math.max(m, i.ordre), -1)
-    const { error } = await supabase
-      .from('affaire_interlocuteurs')
-      .insert({ affaire_id: affaireId, ordre: maxOrdre + 1, ...payload })
+    const ligne = { affaire_id: affaireId, ordre: maxOrdre + 1, ...payload }
+    let { error } = await supabase.from('affaire_interlocuteurs').insert(ligne)
+    if (colonneAbsente(error)) ({ error } = await supabase.from('affaire_interlocuteurs').insert(sansLien(ligne)))
     if (error) throw error
     await fetchAll()
   }, [affaireId, interlocuteurs, fetchAll])
 
   const updateInterlocuteur = useCallback(async (id, payload) => {
-    const { error } = await supabase
-      .from('affaire_interlocuteurs')
-      .update(payload)
-      .eq('id', id)
+    let { error } = await supabase.from('affaire_interlocuteurs').update(payload).eq('id', id)
+    if (colonneAbsente(error)) ({ error } = await supabase.from('affaire_interlocuteurs').update(sansLien(payload)).eq('id', id))
     if (error) throw error
     await fetchAll()
   }, [fetchAll])

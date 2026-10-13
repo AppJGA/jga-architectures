@@ -24,6 +24,7 @@ export function optionsCarnet(entreprises = []) {
         champs: {
           prenom: vide(i.prenom), nom: vide(i.nom), fonction: vide(i.fonction),
           organisation: vide(e.raison_sociale), adresse, telephone: vide(telephone), email: vide(email),
+          interlocuteur_id: i.id, entreprise_id: e.id,
         },
         texte: norm([i.prenom, i.nom, i.fonction, i.telephone, i.email, e.raison_sociale, e.adresse, lieu, e.telephone, e.email].join(' ')),
         chiffres: chiffres(i.telephone, e.telephone, e.code_postal),
@@ -34,7 +35,9 @@ export function optionsCarnet(entreprises = []) {
       titre: e.raison_sociale,
       detail: [adresse, e.telephone, e.email].filter(Boolean).join(' · '),
       // Une organisation ne remplace pas la personne déjà saisie
-      champs: { organisation: vide(e.raison_sociale), adresse, telephone: vide(e.telephone), email: vide(e.email) },
+      champs: { organisation: vide(e.raison_sociale), adresse, telephone: vide(e.telephone), email: vide(e.email),
+        // La fiche seule : le lien vers une personne d'avant ne vaut plus
+        entreprise_id: e.id, interlocuteur_id: null },
       texte: norm([e.raison_sociale, e.adresse, lieu, e.telephone, e.email, e.siret].join(' ')),
       chiffres: chiffres(e.telephone, e.code_postal, e.siret),
     }

@@ -54,10 +54,12 @@ function InterloForm({ initial, onSave, onCancel, onDelete }) {
     setDeCarnet(true)
   }
 
-  const enregistrer = async () => {
+  // Le formulaire à enregistrer peut être passé : `setForm` ne s'applique qu'au
+  // rendu suivant, un lien calculé à l'instant ne passerait pas par `form`.
+  const enregistrer = async (f = form) => {
     setSaving(true)
     try {
-      await onSave({ ...form, categorie_label: form.categorie === 'autre' ? form.categorie_label : null })
+      await onSave({ ...f, categorie_label: f.categorie === 'autre' ? f.categorie_label : null })
     } catch (err) { console.error(err) }
     setSaving(false)
   }
@@ -72,7 +74,7 @@ function InterloForm({ initial, onSave, onCancel, onDelete }) {
         return
       }
     }
-    await enregistrer()
+    await enregistrer(lierAuCarnet(form))
   }
 
   const handleSubmit = async (e) => {
@@ -87,15 +89,24 @@ function InterloForm({ initial, onSave, onCancel, onDelete }) {
     setErreurCarnet(null)
     // Le carnet d'abord : s'il échoue, le formulaire reste ouvert avec le
     // message, et l'on peut décocher la case pour enregistrer quand même
+    let aEnregistrer = lierAuCarnet(form)
     if (proposerCarnet && versCarnet) {
-      try { await verserAuCarnet(form) } catch (err) {
+      try {
+        const r = await verserAuCarnet(form)
+        if (r) aEnregistrer = { ...form, entreprise_id: r.entrepriseId, interlocuteur_id: r.interlocuteurId }
+      } catch (err) {
         setErreurCarnet(`Ajout au carnet d’adresses impossible : ${err?.message ?? err}`)
         setSaving(false)
         return
       }
     }
-    await enregistrer()
+    await enregistrer(aEnregistrer)
   }
+
+  // Un contact retrouvé au carnet par ses valeurs, pas encore relié, l'est à l'enregistrement
+  const lierAuCarnet = (f) => (liaison && !f.interlocuteur_id
+    ? { ...f, entreprise_id: liaison.entreprise.id, interlocuteur_id: liaison.personne?.id ?? null }
+    : f)
 
   // Aussi pour un interlocuteur déjà enregistré dans l'affaire : ceux saisis
   // avant cette case n'ont jamais rejoint le carnet. Rien n'y est recréé s'il

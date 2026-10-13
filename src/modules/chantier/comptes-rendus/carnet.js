@@ -7,7 +7,7 @@
 import { supabase } from '../../../core/supabase/client'
 import { ficheCarnet, memeNom, correspondanceCarnet, ecrituresCarnet } from './carnetLogique'
 
-/** @returns { ficheCreee, personneCreee } ou null s'il n'y avait rien à verser */
+/** @returns { ficheCreee, personneCreee, entrepriseId, interlocuteurId } ou null s'il n'y avait rien à verser */
 export async function verserAuCarnet(form) {
   const fiche = ficheCarnet(form)
   if (!fiche) return null
@@ -27,19 +27,22 @@ export async function verserAuCarnet(form) {
   }
 
   let personneCreee = false
+  let interlocuteurId = null
   if (fiche.interlocuteur) {
     const p = fiche.interlocuteur
     const { data: personnes, error: erreur } = await supabase
       .from('interlocuteurs').select('id, prenom, nom').eq('entreprise_id', entreprise.id)
     if (erreur) throw erreur
-    const dejaLa = (personnes ?? []).some((x) => memeNom(`${x.prenom ?? ''} ${x.nom ?? ''}`, `${p.prenom ?? ''} ${p.nom ?? ''}`))
-    if (!dejaLa) {
-      const { error: e2 } = await supabase.from('interlocuteurs').insert({ ...p, entreprise_id: entreprise.id })
+    const trouvee = (personnes ?? []).find((x) => memeNom(`${x.prenom ?? ''} ${x.nom ?? ''}`, `${p.prenom ?? ''} ${p.nom ?? ''}`))
+    if (trouvee) interlocuteurId = trouvee.id
+    else {
+      const { data, error: e2 } = await supabase.from('interlocuteurs').insert({ ...p, entreprise_id: entreprise.id }).select('id').single()
       if (e2) throw e2
+      interlocuteurId = data.id
       personneCreee = true
     }
   }
-  return { ficheCreee, personneCreee }
+  return { ficheCreee, personneCreee, entrepriseId: entreprise.id, interlocuteurId }
 }
 
 /**

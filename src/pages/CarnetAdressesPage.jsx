@@ -1,7 +1,11 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Search, Plus, Phone, Mail, Pencil, ExternalLink, X, Trash2, LayoutGrid, List } from 'lucide-react'
+import { Search, Plus, Phone, Mail, Pencil, ExternalLink, X, Trash2, LayoutGrid, List, Users } from 'lucide-react'
 import { supabase } from '../core/supabase/client'
+import {
+  TYPES_ORGANISATION, libelleType, usagesDOrganisation, affairesDesUsages,
+} from '../shared/carnet/carnetLiensLogique'
+import PersonnesOrganisation from './carnet/PersonnesOrganisation'
 
 const INPUT = {
   width: '100%', height: 36, padding: '0 12px',
@@ -29,19 +33,25 @@ function getInitials(name) {
     : (words[0][0] + words[1][0]).toUpperCase()
 }
 
-function getUniqueAffaires(entreprise) {
-  const seen = new Set()
-  return (entreprise.lot_entreprises ?? [])
-    .map(le => le.lots?.affaires)
-    .filter(Boolean)
-    .filter(a => { if (seen.has(a.id)) return false; seen.add(a.id); return true })
-}
+// Colonne absente tant que la migration 072 n'est pas passée
+const colonneAbsente = (error, colonne) =>
+  !!error && (error.code === '42703' || error.code === 'PGRST204' || (error.message ?? '').includes(colonne))
+
+// Rôles d'une organisation dans une affaire, pour l'infobulle d'un badge
+const rolesDansAffaire = (usages, affaireId) =>
+  usages.filter(u => u.affaire.id === affaireId).map(u => u.role).join(' ; ')
+
+const PastilleType = ({ type }) => type ? (
+  <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 3, backgroundColor: 'rgba(27,58,92,0.10)', color: 'var(--jga-blueprint)', whiteSpace: 'nowrap' }}>
+    {libelleType(type)}
+  </span>
+) : null
 
 // ─── Carte entreprise (vue grille) ────────────────────────────────────────────
 
-function EntrepriseCard({ entreprise, onEdit, onDelete }) {
+function EntrepriseCard({ entreprise, usages, onEdit, onDelete, onPersonnes }) {
   const navigate = useNavigate()
-  const affaires = getUniqueAffaires(entreprise)
+  const affaires = affairesDesUsages(usages)
   const initials = getInitials(entreprise.raison_sociale)
 
   return (
@@ -87,6 +97,7 @@ function EntrepriseCard({ entreprise, onEdit, onDelete }) {
           }}>
             {entreprise.raison_sociale}
           </p>
+          {entreprise.type && <div style={{ marginBottom: 3 }}><PastilleType type={entreprise.type} /></div>}
           {(entreprise.ville || entreprise.code_postal) && (
             <p style={{ fontSize: 11, color: '#9C9591' }}>
               {[entreprise.ville, entreprise.code_postal].filter(Boolean).join(' · ')}
@@ -149,6 +160,7 @@ function EntrepriseCard({ entreprise, onEdit, onDelete }) {
             {affaires.slice(0, 3).map(a => (
               <span
                 key={a.id}
+                title={rolesDansAffaire(usages, a.id)}
                 onClick={() => navigate(`/affaires/${a.id}`)}
                 style={{
                   fontSize: 10, padding: '2px 8px', borderRadius: 3,
@@ -169,7 +181,10 @@ function EntrepriseCard({ entreprise, onEdit, onDelete }) {
       )}
 
       {/* Actions */}
-      <div style={{ display: 'flex', gap: 6, marginTop: 2 }}>
+      <div style={{ display: 'flex', gap: 6, marginTop: 2, flexWrap: 'wrap' }}>
+        <button onClick={() => onPersonnes(entreprise)} style={{ ...BTN, flex: '1 1 100%', justifyContent: 'center' }}>
+          <Users size={11} /> Personnes ({entreprise.interlocuteurs?.length ?? 0})
+        </button>
         <button onClick={() => onEdit(entreprise)} style={{ ...BTN, flex: 1, justifyContent: 'center' }}>
           <Pencil size={11} /> Éditer
         </button>
@@ -185,10 +200,10 @@ function EntrepriseCard({ entreprise, onEdit, onDelete }) {
 
 // ─── Ligne entreprise (vue liste) ─────────────────────────────────────────────
 
-function EntrepriseRow({ entreprise, onEdit, onDelete }) {
+function EntrepriseRow({ entreprise, usages, onEdit, onDelete, onPersonnes }) {
   const navigate = useNavigate()
   const [hovered, setHovered] = useState(false)
-  const affaires = getUniqueAffaires(entreprise)
+  const affaires = affairesDesUsages(usages)
   const initials = getInitials(entreprise.raison_sociale)
   const principal = entreprise.interlocuteurs?.find(i => i.est_principal) ?? entreprise.interlocuteurs?.[0] ?? null
 
@@ -217,6 +232,7 @@ function EntrepriseRow({ entreprise, onEdit, onDelete }) {
         <span style={{ fontSize: 13, fontWeight: 500, color: '#1F1B17', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {entreprise.raison_sociale}
         </span>
+        <PastilleType type={entreprise.type} />
       </div>
 
       {/* Ville */}
@@ -252,6 +268,7 @@ function EntrepriseRow({ entreprise, onEdit, onDelete }) {
       <div style={{ flex: 1, display: 'flex', justifyContent: 'center', paddingRight: 12 }}>
         {affaires.length > 0
           ? <span
+              title={affaires.map(a => `${a.code_affaire ?? a.nom} : ${rolesDansAffaire(usages, a.id)}`).join('\n')}
               onClick={() => navigate(`/affaires/${affaires[0].id}`)}
               style={{ fontSize: 10, padding: '2px 8px', borderRadius: 3, backgroundColor: 'rgba(27,58,92,0.10)', color: 'var(--jga-blueprint)', border: '0.5px solid rgba(27,58,92,0.2)', cursor: 'pointer' }}
             >
@@ -262,7 +279,14 @@ function EntrepriseRow({ entreprise, onEdit, onDelete }) {
       </div>
 
       {/* Actions */}
-      <div style={{ width: 64, display: 'flex', gap: 4, justifyContent: 'flex-end', opacity: hovered ? 1 : 0, transition: 'opacity 0.15s', flexShrink: 0 }}>
+      <div style={{ width: 96, display: 'flex', gap: 4, justifyContent: 'flex-end', opacity: hovered ? 1 : 0, transition: 'opacity 0.15s', flexShrink: 0 }}>
+        <button
+          onClick={() => onPersonnes(entreprise)}
+          style={{ height: 28, padding: '0 8px', borderRadius: 3, border: '0.5px solid rgba(0,0,0,0.12)', backgroundColor: 'white', color: '#374151', display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, cursor: 'pointer' }}
+          title="Personnes de l'organisation"
+        >
+          <Users size={12} /> {entreprise.interlocuteurs?.length ?? 0}
+        </button>
         <button
           onClick={() => onEdit(entreprise)}
           style={{ width: 28, height: 28, borderRadius: 3, border: '0.5px solid rgba(0,0,0,0.12)', backgroundColor: 'white', color: '#374151', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
@@ -284,7 +308,7 @@ function EntrepriseRow({ entreprise, onEdit, onDelete }) {
 
 // ─── Modale édition entreprise ────────────────────────────────────────────────
 
-function EntrepriseEditModal({ entreprise, onSave, onClose }) {
+function EntrepriseEditModal({ entreprise, avecType, onSave, onClose }) {
   const isNew = !entreprise.id
   const [form, setForm] = useState({
     raison_sociale: entreprise.raison_sociale ?? '',
@@ -294,6 +318,7 @@ function EntrepriseEditModal({ entreprise, onSave, onClose }) {
     telephone: entreprise.telephone ?? '',
     email: entreprise.email ?? '',
     siret: entreprise.siret ?? '',
+    type: entreprise.type ?? 'autre',
   })
   const [saving, setSaving] = useState(false)
 
@@ -302,7 +327,8 @@ function EntrepriseEditModal({ entreprise, onSave, onClose }) {
   const handleSubmit = async () => {
     if (!form.raison_sociale.trim()) return
     setSaving(true)
-    await onSave({ ...form, raison_sociale: form.raison_sociale.trim() })
+    const { type, ...reste } = form
+    await onSave({ ...reste, ...(avecType ? { type } : {}), raison_sociale: form.raison_sociale.trim() })
     setSaving(false)
   }
 
@@ -312,7 +338,6 @@ function EntrepriseEditModal({ entreprise, onSave, onClose }) {
     >
       <div
         style={{ backgroundColor: 'white', borderRadius: 0, padding: 28, width: '100%', maxWidth: 480, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 8px 40px rgba(0,0,0,0.12)' }}
-        onClick={e => e.stopPropagation()}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
           <h2 style={{ fontSize: 15, fontWeight: 500, color: '#1F1B17' }}>
@@ -328,6 +353,14 @@ function EntrepriseEditModal({ entreprise, onSave, onClose }) {
             <label style={LABEL}>Raison sociale *</label>
             <input value={form.raison_sociale} onChange={set('raison_sociale')} style={INPUT} autoFocus />
           </div>
+          {avecType && (
+            <div>
+              <label style={LABEL}>Type</label>
+              <select value={form.type} onChange={set('type')} style={INPUT}>
+                {TYPES_ORGANISATION.map(t => <option key={t.code} value={t.code}>{t.libelle}</option>)}
+              </select>
+            </div>
+          )}
           <div>
             <label style={LABEL}>Adresse</label>
             <input value={form.adresse} onChange={set('adresse')} style={INPUT} />
@@ -371,6 +404,21 @@ function EntrepriseEditModal({ entreprise, onSave, onClose }) {
   )
 }
 
+// Contacts d'affaire reliés au carnet ; sans la colonne `interlocuteur_id`
+// (migration 072 pas passée), seul le lien à l'organisation est relu.
+async function lireContactsAffaire() {
+  const colonnes = 'id, entreprise_id, categorie, categorie_label, affaires(id, nom, code_affaire)'
+  let { data, error } = await supabase
+    .from('affaire_interlocuteurs')
+    .select(colonnes.replace('entreprise_id,', 'entreprise_id, interlocuteur_id,'))
+    .or('interlocuteur_id.not.is.null,entreprise_id.not.is.null')
+  if (colonneAbsente(error, 'interlocuteur_id')) {
+    ;({ data, error } = await supabase.from('affaire_interlocuteurs').select(colonnes).not('entreprise_id', 'is', null))
+  }
+  if (error) return []
+  return (data ?? []).map(c => ({ ...c, interlocuteur_id: c.interlocuteur_id ?? null, affaire: c.affaires }))
+}
+
 // ─── Page principale ───────────────────────────────────────────────────────────
 
 export default function CarnetAdressesPage() {
@@ -380,6 +428,9 @@ export default function CarnetAdressesPage() {
   const [filter, setFilter] = useState('all')
   const [editing, setEditing] = useState(null)
   const [deletingEntreprise, setDeletingEntreprise] = useState(null)
+  const [personnesDe, setPersonnesDe] = useState(null) // id de l'organisation dont on gère les personnes
+  const [contactsAffaire, setContactsAffaire] = useState([])
+  const [typeFilter, setTypeFilter] = useState('all')
   const [viewMode, setViewMode] = useState(
     () => localStorage.getItem('carnet-view-mode') ?? 'grid'
   )
@@ -389,29 +440,38 @@ export default function CarnetAdressesPage() {
   }, [viewMode])
 
   const fetchEntreprises = useCallback(async () => {
-    const { data } = await supabase
-      .from('entreprises')
-      .select(`
-        *,
-        interlocuteurs(id, prenom, nom, fonction, est_principal),
-        lot_entreprises(
-          id,
-          lots(id, nom, affaires(id, nom, code_affaire, phase))
-        )
-      `)
-      .order('raison_sociale')
+    const [{ data }, contacts] = await Promise.all([
+      supabase
+        .from('entreprises')
+        .select(`
+          *,
+          interlocuteurs(*),
+          lot_entreprises(
+            id, entreprise_id, interlocuteur_id,
+            lots(id, numero, numero_affiche, nom, affaires(id, nom, code_affaire, phase))
+          )
+        `)
+        .order('raison_sociale'),
+      lireContactsAffaire(),
+    ])
     setEntreprises(data ?? [])
+    setContactsAffaire(contacts)
     setLoading(false)
   }, [])
 
   useEffect(() => { fetchEntreprises() }, [fetchEntreprises])
 
   const handleSave = async (data) => {
-    if (editing?.id) {
-      await supabase.from('entreprises').update(data).eq('id', editing.id)
-    } else {
-      await supabase.from('entreprises').insert(data)
+    const ecrire = (champs) => editing?.id
+      ? supabase.from('entreprises').update(champs).eq('id', editing.id)
+      : supabase.from('entreprises').insert(champs)
+    let { error } = await ecrire(data)
+    if (colonneAbsente(error, 'type') && 'type' in data) {
+      const sansType = { ...data }
+      delete sansType.type
+      ;({ error } = await ecrire(sansType))
     }
+    if (error) { console.error('Enregistrement:', error.message); return }
     await fetchEntreprises()
     setEditing(null)
   }
@@ -425,6 +485,16 @@ export default function CarnetAdressesPage() {
     setEntreprises(prev => prev.filter(e => e.id !== id))
   }
 
+  const donneesLiens = useMemo(() => ({
+    lots: entreprises.flatMap(e => (e.lot_entreprises ?? [])
+      .filter(le => le.lots?.affaires)
+      .map(le => ({ id: le.id, entreprise_id: le.entreprise_id ?? e.id, interlocuteur_id: le.interlocuteur_id ?? null, lot: le.lots, affaire: le.lots.affaires }))),
+    contacts: contactsAffaire,
+  }), [entreprises, contactsAffaire])
+  const usagesDe = useCallback(e => usagesDOrganisation(e, donneesLiens), [donneesLiens])
+  const typeDisponible = entreprises.some(e => e.type)
+  const organisationPersonnes = entreprises.find(e => e.id === personnesDe) ?? null
+
   const filtered = entreprises.filter(e => {
     const q = search.toLowerCase()
     const matchSearch = !q ||
@@ -433,7 +503,8 @@ export default function CarnetAdressesPage() {
       e.email?.toLowerCase().includes(q) ||
       (e.siret ?? '').includes(q)
     if (!matchSearch) return false
-    const affCount = getUniqueAffaires(e).length
+    if (typeFilter !== 'all' && (e.type ?? 'autre') !== typeFilter) return false
+    const affCount = affairesDesUsages(usagesDe(e)).length
     if (filter === 'avec-affaire') return affCount > 0
     if (filter === 'sans-affaire') return affCount === 0
     return true
@@ -497,6 +568,25 @@ export default function CarnetAdressesPage() {
             </button>
           ))}
         </div>
+        {typeDisponible && (
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {[{ code: 'all', pluriel: 'Tous types' }, ...TYPES_ORGANISATION].map(t => (
+              <button
+                key={t.code}
+                onClick={() => setTypeFilter(t.code)}
+                style={{
+                  padding: '5px 14px', borderRadius: 3, fontSize: 12, cursor: 'pointer',
+                  border: typeFilter === t.code ? '0.5px solid var(--jga-blueprint)' : '0.5px solid rgba(0,0,0,0.12)',
+                  backgroundColor: typeFilter === t.code ? 'rgba(27,58,92,0.10)' : 'white',
+                  color: typeFilter === t.code ? 'var(--jga-blueprint)' : '#5E5854',
+                  fontWeight: typeFilter === t.code ? 500 : 400,
+                }}
+              >
+                {t.pluriel}
+              </button>
+            ))}
+          </div>
+        )}
         <div style={{ display: 'flex', gap: 4 }}>
           <button onClick={() => setViewMode('grid')} style={toggleBtnStyle(viewMode === 'grid')} title="Vue grille">
             <LayoutGrid size={15} />
@@ -514,12 +604,12 @@ export default function CarnetAdressesPage() {
         </div>
       ) : filtered.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '60px 0', color: '#9C9591', fontSize: 13 }}>
-          {search || filter !== 'all' ? 'Aucun résultat' : 'Aucune entreprise enregistrée'}
+          {search || filter !== 'all' || typeFilter !== 'all' ? 'Aucun résultat' : 'Aucune entreprise enregistrée'}
         </div>
       ) : viewMode === 'grid' ? (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16 }}>
           {filtered.map(e => (
-            <EntrepriseCard key={e.id} entreprise={e} onEdit={setEditing} onDelete={setDeletingEntreprise} />
+            <EntrepriseCard key={e.id} entreprise={e} usages={usagesDe(e)} onEdit={setEditing} onDelete={setDeletingEntreprise} onPersonnes={x => setPersonnesDe(x.id)} />
           ))}
         </div>
       ) : (
@@ -537,10 +627,10 @@ export default function CarnetAdressesPage() {
             <div style={{ flex: 2 }}>Email</div>
             <div style={{ flex: 2 }}>Interlocuteur</div>
             <div style={{ flex: 1, textAlign: 'center' }}>Affaires</div>
-            <div style={{ width: 64 }} />
+            <div style={{ width: 96 }} />
           </div>
           {filtered.map(e => (
-            <EntrepriseRow key={e.id} entreprise={e} onEdit={setEditing} onDelete={setDeletingEntreprise} />
+            <EntrepriseRow key={e.id} entreprise={e} usages={usagesDe(e)} onEdit={setEditing} onDelete={setDeletingEntreprise} onPersonnes={x => setPersonnesDe(x.id)} />
           ))}
         </div>
       )}
@@ -549,8 +639,19 @@ export default function CarnetAdressesPage() {
       {editing !== null && (
         <EntrepriseEditModal
           entreprise={editing}
+          avecType={typeDisponible || entreprises.length === 0}
           onSave={handleSave}
           onClose={() => setEditing(null)}
+        />
+      )}
+
+      {organisationPersonnes && (
+        <PersonnesOrganisation
+          entreprise={organisationPersonnes}
+          lots={donneesLiens.lots}
+          contacts={donneesLiens.contacts}
+          onChange={fetchEntreprises}
+          onClose={() => setPersonnesDe(null)}
         />
       )}
 
@@ -561,7 +662,6 @@ export default function CarnetAdressesPage() {
         >
           <div
             style={{ background: 'white', borderRadius: 0, padding: '28px 32px', maxWidth: 420, width: '100%', border: '0.5px solid rgba(0,0,0,0.08)', boxShadow: '0 8px 40px rgba(0,0,0,0.12)' }}
-            onClick={e => e.stopPropagation()}
           >
             <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', marginBottom: 16 }}>
               <div style={{ width: 40, height: 40, borderRadius: 2, background: 'rgba(184,65,44,0.10)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -575,6 +675,22 @@ export default function CarnetAdressesPage() {
             <p style={{ fontSize: 13, color: '#5E5854', lineHeight: 1.6, marginBottom: 24 }}>
               Cette action est <strong>irréversible</strong>. L'entreprise sera supprimée du carnet d'adresses, retirée de tous les lots auxquels elle est assignée, et tous ses interlocuteurs seront supprimés.
             </p>
+            {(() => {
+              const usagesSuppr = usagesDe(deletingEntreprise)
+              const affairesSuppr = affairesDesUsages(usagesSuppr)
+              if (affairesSuppr.length === 0) return null
+              return (
+                <div style={{ fontSize: 12, color: '#5E5854', lineHeight: 1.6, marginBottom: 24, marginTop: -12 }}>
+                  <p style={{ marginBottom: 4 }}>Elle intervient dans {affairesSuppr.length > 1 ? 'ces affaires' : 'cette affaire'} :</p>
+                  <ul style={{ margin: '0 0 8px 16px', padding: 0 }}>
+                    {affairesSuppr.map(a => (
+                      <li key={a.id}><strong>{a.code_affaire ?? a.nom}</strong> · {rolesDansAffaire(usagesSuppr, a.id)}</li>
+                    ))}
+                  </ul>
+                  <p>Les lots concernés n'auront plus d'entreprise attribuée ; les contacts d'affaire gardent leurs coordonnées.</p>
+                </div>
+              )
+            })()}
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button
                 onClick={() => setDeletingEntreprise(null)}

@@ -4,6 +4,7 @@ import {
   Plus, MoreHorizontal, Phone, Mail, Pencil, X, Check, Search,
 } from 'lucide-react'
 import { IconeEntreprisesLots } from '../../../shared/icones/IconesAffaire'
+import { ordonnerPersonnes, libellePersonne } from '../../../shared/lots/personnesEntreprise'
 import { useLotsEntreprises, useEntreprises } from '../../../shared/hooks/useLotsEntreprises'
 import { supabase } from '../../../core/supabase/client'
 import { numeroLot, lireNumeroSaisi } from '../../../shared/lots/numeroLot'
@@ -147,8 +148,10 @@ function LotFormModal({ lots, editingLot, onSave, onClose }) {
   )
 }
 
+const NOUVELLE = '__nouvelle__'
+
 // ─── EntrepriseAssignModal ────────────────────────────────────────────────────
-function EntrepriseAssignModal({ lot, entreprises, createEntreprise, tva = 1.2, onSave, onClose }) {
+function EntrepriseAssignModal({ lot, entreprises, createEntreprise, tva = 1.2, onSave, onNouvellePersonne, onClose }) {
   const navigate = useNavigate()
   const [tab, setTab] = useState('existing')
   const [search, setSearch] = useState('')
@@ -164,7 +167,16 @@ function EntrepriseAssignModal({ lot, entreprises, createEntreprise, tva = 1.2, 
     date_notification: lot.date_notification ?? '',
     observations: lot.observations ?? '',
   })
+  // '' = aucun, NOUVELLE = créer la personne après l'attribution
+  const [interlocuteurId, setInterlocuteurId] = useState(lot.interlocuteur_id ?? '')
   const [saving, setSaving] = useState(false)
+
+  // L'ancien représentant ne suit pas une autre entreprise
+  const choisirEntreprise = (e) => {
+    if (e.id !== selectedE?.id) setInterlocuteurId('')
+    setSelectedE(e)
+  }
+  const personnes = ordonnerPersonnes(entreprises.find(e => e.id === selectedE?.id)?.interlocuteurs)
 
   const filtered = entreprises.filter(e =>
     !search ||
@@ -186,13 +198,14 @@ function EntrepriseAssignModal({ lot, entreprises, createEntreprise, tva = 1.2, 
     if (!entreprise_id) { setSaving(false); return }
     await onSave({
       entreprise_id,
-      interlocuteur_id: lot.interlocuteur_id ?? null,
+      interlocuteur_id: tab === 'existing' && interlocuteurId && interlocuteurId !== NOUVELLE ? interlocuteurId : null,
       montant_marche_ht: marche.montant_marche_ht ? Number(marche.montant_marche_ht) : null,
       // Le HT se saisit, le TTC suit au taux de TVA de l'affaire
       montant_marche_ttc: marche.montant_marche_ht ? ttcDe(marche.montant_marche_ht, tva) : null,
       date_notification: marche.date_notification || null,
       observations: marche.observations || null,
     })
+    if (tab === 'existing' && interlocuteurId === NOUVELLE) onNouvellePersonne?.()
     setSaving(false)
   }
 
@@ -250,7 +263,7 @@ function EntrepriseAssignModal({ lot, entreprises, createEntreprise, tva = 1.2, 
               ) : filtered.map(e => (
                 <button
                   key={e.id}
-                  onClick={() => setSelectedE(e)}
+                  onClick={() => choisirEntreprise(e)}
                   style={{
                     width: '100%', textAlign: 'left', padding: '8px 12px',
                     borderRadius: 2, border: 'none', cursor: 'pointer',
@@ -264,6 +277,16 @@ function EntrepriseAssignModal({ lot, entreprises, createEntreprise, tva = 1.2, 
                 </button>
               ))}
             </div>
+            {selectedE && (
+              <div style={{ marginTop: 12 }}>
+                <label style={LABEL}>Interlocuteur</label>
+                <select value={interlocuteurId} onChange={e => setInterlocuteurId(e.target.value)} style={INPUT}>
+                  <option value="">— Aucun —</option>
+                  {personnes.map(p => <option key={p.id} value={p.id}>{libellePersonne(p)}</option>)}
+                  <option value={NOUVELLE}>Nouvelle personne…</option>
+                </select>
+              </div>
+            )}
           </div>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
@@ -863,6 +886,7 @@ export default function LotsEntreprisesModule({ lectureSeule = false }) {
           entreprises={entreprises}
           createEntreprise={createEntreprise}
           onSave={handleAssignSave}
+          onNouvellePersonne={() => setInterlocuteurModalOpen(true)}
           onClose={() => setAssignModalOpen(false)}
         />
       )}

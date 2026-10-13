@@ -137,7 +137,7 @@ export function useEntreprises() {
     setLoading(true)
     const { data } = await supabase
       .from('entreprises')
-      .select('*')
+      .select('*, interlocuteurs(id, prenom, nom, fonction, est_principal)')
       .order('raison_sociale', { ascending: true })
     setEntreprises(data ?? [])
     setLoading(false)

@@ -69,5 +69,10 @@ export function filtrerOptions(options = [], requete = '', max = 60) {
 
 /** Le formulaire rempli par l'option choisie. */
 export function remplirDepuis(option, form = {}) {
-  return { ...form, ...option.champs }
+  const rempli = { ...form, ...option.champs }
+  // La fiche seule garde la personne déjà liée si elle en fait partie
+  if (option.type === 'organisation' && form.entreprise_id === option.champs.entreprise_id) {
+    rempli.interlocuteur_id = form.interlocuteur_id ?? null
+  }
+  return rempli
 }

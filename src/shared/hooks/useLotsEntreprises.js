@@ -146,11 +146,12 @@ export function useEntreprises() {
   useEffect(() => { fetch() }, [fetch])
 
   const createEntreprise = async (data) => {
-    const { data: result, error } = await supabase
-      .from('entreprises')
-      .insert(data)
-      .select()
-      .single()
+    // Type « entreprise » d'office ; retenté sans lui tant que la migration 072 manque
+    const inserer = (champs) => supabase.from('entreprises').insert(champs).select().single()
+    let { data: result, error } = await inserer({ type: 'entreprise', ...data })
+    if (error && ['42703', 'PGRST204'].includes(error.code) && /['"]type['"]|\.type\b/.test(error.message ?? '')) {
+      ;({ data: result, error } = await inserer(data))
+    }
     if (!error) await fetch()
     return { data: result, error }
   }

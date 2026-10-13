@@ -409,15 +409,34 @@ function EntrepriseEditModal({ entreprise, avecType, onSave, onClose }) {
 // (migration 072 pas passée), seul le lien à l'organisation est relu.
 async function lireContactsAffaire() {
   const colonnes = 'id, entreprise_id, categorie, categorie_label, affaires(id, nom, code_affaire)'
-  let { data, error } = await supabase
-    .from('affaire_interlocuteurs')
-    .select(colonnes.replace('entreprise_id,', 'entreprise_id, interlocuteur_id,'))
-    .or('interlocuteur_id.not.is.null,entreprise_id.not.is.null')
-  if (colonneAbsente(error, 'interlocuteur_id')) {
-    ;({ data, error } = await supabase.from('affaire_interlocuteurs').select(colonnes).not('entreprise_id', 'is', null))
+  const lignes = []
+  let avecLien = true
+  let dernier = null
+  // Pagination par identifiant (1 000 lignes par réponse au plus)
+  for (;;) {
+    let requete = avecLien
+      ? supabase.from('affaire_interlocuteurs')
+        .select(colonnes.replace('entreprise_id,', 'entreprise_id, interlocuteur_id,'))
+        .or('interlocuteur_id.not.is.null,entreprise_id.not.is.null')
+      : supabase.from('affaire_interlocuteurs').select(colonnes).not('entreprise_id', 'is', null)
+    requete = requete.order('id')
+    if (dernier != null) requete = requete.gt('id', dernier)
+    const { data, error } = await requete.limit(1000)
+    if (avecLien && colonneAbsente(error, 'interlocuteur_id')) {
+      avecLien = false
+      lignes.length = 0
+      dernier = null
+      continue
+    }
+    if (error) return { contacts: [], erreur: error.message }
+    lignes.push(...(data ?? []))
+    if ((data?.length ?? 0) < 1000) break
+    dernier = data[data.length - 1].id
   }
-  if (error) return []
-  return (data ?? []).map(c => ({ ...c, interlocuteur_id: c.interlocuteur_id ?? null, affaire: c.affaires }))
+  return {
+    contacts: lignes.map(c => ({ ...c, interlocuteur_id: c.interlocuteur_id ?? null, affaire: c.affaires })),
+    erreur: null,
+  }
 }
 
 // ─── Page principale ───────────────────────────────────────────────────────────
@@ -431,6 +450,8 @@ export default function CarnetAdressesPage() {
   const [deletingEntreprise, setDeletingEntreprise] = useState(null)
   const [personnesDe, setPersonnesDe] = useState(null) // id de l'organisation dont on gère les personnes
   const [contactsAffaire, setContactsAffaire] = useState([])
+  const [contactsLus, setContactsLus] = useState(false)
+  const [suppressionEnCours, setSuppressionEnCours] = useState(false)
   const [erreurLecture, setErreurLecture] = useState(null)
   const [erreurSuppression, setErreurSuppression] = useState(null)
   const [typeFilter, setTypeFilter] = useState('all')
@@ -443,7 +464,7 @@ export default function CarnetAdressesPage() {
   }, [viewMode])
 
   const fetchEntreprises = useCallback(async () => {
-    const [{ data, error }, contacts] = await Promise.all([
+    const [{ data, error }, lecture] = await Promise.all([
       supabase
         .from('entreprises')
         .select(`
@@ -457,9 +478,10 @@ export default function CarnetAdressesPage() {
         .order('raison_sociale'),
       lireContactsAffaire(),
     ])
-    setErreurLecture(error ? error.message : null)
+    setErreurLecture(error ? error.message : lecture.erreur)
     setEntreprises(data ?? [])
-    setContactsAffaire(contacts)
+    setContactsAffaire(lecture.contacts)
+    setContactsLus(!lecture.erreur)
     setLoading(false)
   }, [])
 
@@ -481,6 +503,12 @@ export default function CarnetAdressesPage() {
   }
 
   const handleDelete = async (entreprise) => {
+    if (suppressionEnCours) return
+    setSuppressionEnCours(true)
+    try { await supprimerOrganisation(entreprise) } finally { setSuppressionEnCours(false) }
+  }
+
+  const supprimerOrganisation = async (entreprise) => {
     setErreurSuppression(null)
     // Avant tout retrait : un refus RLS ne rend pas d'erreur et laisserait une suppression à moitié faite.
     // Le paramètre de la fonction SQL s'appelle `cible` (migrations 060 / 069).
@@ -522,7 +550,11 @@ export default function CarnetAdressesPage() {
       .map(le => ({ id: le.id, entreprise_id: le.entreprise_id ?? e.id, interlocuteur_id: le.interlocuteur_id ?? null, lot: le.lots, affaire: le.lots.affaires }))),
     contacts: contactsAffaire,
   }), [entreprises, contactsAffaire])
-  const usagesDe = useCallback(e => usagesDOrganisation(e, donneesLiens), [donneesLiens])
+  const usagesParOrganisation = useMemo(
+    () => new Map(entreprises.map(e => [e.id, usagesDOrganisation(e, donneesLiens)])),
+    [entreprises, donneesLiens],
+  )
+  const usagesDe = useCallback(e => usagesParOrganisation.get(e.id) ?? [], [usagesParOrganisation])
   const typeDisponible = entreprises.some(e => e.type)
   const organisationPersonnes = entreprises.find(e => e.id === personnesDe) ?? null
 
@@ -685,6 +717,7 @@ export default function CarnetAdressesPage() {
           entreprise={organisationPersonnes}
           lots={donneesLiens.lots}
           contacts={donneesLiens.contacts}
+          verificationImpossible={!contactsLus}
           onChange={fetchEntreprises}
           onClose={() => setPersonnesDe(null)}
         />
@@ -736,9 +769,10 @@ export default function CarnetAdressesPage() {
               </button>
               <button
                 onClick={() => handleDelete(deletingEntreprise)}
-                style={{ padding: '8px 16px', borderRadius: 2, border: 'none', background: '#B8412C', color: 'white', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}
+                disabled={suppressionEnCours}
+                style={{ padding: '8px 16px', borderRadius: 2, border: 'none', background: '#B8412C', color: 'white', fontSize: 13, fontWeight: 500, cursor: suppressionEnCours ? 'default' : 'pointer', opacity: suppressionEnCours ? 0.6 : 1 }}
               >
-                Supprimer définitivement
+                {suppressionEnCours ? 'Suppression…' : 'Supprimer définitivement'}
               </button>
             </div>
           </div>

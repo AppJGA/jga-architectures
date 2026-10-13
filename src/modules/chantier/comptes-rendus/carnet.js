@@ -5,10 +5,10 @@
 // Une fiche ou une personne déjà présente n'est pas recréée.
 
 import { supabase } from '../../../core/supabase/client'
-import { ficheCarnet, memeNom, correspondanceCarnet, ecrituresCarnet } from './carnetLogique'
+import { ficheCarnet, memeNom, correspondanceCarnet, ecrituresCarnet, typeDepuisCategorie } from './carnetLogique'
 
 /** @returns { ficheCreee, personneCreee, entrepriseId, interlocuteurId } ou null s'il n'y avait rien à verser */
-export async function verserAuCarnet(form) {
+export async function verserAuCarnet(form, categorie) {
   const fiche = ficheCarnet(form)
   if (!fiche) return null
   const raison = fiche.entreprise.raison_sociale
@@ -20,7 +20,12 @@ export async function verserAuCarnet(form) {
   let entreprise = (proches ?? []).find((e) => memeNom(e.raison_sociale, raison))
   let ficheCreee = false
   if (!entreprise) {
-    const { data, error: erreur } = await supabase.from('entreprises').insert(fiche.entreprise).select('id').single()
+    // Type d'après la catégorie du contact ; retenté sans lui tant que la migration 072 manque
+    const inserer = (champs) => supabase.from('entreprises').insert(champs).select('id').single()
+    let { data, error: erreur } = await inserer({ ...fiche.entreprise, type: typeDepuisCategorie(categorie) })
+    if (erreur && ['42703', 'PGRST204'].includes(erreur.code) && /['"]type['"]|\.type\b/.test(erreur.message ?? '')) {
+      ;({ data, error: erreur } = await inserer(fiche.entreprise))
+    }
     if (erreur) throw erreur
     entreprise = data
     ficheCreee = true

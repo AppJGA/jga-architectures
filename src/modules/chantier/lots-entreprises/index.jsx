@@ -170,6 +170,7 @@ function EntrepriseAssignModal({ lot, entreprises, createEntreprise, tva = 1.2, 
   // '' = aucun, NOUVELLE = créer la personne après l'attribution
   const [interlocuteurId, setInterlocuteurId] = useState(lot.interlocuteur_id ?? '')
   const [saving, setSaving] = useState(false)
+  const [erreur, setErreur] = useState(null)
 
   // L'ancien représentant ne suit pas une autre entreprise
   const choisirEntreprise = (e) => {
@@ -190,13 +191,15 @@ function EntrepriseAssignModal({ lot, entreprises, createEntreprise, tva = 1.2, 
   const handleSubmit = async () => {
     if (!canSave) return
     setSaving(true)
+    setErreur(null)
     let entreprise_id = selectedE?.id ?? null
     if (tab === 'new') {
-      const { data } = await createEntreprise({ ...newForm, raison_sociale: newForm.raison_sociale.trim() })
+      const { data, error } = await createEntreprise({ ...newForm, raison_sociale: newForm.raison_sociale.trim() })
+      if (error) { setErreur(error.message ?? 'Création impossible.'); setSaving(false); return }
       entreprise_id = data?.id
     }
     if (!entreprise_id) { setSaving(false); return }
-    await onSave({
+    const erreurAttribution = await onSave({
       entreprise_id,
       interlocuteur_id: tab === 'existing' && interlocuteurId && interlocuteurId !== NOUVELLE ? interlocuteurId : null,
       montant_marche_ht: marche.montant_marche_ht ? Number(marche.montant_marche_ht) : null,
@@ -205,6 +208,11 @@ function EntrepriseAssignModal({ lot, entreprises, createEntreprise, tva = 1.2, 
       date_notification: marche.date_notification || null,
       observations: marche.observations || null,
     })
+    if (erreurAttribution) {
+      setErreur(erreurAttribution.message ?? 'Attribution impossible.')
+      setSaving(false)
+      return
+    }
     if (tab === 'existing' && interlocuteurId === NOUVELLE) onNouvellePersonne?.()
     setSaving(false)
   }
@@ -355,6 +363,7 @@ function EntrepriseAssignModal({ lot, entreprises, createEntreprise, tva = 1.2, 
             rows={2} style={{ ...INPUT, height: 'auto', padding: '8px 12px', resize: 'none' }} />
         </div>
 
+        {erreur && <p style={{ fontSize: 12, color: '#B8412C', marginTop: 12 }}>{erreur}</p>}
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 20 }}>
           <button onClick={onClose} style={BTN_CANCEL}>Annuler</button>
           <button onClick={handleSubmit} disabled={!canSave || saving}
@@ -798,8 +807,11 @@ export default function LotsEntreprisesModule({ lectureSeule = false }) {
   }
 
   const handleAssignSave = async (data) => {
-    await assignerEntreprise(selectedLotId, data)
+    const res = await assignerEntreprise(selectedLotId, data)
+    // En cas d'échec la fenêtre reste ouverte et montre le message
+    if (res?.error) return res.error
     setAssignModalOpen(false)
+    return null
   }
 
   const handleInterlocuteurSave = async (formData, isEdit) => {

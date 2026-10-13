@@ -143,7 +143,12 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
   carnet ne change jamais une affaire. `lienDepuisLiaison`
   (`comptes-rendus/carnetLogique.js`) relie d'après une correspondance de
   valeurs **seulement** si le contact n'a pas été rempli depuis le carnet et
-  n'est pas déjà lié — sinon l'ancienne fiche remplaçait un choix fait.
+  n'est pas déjà lié, et si prénom + nom (ou l'organisation) correspondent
+  encore à la fiche — sinon l'ancienne fiche remplaçait un choix fait.
+  Attention : `affaire_interlocuteurs.interlocuteur_id` est un identifiant de
+  personne du carnet, alors que les colonnes `interlocuteur_id` de
+  `cr_presences`, `cr_remarques` et des tables OPR désignent des lignes de
+  `affaire_interlocuteurs` — ne pas les mélanger.
   L'organisation (`entreprises.type` : entreprise / bet / moa / autre,
   déduit une fois par la 072, filtre dans le carnet) a ses personnes
   (`PersonnesOrganisation.jsx`). Les **usages** (lots représentés, contacts

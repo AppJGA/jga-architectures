@@ -63,7 +63,7 @@ function ListeUsages({ usages, onNavigate }) {
   )
 }
 
-export default function PersonnesOrganisation({ entreprise, lots, contacts, onChange, onClose }) {
+export default function PersonnesOrganisation({ entreprise, lots, contacts, verificationImpossible = false, onChange, onClose }) {
   const navigate = useNavigate()
   const [mode, setMode] = useState(null) // null | { personne } (formulaire) | { suppression }
   const [form, setForm] = useState(VIDE)
@@ -222,10 +222,10 @@ export default function PersonnesOrganisation({ entreprise, lots, contacts, onCh
       {mode?.suppression && (() => {
         const p = mode.suppression
         const usages = usagesDePersonne(p.id, donnees)
-        const libre = personneSupprimable(p.id, donnees)
+        const libre = !verificationImpossible && personneSupprimable(p.id, donnees)
         return (
           <Fenetre
-            titre={libre ? 'Supprimer cette personne ?' : 'Suppression impossible'}
+            titre={libre ? 'Supprimer cette personne ?' : verificationImpossible ? 'Vérification impossible' : 'Suppression impossible'}
             largeur={440}
             onClose={() => setMode(null)}
             pied={(
@@ -243,9 +243,11 @@ export default function PersonnesOrganisation({ entreprise, lots, contacts, onCh
             <p style={{ fontSize: 13, color: '#5E5854', lineHeight: 1.6, marginBottom: 10 }}>
               {libre
                 ? <><strong>{nomComplet(p)}</strong> sera retirée du carnet. Cette action est irréversible.</>
-                : <><strong>{nomComplet(p)}</strong> sert encore dans {affairesDesUsages(usages).length > 1 ? 'ces affaires' : 'cette affaire'}. Retirez-la d’abord de ces affaires, puis revenez la supprimer.</>}
+                : verificationImpossible
+                  ? <>Les affaires où <strong>{nomComplet(p)}</strong> intervient n’ont pas pu être lues : impossible de vérifier qu’elle ne sert pas. Rechargez la page, puis réessayez.</>
+                  : <><strong>{nomComplet(p)}</strong> sert encore dans {affairesDesUsages(usages).length > 1 ? 'ces affaires' : 'cette affaire'}. Retirez-la d’abord de ces affaires, puis revenez la supprimer.</>}
             </p>
-            {!libre && <ListeUsages usages={usages} onNavigate={aller} />}
+            {!libre && !verificationImpossible && <ListeUsages usages={usages} onNavigate={aller} />}
             {erreur && <p style={{ fontSize: 12, color: '#B8412C', marginTop: 8 }}>{erreur}</p>}
           </Fenetre>
         )

@@ -131,5 +131,17 @@ export function ecrituresCarnet(ecarts = []) {
  */
 export function lienDepuisLiaison(form, liaison, deCarnet) {
   if (!liaison || deCarnet || form.interlocuteur_id || form.entreprise_id) return form
+  // Le formulaire a changé de personne (ou d'organisation) : l'ancienne fiche ne le concerne plus
+  const personneForm = nomPersonne(form)
+  if (liaison.personne) {
+    if (!memeNom(personneForm, nomPersonne(liaison.personne))) return form
+  } else if (!memeNom(propre(form.organisation) || personneForm, liaison.entreprise?.raison_sociale)) return form
   return { ...form, entreprise_id: liaison.entreprise.id, interlocuteur_id: liaison.personne?.id ?? null }
+}
+
+/** Type d'organisation du carnet d'après la catégorie d'un contact d'affaire. */
+export function typeDepuisCategorie(categorie) {
+  if (categorie === 'be') return 'bet'
+  if (categorie === 'moa') return 'moa'
+  return 'autre'
 }

@@ -69,3 +69,12 @@ test('choisir dans le carnet garde le lien vers la fiche et la personne', () => 
   const apres = remplirDepuis(fiche, { prenom: 'X', interlocuteur_id: 'p9', entreprise_id: 'e9' })
   assert.deepEqual([apres.interlocuteur_id, apres.entreprise_id, apres.prenom], [null, 'e1', 'X'])
 })
+
+test('choisir la fiche de l’organisation de la personne liée garde ce lien', () => {
+  const opts = optionsCarnet([{ id: 'e1', raison_sociale: 'Exemple BET', interlocuteurs: [{ id: 'p1', prenom: 'Alix', nom: 'Durand' }] }])
+  const fiche = opts.find((o) => o.type === 'organisation')
+  const apres = remplirDepuis(fiche, { prenom: 'Alix', interlocuteur_id: 'p1', entreprise_id: 'e1' })
+  assert.deepEqual([apres.interlocuteur_id, apres.entreprise_id], ['p1', 'e1'])
+  const sansLien = remplirDepuis(fiche, { entreprise_id: 'e1' })
+  assert.equal(sansLien.interlocuteur_id, null)
+})

@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict'
 import { test, describe } from 'node:test'
 
-import { ficheCarnet, memeNom, correspondanceCarnet, ecartsCarnet, ecrituresCarnet, lienDepuisLiaison } from '../src/modules/chantier/comptes-rendus/carnetLogique.js'
+import { ficheCarnet, memeNom, correspondanceCarnet, ecartsCarnet, ecrituresCarnet, lienDepuisLiaison, typeDepuisCategorie } from '../src/modules/chantier/comptes-rendus/carnetLogique.js'
 
 test('une personne d’une organisation : la fiche de l’organisation, la personne en contact', () => {
   assert.deepEqual(ficheCarnet({
@@ -83,12 +83,28 @@ describe('interlocuteur déjà au carnet', () => {
 })
 
 test('lienDepuisLiaison : relie seulement un contact sans lien, non rempli depuis le carnet', () => {
-  const liaison = { entreprise: { id: 'e1' }, personne: { id: 'p1' } }
-  const f = { nom: 'X' }
-  assert.deepEqual(lienDepuisLiaison(f, liaison, false), { nom: 'X', entreprise_id: 'e1', interlocuteur_id: 'p1' })
-  assert.equal(lienDepuisLiaison(f, { entreprise: { id: 'e1' }, personne: null }, false).interlocuteur_id, null)
+  const liaison = { entreprise: { id: 'e1', raison_sociale: 'Apave' }, personne: { id: 'p1', prenom: 'Damien', nom: 'Vinot' } }
+  const f = { prenom: 'Damien', nom: 'Vinot' }
+  assert.deepEqual(lienDepuisLiaison(f, liaison, false), { prenom: 'Damien', nom: 'Vinot', entreprise_id: 'e1', interlocuteur_id: 'p1' })
+  assert.equal(lienDepuisLiaison({ organisation: 'APAVE' }, { entreprise: { id: 'e1', raison_sociale: 'Apave' }, personne: null }, false).interlocuteur_id, null)
   assert.equal(lienDepuisLiaison(f, liaison, true), f, 'après un choix dans le carnet')
-  const lie = { nom: 'X', entreprise_id: 'e9', interlocuteur_id: null }
+  const lie = { nom: 'Vinot', entreprise_id: 'e9', interlocuteur_id: null }
   assert.equal(lienDepuisLiaison(lie, liaison, false), lie, 'entreprise déjà choisie')
   assert.equal(lienDepuisLiaison(f, null, false), f, 'sans liaison')
+})
+
+test('lienDepuisLiaison : pas de lien si la personne ou l’organisation a changé', () => {
+  const liaison = { entreprise: { id: 'e1', raison_sociale: 'Apave' }, personne: { id: 'p1', prenom: 'Damien', nom: 'Vinot' } }
+  const autre = { prenom: 'Luc', nom: 'Martin' }
+  assert.equal(lienDepuisLiaison(autre, liaison, false), autre, 'autre personne')
+  const sansPersonne = { entreprise: { id: 'e1', raison_sociale: 'Apave' }, personne: null }
+  const renomme = { organisation: 'Socotec' }
+  assert.equal(lienDepuisLiaison(renomme, sansPersonne, false), renomme, 'autre organisation')
+})
+
+test('typeDepuisCategorie : bureau d’études, maître d’ouvrage, sinon autre', () => {
+  assert.equal(typeDepuisCategorie('be'), 'bet')
+  assert.equal(typeDepuisCategorie('moa'), 'moa')
+  assert.equal(typeDepuisCategorie('csps'), 'autre')
+  assert.equal(typeDepuisCategorie(undefined), 'autre')
 })

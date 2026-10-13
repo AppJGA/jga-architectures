@@ -92,7 +92,7 @@ function InterloForm({ initial, onSave, onCancel, onDelete }) {
     let aEnregistrer = lierAuCarnet(form)
     if (proposerCarnet && versCarnet) {
       try {
-        const r = await verserAuCarnet(form)
+        const r = await verserAuCarnet(form, form.categorie)
         if (r) aEnregistrer = { ...form, entreprise_id: r.entrepriseId, interlocuteur_id: r.interlocuteurId }
       } catch (err) {
         setErreurCarnet(`Ajout au carnet d’adresses impossible : ${err?.message ?? err}`)

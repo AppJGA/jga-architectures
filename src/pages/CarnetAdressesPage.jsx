@@ -482,6 +482,22 @@ export default function CarnetAdressesPage() {
 
   const handleDelete = async (entreprise) => {
     setErreurSuppression(null)
+    // Avant tout retrait : un refus RLS ne rend pas d'erreur et laisserait une suppression à moitié faite.
+    // Le paramètre de la fonction SQL s'appelle `cible` (migrations 060 / 069).
+    const affaires = new Map()
+    for (const le of entreprise.lot_entreprises ?? []) {
+      const af = le.lots?.affaires
+      if (af) affaires.set(af.id, af)
+    }
+    const bloquantes = []
+    for (const af of affaires.values()) {
+      const { data: ok, error: errDroit } = await supabase.rpc('peut_modifier_affaire', { cible: af.id })
+      if (errDroit || ok !== true) bloquantes.push(af.code_affaire ?? af.nom)
+    }
+    if (bloquantes.length > 0) {
+      setErreurSuppression(`Suppression impossible : l'organisation est attribuée à des lots d'affaires que vous ne pouvez pas modifier (${bloquantes.join(', ')}).`)
+      return
+    }
     // Attributions d'abord : un refus RLS (affaire non modifiable) ne rend pas d'erreur
     const connues = entreprise.lot_entreprises?.length ?? 0
     const { data: retirees, error: errLots } = await supabase
@@ -628,7 +644,7 @@ export default function CarnetAdressesPage() {
       ) : viewMode === 'grid' ? (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16 }}>
           {filtered.map(e => (
-            <EntrepriseCard key={e.id} entreprise={e} usages={usagesDe(e)} onEdit={setEditing} onDelete={setDeletingEntreprise} onPersonnes={x => setPersonnesDe(x.id)} />
+            <EntrepriseCard key={e.id} entreprise={e} usages={usagesDe(e)} onEdit={setEditing} onDelete={x => { setErreurSuppression(null); setDeletingEntreprise(x) }} onPersonnes={x => setPersonnesDe(x.id)} />
           ))}
         </div>
       ) : (
@@ -649,7 +665,7 @@ export default function CarnetAdressesPage() {
             <div style={{ width: 96 }} />
           </div>
           {filtered.map(e => (
-            <EntrepriseRow key={e.id} entreprise={e} usages={usagesDe(e)} onEdit={setEditing} onDelete={setDeletingEntreprise} onPersonnes={x => setPersonnesDe(x.id)} />
+            <EntrepriseRow key={e.id} entreprise={e} usages={usagesDe(e)} onEdit={setEditing} onDelete={x => { setErreurSuppression(null); setDeletingEntreprise(x) }} onPersonnes={x => setPersonnesDe(x.id)} />
           ))}
         </div>
       )}

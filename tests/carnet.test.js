@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict'
 import { test, describe } from 'node:test'
 
-import { ficheCarnet, memeNom, correspondanceCarnet, ecartsCarnet, ecrituresCarnet } from '../src/modules/chantier/comptes-rendus/carnetLogique.js'
+import { ficheCarnet, memeNom, correspondanceCarnet, ecartsCarnet, ecrituresCarnet, lienDepuisLiaison } from '../src/modules/chantier/comptes-rendus/carnetLogique.js'
 
 test('une personne d’une organisation : la fiche de l’organisation, la personne en contact', () => {
   assert.deepEqual(ficheCarnet({
@@ -80,4 +80,15 @@ describe('interlocuteur déjà au carnet', () => {
       { table: 'entreprises', id: 'arragon', champs: { telephone: '06 11 22 33 44' } },
     ])
   })
+})
+
+test('lienDepuisLiaison : relie seulement un contact sans lien, non rempli depuis le carnet', () => {
+  const liaison = { entreprise: { id: 'e1' }, personne: { id: 'p1' } }
+  const f = { nom: 'X' }
+  assert.deepEqual(lienDepuisLiaison(f, liaison, false), { nom: 'X', entreprise_id: 'e1', interlocuteur_id: 'p1' })
+  assert.equal(lienDepuisLiaison(f, { entreprise: { id: 'e1' }, personne: null }, false).interlocuteur_id, null)
+  assert.equal(lienDepuisLiaison(f, liaison, true), f, 'après un choix dans le carnet')
+  const lie = { nom: 'X', entreprise_id: 'e9', interlocuteur_id: null }
+  assert.equal(lienDepuisLiaison(lie, liaison, false), lie, 'entreprise déjà choisie')
+  assert.equal(lienDepuisLiaison(f, null, false), f, 'sans liaison')
 })

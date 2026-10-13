@@ -123,3 +123,13 @@ export function ecrituresCarnet(ecarts = []) {
   }
   return [...parCible.values()]
 }
+
+/**
+ * Un contact retrouvé au carnet par ses valeurs est relié à sa fiche à
+ * l'enregistrement — sauf s'il vient d'être rempli depuis le carnet ou porte
+ * déjà un lien : ce choix-là ne doit pas être remplacé par l'ancienne fiche.
+ */
+export function lienDepuisLiaison(form, liaison, deCarnet) {
+  if (!liaison || deCarnet || form.interlocuteur_id || form.entreprise_id) return form
+  return { ...form, entreprise_id: liaison.entreprise.id, interlocuteur_id: liaison.personne?.id ?? null }
+}

@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { X, Plus, Pencil, Trash2, ChevronUp, ChevronDown } from 'lucide-react'
 import { useAffaireInterlocuteurs, CATEGORIE_META } from '../../../shared/hooks/useAffaireInterlocuteurs'
 import { verserAuCarnet, chercherDansCarnet, mettreAJourCarnet } from './carnet'
-import { ecartsCarnet } from './carnetLogique'
+import { ecartsCarnet, lienDepuisLiaison } from './carnetLogique'
 import { RechercheCarnet } from './RechercheCarnet'
 import { remplirDepuis } from './rechercheCarnetLogique'
 
@@ -104,9 +104,7 @@ function InterloForm({ initial, onSave, onCancel, onDelete }) {
   }
 
   // Un contact retrouvé au carnet par ses valeurs, pas encore relié, l'est à l'enregistrement
-  const lierAuCarnet = (f) => (liaison && !f.interlocuteur_id
-    ? { ...f, entreprise_id: liaison.entreprise.id, interlocuteur_id: liaison.personne?.id ?? null }
-    : f)
+  const lierAuCarnet = (f) => lienDepuisLiaison(f, liaison, deCarnet)
 
   // Aussi pour un interlocuteur déjà enregistré dans l'affaire : ceux saisis
   // avant cette case n'ont jamais rejoint le carnet. Rien n'y est recréé s'il

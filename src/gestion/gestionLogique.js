@@ -10,6 +10,8 @@ import { tachesTriees, enRetard } from '../modules/etude/todo/todoLogique.js'
 import { estAncre } from '../shared/planning/ancrage.js'
 // Jamais depuis echeancesNotionLogique.js : il importe ce fichier (cycle)
 import { COULEUR_NOTION, numeroAffaire, codeCarte } from '../shared/notion/codesAffaire.js'
+import { clePrenom } from '../shared/notion/equipeNotionLogique.js'
+import { initialesPersonne } from '../shared/initiales.js'
 
 const JOUR = 86400000
 const iso = (ms) => new Date(ms).toISOString().slice(0, 10)
@@ -136,12 +138,8 @@ export function groupesTaches(taches, affaires, filtres = {}, aujourdhui) {
     .sort((a, b) => (b.enRetard > 0) - (a.enRetard > 0) || (a.affaire.code_affaire ?? '').localeCompare(b.affaire.code_affaire ?? ''))
 }
 
-/** Initiales d'un compte, comme sur la page d'une affaire : prénom puis nom. */
-export function initiales(profil) {
-  if (!profil) return ''
-  const lettres = `${(profil.prenom ?? '').trim().charAt(0)}${(profil.nom ?? '').trim().charAt(0)}`.toUpperCase()
-  return lettres || (profil.email ?? '').trim().charAt(0).toUpperCase()
-}
+/** Initiales d'un compte, comme sur toutes les pastilles de l'app (noms composés compris). */
+export const initiales = initialesPersonne
 
 /**
  * Équipe de chaque affaire, telle que le calendrier l'annonce : propriétaire
@@ -201,4 +199,38 @@ export function affairesNotionSeules(references, affaires) {
   return (references ?? [])
     .filter((r) => r.numero && !numeros.has(r.numero) && !vus.has(r.numero) && vus.add(r.numero))
     .map((r) => ({ id: `notion-${r.numero}`, code_affaire: codeCarte(r.reference), nom: r.reference, horsApp: true, numero: r.numero, reference: r.reference }))
+}
+
+/**
+ * Équipe des affaires présentes seulement dans Notion : les personnes de la
+ * colonne « 👤 Equipe JGA » de leurs cartes, sans les associés (comme pour
+ * les autres affaires du calendrier). Initiales de l'app quand le prénom y
+ * retrouve un compte, sinon celles du nom porté dans Notion.
+ * @returns Map 'notion-<numéro>' → [{ id, initiales, nom, proprietaire: false }]
+ */
+export function equipesAffairesNotion(registre, cartes, membres, profils) {
+  const equipeDePage = new Map((cartes ?? []).map((c) => [c.id, c.equipe ?? []]))
+  const membreParId = new Map((membres ?? []).filter((m) => m.role !== 'Associé').map((m) => [m.id, m]))
+  const comptes = (profils ?? []).filter((p) => !p.est_associe)
+  const personne = (m) => {
+    const cle = clePrenom(m.nom)
+    const trouves = comptes.filter((p) => clePrenom(p.prenom) === cle || clePrenom(`${p.prenom ?? ''}${p.nom ?? ''}`) === cle)
+    const p = trouves.length === 1 ? trouves[0] : null
+    return p
+      ? { id: m.id, initiales: initialesPersonne(p), nom: [p.prenom, p.nom].map((x) => String(x ?? '').trim()).filter(Boolean).join(' '), proprietaire: false }
+      : { id: m.id, initiales: initialesPersonne({ prenom: m.nom }), nom: m.nom, proprietaire: false }
+  }
+  const equipes = new Map()
+  for (const l of registre ?? []) {
+    if (l.affaire_id || !l.page_id || !l.numero) continue
+    const cle = `notion-${l.numero}`
+    for (const id of equipeDePage.get(l.page_id) ?? []) {
+      const m = membreParId.get(id)
+      if (!m) continue
+      if (!equipes.has(cle)) equipes.set(cle, [])
+      const liste = equipes.get(cle)
+      if (!liste.some((x) => x.id === id)) liste.push(personne(m))
+    }
+  }
+  return equipes
 }

@@ -67,7 +67,7 @@ function dateDetail(iso) {
 }
 
 const ronds = (equipe, accent) => (equipe ?? []).map((p, i) =>
-  `<span class="rond" style="background:${p.proprietaire ? accent : '#9C9591'};margin-left:${i ? -3 : 0}px" title="${e(p.nom)}">${e(p.initiales)}</span>`).join('')
+  `<span class="rond" style="background:${p.proprietaire ? accent : '#9C9591'};margin-left:${i ? -3 : 0}px${p.initiales.length > 2 ? ';font-size:4.4pt' : ''}" title="${e(p.nom)}">${e(p.initiales)}</span>`).join('')
 
 /**
  * @param evenements  jalons déjà filtrés (`rendus`), toutes dates confondues

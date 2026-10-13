@@ -6,7 +6,7 @@ import { test } from 'node:test'
 
 import {
   vendrediSemaineIso, rendus, grilleMois, parJour, prochaines, ecartJours,
-  affairesModifiables, mesAffaires, groupesTaches, initiales, equipeParAffaire, semaineIso,
+  affairesModifiables, mesAffaires, groupesTaches, initiales, equipeParAffaire, semaineIso, equipesAffairesNotion,
   marquerNotion, rendusNotion, aDater, affairesNotionSeules,
 } from '../src/gestion/gestionLogique.js'
 
@@ -91,9 +91,10 @@ test('groupes de tâches : retards en tête, filtres', () => {
   assert.deepEqual(groupesTaches(taches, affaires, { affaires: new Set(['a2']) }, '2026-10-09').map((x) => x.affaire.id), ['a2'])
 })
 
-test('initiales : comme sur la page d’une affaire, prénom puis nom', () => {
-  assert.equal(initiales({ prenom: 'Anne-Lise', nom: 'Aumeunier' }), 'AA')
-  assert.equal(initiales({ prenom: 'Véronique', nom: 'Durafour-Soro' }), 'VD')
+test('initiales : une lettre par partie du prénom puis du nom (noms composés)', () => {
+  assert.equal(initiales({ prenom: 'Anne-Lise ', nom: 'Aumeunier' }), 'ALA')
+  assert.equal(initiales({ prenom: 'Véronique', nom: 'Durafour-Soro' }), 'VDS')
+  assert.equal(initiales({ prenom: 'Claire Avril', nom: 'Rat' }), 'CAR')
   assert.equal(initiales({ prenom: ' anthonin ', nom: 'bridon' }), 'AB')
   assert.equal(initiales({ prenom: '', nom: '', email: 'claire@exemple.fr' }), 'C')
   assert.equal(initiales(null), '')
@@ -111,7 +112,7 @@ test('équipe d’une affaire : ni associés ni extérieurs, propriétaire d’a
   ]
   const equipe = equipeParAffaire(collabs, profils)
   assert.deepEqual(equipe.get('a1'), [
-    { id: 'p2', initiales: 'AA', nom: 'Anne-Lise Aumeunier', proprietaire: true },
+    { id: 'p2', initiales: 'ALA', nom: 'Anne-Lise Aumeunier', proprietaire: true },
     { id: 'p1', initiales: 'AB', nom: 'Anthonin Bridon', proprietaire: false },
   ])
   assert.equal(equipe.has('a2'), false)
@@ -196,4 +197,25 @@ test('Notion : échéances liées marquées, affaires absentes de l’app en plu
   assert.deepEqual(aDater(registre).map((x) => x.id), ['r3'])
   const choix = affairesNotionSeules([{ numero: '2697', reference: '2697 - QRS' }, { numero: '2618', reference: '2618 - LVV' }], affaires)
   assert.deepEqual(choix.map((a) => a.id), ['notion-2697'])
+})
+
+test('équipe des affaires présentes seulement dans Notion : les personnes de leurs cartes, sans associés', () => {
+  const registre = [
+    { id: 'r1', affaire_id: null, numero: '2697', page_id: 'p1', date_synchro: '2026-10-22' },
+    { id: 'r2', affaire_id: null, numero: '2697', page_id: 'p2', date_synchro: '2026-10-29' },
+    { id: 'r3', affaire_id: 'a2', numero: '2606', page_id: 'p3', date_synchro: '2026-10-20' },
+  ]
+  const cartes = [{ id: 'p1', equipe: ['n1', 'n3'] }, { id: 'p2', equipe: ['n2', 'n1'] }, { id: 'p3', equipe: ['n2'] }]
+  const membres = [
+    { id: 'n1', nom: 'Claire-Avril', role: 'Collaborateur' },
+    { id: 'n2', nom: 'Benjamin', role: 'Collaborateur' },
+    { id: 'n3', nom: 'Paul', role: 'Associé' },
+  ]
+  const profils = [{ id: 'u1', prenom: 'Claire Avril', nom: 'Rat', type_compte: 'agence' }]
+  const equipes = equipesAffairesNotion(registre, cartes, membres, profils)
+  assert.deepEqual(equipes.get('notion-2697'), [
+    { id: 'n1', initiales: 'CAR', nom: 'Claire Avril Rat', proprietaire: false },
+    { id: 'n2', initiales: 'B', nom: 'Benjamin', proprietaire: false },
+  ])
+  assert.equal(equipes.has('notion-2606'), false) // affaire de l'app : son équipe vient de l'app
 })

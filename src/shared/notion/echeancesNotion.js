@@ -152,7 +152,11 @@ export function synchroniser({ affaireId = null } = {}) {
       })
       ajouterEquipe(plan, { cartes: notion.cartes, registre, equipes: await equipesDesAffaires(affaireId, notion.equipe) })
       const { erreurs, changementsApp } = await appliquerPlan(plan, { base: supabase, ecrireCartes })
-      return { etat: 'ok', lectureLe: new Date().toISOString(), changementsApp, erreurs, references: notion.references }
+      return {
+        etat: 'ok', lectureLe: new Date().toISOString(), changementsApp, erreurs, references: notion.references,
+        // Pour le calendrier : les personnes de chaque carte (affaires seulement dans Notion)
+        cartes: notion.cartes, membres: notion.equipe ?? [],
+      }
     } catch (e) {
       return { etat: e.code === 'hors-ligne' ? 'hors-ligne' : 'injoignable', erreurs: [e.message] }
     }

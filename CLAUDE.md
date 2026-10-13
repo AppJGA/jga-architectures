@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 944 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion)
+npm test         # 945 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -173,6 +173,12 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
   se resserre à chaque lettre, code ou nom (ou maître d'ouvrage), sans
   majuscules ni accents (`filtrerAffaires`, `choixAffaireLogique.js`, testé),
   ↑ ↓ Entrée Échap, lignes de 44 px. Pas de `<select>` d'affaires.
+- **Initiales d'une personne** (pastilles du portail, de l'affaire, des
+  collaborateurs, du calendrier des rendus et de son PDF) : toujours par
+  `initialesPersonne` (`shared/initiales.js`) — une lettre par partie du
+  prénom puis du nom, à la demande de l'agence (« Claire Avril Rat » → CAR,
+  « Véronique Durafour-Soro » → VDS). Trois lettres : police réduite dans le
+  rond.
 - Les commentaires expliquent **pourquoi**, pas quoi. Un commentaire qui
   paraphrase la ligne suivante est du bruit.
 
@@ -739,7 +745,11 @@ serveur `api/notion.js` (+ `api/_agence.js`) ; migration 071.
   plus. Une carte de l'app (`estCarteApp`, format de `titreCarte`) dont la
   colonne est vide est complétée au passage suivant (action `equipe` du
   passeur) ; une carte écrite à la main, ou déjà remplie, n'est jamais
-  touchée.
+  touchée. **Dans l'autre sens**, les affaires présentes seulement dans
+  Notion ont dans le calendrier les ronds des personnes de leurs cartes
+  (`equipesAffairesNotion`, `gestionLogique.js` : sans associés, initiales de
+  l'app si le prénom y retrouve un compte) ; `synchroniser` rend pour cela
+  `cartes` et `membres`.
 - **Limites connues** : ⌘Z juste après une synchro peut défaire un
   changement de Notion qu'elle venait de rapporter. L'ancienne synchro des
   phases (`useNotionSync`, `useNotionGantt`, `notion-sync-server.mjs`,

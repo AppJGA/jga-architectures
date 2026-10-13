@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ClipboardList, Calendar, BarChart2, CheckSquare, Trash2, Lock } from 'lucide-react'
 import { PhaseBadge } from '../shared/components/Badge'
+import { initialesPersonne } from '../shared/initiales'
 
 const TOP_COLORS = {
   esq:      'var(--jga-orange)',
@@ -34,10 +35,7 @@ function AvatarsStack({ collaborateurs }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center' }}>
       {visible.map((c, i) => {
-        const initiales = (
-          (c.profiles?.prenom?.[0] ?? '') +
-          (c.profiles?.nom?.[0] ?? '')
-        ).toUpperCase() || '?'
+        const initiales = initialesPersonne(c.profiles) || '?'
         return (
           <div
             key={i}

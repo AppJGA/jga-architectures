@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { X, Search } from 'lucide-react'
 import { supabase } from '../core/supabase/client'
+import { initialesPersonne } from '../shared/initiales'
 
 function Avatar({ initiales, isOwner }) {
   return (
@@ -91,7 +92,7 @@ export function CollabModal({
         {/* Liste */}
         <div style={{ display: 'flex', flexDirection: 'column' }}>
           {collaborateurs.map(c => {
-            const initiales = ((c.profiles?.prenom?.[0] ?? '') + (c.profiles?.nom?.[0] ?? '')).toUpperCase() || '?'
+            const initiales = initialesPersonne(c.profiles) || '?'
             const isOwner = c.role === 'proprietaire'
             const canRemove = isProprietaire && !isOwner
 
@@ -193,7 +194,7 @@ export function CollabModal({
                       Aucun résultat — la personne doit s'être connectée au moins une fois.
                     </p>
                   ) : suggestions.map(p => {
-                    const initiales = ((p.prenom?.[0] ?? '') + (p.nom?.[0] ?? '')).toUpperCase() || '?'
+                    const initiales = initialesPersonne(p) || '?'
                     return (
                       <button
                         key={p.id}

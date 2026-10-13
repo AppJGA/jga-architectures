@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, ChevronDown, FileDown, Plus, RefreshCw } from 'lucide-react'
 import { useAuth } from '../core/auth/useAuth'
 import {
-  rendus, grilleMois, parJour, prochaines, ecartJours, mesAffaires, equipeParAffaire,
+  rendus, grilleMois, parJour, prochaines, ecartJours, mesAffaires, equipeParAffaire, equipesAffairesNotion,
   marquerNotion, rendusNotion, aDater, affairesNotionSeules,
 } from './gestionLogique'
 import { MarqueNotion } from '../shared/notion/MarqueNotion'
@@ -60,7 +60,8 @@ function Ronds({ equipe, taille }) {
           style={{
             width: taille, height: taille, borderRadius: '50%', flexShrink: 0,
             background: p.proprietaire ? ACCENT : '#9C9591', color: 'white',
-            fontSize: Math.round(taille * 0.42), fontWeight: 600, lineHeight: 1,
+            // Trois lettres (noms composés : CAR, VDS) tiennent dans le même rond
+            fontSize: Math.round(taille * (p.initiales.length > 2 ? 0.34 : 0.42)), fontWeight: 600, lineHeight: 1,
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
             border: '1.5px solid white', marginLeft: i === 0 ? 0 : -Math.round(taille * 0.3),
             position: 'relative', zIndex: equipe.length - i,
@@ -153,6 +154,7 @@ export default function CalendrierRendus() {
   const lireNotion = useCallback(() => synchroniser().then((r) => {
     setNotion((n) => ({
       etat: r.etat, lectureLe: r.lectureLe ?? n?.lectureLe ?? null, references: r.references ?? n?.references ?? [],
+      cartes: r.cartes ?? n?.cartes ?? [], membres: r.membres ?? n?.membres ?? [],
       echecs: r.etat === 'ok' ? (r.erreurs?.length ?? 0) : 0,
     }))
     if (r.etat === 'ok') recharger()
@@ -172,9 +174,14 @@ export default function CalendrierRendus() {
     ].sort((a, b) => a.date.localeCompare(b.date) || (a.affaire.code_affaire ?? '').localeCompare(b.affaire.code_affaire ?? ''))
     return tous.filter((e) => (origines[e.origine] ?? true) && (portee === 'toutes' || (!e.affaire.horsApp && miennes.has(e.affaire.id))))
   }, [donnees, user?.id, portee, origines])
-  const equipes = useMemo(() => equipeParAffaire(
-    donnees?.collaborateurs, Object.fromEntries((donnees?.profils ?? []).map((p) => [p.id, p])),
-  ), [donnees])
+  // Affaires de l'app : leur équipe ; affaires seulement dans Notion : les
+  // personnes de leurs cartes (colonne « 👤 Equipe JGA »)
+  const cartesNotion = notion?.cartes
+  const membresNotion = notion?.membres
+  const equipes = useMemo(() => new Map([
+    ...equipeParAffaire(donnees?.collaborateurs, Object.fromEntries((donnees?.profils ?? []).map((p) => [p.id, p]))),
+    ...equipesAffairesNotion(donnees?.registre, cartesNotion, membresNotion, donnees?.profils),
+  ]), [donnees, cartesNotion, membresNotion])
   const jours = useMemo(() => parJour(evenements), [evenements])
   const aVenir = useMemo(() => prochaines(evenements, aujourdhui, 30), [evenements, aujourdhui])
   const cartesADater = useMemo(() => aDater(donnees?.registre), [donnees])

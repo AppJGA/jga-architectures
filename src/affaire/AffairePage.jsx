@@ -25,6 +25,7 @@ import {
 } from '../shared/icones/IconesAffaire'
 import { montantsAffaire, tvaAffaire, htDe, formatEuros } from '../shared/montants'
 import { MontantHT } from '../shared/components/MontantHT'
+import { initialesPersonne } from '../shared/initiales'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -381,7 +382,7 @@ function AffaireHeader({ affaire, onEdit, onChangerPhase, collaborateurs, canEdi
             title="Gérer les collaborateurs"
           >
             {collaborateurs.slice(0, 5).map((c, i) => {
-              const initiales = ((c.profiles?.prenom?.[0] ?? '') + (c.profiles?.nom?.[0] ?? '')).toUpperCase() || '?'
+              const initiales = initialesPersonne(c.profiles) || '?'
               return (
                 <div key={c.user_id} style={{
                   width: 28, height: 28, borderRadius: '50%',

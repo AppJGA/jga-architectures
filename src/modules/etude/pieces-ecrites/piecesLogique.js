@@ -542,3 +542,29 @@ export function extrait(texte = '', mots = [], largeur = 160, styles = []) {
   if (fin < source.length) morceaux.push({ texte: '…', surligne: false })
   return morceaux
 }
+
+// ─── 6. Lecture d'un CCTP en entier ──────────────────────────────────────────
+
+/**
+ * Un CCTP à lire d'un bout à l'autre, comme son PDF : ses articles dans
+ * l'ordre du document, un repère à chaque page qui commence (seule la page
+ * de départ d'un article est connue), et le sommaire des deux premiers
+ * niveaux pour y sauter.
+ * @returns { blocs: [{ article, page }], sommaire: [{ id, numero, titre, niveau }] }
+ *   `page` : numéro de la page qui commence avec cet article, sinon null.
+ */
+export function lectureCctp(articles = [], pieceId) {
+  const siens = articles
+    .filter((a) => a.piece_id === pieceId)
+    .sort((x, y) => (x.ordre ?? 0) - (y.ordre ?? 0))
+  let pagePrecedente = null
+  const blocs = siens.map((article) => {
+    const nouvelle = article.page != null && article.page !== pagePrecedente
+    if (article.page != null) pagePrecedente = article.page
+    return { article, page: nouvelle ? article.page : null }
+  })
+  const sommaire = siens
+    .filter((a) => (a.niveau ?? 1) <= 2)
+    .map((a) => ({ id: a.id, numero: a.numero ?? null, titre: a.titre, niveau: a.niveau ?? 1 }))
+  return { blocs, sommaire }
+}

@@ -1,34 +1,23 @@
 import { useMemo, useState } from 'react'
-import { Search, ChevronLeft, FileText } from 'lucide-react'
+import { Search, ChevronLeft, FileText, BookOpen } from 'lucide-react'
 import { chercherArticles, extrait, motsRecherche, recomposerTexte } from './piecesLogique'
+import { Surligne } from './Surligne'
+import { LecteurCctp } from './LecteurCctp'
 
 // ─── Recherche dans les CCTP ─────────────────────────────────────────────────
 //
 // Commune au module (bureau) et au mode Visite (tablette) : un champ, un
 // filtre par lot, les résultats groupés par CCTP, mots surlignés ; toucher un
-// résultat ouvre l'article entier. `grand` : tailles du mode Visite (doigt).
+// résultat ouvre l'article entier, puis « Lire dans le CCTP » le replace dans
+// tout son document. `grand` : tailles du mode Visite (doigt).
 
 const MAX_RESULTATS = 60
-
-// Mots trouvés surlignés ; gras, italique et souligné du CCTP d'origine
-// gardés, pour distinguer titres, références et réserves comme sur le papier
-function Surligne({ morceaux }) {
-  return morceaux.map((m, i) => {
-    const style = {
-      fontWeight: m.gras ? 700 : undefined,
-      fontStyle: m.italique ? 'italic' : undefined,
-      textDecoration: m.souligne ? 'underline' : undefined,
-    }
-    return m.surligne
-      ? <mark key={i} style={{ ...style, background: '#FDE68A', color: 'inherit', padding: 0 }}>{m.texte}</mark>
-      : <span key={i} style={style}>{m.texte}</span>
-  })
-}
 
 export function RecherchePieces({ pieces = [], articles = [], grand = false, autoFocus = false }) {
   const [requete, setRequete] = useState('')
   const [lotId, setLotId] = useState('')
   const [ouvert, setOuvert] = useState(null)
+  const [lecture, setLecture] = useState(false)
 
   const mots = useMemo(() => motsRecherche(requete), [requete])
   const resultats = useMemo(
@@ -48,10 +37,18 @@ export function RecherchePieces({ pieces = [], articles = [], grand = false, aut
     const piece = piecesParId.get(ouvert.piece_id)
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <button type="button" onClick={() => setOuvert(null)}
-          style={{ alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: 6, minHeight: 44, padding: '0 4px', border: 'none', background: 'none', fontSize: taille, fontWeight: 600, color: '#5E5854', cursor: 'pointer' }}>
-          <ChevronLeft size={18} /> Résultats
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+          <button type="button" onClick={() => setOuvert(null)}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minHeight: 44, padding: '0 4px', border: 'none', background: 'none', fontSize: taille, fontWeight: 600, color: '#5E5854', cursor: 'pointer' }}>
+            <ChevronLeft size={18} /> Résultats
+          </button>
+          {piece && (
+            <button type="button" onClick={() => setLecture(true)}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 8, minHeight: 44, padding: '0 14px', border: '0.5px solid rgba(0,0,0,0.15)', borderRadius: 3, background: 'white', fontSize: taille, fontWeight: 600, color: '#1F1B17', cursor: 'pointer' }}>
+              <BookOpen size={16} /> Lire dans le CCTP
+            </button>
+          )}
+        </div>
         <div style={{ background: 'white', border: '0.5px solid rgba(0,0,0,0.08)', padding: grand ? 18 : 16 }}>
           <p style={{ margin: 0, fontSize: 11, color: '#9C9591', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
             {piece?.titre ?? 'CCTP'}{ouvert.page ? ` · page ${ouvert.page}` : ''}
@@ -66,6 +63,9 @@ export function RecherchePieces({ pieces = [], articles = [], grand = false, aut
               : <em style={{ color: '#9C9591' }}>Titre de chapitre, sans texte propre : voir les articles qui suivent.</em>}
           </p>
         </div>
+        {lecture && piece && (
+          <LecteurCctp piece={piece} articles={articles} articleId={ouvert.id} grand={grand} onFermer={() => setLecture(false)} />
+        )}
       </div>
     )
   }

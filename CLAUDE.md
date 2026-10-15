@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 958 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion)
+npm test         # 961 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -564,6 +564,13 @@ du mode Visite, hors ligne). Conception :
   ligne vide, puce ou énumération, sous-titre en capitales ; une césure
   (« huisse-/rie ») se recolle par une espace sans largeur. Sur les 7 CCTP
   d'exemple, un tiers à la moitié des retours disparaissent.
+- **Lecture d'un CCTP entier** (`LecteurCctp.jsx`, `lectureCctp` testé) :
+  toucher la tuile d'un CCTP, ou « Lire dans le CCTP » sur un article
+  trouvé (module et mode Visite), ouvre le texte en plein écran, articles à
+  la suite, repère à chaque page qui commence, sommaire des deux premiers
+  niveaux qui suit la lecture. Le PDF n'étant pas gardé, c'est le texte
+  remis en page (choix de l'agence, 2026-10-15) : ni tableaux ni images.
+  Portail vers `body` : la couleur de la phase est relue sur une ancre.
 - **Dossier pour Claude** (conformité plans / CCTP, conception
   `docs/superpowers/specs/2026-10-08-dossier-claude-conformite-design.md`) :
   bouton « Préparer le dossier d’analyse de conformité par l’IA » (logo de

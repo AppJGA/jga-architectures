@@ -8,7 +8,7 @@ import {
   lignesDePage, retirerBruit, decouperArticles, lireLot, lireIndice, lirePiece,
   chercherArticles, extrait, proposerLot, numeroLibre, titrePiece,
   styleDePolice, traitsHorizontaux, fragmentSouligne,
-  recomposerTexte,
+  recomposerTexte, lectureCctp,
 } from '../src/modules/etude/pieces-ecrites/piecesLogique.js'
 
 // Une page faite de lignes { texte, taille }
@@ -256,5 +256,24 @@ describe('phrases coupées par les lignes du PDF', () => {
   test('texte d’une ligne ou vide : inchangé', () => {
     assert.equal(recomposerTexte('Une seule ligne'), 'Une seule ligne')
     assert.equal(recomposerTexte(''), '')
+  })
+})
+
+describe('lecture d’un CCTP en entier', () => {
+  const a = (id, ordre, page, niveau, piece = 'P1') => ({ id, piece_id: piece, ordre, page, niveau, numero: String(ordre), titre: `Titre ${id}` })
+
+  test('les articles du seul CCTP demandé, dans l’ordre du document', () => {
+    const { blocs } = lectureCctp([a('c', 3, 2, 1), a('x', 1, 1, 1, 'P2'), a('a', 1, 1, 1), a('b', 2, 1, 2)], 'P1')
+    assert.deepEqual(blocs.map((b) => b.article.id), ['a', 'b', 'c'])
+  })
+
+  test('un repère à chaque page qui commence, pas à chaque article', () => {
+    const { blocs } = lectureCctp([a('a', 1, 2, 1), a('b', 2, 2, 2), a('c', 3, 4, 2), a('d', 4, null, 3), a('e', 5, 4, 3)], 'P1')
+    assert.deepEqual(blocs.map((b) => b.page), [2, null, 4, null, null])
+  })
+
+  test('le sommaire garde les deux premiers niveaux', () => {
+    const { sommaire } = lectureCctp([a('a', 1, 1, 1), a('b', 2, 1, 2), a('c', 3, 1, 3)], 'P1')
+    assert.deepEqual(sommaire.map((s) => [s.id, s.niveau]), [['a', 1], ['b', 2]])
   })
 })

@@ -351,6 +351,7 @@ export function recomposerTexte(texte = '') {
 
 const LOT = /\blot\s*(?:n\s*[°o]\s*)?(\d{1,3})\b\s*[-:–—]?\s*(.*)$/i
 const PAS_UN_NOM = /cctp|cahier|clauses|dce|indice|phase|date|page/i
+const DATE_EN_FIN = /\s+(\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}|(janv|f[ée]vr|mars|avr|mai|juin|juil|ao[uû]t|sept|oct|nov|d[ée]c)[a-zéû]*\.?[\s-]\d{2,4})\s*$/i
 
 const casePhrase = (t) => {
   const bas = propre(t).toLowerCase().replace(/[\s\-–—:]+$/, '')
@@ -369,7 +370,8 @@ export function lireLot(pages = [], nomFichier = '') {
   for (const l of parTaille) {
     const m = LOT.exec(l.texte)
     if (!m) continue
-    let nom = m[2]
+    // Une date posée à la même hauteur (« déc-24 », « 10/12/2024 ») n'est pas du nom
+    let nom = m[2].replace(DATE_EN_FIN, '')
     const suite = couverture[l.i + 1]
     const coupe = /[-–—:]\s*$/.test(nom) || !nom.trim()
     if (suite && Math.abs(suite.taille - l.taille) <= 1 && !PAS_UN_NOM.test(suite.texte) && !LOT.test(suite.texte)

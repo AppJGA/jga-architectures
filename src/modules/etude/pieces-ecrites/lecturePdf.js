@@ -1,13 +1,15 @@
 // ─── Lire le texte d'un PDF, sur l'appareil ──────────────────────────────────
 //
 // pdf.js rend, page par page, des fragments de texte positionnés ; ils sont
-// remis en lignes par `lignesDePage`. Le PDF ne quitte pas l'appareil : seul
-// le texte découpé sera enregistré. Le module des pièces écrites est chargé à
+// remis en lignes par `lignesDePage`, et en cases positionnées par
+// `casesDePage` pour les tableaux de DPGF. Le PDF ne quitte pas l'appareil :
+// seul le texte découpé sera enregistré. Le module des pièces écrites est chargé à
 // la demande, pdf.js avec lui.
 
 import * as pdfjs from 'pdfjs-dist'
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.js?url'
 import { lignesDePage, styleDePolice, traitsHorizontaux, fragmentSouligne } from './piecesLogique'
+import { casesDePage } from './dpgfLogique'
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl
 
@@ -16,7 +18,8 @@ export function estPdf(fichier) {
 }
 
 /**
- * @returns { pages: [{ numero, lignes: [{ texte, taille }] }], nomFichier }
+ * @returns { pages: [{ numero, lignes: [{ texte, taille }], cases }], nomFichier }
+ *   `cases` : les lignes avec la position de chaque fragment (tableaux de DPGF)
  */
 export async function lirePdf(fichier, { surProgression } = {}) {
   let doc
@@ -48,7 +51,7 @@ export async function lirePdf(fichier, { surProgression } = {}) {
     const items = contenu.items.map((it) => (it.str?.trim()
       ? { ...it, style: { ...police(it.fontName), souligne: fragmentSouligne(it, traits) } }
       : it))
-    pages.push({ numero: i, lignes: lignesDePage(items) })
+    pages.push({ numero: i, lignes: lignesDePage(items), cases: casesDePage(contenu.items) })
     surProgression?.(i / doc.numPages)
   }
   doc.destroy?.()

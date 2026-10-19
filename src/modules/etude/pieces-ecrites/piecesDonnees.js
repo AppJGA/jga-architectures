@@ -1,54 +1,85 @@
 // ─── Pièces écrites : base et copie sur l'appareil ───────────────────────────
 //
-// La lecture des PDF se décide dans `piecesLogique.js`. Ici : les CCTP et
-// leurs articles dans Supabase (migration 061), et une copie dans IndexedDB
+// La lecture des fichiers se décide dans `piecesLogique.js` et
+// `dpgfLogique.js`. Ici : les pièces et les articles des CCTP (migration
+// 061), les lignes des DPGF (073) dans Supabase, et une copie dans IndexedDB
 // pour chercher pendant une visite sans réseau (base à part, `jga-pieces`,
 // comme l'audio : la base de la visite garde sa version).
 
 import { supabase } from '../../../core/supabase/client'
 
-const PAQUET = 200 // articles par insertion
+const PAQUET = 200 // articles ou lignes par insertion
+
+const TABLE_ABSENTE = ['PGRST205', '42P01']
 
 /**
- * Les CCTP d'une affaire et tous leurs articles.
- * @returns { disponible (migration 061 passée), pieces, articles }
+ * Les pièces d'une affaire (CCTP et DPGF), les articles des CCTP et les
+ * lignes des DPGF.
+ * @returns { disponible (migration 061 passée), dpgfDisponible (073), pieces, articles, lignes }
  */
 export async function listerPieces(affaireId) {
-  const [{ data: pieces, error }, { data: articles, error: erreurArticles }] = await Promise.all([
+  const [{ data: pieces, error }, { data: articles, error: erreurArticles }, { data: lignes, error: erreurLignes }] = await Promise.all([
     supabase.from('pieces_ecrites').select('*').eq('affaire_id', affaireId).order('lot_numero_lu', { nullsFirst: false }),
     // Toutes les colonnes : `styles` (migration 062) peut manquer encore
     supabase.from('pieces_articles').select('*').eq('affaire_id', affaireId).order('ordre'),
+    supabase.from('pieces_dpgf_lignes').select('*').eq('affaire_id', affaireId).order('ordre'),
   ])
-  if (error?.code === 'PGRST205' || error?.code === '42P01') return { disponible: false, pieces: [], articles: [] }
+  if (TABLE_ABSENTE.includes(error?.code)) return { disponible: false, dpgfDisponible: false, pieces: [], articles: [], lignes: [] }
   if (error) throw error
   if (erreurArticles) throw erreurArticles
-  // Chaque article porte le lot de sa pièce : la recherche filtre par lot
+  // Sans la migration 073, pas de DPGF : le module marche comme avant
+  const dpgfDisponible = !TABLE_ABSENTE.includes(erreurLignes?.code)
+  if (erreurLignes && dpgfDisponible) throw erreurLignes
+  // Articles et lignes portent le lot de leur pièce : la recherche filtre par lot
   const lotDe = new Map((pieces ?? []).map((p) => [p.id, p.lot_id]))
   return {
     disponible: true,
+    dpgfDisponible,
     pieces: pieces ?? [],
     articles: (articles ?? []).map((a) => ({ ...a, lot_id: lotDe.get(a.piece_id) ?? null })),
+    lignes: (dpgfDisponible ? lignes ?? [] : []).map((l) => ({ ...l, lot_id: lotDe.get(l.piece_id) ?? null })),
   }
 }
 
 /**
- * Enregistre un CCTP lu. Le CCTP déjà rattaché au même lot est remplacé
- * (ses articles partent avec lui). La pièce d'abord, puis ses articles par
+ * Enregistre une pièce lue. La pièce **du même type** déjà rattachée au lot
+ * est remplacée (ses articles ou lignes partent avec elle) : un DPGF ne
+ * remplace jamais le CCTP de son lot. La pièce d'abord, puis son contenu par
  * paquets ; un échec en route retire la pièce incomplète.
- * @param lu résultat de `lirePiece` ({ lot, indice, articles, nbPages })
+ * @param type 'cctp' | 'dpgf'
+ * @param lu CCTP : { lot, indice, nbPages, articles } ; DPGF : { lot, indice, nbPages, lignes }
  */
-export async function enregistrerPiece({ affaireId, lotId, lu, nomFichier, titre }) {
+export async function enregistrerPiece({ affaireId, lotId, type = 'cctp', lu, nomFichier, titre }) {
   if (lotId) {
-    const { error } = await supabase.from('pieces_ecrites').delete().eq('affaire_id', affaireId).eq('lot_id', lotId)
+    const { error } = await supabase.from('pieces_ecrites').delete().eq('affaire_id', affaireId).eq('lot_id', lotId).eq('type', type)
     if (error) throw error
   }
+  const contenu = type === 'dpgf' ? lu.lignes : lu.articles
   const { data: piece, error } = await supabase.from('pieces_ecrites').insert({
-    affaire_id: affaireId, lot_id: lotId ?? null, type: 'cctp', titre,
+    affaire_id: affaireId, lot_id: lotId ?? null, type, titre,
     lot_numero_lu: lu.lot?.numero ?? null, lot_nom_lu: lu.lot?.nom ?? null,
     indice: lu.indice ?? null, nom_fichier: nomFichier ?? null,
-    nb_pages: lu.nbPages ?? 0, nb_articles: lu.articles.length,
+    nb_pages: lu.nbPages ?? 0, nb_articles: contenu.length,
   }).select('id').single()
   if (error) throw error
+
+  const echec = async (erreur) => {
+    await supabase.from('pieces_ecrites').delete().eq('id', piece.id)
+    throw erreur
+  }
+
+  if (type === 'dpgf') {
+    const lignes = lu.lignes.map((l) => ({
+      piece_id: piece.id, affaire_id: affaireId, ordre: l.ordre, numero: l.numero, article: l.article,
+      niveau: l.niveau, designation: l.designation, unite: l.unite, quantite: l.quantite,
+      quantite_texte: l.quantiteTexte, titre: l.titre, page: l.page,
+    }))
+    for (let i = 0; i < lignes.length; i += PAQUET) {
+      const { error: erreur } = await supabase.from('pieces_dpgf_lignes').insert(lignes.slice(i, i + PAQUET))
+      if (erreur) await echec(erreur)
+    }
+    return piece.id
+  }
 
   let lignes = lu.articles.map((a) => ({
     piece_id: piece.id, affaire_id: affaireId, ordre: a.ordre, numero: a.numero,
@@ -61,10 +92,7 @@ export async function enregistrerPiece({ affaireId, lotId, lu, nomFichier, titre
       lignes = lignes.map((l) => { const reste = { ...l }; delete reste.styles; return reste })
       ;({ error: erreur } = await supabase.from('pieces_articles').insert(lignes.slice(i, i + PAQUET)))
     }
-    if (erreur) {
-      await supabase.from('pieces_ecrites').delete().eq('id', piece.id)
-      throw erreur
-    }
+    if (erreur) await echec(erreur)
   }
   return piece.id
 }
@@ -100,9 +128,9 @@ function transaction(mode, action) {
   }))
 }
 
-/** Garde les CCTP d'une affaire sur l'appareil (visite sans réseau). */
-export function garderCopie(affaireId, { pieces, articles }) {
-  return transaction('readwrite', (m) => m.put({ affaireId, pieces, articles, copieLe: new Date().toISOString() }))
+/** Garde les pièces écrites d'une affaire sur l'appareil (visite sans réseau). */
+export function garderCopie(affaireId, { pieces, articles, lignes = [] }) {
+  return transaction('readwrite', (m) => m.put({ affaireId, pieces, articles, lignes, copieLe: new Date().toISOString() }))
 }
 
 /** La copie gardée, ou null. */
@@ -113,7 +141,7 @@ export function lireCopie(affaireId) {
 /**
  * Les CCTP de l'affaire : depuis la base (et la copie est rafraîchie), ou,
  * sans réseau, depuis la copie de l'appareil.
- * @returns { disponible, pieces, articles, horsLigne, copieLe }
+ * @returns { disponible, pieces, articles, lignes, horsLigne, copieLe }
  */
 export async function piecesPourConsultation(affaireId) {
   try {
@@ -122,7 +150,8 @@ export async function piecesPourConsultation(affaireId) {
     return { ...donnees, horsLigne: false }
   } catch (err) {
     const copie = await lireCopie(affaireId).catch(() => null)
-    if (copie) return { disponible: true, pieces: copie.pieces, articles: copie.articles, horsLigne: true, copieLe: copie.copieLe }
+    // Une copie gardée avant les DPGF n'a pas de lignes
+    if (copie) return { disponible: true, pieces: copie.pieces, articles: copie.articles, lignes: copie.lignes ?? [], horsLigne: true, copieLe: copie.copieLe }
     throw err
   }
 }

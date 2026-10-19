@@ -8,7 +8,7 @@
 // IA : des règles réglées sur des DPGF réels gardés hors du dépôt (public).
 // Pur (tests/dpgf.test.js, tableaux inventés).
 
-import { normaliser, suitLogiquement, lireLot, lireIndice, retirerBruit, decouperArticles } from './piecesLogique'
+import { normaliser, suitLogiquement, lireLot, lireIndice, retirerBruit, decouperArticles, motsRecherche, extrait } from './piecesLogique'
 
 const propre = (t) => String(t ?? '').replace(/\s+/g, ' ').trim()
 const cle = (t) => normaliser(propre(t))
@@ -485,8 +485,49 @@ export function lienCctpDpgf(pieces = [], articles = [], lignes = []) {
   return { parArticle, sansArticle, articleDeLigne }
 }
 
-/** « 73,53 », « 1 650 » : la quantité à la française, sans zéros inutiles. */
+/**
+ * « 73,53 », « 1 650 » : la quantité à la française, sans zéros inutiles ;
+ * sinon son texte (« PM »). Ligne lue (`quantiteTexte`) ou enregistrée
+ * (`quantite_texte`).
+ */
 export function formatQuantite(ligne) {
-  if (ligne?.quantite != null) return Number(ligne.quantite).toLocaleString('fr-FR', { maximumFractionDigits: 3 })
-  return ligne?.quantiteTexte ?? ''
+  if (ligne?.quantite != null && ligne.quantite !== '') return Number(ligne.quantite).toLocaleString('fr-FR', { maximumFractionDigits: 3 })
+  return ligne?.quantiteTexte ?? ligne?.quantite_texte ?? ''
+}
+
+// ─── 4. Présentation ─────────────────────────────────────────────────────────
+
+/**
+ * Une tuile par lot : son CCTP et son DPGF ensemble ; une pièce sans lot a
+ * sa propre tuile. Dans l'ordre des pièces reçues.
+ * @returns [{ cle, lotId, titre, cctp, dpgf }]
+ */
+export function piecesParLot(pieces = []) {
+  const groupes = []
+  const index = new Map()
+  for (const p of pieces) {
+    const cle = p.lot_id ? `lot:${p.lot_id}` : `piece:${p.id}`
+    if (!index.has(cle)) {
+      index.set(cle, groupes.length)
+      groupes.push({ cle, lotId: p.lot_id ?? null, titre: p.titre, cctp: null, dpgf: null })
+    }
+    const g = groupes[index.get(cle)]
+    if ((p.type ?? 'cctp') === 'dpgf') g.dpgf = p
+    else { g.cctp = p; g.titre = p.titre }
+  }
+  return groupes
+}
+
+/**
+ * Lignes de DPGF dont la désignation contient TOUS les mots (sans accents ni
+ * majuscules), dans l'ordre du document.
+ * @returns [{ ligne, extrait }]
+ */
+export function chercherLignesDpgf(lignes = [], requete = '', { lotId = null } = {}) {
+  const mots = motsRecherche(requete)
+  if (mots.length === 0) return []
+  return lignes
+    .filter((l) => (!lotId || l.lot_id === lotId) && mots.every((m) => normaliser(l.designation).includes(m)))
+    .sort((a, b) => (a.ordre ?? 0) - (b.ordre ?? 0))
+    .map((l) => ({ ligne: l, extrait: extrait(l.designation, mots, 160) }))
 }

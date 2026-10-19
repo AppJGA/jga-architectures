@@ -5,7 +5,7 @@ import assert from 'node:assert/strict'
 import { test, describe } from 'node:test'
 
 import {
-  lireDpgfExcel, casesDePage, lirePdfPieces, cleNumero, lienCctpDpgf, formatQuantite, lireNombre,
+  lireDpgfExcel, casesDePage, lirePdfPieces, cleNumero, lienCctpDpgf, formatQuantite, lireNombre, piecesParLot, chercherLignesDpgf,
 } from '../src/modules/etude/pieces-ecrites/dpgfLogique.js'
 import { lignesDePage, lireLot } from '../src/modules/etude/pieces-ecrites/piecesLogique.js'
 
@@ -295,5 +295,36 @@ describe('lien au CCTP', () => {
     assert.equal(sansArticle.get('D1'), 1)
     assert.equal(sansArticle.get('D3'), 1)
     assert.equal(articleDeLigne.get('l2').id, 'a2')
+  })
+})
+
+describe('tuiles', () => {
+  test('une tuile par lot, CCTP et DPGF ensemble ; une pièce sans lot seule', () => {
+    const tuiles = piecesParLot([
+      { id: 'D1', type: 'dpgf', lot_id: 'L1', titre: 'Lot 1 – Gros œuvre' },
+      { id: 'C1', type: 'cctp', lot_id: 'L1', titre: 'Lot 1 – Gros œuvre' },
+      { id: 'C2', type: 'cctp', lot_id: 'L2', titre: 'Lot 2' },
+      { id: 'X', type: 'cctp', lot_id: null, titre: 'CCTP' },
+      { id: 'Y', lot_id: null, titre: 'CCTP ancien' },
+    ])
+    assert.deepEqual(tuiles.map((t) => [t.cle, t.cctp?.id ?? null, t.dpgf?.id ?? null]), [
+      ['lot:L1', 'C1', 'D1'], ['lot:L2', 'C2', null], ['piece:X', 'X', null], ['piece:Y', 'Y', null],
+    ])
+  })
+})
+
+describe('recherche dans les DPGF', () => {
+  test('tous les mots, sans accents, filtre par lot, ordre du document', () => {
+    const lignes = [
+      { id: 'b', ordre: 2, lot_id: 'L1', designation: 'Garde-corps en acier galvanisé' },
+      { id: 'a', ordre: 1, lot_id: 'L1', designation: 'Dépose du garde-corps existant' },
+      { id: 'c', ordre: 3, lot_id: 'L2', designation: 'Garde-corps vitré' },
+      { id: 'd', ordre: 4, lot_id: 'L1', designation: 'Peinture' },
+    ]
+    assert.deepEqual(chercherLignesDpgf(lignes, 'garde corps').map((r) => r.ligne.id), ['a', 'b', 'c'])
+    assert.deepEqual(chercherLignesDpgf(lignes, 'GALVANISE acier').map((r) => r.ligne.id), ['b'])
+    assert.deepEqual(chercherLignesDpgf(lignes, 'garde', { lotId: 'L2' }).map((r) => r.ligne.id), ['c'])
+    assert.deepEqual(chercherLignesDpgf(lignes, ''), [])
+    assert.ok(chercherLignesDpgf(lignes, 'depose')[0].extrait.some((m) => m.surligne && m.texte === 'Dépose'))
   })
 })

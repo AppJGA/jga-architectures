@@ -382,7 +382,7 @@ export function ModeVisite({ cr, affaire = null, convocations = new Map(), secti
   )
   const robot = useEnregistrementVisite({ crId: cr.id, affaireId: cr.affaire_id, vocabulaire, actif: estAgence })
 
-  // Les CCTP de l'affaire, cherchables pendant la réunion : lus à l'ouverture
+  // CCTP et DPGF de l'affaire, cherchables pendant la réunion : lus à l'ouverture
   // (et gardés sur l'appareil), ou, sans réseau, depuis la copie gardée
   const [pieces, setPieces] = useState(null)
   useEffect(() => {
@@ -507,8 +507,8 @@ export function ModeVisite({ cr, affaire = null, convocations = new Map(), secti
             <BoutonRobot robot={robot} onOuvrirPanneau={() => setPanneau({ type: 'enregistrements' })} />
           )}
           {pieces?.pieces.length > 0 && (
-            <button type="button" onClick={() => setPanneau({ type: 'pieces' })} style={bouton()} title="Chercher dans les CCTP">
-              <Search size={18} /> CCTP
+            <button type="button" onClick={() => setPanneau({ type: 'pieces' })} style={bouton()} title="Chercher dans les CCTP et DPGF">
+              <Search size={18} /> Pièces écrites
             </button>
           )}
           <button type="button" onClick={() => setPanneau({ type: 'presences' })} style={bouton()}>
@@ -669,7 +669,7 @@ export function ModeVisite({ cr, affaire = null, convocations = new Map(), secti
               Sans réseau : copie gardée sur l’appareil{pieces.copieLe ? ` le ${new Date(pieces.copieLe).toLocaleDateString('fr-FR')}` : ''}.
             </p>
           )}
-          <RecherchePieces pieces={pieces.pieces} articles={pieces.articles} grand autoFocus />
+          <RecherchePieces pieces={pieces.pieces} articles={pieces.articles} lignes={pieces.lignes} grand autoFocus />
         </Panneau>
       )}
       {panneau?.type === 'presences' && (

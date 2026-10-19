@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { BookOpen } from 'lucide-react'
+import { BookOpen, AlertTriangle } from 'lucide-react'
 import { formatQuantite } from './dpgfLogique'
 import { CadreLecture, ReperePage } from './CadreLecture'
 
@@ -9,7 +9,9 @@ import { CadreLecture, ReperePage } from './CadreLecture'
 // quantité (jamais les prix). Les titres d'articles en gras selon leur
 // niveau, les lignes de détail en retrait sous leur article. Une ligne
 // numérotée reliée au CCTP du lot porte « CCTP » : la lecture du CCTP s'ouvre
-// sur l'article (`onLireArticle`). `ligneId` : la ligne sur laquelle ouvrir.
+// sur l'article (`onLireArticle`) ; celle qui n'a pas trouvé son article
+// porte « Absent du CCTP », aux couleurs du bandeau qui les compte.
+// `ligneId` : la ligne sur laquelle ouvrir.
 
 // Numéro, désignation, unité, quantité ; plus serré sur tablette en portrait
 const colonnes = (large) => (large ? '72px minmax(0, 1fr) 52px 120px' : '50px minmax(0, 1fr) 38px 64px')
@@ -33,7 +35,12 @@ export function LecteurDpgf({ piece, lignes = [], ligneId = null, lien = null, a
     () => siennes.filter((l) => l.numero && (l.niveau ?? 1) <= 2).map((l) => ({ id: l.id, numero: l.numero, titre: l.designation, niveau: l.niveau ?? 1 })),
     [siennes],
   )
-  const sansArticle = lien?.sansArticle.get(piece?.id) ?? 0
+  // Articles du DPGF sans article de même numéro dans le CCTP du lot (sans
+  // CCTP, rien n'est relié : le bandeau gris le dit une fois pour toutes)
+  const nonRelies = useMemo(
+    () => new Set(aCctp && lien ? siennes.filter((l) => l.numero && !lien.articleDeLigne.has(l.id)).map((l) => l.id) : []),
+    [aCctp, lien, siennes],
+  )
 
   return (
     <CadreLecture
@@ -44,9 +51,10 @@ export function LecteurDpgf({ piece, lignes = [], ligneId = null, lien = null, a
     >
       {({ accent, inscrire, taille, large }) => (
         <>
-          {aCctp && sansArticle > 0 && (
-            <p style={{ margin: '0 0 16px', padding: '8px 12px', fontSize: 12, color: '#92400E', background: '#FFFBEB', border: '0.5px solid #F59E0B' }}>
-              {sansArticle} ligne{sansArticle > 1 ? 's' : ''} sans article correspondant dans le CCTP du lot (numérotation différente, ou article absent du CCTP).
+          {nonRelies.size > 0 && (
+            <p style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '0 0 16px', padding: '8px 12px', fontSize: 12, color: '#92400E', background: '#FFFBEB', border: '0.5px solid #F59E0B' }}>
+              <AlertTriangle size={14} style={{ flexShrink: 0 }} />
+              {nonRelies.size} article{nonRelies.size > 1 ? 's' : ''} du DPGF sans article correspondant dans le CCTP du lot (numérotation différente, ou article absent du CCTP), marqué{nonRelies.size > 1 ? 's' : ''} « Absent du CCTP » ci-dessous.
             </p>
           )}
           {!aCctp && siennes.length > 0 && (
@@ -80,6 +88,12 @@ export function LecteurDpgf({ piece, lignes = [], ligneId = null, lien = null, a
                         textTransform: l.titre && niveau === 1 ? 'uppercase' : undefined,
                       }}>
                         {l.designation}
+                        {nonRelies.has(l.id) && (
+                          <span title="Aucun article de ce numéro dans le CCTP du lot"
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 8, padding: grand ? '5px 9px' : '1px 6px', border: '0.5px solid #F59E0B', borderRadius: 2, background: '#FFFBEB', color: '#92400E', fontSize: grand ? 12 : 10, fontWeight: 600, textTransform: 'none', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+                            <AlertTriangle size={11} /> Absent du CCTP
+                          </span>
+                        )}
                         {article && onLireArticle && (
                           <button type="button" onClick={() => onLireArticle(article)} title="Lire cet article dans le CCTP"
                             style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 8, padding: grand ? '6px 10px' : '1px 6px', minHeight: 0, border: `0.5px solid ${accent}`, borderRadius: 2, background: 'white', color: accent, fontSize: grand ? 12 : 10, fontWeight: 600, textTransform: 'none', verticalAlign: 'middle', cursor: 'pointer' }}>

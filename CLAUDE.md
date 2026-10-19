@@ -594,7 +594,9 @@ du mode Visite, hors ligne). Conception :
   du même lot. **Lien au CCTP calculé, jamais stocké** (`lienCctpDpgf`) :
   même lot, même numéro (`cleNumero` : « 3.0 » ≡ « 3 ») ; sur les exemples,
   88 à 100 % des lignes reliées. Écran : une tuile par lot (`piecesParLot`),
-  `LecteurDpgf`, lignes en gris sous chaque article de `LecteurCctp`,
+  `LecteurDpgf` (article sans correspondant dans le CCTP du lot marqué
+  « Absent du CCTP », ambre du bandeau qui les compte), lignes en gris sous
+  chaque article de `LecteurCctp`,
   passage de l'un à l'autre par `LecturePiece`, cadre commun
   `CadreLecture` ; recherche (`chercherLignesDpgf`) ; copie hors ligne avec
   `lignes`. Sans la 073, le module marche comme avant (`dpgfDisponible`).

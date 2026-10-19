@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 961 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion)
+npm test         # 978 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -167,7 +167,7 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
   personnes partent par cascade). Sans la 072, le carnet et les contacts
   tolèrent l'absence des colonnes (`type`, `interlocuteur_id`) et
   réessaient sans elles.
-- **Base** : `supabase/migrations/`, numérotées, 72 fichiers, **passées à la
+- **Base** : `supabase/migrations/`, numérotées, 73 fichiers, **passées à la
   main** dans le SQL Editor de Supabase : un code qui dépend d'une nouvelle
   colonne doit tolérer son absence tant que la migration n'est pas faite. La photo de
   couverture d'une affaire est `affaires.photo_url` (migration 014, bucket
@@ -511,8 +511,8 @@ création avec reprise de la visite précédente) et `useCompteRendu` (un CR).
 
 ## Pièces écrites (`src/modules/etude/pieces-ecrites/`)
 
-CCTP des bureaux d'études, importés en PDF, découpés en articles et
-cherchables — au bureau (module, partie Étude) et en visite (bouton « CCTP »
+CCTP et DPGF des bureaux d'études, importés en PDF (et Excel pour les DPGF),
+découpés en articles ou en lignes et cherchables — au bureau (module, partie Étude) et en visite (bouton « CCTP »
 du mode Visite, hors ligne). Conception :
 `docs/superpowers/specs/2026-10-06-pieces-ecrites-design.md`. **Aucune IA.**
 
@@ -571,6 +571,33 @@ du mode Visite, hors ligne). Conception :
   niveaux qui suit la lecture. Le PDF n'étant pas gardé, c'est le texte
   remis en page (choix de l'agence, 2026-10-15) : ni tableaux ni images.
   Portail vers `body` : la couleur de la phase est relue sur une ancre.
+- **DPGF** (conception `docs/superpowers/specs/2026-10-19-dpgf-design.md`,
+  migration 073, `dpgfLogique.js` pur, `tests/dpgf.test.js` sur tableaux
+  inventés ; 9 DPGF réels hors dépôt, `Desktop/PERSO/Exemples DPGF`) :
+  **vierges seulement, jamais les prix** — numéro, désignation, unité,
+  quantité ou texte (« PM », « CP », « Inclus en armoire »). Une pièce
+  `type = 'dpgf'` par lot à côté du CCTP ; lignes dans `pieces_dpgf_lignes`.
+  **`enregistrerPiece` remplace par lot ET par type** (sinon un DPGF
+  effaçait le CCTP). Excel (`lectureTableur.js`, SheetJS à la demande) :
+  en-tête unité + quantité, colonnes recalées sur les valeurs, **texte
+  affiché** des cases (« 1.10 » saisi en nombre vaut 1.1), lecture depuis le
+  haut de la feuille (l'en-tête répété arrive parfois après les premiers
+  articles), numéro en tête de désignation pris s'il suit logiquement,
+  sous-totaux / totaux / signature écartés ; colonnes désignées à la main en
+  repli. PDF (`casesDePage`, abscisses des fragments) : pages à tableau
+  par l'en-tête, désignation sur plusieurs lignes (continuée si minuscule,
+  ou si la ligne précédente atteignait le bord du texte — bord lu sans les
+  sous-totaux qui débordent), quantité posée entre deux lignes, rubrique
+  « Localisation : » qui ouvre une ligne, numéro dans sa propre case
+  accepté même s'il saute ; **un PDF peut contenir CCTP et DPGF**
+  (`lirePdfPieces`). À l'import, le DPGF d'un PDF s'efface devant l'Excel
+  du même lot. **Lien au CCTP calculé, jamais stocké** (`lienCctpDpgf`) :
+  même lot, même numéro (`cleNumero` : « 3.0 » ≡ « 3 ») ; sur les exemples,
+  88 à 100 % des lignes reliées. Écran : une tuile par lot (`piecesParLot`),
+  `LecteurDpgf`, lignes en gris sous chaque article de `LecteurCctp`,
+  passage de l'un à l'autre par `LecturePiece`, cadre commun
+  `CadreLecture` ; recherche (`chercherLignesDpgf`) ; copie hors ligne avec
+  `lignes`. Sans la 073, le module marche comme avant (`dpgfDisponible`).
 - **Dossier pour Claude** (conformité plans / CCTP, conception
   `docs/superpowers/specs/2026-10-08-dossier-claude-conformite-design.md`) :
   bouton « Préparer le dossier d’analyse de conformité par l’IA » (logo de

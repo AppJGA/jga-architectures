@@ -43,6 +43,17 @@ export function versionCourante(versions, planId) {
     .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))[0] ?? null
 }
 
+/**
+ * Images à garder sur l'appareil pour consulter les plans sans réseau :
+ * aperçu et pleine définition de la version courante de chaque plan.
+ */
+export function cheminsAGarder(plans, versions) {
+  return (plans ?? []).flatMap((p) => {
+    const v = versionCourante(versions, p.id)
+    return v ? [v.chemin_apercu, v.chemin].filter(Boolean) : []
+  })
+}
+
 // Versions d'un plan qu'aucune pastille n'affiche plus, hors version gardée :
 // leurs fichiers peuvent partir.
 export function versionsInutilisees(versions, pastilles, planId, gardeId) {

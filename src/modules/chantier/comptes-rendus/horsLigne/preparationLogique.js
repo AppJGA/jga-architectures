@@ -14,6 +14,8 @@ export function etapesPreparation(affaireId, crId) {
   return [
     { cle: 'visites', libelle: 'Liste des visites', chemin: `${base}/comptes-rendus` },
     ...(crId ? [{ cle: 'visite', libelle: 'Visite, photos et plans', chemin: `${base}/comptes-rendus?cr=${crId}&visite=1`, visite: true }] : []),
+    // Tous les plans de l'affaire, pas seulement ceux que la visite affiche
+    { cle: 'plans', libelle: 'Plans', chemin: `${base}/plans`, plans: true },
     { cle: 'lots', libelle: 'Lots et entreprises', chemin: `${base}/lots-entreprises` },
     { cle: 'planning', libelle: 'Planning chantier', chemin: `${base}/planning-chantier` },
     { cle: 'cctp', libelle: 'Pièces écrites', chemin: `${base}/pieces-ecrites`, cctp: true },

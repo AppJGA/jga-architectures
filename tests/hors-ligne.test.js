@@ -220,7 +220,7 @@ describe('préparer pour le chantier', async () => {
 
   test('les pages utiles, la visite en mode Visite', () => {
     const etapes = etapesPreparation('a1', 'cr3')
-    assert.deepEqual(etapes.map((e) => e.cle), ['visites', 'visite', 'lots', 'planning', 'cctp'])
+    assert.deepEqual(etapes.map((e) => e.cle), ['visites', 'visite', 'plans', 'lots', 'planning', 'cctp'])
     assert.equal(etapes[1].chemin, '/affaires/a1/comptes-rendus?cr=cr3&visite=1')
     assert.ok(etapes[1].visite)
   })

@@ -11,6 +11,10 @@
 import { etapesPreparation, pageCalme } from './preparationLogique'
 import { MAGASINS, lire } from './baseLocale'
 import { listerPieces, garderCopie } from '../../../etude/pieces-ecrites/piecesDonnees'
+import { plansDeLAffaire, BUCKET_PLANS } from '../plansStockage'
+import { liensSignes } from '../photosStockage'
+import { cheminsAGarder } from '../plansLogique'
+import { garderImages } from './images'
 
 const CLE = (affaireId) => `jga.preparation.${affaireId}`
 const ATTENTE_MAX_MS = 45_000
@@ -69,6 +73,15 @@ export async function preparerChantier({ affaireId, cr = null, surEtape }) {
         // La visite est emportée quand son instantané est plus récent que le début
         const emportee = await lire(MAGASINS.visites, cr.id).catch(() => null)
         if (!emportee || (emportee.prepareLe ?? 0) < debut) echecs.push(etape.libelle)
+      } else if (etape.plans) {
+        // Les images de tous les plans, attendues jusqu'au bout : la page du
+        // module les recopie aussi, mais le cadre pourrait se fermer avant
+        try {
+          const donnees = await plansDeLAffaire(affaireId)
+          const chemins = donnees ? cheminsAGarder(donnees.plans, donnees.versions) : []
+          const { gardees } = await garderImages(chemins, (c) => liensSignes(c, 3600, BUCKET_PLANS))
+          if (gardees < chemins.length) echecs.push(etape.libelle)
+        } catch { echecs.push(etape.libelle) }
       } else if (etape.cctp) {
         // La copie des CCTP pour la recherche hors ligne, attendue jusqu'au bout
         try {

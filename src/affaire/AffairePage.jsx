@@ -21,7 +21,7 @@ import { infosStatut } from '../modules/chantier/comptes-rendus/crLogique'
 import { dernierePhaseRenseignee, nomPhase } from '../modules/etude/financier/phases'
 import {
   IconeTableauDeBord, IconePlanningEtude, IconeFinancierEtude, IconeEntreprisesLots, IconeVisitesChantier,
-  IconeOpr, IconeFtm, IconePlanningChantier, IconeFinancierChantier, IconeDocuments, IconeTodo,
+  IconeOpr, IconeFtm, IconePlanningChantier, IconeFinancierChantier, IconeDocuments, IconeTodo, IconePlans,
 } from '../shared/icones/IconesAffaire'
 import { montantsAffaire, tvaAffaire, htDe, formatEuros } from '../shared/montants'
 import { MontantHT } from '../shared/components/MontantHT'
@@ -41,6 +41,7 @@ const ICON_MAP = {
   CalendarRange: IconePlanningChantier,
   TrendingUp: IconeFinancierChantier,
   FileText: IconeDocuments,
+  Map: IconePlans,
 }
 
 
@@ -71,6 +72,7 @@ function useAffaireStats(affaireId) {
     etudeTotal: 0, prochainJalonEtude: null,
     financierEtudeDernierePhase: null, financierEtudeEnvActuelle: null,
     crTotal: 0, crEmis: 0, crDernierDate: null, crProchaineReunion: null, remarquesAFaire: 0,
+    plans: null,
   })
   useEffect(() => {
     if (!affaireId) return
@@ -88,7 +90,8 @@ function useAffaireStats(affaireId) {
       supabase.from('planning_etude_phases').select('id').eq('affaire_id', affaireId),
       supabase.from('planning_etude_jalons').select('id, label, semaine, annee, couleur').eq('affaire_id', affaireId).order('annee').order('semaine'),
       supabase.from('suivi_financier_etude').select('*').eq('affaire_id', affaireId),
-    ]).then(([crData, remAFaire, t, lots, le, lf, pl, ja, fa, ea, ej, sfe]) => {
+      supabase.from('affaire_plans').select('id', { count: 'exact', head: true }).eq('affaire_id', affaireId),
+    ]).then(([crData, remAFaire, t, lots, le, lf, pl, ja, fa, ea, ej, sfe, pa]) => {
       const lotsTotalHt = le.data?.reduce((sum, x) => sum + (x.montant_marche_ht ?? 0), 0) ?? 0
       const activeLignes = lf.data?.filter(l => l.statut !== 'refuse') ?? []
       const financierSupplementsHt = activeLignes.reduce((s, l) => s + (l.montant_ht ?? 0), 0)
@@ -176,6 +179,8 @@ function useAffaireStats(affaireId) {
         financierEtudeDernierePhase: derniereSfe ? nomPhase(derniereSfe) : null,
         // HT et TTC gardés tels quels : la tuile en tire le HT au taux de l'affaire
         financierEtudeEnvActuelle: derniereSfe ? { ht: derniereSfe.enveloppe_ht ?? null, ttc: derniereSfe.enveloppe_ttc ?? null } : null,
+        // Sans la migration 041, la tuile se tait
+        plans: pa.error ? null : (pa.count ?? 0),
       })
     })
   }, [affaireId])
@@ -627,24 +632,6 @@ function ModulesSidebar({ affaireId, moduleId }) {
         })}
       </div>
 
-      <div style={{ height: '0.5px', backgroundColor: 'rgba(0,0,0,0.08)', margin: '14px 0' }} />
-
-      <p style={{
-        fontSize: 10, fontWeight: 500, color: 'var(--jga-beige)',
-        letterSpacing: '0.08em', textTransform: 'uppercase',
-        marginBottom: 4, paddingLeft: 4,
-      }}>
-        Documents
-      </p>
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 10,
-        padding: '7px 12px', borderRadius: 2,
-        fontSize: 12, color: '#5E5854',
-        opacity: 0.4, cursor: 'default',
-      }}>
-        <IconeDocuments size={22} />
-        <span>Documents · bientôt</span>
-      </div>
     </aside>
   )
 }
@@ -773,6 +760,17 @@ function PhaseSection({ phase, affaire, stats, affaireId, navigate, rangBase }) 
                       lots attribués{stats.lotsTotalHt > 0 ? ` · ${formatEuro(stats.lotsTotalHt)} HT` : ''}
                     </p>
                   </>
+                )
+              )}
+
+              {isChantier && mod.id === 'plans' && stats.plans != null && (
+                stats.plans === 0 ? (
+                  <p style={{ fontSize: 12, color: 'var(--jga-beige)' }}>Aucun plan — importer le jeu de plans</p>
+                ) : (
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+                    <p style={{ fontSize: 22, fontWeight: 500, color: '#1F1B17' }}>{stats.plans}</p>
+                    <span style={{ fontSize: 12, color: '#5E5854' }}>plan{stats.plans > 1 ? 's' : ''}</span>
+                  </div>
                 )
               )}
 

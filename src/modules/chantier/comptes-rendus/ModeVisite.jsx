@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useContext, useMemo } from 'react'
 import { Search, Plus, Camera, MapPin, Pencil, MoreHorizontal, WifiOff, AlertTriangle, X, LogOut, Lock, RefreshCw, CornerDownRight } from 'lucide-react'
-import { IconeFtm, IconeAvancement, IconePresence, IconeSuite } from '../../../shared/icones/IconesAffaire'
+import { IconeFtm, IconeAvancement, IconePresence, IconeSuite, IconePlans } from '../../../shared/icones/IconesAffaire'
 import { FILTRES_VISITE, filtreVisite, groupesVisite, compteursVisite } from './visiteLogique'
 import { STATUTS, infosStatut, estEnRetard, libelleZone, peutModifierRemarque, auteurExterieur, miseEnForme, COULEUR_SURLIGNE } from './crLogique'
 import { useCr } from './CrContexte'
@@ -12,6 +12,7 @@ import { creerRemarqueAdressee, champsModification } from './rangerRemarque'
 import { usePhotosRemarque, PhotosContexte } from './usePhotosRemarque'
 import { PhotosDeRemarque } from './PhotosRemarque'
 import { usePlansCr } from './PlansContexte'
+import { PanneauPlansVisite } from './PanneauPlansVisite'
 import { ftmDeRemarque, resumeFtm } from '../ftm/lienFtm'
 import { useAuth } from '../../../core/auth/useAuth'
 import { useEnregistrementVisite } from './enregistrement/useEnregistrementVisite'
@@ -394,6 +395,7 @@ export function ModeVisite({ cr, affaire = null, convocations = new Map(), secti
     return () => { annule = true }
   }, [cr.affaire_id, estAgence])
   const peutEnregistrer = robot.disponible && !lectureSeule && cr.statut !== 'emis'
+  const plansVisite = usePlansCr()
   const aValider = propositionsAValider(sections)
 
   // Glisser une remarque vers un autre destinataire : comme une modification
@@ -505,6 +507,11 @@ export function ModeVisite({ cr, affaire = null, convocations = new Map(), secti
           {compteurs.enRetard > 0 && <span style={{ fontSize: 13, color: 'white', background: '#B8412C', fontWeight: 600, borderRadius: 3, padding: '3px 8px' }}>{compteurs.enRetard} en retard</span>}
           {(peutEnregistrer || (robot.disponible && robot.etat !== 'pret')) && (
             <BoutonRobot robot={robot} onOuvrirPanneau={() => setPanneau({ type: 'enregistrements' })} />
+          )}
+          {plansVisite.disponible && plansVisite.plans.length > 0 && (
+            <button type="button" onClick={() => setPanneau({ type: 'plans' })} style={bouton()} title="Consulter les plans de l’affaire">
+              <IconePlans size={20} /> Plans
+            </button>
           )}
           {pieces?.pieces.length > 0 && (
             <button type="button" onClick={() => setPanneau({ type: 'pieces' })} style={bouton()} title="Chercher dans les CCTP et DPGF">
@@ -662,6 +669,7 @@ export function ModeVisite({ cr, affaire = null, convocations = new Map(), secti
           onFermer={() => setPanneau(null)}
         />
       )}
+      {panneau?.type === 'plans' && <PanneauPlansVisite onFermer={() => setPanneau(null)} />}
       {panneau?.type === 'pieces' && pieces && (
         <Panneau titre="Pièces écrites" onFermer={() => setPanneau(null)}>
           {pieces.horsLigne && (

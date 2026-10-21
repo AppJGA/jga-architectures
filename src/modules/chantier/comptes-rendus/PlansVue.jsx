@@ -16,7 +16,7 @@ function fmtJour(iso) {
   return iso ? new Date(iso).toLocaleDateString('fr-FR') : ''
 }
 
-function CartePlan({ plan, version, nbPastilles, liens, peutGerer, onOuvrir, onVersion, onRenommer, onSupprimer }) {
+export function CartePlan({ plan, version, nbPastilles, liens, peutGerer, onOuvrir, onVersion, onRenommer, onSupprimer }) {
   const [renommage, setRenommage] = useState(null)
   return (
     <div style={{ background: 'white', border: '0.5px solid rgba(0,0,0,0.1)', display: 'flex', flexDirection: 'column' }}>

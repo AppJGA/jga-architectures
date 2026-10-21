@@ -676,10 +676,12 @@ export function CrDetail({ crId, affaire, onBack, lectureSeule: lectureSeuleAffa
     ...(s.directRemarques ?? []),
     ...(s.sousSections ?? []).flatMap(ss => ss.remarques ?? []),
   ]), [sections])
+  // Les liens et les remarques servent aussi au bouton « Plans » du mode Visite
   const contextePlans = useMemo(() => ({
     disponible: plansCr.disponible, plans: plansCr.plans, versions: plansCr.versions, pastilles,
+    liens: plansCr.liens, obtenirLiens: plansCr.obtenirLiens, remarques: toutesRemarques,
     ouvrirPlacement: setPlacement,
-  }), [plansCr.disponible, plansCr.plans, plansCr.versions, pastilles])
+  }), [plansCr.disponible, plansCr.plans, plansCr.versions, plansCr.liens, plansCr.obtenirLiens, pastilles, toutesRemarques])
 
   // Un intervenant extérieur consulte l'affaire (lectureSeuleAffaire), mais
   // dépose ses propres observations tant que le compte rendu est un brouillon

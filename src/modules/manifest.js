@@ -78,6 +78,17 @@ export const phases = [
         exterieur: true,
       },
       {
+        // Les plans de l'affaire, ceux que les visites affichent : rangés et
+        // consultés ici, sur la tablette en réunion, même sans réseau
+        id: 'plans',
+        label: 'Plans',
+        icon: 'Map',
+        path: 'plans',
+        component: lazy(() => import('./chantier/plans')),
+        enabled: true,
+        description: 'Plans du projet, consultables en visite',
+      },
+      {
         id: 'opr',
         label: 'OPR',
         icon: 'ClipboardCheck',

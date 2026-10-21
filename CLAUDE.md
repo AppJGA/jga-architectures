@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 978 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF)
+npm test         # 986 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -319,6 +319,20 @@ création avec reprise de la visite précédente) et `useCompteRendu` (un CR).
   émis gardent la leur, et un plan ou une version qu'ils affichent ne se
   supprime pas. La visionneuse (`VisionneusePlan.jsx`) garde ses calculs de
   zoom dans `plansLogique.js`.
+  **Module « Plans »** (phase chantier, `src/modules/chantier/plans/`,
+  conception `docs/superpowers/specs/2026-10-21-module-plans-design.md`,
+  remplace l'ancienne rubrique « Documents · bientôt ») : **les mêmes
+  plans**, aucune table de plus. Import d'un **jeu de plans** (`ImportPlans`,
+  règle pure `importPlansLogique.js`, testée) : toutes les pages de chaque
+  PDF, cochées, nom d'après le fichier (« – p. N ») ; une page qui porte le
+  nom d'un plan existant (`cleNom`) en devient la **nouvelle version**, sauf
+  « en faire un nouveau plan » ; deux pages cochées du même nom bloquent.
+  Ouvert avec réseau, le module recopie sur l'appareil aperçu et image de
+  la version courante de chaque plan (`cheminsAGarder`, `garderImages`) ;
+  « Préparer pour le chantier » a son étape « Plans ». Bouton **« Plans »
+  du mode Visite** (`PanneauPlansVisite`) : liste puis plein écran
+  (`PlanPleinEcran`, commun au module) avec les pastilles de la visite ;
+  `PlansContexte` porte pour cela `liens`, `obtenirLiens` et `remarques`.
 - **Tableau de bord d'une visite** (`CrAccueil`, dans `CrDetail.jsx`) : le
   bloc Remarques en tête, puis les tuiles dans l'ordre voulu par l'agence —
   Présences, Avancement, Prochaine visite, Enregistrement, Plans, Généralités — **toujours trois

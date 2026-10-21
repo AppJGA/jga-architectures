@@ -30,6 +30,13 @@ create table if not exists pieces_dpgf_lignes (
   page            integer
 );
 
+-- Depuis le 30 octobre 2026, Supabase n'ouvre plus d'office une nouvelle
+-- table à l'API : sans ces droits, l'app reçoit « permission denied ». Pas
+-- de droit aux visiteurs sans compte (anon) : table réservée à l'agence, et
+-- les règles RLS ci-dessous décident de toute façon ligne par ligne.
+grant select, insert, update, delete on public.pieces_dpgf_lignes to authenticated;
+grant select, insert, update, delete on public.pieces_dpgf_lignes to service_role;
+
 create index if not exists pieces_dpgf_lignes_affaire on pieces_dpgf_lignes(affaire_id);
 create index if not exists pieces_dpgf_lignes_piece on pieces_dpgf_lignes(piece_id, ordre);
 

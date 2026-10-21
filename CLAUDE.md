@@ -169,7 +169,13 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
   réessaient sans elles.
 - **Base** : `supabase/migrations/`, numérotées, 73 fichiers, **passées à la
   main** dans le SQL Editor de Supabase : un code qui dépend d'une nouvelle
-  colonne doit tolérer son absence tant que la migration n'est pas faite. La photo de
+  colonne doit tolérer son absence tant que la migration n'est pas faite.
+  **Toute table créée depuis le 2026-10-30 doit recevoir ses droits d'API
+  dans la migration qui la crée** (Supabase ne les donne plus d'office ;
+  sans eux : « permission denied ») : `grant select, insert, update, delete
+  on public.<table> to authenticated;` et de même `to service_role;` —
+  `anon` seulement si des visiteurs sans compte doivent la lire (jamais pour
+  une table de l'agence). Les tables antérieures ne changent pas. La photo de
   couverture d'une affaire est `affaires.photo_url` (migration 014, bucket
   public `affaires-photos`).
 

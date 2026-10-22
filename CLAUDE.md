@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 986 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans)
+npm test         # 993 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans, gestion de l'application)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -167,7 +167,7 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
   personnes partent par cascade). Sans la 072, le carnet et les contacts
   tolèrent l'absence des colonnes (`type`, `interlocuteur_id`) et
   réessaient sans elles.
-- **Base** : `supabase/migrations/`, numérotées, 73 fichiers, **passées à la
+- **Base** : `supabase/migrations/`, numérotées, 74 fichiers, **passées à la
   main** dans le SQL Editor de Supabase : un code qui dépend d'une nouvelle
   colonne doit tolérer son absence tant que la migration n'est pas faite.
   **Toute table créée depuis le 2026-10-30 doit recevoir ses droits d'API
@@ -749,6 +749,25 @@ associés, sur toutes les pages sauf Gestion d'agence elle-même.
   sur des pages à part (date, affaire, rendu, planning, équipe), filtres de
   l'écran rappelés ; tout texte passe par `echapperHtml`.
 - Échéances partagées avec Notion : voir la section du même nom.
+
+## Gestion de l'application (`src/admin/`)
+
+5ᵉ bulle de l'accueil, **administrateur seul** (`estAdmin`, route
+`/gestion-application` gardée par `AdminSeul`), gris ardoise `#4A5560`
+(conception `docs/superpowers/specs/2026-10-22-gestion-application-design.md`).
+Tableau de bord : stockage (jauges fichiers / base contre les limites de
+l'offre gratuite, `LIMITES` de `gestionAppLogique.js` — **seul endroit à
+changer** le jour d'une autre offre ; détail par sorte, affaires les plus
+lourdes, « Nettoyer le stockage »), comptes (dernière connexion, comptes
+**sans profil** en rouge), santé (version en ligne injectée au build par
+`vite.config.js` : `VITE_COMMIT` d'après `VERCEL_GIT_COMMIT_SHA`,
+`VITE_CONSTRUIT_LE` ; envois hors ligne en attente sur l'appareil ;
+échéances Notion sans carte au-delà du bail), activité. Au-delà de 80 %
+(`SEUIL_ALERTE`), la bulle d'accueil porte un avertissement orange
+(`alerteAccueil`). Lectures réservées par la **migration 074**
+(`admin_stockage`, `admin_base`, `admin_comptes`, `security definer`, refus
+de tout autre appelant, aucune table) ; sans elle la page dit ce qui manque.
+Calculs purs testés (`tests/gestion-application.test.js`).
 
 ## Échéances partagées avec Notion
 

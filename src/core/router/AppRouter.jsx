@@ -12,6 +12,7 @@ const Heures = lazy(() => import('../../tools/heures'))
 const HomePage = lazy(() => import('../../pages/HomePage'))
 const CarnetAdresses = lazy(() => import('../../pages/CarnetAdressesPage'))
 const GestionAgence = lazy(() => import('../../gestion/GestionPage'))
+const GestionApplication = lazy(() => import('../../admin/GestionApplicationPage'))
 
 function Spinner() {
   return (
@@ -50,6 +51,14 @@ function AssocieSeul({ children }) {
   const { accesGestion } = useAuth()
   if (accesGestion === null) return <Spinner />
   return accesGestion ? children : <Navigate to="/home" replace />
+}
+
+// Gestion de l'application : l'administrateur seul (migration 068). Tant que
+// le profil n'est pas lu (accesGestion nul), on attend.
+function AdminSeul({ children }) {
+  const { estAdmin, accesGestion } = useAuth()
+  if (!estAdmin && accesGestion === null) return <Spinner />
+  return estAdmin ? children : <Navigate to="/home" replace />
 }
 
 function PlaceholderSettings() {
@@ -97,6 +106,7 @@ export function AppRouter() {
           <Route path="carnet-adresses" element={<AgenceSeule><Wrap><CarnetAdresses /></Wrap></AgenceSeule>} />
           <Route path="gestion-agence" element={<AssocieSeul><Wrap><GestionAgence /></Wrap></AssocieSeul>} />
           <Route path="gestion-agence/:outil" element={<AssocieSeul><Wrap><GestionAgence /></Wrap></AssocieSeul>} />
+          <Route path="gestion-application" element={<AdminSeul><Wrap><GestionApplication /></Wrap></AdminSeul>} />
           <Route path="heures" element={<AgenceSeule><Wrap><Heures /></Wrap></AgenceSeule>} />
 
           {/* Tools */}

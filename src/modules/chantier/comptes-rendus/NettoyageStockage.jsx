@@ -6,11 +6,14 @@ import { formatOctets, resumeOrphelines, libelleFichiers } from './photosLogique
 // Recherche puis suppression des fichiers (photos, plans) qu'aucun compte rendu
 // n'utilise (affaire supprimée, envoi interrompu). Rien n'est effacé sans
 // confirmation.
-export function NettoyageStockage({ onTermine }) {
+// `onErreur` : hors d'un compte rendu (page de l'administrateur), l'erreur va
+// là plutôt que dans le bandeau du CR.
+export function NettoyageStockage({ onTermine, onErreur }) {
   const [etat, setEtat] = useState('repos') // repos | recherche | resultat | suppression | fini
   const [fichiers, setFichiers] = useState([])
   const [bilan, setBilan] = useState(null)
-  const { signalerErreur } = useCr()
+  const cr = useCr()
+  const signalerErreur = onErreur ?? cr.signalerErreur
 
   const rechercher = async () => {
     setEtat('recherche')

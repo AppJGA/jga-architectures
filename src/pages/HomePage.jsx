@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowRight } from 'lucide-react'
+import { ArrowRight, Gauge, AlertTriangle } from 'lucide-react'
 import { IconePortail, IconeBoiteOutils, IconeCarnet, IconeGestionAgence } from '../shared/icones/IconesAffaire'
 import { useAuth } from '../core/auth/useAuth'
 import { supabase } from '../core/supabase/client'
+import { stockageTotal } from '../admin/gestionAppDonnees'
+import { alerteAccueil } from '../admin/gestionAppLogique'
 
 // Entrées d'accueil. `accent` sert au liseré du haut, aux cercles pulsés et à
 // la mention « Ouvrir » ; `bordure` est la couleur de bord au survol.
@@ -55,10 +57,24 @@ const MODULES = [
     gradient: 'linear-gradient(135deg, #7A4E9C 0%, #C4A3DE 100%)',
     halo: 'rgba(122,78,156,0.14)',
   },
+  {
+    numero: '05',
+    label: "Gestion de l'application",
+    description: 'Stockage, comptes et santé de l’application.',
+    path: '/gestion-application',
+    // L'administrateur seul (migration 068)
+    admin: true,
+    Icon: Gauge,
+    accent: '#4A5560',
+    bordure: '#9AA5B1',
+    gradient: 'linear-gradient(135deg, #4A5560 0%, #9AA5B1 100%)',
+    halo: 'rgba(74,85,96,0.14)',
+  },
 ]
 
 // Quatre bulles (un associé) : une ligne sur grand écran, sinon deux par deux —
-// la grille automatique en mettait trois, et la quatrième seule dessous
+// la grille automatique en mettait trois, et la quatrième seule dessous.
+// Cinq (l'administrateur) : une ligne si la place le permet, sinon 3 + 2.
 function useLargeurSuffit(minPx) {
   const requete = `(min-width: ${minPx}px)`
   const [ok, setOk] = useState(() => window.matchMedia?.(requete).matches ?? true)
@@ -92,7 +108,7 @@ function useMouvementReduit() {
 
 // ─── Carte de module ─────────────────────────────────────────────────────────
 
-function CarteModule({ module, rang, reduit, onOpen }) {
+function CarteModule({ module, rang, reduit, onOpen, alerte = null }) {
   const [survol, setSurvol] = useState(false)
   const { Icon } = module
 
@@ -198,6 +214,11 @@ function CarteModule({ module, rang, reduit, onOpen }) {
         <div style={{ fontSize: 13, lineHeight: 1.5, color: '#9C9591', textWrap: 'pretty' }}>
           {module.description}
         </div>
+        {alerte && (
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 4, padding: '4px 8px', fontSize: 12, fontWeight: 600, color: '#C2410C', background: '#FFF7ED', border: '0.5px solid #FDBA74' }}>
+            <AlertTriangle size={13} /> {alerte.texte}
+          </div>
+        )}
       </div>
 
       <div
@@ -223,9 +244,19 @@ function CarteModule({ module, rang, reduit, onOpen }) {
 
 export default function HomePage() {
   const navigate = useNavigate()
-  const { user, estAgence, accesGestion } = useAuth()
+  const { user, estAgence, accesGestion, estAdmin } = useAuth()
   const quatreDeFront = useLargeurSuffit(1100)
-  const visibles = MODULES.filter(m => (estAgence || m.exterieur) && (!m.associe || accesGestion === true))
+  const cinqDeFront = useLargeurSuffit(1380)
+  const troisDeFront = useLargeurSuffit(900)
+  const visibles = MODULES.filter(m => (estAgence || m.exterieur) && (!m.associe || accesGestion === true) && (!m.admin || estAdmin))
+  // Le stockage gratuit se remplit : l'administrateur le voit dès l'accueil
+  const [alerte, setAlerte] = useState(null)
+  useEffect(() => {
+    if (!estAdmin || !navigator.onLine) return
+    let abandon = false
+    stockageTotal().then((t) => { if (!abandon) setAlerte(alerteAccueil(t)) }).catch(() => {})
+    return () => { abandon = true }
+  }, [estAdmin])
   const [prenom, setPrenom] = useState('')
   const reduit = useMouvementReduit()
 
@@ -296,7 +327,7 @@ export default function HomePage() {
         style={{
           position: 'relative',
           display: 'flex', flexDirection: 'column', alignItems: 'center',
-          width: '100%', maxWidth: 1040,
+          width: '100%', maxWidth: visibles.length === 5 ? 1320 : 1040,
         }}
       >
         <img
@@ -349,9 +380,11 @@ export default function HomePage() {
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: visibles.length === 4
-              ? (quatreDeFront ? 'repeat(4, minmax(0, 1fr))' : 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))')
-              : 'repeat(auto-fit, minmax(268px, 1fr))',
+            gridTemplateColumns: visibles.length === 5
+              ? (cinqDeFront ? 'repeat(5, minmax(0, 1fr))' : troisDeFront ? 'repeat(3, minmax(0, 1fr))' : 'repeat(auto-fit, minmax(min(100%, 268px), 1fr))')
+              : visibles.length === 4
+                ? (quatreDeFront ? 'repeat(4, minmax(0, 1fr))' : 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))')
+                : 'repeat(auto-fit, minmax(268px, 1fr))',
             gap: 24,
             width: '100%',
           }}
@@ -363,6 +396,7 @@ export default function HomePage() {
               rang={rang}
               reduit={reduit}
               onOpen={() => navigate(module.path)}
+              alerte={module.admin ? alerte : null}
             />
           ))}
         </div>

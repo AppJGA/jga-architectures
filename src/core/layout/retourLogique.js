@@ -26,7 +26,7 @@ export function retourParDefaut(chemin = '', recherche = '') {
   }
   if (racine === 'tools' && id) return { libelle: 'Boîte à outils', icone: 'outils', vers: '/tools' }
   if (racine === 'gestion-agence' && id) return { libelle: 'Gestion d’agence', icone: 'gestion', vers: '/gestion-agence' }
-  if (['dashboard', 'carnet-adresses', 'tools', 'heures', 'settings', 'gestion-agence'].includes(racine)) {
+  if (['dashboard', 'carnet-adresses', 'tools', 'heures', 'settings', 'gestion-agence', 'gestion-application'].includes(racine)) {
     return { libelle: 'Accueil', icone: 'accueil', vers: '/home' }
   }
   return null

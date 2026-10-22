@@ -86,8 +86,8 @@ test('resumeOrphelines : une photo et sa miniature comptent pour une, un plan et
     { bucket: 'cr-photos', chemin: 'a/2-mini.jpg', taille: 12000 },
     { bucket: 'cr-plans', chemin: 'a/p.webp', taille: 1500000 }, { bucket: 'cr-plans', chemin: 'a/p-apercu.webp', taille: 200000 },
   ])
-  assert.deepEqual(r, { photos: 2, plans: 1, fichiers: 5, taille: 1977000 })
-  assert.deepEqual(resumeOrphelines([]), { photos: 0, plans: 0, fichiers: 0, taille: 0 })
+  assert.deepEqual(r, { photos: 2, plans: 1, couvertures: 0, fichiers: 5, taille: 1977000 })
+  assert.deepEqual(resumeOrphelines([]), { photos: 0, plans: 0, couvertures: 0, fichiers: 0, taille: 0 })
 })
 
 test('paquets', () => {
@@ -99,4 +99,14 @@ test('libelleFichiers', () => {
   assert.equal(libelleFichiers({ photos: 2, plans: 1 }), '2 photos, 1 plan')
   assert.equal(libelleFichiers({ photos: 1, plans: 0 }), '1 photo')
   assert.equal(libelleFichiers({ photos: 0, plans: 3 }), '3 plans')
+  assert.equal(libelleFichiers({ photos: 1, plans: 0, couvertures: 2 }), '1 photo, 2 photos de couverture')
+})
+
+test('resumeOrphelines : une photo de couverture compte à part (migration 075)', () => {
+  const r = resumeOrphelines([
+    { bucket: 'affaires-photos', chemin: 'ancienne.jpg', taille: 1400000 },
+    { bucket: 'affaires-photos', chemin: '0000-a/1700000000.webp', taille: 90000 },
+    { bucket: 'cr-photos', chemin: 'a/1.webp', taille: 250000 },
+  ])
+  assert.deepEqual(r, { photos: 1, plans: 0, couvertures: 2, fichiers: 3, taille: 1740000 })
 })

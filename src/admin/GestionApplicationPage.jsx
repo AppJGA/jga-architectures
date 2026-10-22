@@ -130,7 +130,7 @@ export default function GestionApplicationPage({ source = chargerGestion }) {
             ) : (
               <p style={{ fontSize: 13, color: '#5E5854' }}>Détail disponible après la migration 074.</p>
             )}
-            <p style={{ margin: 0, fontSize: 12, color: '#5E5854' }}>Fichiers qu’aucun compte rendu ni plan n’utilise plus (affaire supprimée, envoi interrompu) :</p>
+            <p style={{ margin: 0, fontSize: 12, color: '#5E5854' }}>Fichiers que plus rien n’utilise — photos et plans des visites, PDF archivés, photos de couverture des affaires (affaire supprimée, photo remplacée, envoi interrompu) :</p>
             <NettoyageStockage onTermine={charger} onErreur={(err) => setErreur(err?.message ?? String(err))} />
           </Carte>
 

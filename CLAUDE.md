@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 993 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans, gestion de l'application)
+npm test         # 994 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans, gestion de l'application)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -167,7 +167,7 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
   personnes partent par cascade). Sans la 072, le carnet et les contacts
   tolèrent l'absence des colonnes (`type`, `interlocuteur_id`) et
   réessaient sans elles.
-- **Base** : `supabase/migrations/`, numérotées, 74 fichiers, **passées à la
+- **Base** : `supabase/migrations/`, numérotées, 75 fichiers, **passées à la
   main** dans le SQL Editor de Supabase : un code qui dépend d'une nouvelle
   colonne doit tolérer son absence tant que la migration n'est pas faite.
   **Toute table créée depuis le 2026-10-30 doit recevoir ses droits d'API
@@ -312,7 +312,9 @@ création avec reprise de la visite précédente) et `useCompteRendu` (un CR).
   tout se retrouvent par `cr_photos_orphelines()` (migration 040, ignore ceux
   de moins d'une heure : envoi en cours) — bouton « Nettoyer le stockage » de
   l'écran d'export. Depuis la migration 041, `fichiers_orphelins()` couvre
-  photos et plans. **Une suite a ses propres photos** (`remarque_id` = l'id
+  photos et plans ; depuis la 075, aussi les **photos de couverture** que
+  plus aucune affaire ne désigne (`affaires.photo_url`, chemin comparé sans
+  le « ?… »), comptées à part (`couvertures` de `resumeOrphelines`). **Une suite a ses propres photos** (`remarque_id` = l'id
   de la suite, aucune migration) : bouton à côté de son texte (tablette) ou
   dans ses actions (bureau), reprises avec elle (`preparerReprise`), imprimées
   sous elle dans le PDF, et comptées dans les fichiers à nettoyer quand sa

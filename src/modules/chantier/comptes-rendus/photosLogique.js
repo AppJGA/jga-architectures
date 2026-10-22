@@ -78,10 +78,13 @@ export function pointeFleche(x1, y1, x2, y2, longueur) {
 export function resumeOrphelines(fichiers) {
   const liste = fichiers ?? []
   const base = (f) => f.chemin.replace(/-(mini|apercu)(\.\w+)$/, '$2')
-  const photos = new Set(liste.filter((f) => f.bucket !== 'cr-plans').map(base))
+  const couverture = (f) => f.bucket === 'affaires-photos'
+  const photos = new Set(liste.filter((f) => f.bucket !== 'cr-plans' && !couverture(f)).map(base))
   const plans = new Set(liste.filter((f) => f.bucket === 'cr-plans').map(base))
+  // Une couverture d'affaire (migration 075) : un fichier, pas de miniature
+  const couvertures = liste.filter(couverture).length
   const taille = liste.reduce((s, f) => s + (Number(f.taille) || 0), 0)
-  return { photos: photos.size, plans: plans.size, fichiers: liste.length, taille }
+  return { photos: photos.size, plans: plans.size, couvertures, fichiers: liste.length, taille }
 }
 
 // Par paquets : l'API du stockage limite le nombre de fichiers par suppression
@@ -91,10 +94,11 @@ export function paquets(liste, taille = 100) {
   return resultat
 }
 
-// « 2 photos, 1 plan »
-export function libelleFichiers({ photos = 0, plans = 0 }) {
+// « 2 photos, 1 plan, 1 photo de couverture »
+export function libelleFichiers({ photos = 0, plans = 0, couvertures = 0 }) {
   const parts = []
   if (photos) parts.push(`${photos} photo${photos > 1 ? 's' : ''}`)
   if (plans) parts.push(`${plans} plan${plans > 1 ? 's' : ''}`)
+  if (couvertures) parts.push(`${couvertures} photo${couvertures > 1 ? 's' : ''} de couverture`)
   return parts.join(', ')
 }

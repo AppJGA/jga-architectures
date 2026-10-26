@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 1026 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans, gestion de l'application)
+npm test         # 1031 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans, gestion de l'application)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -167,7 +167,28 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
   personnes partent par cascade). Sans la 072, le carnet et les contacts
   tolèrent l'absence des colonnes (`type`, `interlocuteur_id`) et
   réessaient sans elles.
-- **Base** : `supabase/migrations/`, numérotées, 75 fichiers, **passées à la
+- **Téléphones fixe et portable** (migration 076, `shared/telephones.js`,
+  testé) : `telephone` = le fixe, `telephone_portable` à côté (`entreprises`,
+  `interlocuteurs`, `affaire_interlocuteurs`) et `moa_telephone_portable`
+  pour le maître d'ouvrage ; copies `copie_telephone_portable` des présences
+  (CR, OPR), envoyées **seulement si la fiche lue porte la colonne**
+  (`copiePresence`). La 076 a réparti les anciens numéros (06 / 07 au
+  portable, le reste au fixe), règle jumelle de `repartirNumeros`. Affichage
+  par `numerosFiche` / `texteTelephones` / `LiensTelephone` (combiné ou
+  mobile) ; un numéro en 06 resté au fixe compte pour un portable (vCard
+  CELL, Outlook « Mobile Phone »). Un numéro manquant du représentant d'un
+  lot est pris à son entreprise, champ par champ. Lectures en `*` (pas de
+  liste de colonnes) pour récupérer le portable quand la base l'a ; sans la
+  076, `sansPortable` le joint au fixe (« 03 … / 06 … »). Les replis de
+  colonnes manquantes s'enchaînent par `ecrireAvecReplis`
+  (`shared/repliColonnes.js`).
+- **Références cadastrales** (migration 076, `affaire/cadastreLogique.js`,
+  testé) : `affaires.cadastre_references` (jsonb `[{ section, parcelles,
+  superficie }]`), autant de sections que voulu, une superficie par section.
+  Toujours lire par `referencesCadastre` (repli sur les anciennes colonnes) ;
+  l'enregistrement (`colonnesCadastre`) tient aussi à jour `cadastre_section`
+  / `cadastre_parcelle` (première ligne) et `cadastre_superficie` (total).
+- **Base** : `supabase/migrations/`, numérotées, 76 fichiers, **passées à la
   main** dans le SQL Editor de Supabase : un code qui dépend d'une nouvelle
   colonne doit tolérer son absence tant que la migration n'est pas faite.
   **Toute table créée depuis le 2026-10-30 doit recevoir ses droits d'API

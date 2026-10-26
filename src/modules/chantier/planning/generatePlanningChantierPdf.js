@@ -4,7 +4,7 @@ import { buildRowsByZone } from './groupByZone'
 import { legendeCouleurs } from './legende'
 import { echapperHtml } from '../../../shared/echapperHtml'
 import {
-  bordureGauche, niveauDuJour, moisDuJour, pastelPdf, fondPeriode, traitPeriode, stylePause,
+  bordureGauche, niveauDuJour, moisDuJour, semainesEntieres, pastelPdf, fondPeriode, traitPeriode, stylePause,
   estBloquante, groupesDePeriodes, TRAIT_HORIZONTAL,
 } from '../../../shared/planning/export/grilleExport'
 import { scriptMiseEnPage, STYLE_FEUILLES, STYLE_APERCU } from '../../../shared/planning/export/miseEnPageExport'
@@ -210,13 +210,16 @@ function indexJour(days, date) {
 }
 
 // Portion visible d'un intervalle [debut, fin], bornes incluses : premier et
-// dernier index affichés, et largeur (mm) cumulée. La barre est un enfant du
+// dernier index affichés, et largeur (mm) cumulée. En vue Semaines,
+// l'intervalle couvre des semaines entières, du lundi au dimanche, comme dans
+// l'éditeur (`barreSemaine`) : une barre remplit les cases de ses semaines. La barre est un enfant du
 // <td> de `startIdx`, positionnée en left:0 et débordant vers la droite grâce
 // à overflow:visible. Un intervalle commencé avant la plage s'ancre sur le
 // premier jour affiché : sans cela, une tâche en cours au début de l'export
 // n'aurait aucune barre.
-function plageVisible(days, dayWidths, debut, fin) {
+function plageVisible(days, dayWidths, debut, fin, granularite = 'day') {
   if (!days.length || !debut || !fin) return null
+  if (granularite === 'week') ({ debut, fin } = semainesEntieres(debut, fin))
   const debutIdx = indexJour(days, debut)
   const finIdx = indexJour(days, fin)
   if (Number.isNaN(debutIdx) || Number.isNaN(finIdx)) return null
@@ -231,9 +234,9 @@ function plageVisible(days, dayWidths, debut, fin) {
 // Barre d'une tâche ou d'un segment : la durée est en jours ouvrés, fermetures
 // bloquantes non comptées, et la barre s'arrête sur le dernier jour travaillé —
 // ni avant une fermeture qu'elle traverse, ni sur le week-end qui suit.
-function computeBarGeometry(days, dayWidths, debut, duree, periodes = []) {
+function computeBarGeometry(days, dayWidths, debut, duree, periodes = [], granularite = 'day') {
   const d = dateSeule(debut)
-  return plageVisible(days, dayWidths, d, dernierJourTache(d, duree, periodes))
+  return plageVisible(days, dayWidths, d, dernierJourTache(d, duree, periodes), granularite)
 }
 
 // ─── Bande de jalons ──────────────────────────────────────────────────────────
@@ -339,7 +342,7 @@ function buildTaskRow(task, color, days, dayWidths, jalons, todayStr, ctx, rowIn
   if (showMainBar && bornes?.debutAvant) {
     const veille = new Date(bornes.debut)
     veille.setDate(veille.getDate() - 1)
-    const geoAvant = plageVisible(days, dayWidths, bornes.debutAvant, veille)
+    const geoAvant = plageVisible(days, dayWidths, bornes.debutAvant, veille, granularite)
     if (geoAvant && geoAvant.widthMm > 0) {
       // Motif à l'intérieur de la barre, aligné à gauche et tronqué si trop long
       const lbl = echapperHtml(task.appro_materiau || `Appro. ${task.appro_duree}j`)
@@ -352,7 +355,7 @@ function buildTaskRow(task, color, days, dayWidths, jalons, todayStr, ctx, rowIn
   // Délai après la tâche (séchage, livraison…) : il reprend au jour ouvré qui
   // suit la tâche ; motif écrit à l'extérieur, même convention que le nom d'une tâche.
   if (showMainBar && bornes?.debutApres) {
-    const geoApres = plageVisible(days, dayWidths, bornes.debutApres, bornes.finApres)
+    const geoApres = plageVisible(days, dayWidths, bornes.debutApres, bornes.finApres, granularite)
     if (geoApres && geoApres.widthMm > 0) {
       let html = `<div style="position:absolute;left:0;width:${geoApres.widthMm.toFixed(2)}mm;top:${dens.barPadMm}mm;bottom:${dens.barPadMm}mm;background:${fondDelai};border:1px dashed ${color}80;z-index:3;pointer-events:none"></div>`
       if (task.label_apres) {
@@ -383,7 +386,7 @@ function buildTaskRow(task, color, days, dayWidths, jalons, todayStr, ctx, rowIn
   }
 
   const mainGeo = showMainBar && bornes
-    ? plageVisible(days, dayWidths, bornes.debut, bornes.dernierJour)
+    ? plageVisible(days, dayWidths, bornes.debut, bornes.dernierJour, granularite)
     : null
   if (mainGeo && mainGeo.widthMm > 0) {
     const avancement = Number(task.avancement) || 0
@@ -404,7 +407,7 @@ function buildTaskRow(task, color, days, dayWidths, jalons, todayStr, ctx, rowIn
     .filter(s => s.tache_id === task.id && s.date_debut)
     .filter(s => !visibleSegmentIds || visibleSegmentIds.includes(s.id))
     .forEach(seg => {
-      const geo = computeBarGeometry(days, dayWidths, seg.date_debut, seg.duree_jours, periodes)
+      const geo = computeBarGeometry(days, dayWidths, seg.date_debut, seg.duree_jours, periodes, granularite)
       if (!geo || geo.widthMm <= 0) return
       const segColor = getSegColor(seg, color, zones)
       let html = `<div data-segment-id="${echapperHtml(seg.id)}" data-task-id="${echapperHtml(task.id)}" data-type="segment" style="position:absolute;left:0;width:${geo.widthMm.toFixed(2)}mm;top:${dens.barPadMm}mm;bottom:${dens.barPadMm}mm;background:${segColor};outline:1px dashed rgba(255,255,255,0.6);outline-offset:-1px;z-index:3;overflow:hidden"></div>${pauses(geo, segColor)}`

@@ -57,6 +57,19 @@ export function moisDuJour(date, granularite = 'day') {
   return new Date(d.getFullYear(), d.getMonth(), 1)
 }
 
+/**
+ * Intervalle [debut, fin] (bornes incluses) étendu à des semaines entières :
+ * du lundi de sa première semaine au dimanche de sa dernière. C'est ainsi
+ * que l'éditeur dessine une barre en vue Semaines.
+ */
+export function semainesEntieres(debut, fin) {
+  const lundi = new Date(debut.getFullYear(), debut.getMonth(), debut.getDate())
+  lundi.setDate(lundi.getDate() - (lundi.getDay() + 6) % 7)
+  const dimanche = new Date(fin.getFullYear(), fin.getMonth(), fin.getDate())
+  dimanche.setDate(dimanche.getDate() + (7 - dimanche.getDay()) % 7)
+  return { debut: lundi, fin: dimanche }
+}
+
 // ─── Périodes ──────────────────────────────────────────────────────────────────
 //
 // Fond uni, pas de hachures : les hachures bavaient à l'impression (moiré,

@@ -6,7 +6,7 @@ import { test, describe } from 'node:test'
 
 import { nettoyerHtml, estVide } from '../src/shared/planning/export/texteRiche.js'
 import {
-  bordureGauche, niveauDuJour, moisDuJour, fondPeriode, pastelPdf, groupesDePeriodes, TRAITS_GRILLE,
+  bordureGauche, niveauDuJour, moisDuJour, semainesEntieres, fondPeriode, pastelPdf, groupesDePeriodes, TRAITS_GRILLE,
 } from '../src/shared/planning/export/grilleExport.js'
 import { lireTextesExport, ecrireTextesExport } from '../src/shared/planning/export/textesExport.js'
 
@@ -78,6 +78,22 @@ describe('grille selon la granularité', () => {
     assert.equal(niveauDuJour(new Date(2026, 3, 6), 'week'), 'mois')     // premier lundi d'avril
     assert.equal(niveauDuJour(new Date(2026, 3, 13), 'week'), 'semaine')
     assert.equal(niveauDuJour(new Date(2026, 5, 1), 'week'), 'mois')     // lundi 1er juin
+  })
+
+  test('vue Semaines : une barre couvre ses semaines entières, du lundi au dimanche', () => {
+    const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    // Du mercredi 4 au mardi 10 mars 2026 : semaines du 2 et du 9
+    const s = semainesEntieres(new Date(2026, 2, 4), new Date(2026, 2, 10))
+    assert.equal(iso(s.debut), '2026-03-02')
+    assert.equal(iso(s.fin), '2026-03-15')
+    // Déjà du lundi au dimanche : inchangé
+    const t = semainesEntieres(new Date(2026, 2, 2), new Date(2026, 2, 8))
+    assert.equal(iso(t.debut), '2026-03-02')
+    assert.equal(iso(t.fin), '2026-03-08')
+    // Passage à l'heure d'été (29 mars 2026) : les jours restent entiers
+    const u = semainesEntieres(new Date(2026, 2, 27), new Date(2026, 2, 31))
+    assert.equal(iso(u.debut), '2026-03-23')
+    assert.equal(iso(u.fin), '2026-04-05')
   })
 
   test('vue Semaines : une semaine appartient au mois et à l’année de son lundi', () => {

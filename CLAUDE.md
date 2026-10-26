@@ -1154,7 +1154,10 @@ navigateur. Ce qui leur est commun vit dans `src/shared/planning/export/`.
   de mois pour que la ligne de mois le traverse. Au chantier en vue
   Semaines, le mois commence à son **premier lundi** et une semaine
   appartient au mois de son lundi (`niveauDuJour(d, 'week')`, `moisDuJour`),
-  comme dans l'éditeur : un trait au 1er coupait une semaine en deux.
+  comme dans l'éditeur : un trait au 1er coupait une semaine en deux. Dans
+  cette vue, barres, segments et délais couvrent leurs **semaines entières**,
+  du lundi au dimanche (`semainesEntieres`, comme `barreSemaine` de
+  l'éditeur) ; au jour près seulement en vue Jours.
 - **Périodes** : fond uni (les hachures moiraient à l'impression), trait aux
   vraies dates de début et de fin, bandeau qui les nomme sous les dates. Au
   chantier, **un seul bloc par période et par ligne**, sous la grille

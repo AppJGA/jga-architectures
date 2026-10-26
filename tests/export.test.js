@@ -254,6 +254,24 @@ describe('PDF chantier — grille selon la granularité', () => {
     assert.ok(!htmlGenere.includes('scale('))
   })
 
+  test('en semaines : la barre remplit ses semaines entières, comme dans l’éditeur', () => {
+    // Tâche du mercredi 4 mars, 5 jours ouvrés → mardi 10 mars : elle couvre
+    // les semaines du 2 et du 9 mars, soit 14 jours de 3 mm
+    const tache = { id: 9, nom: 'Maçonnerie', debut: '2026-03-04', duree: 5, lot_id: 7, avancement: 0 }
+    const largeurJour = (420 - 20 - 45) / 28   // 28 jours du 23/02 au 22/03
+    generatePlanningChantierPdf(paramsPdfChantier({ tasks: [tache], viewMode: 'week', dateDebut: '2026-02-23', dateFin: '2026-03-22' }))
+    const barre = corpsPdf().match(/data-task-id="9" data-type="task" style="[^"]*width:([\d.]+)mm/)
+    assert.ok(barre)
+    assert.ok(Math.abs(Number(barre[1]) - 14 * largeurJour) < 0.05)
+    // Elle part du lundi 2 mars : 8e cellule de jour de la ligne
+    const ligne = corpsPdf().split('</tr>')[1]
+    const cellules = ligne.split('<td style=').slice(1)
+    assert.ok(cellules[7].includes('data-task-id="9"'))
+    // En vue jours, elle reste au jour près
+    generatePlanningChantierPdf(paramsPdfChantier({ tasks: [tache], viewMode: 'day', dateDebut: '2026-02-23', dateFin: '2026-03-22' }))
+    assert.ok(corpsPdf().split('</tr>')[1].split('<td style=').slice(1)[9].includes('data-task-id="9"'))
+  })
+
   test('le grisé du week-end ne reste qu’en vue jours', () => {
     generatePlanningChantierPdf(params('week'))
     assert.ok(!corpsPdf().includes('rgba(0,0,0,0.03)'))
@@ -338,7 +356,9 @@ describe('PDF chantier — légende et groupement', () => {
 
 describe('PDF chantier — géométrie des barres', () => {
   // Vue semaine : toutes les colonnes de jour ont la même largeur, ce qui
-  // ramène la largeur d'une barre à un nombre de jours calendaires.
+  // ramène la largeur d'une barre à un nombre de jours calendaires. Une barre
+  // y couvre ses semaines entières, comme dans l'éditeur ; ce qui se joue au
+  // jour près (week-end) se vérifie en vue jours.
   const CONTENU_MM = 420 - 20 - 45
   const nbJours = (debut, fin) => Math.round((new Date(fin) - new Date(debut)) / 86400000) + 1
 
@@ -362,17 +382,27 @@ describe('PDF chantier — géométrie des barres', () => {
     }))
     const { idx, largeur } = barre('data-task-id="1" data-type="task"')
     assert.equal(idx, 0)
-    // 5 jours avant la fermeture, 5 après : fin le vendredi 28 août
+    // 5 jours avant la fermeture, 5 après : fin le vendredi 28 août, donc
+    // jusqu'au bout de sa semaine (dimanche 30)
     const uniforme = CONTENU_MM / nbJours(plage.dateDebut, plage.dateFin)
-    proche(largeur, nbJours('2026-07-27', '2026-08-28') * uniforme)
+    proche(largeur, nbJours('2026-07-27', '2026-08-30') * uniforme)
   })
 
-  test('une barre du lundi au vendredi ne couvre pas le week-end', () => {
+  test('en vue jours, une barre du lundi au vendredi ne couvre pas le week-end', () => {
+    const plage = { dateDebut: '2026-03-02', dateFin: '2026-03-20' }
+    generatePlanningChantierPdf(paramsPdfChantier({ ...plage, viewMode: 'day' }))
+    const { idx, largeur } = barre('data-task-id="1" data-type="task"')
+    assert.equal(idx, 0)
+    // 15 jours ouvrés et 4 jours de week-end (35 % de largeur) dans la plage
+    proche(largeur, 5 * CONTENU_MM / (15 + 4 * 0.35))
+  })
+
+  test('en vue semaines, la même barre remplit sa semaine', () => {
     const plage = { dateDebut: '2026-03-02', dateFin: '2026-03-20' }
     generatePlanningChantierPdf(paramsPdfChantier({ ...plage, viewMode: 'week' }))
     const { idx, largeur } = barre('data-task-id="1" data-type="task"')
     assert.equal(idx, 0)
-    proche(largeur, 5 * CONTENU_MM / nbJours(plage.dateDebut, plage.dateFin))
+    proche(largeur, 7 * CONTENU_MM / nbJours(plage.dateDebut, plage.dateFin))
   })
 
   test('une tâche commencée avant la plage a bien une barre, ancrée au premier jour', () => {
@@ -383,8 +413,9 @@ describe('PDF chantier — géométrie des barres', () => {
     }))
     const { idx, largeur } = barre('data-task-id="1" data-type="task"')
     assert.equal(idx, 0)
-    // Seuls les jours visibles comptent : du 2 au vendredi 6 mars
-    proche(largeur, 5 * CONTENU_MM / nbJours(plage.dateDebut, plage.dateFin))
+    // Seuls les jours visibles comptent : du 2 mars au bout de la semaine
+    // (dimanche 8)
+    proche(largeur, 7 * CONTENU_MM / nbJours(plage.dateDebut, plage.dateFin))
   })
 
   test('le délai après reprend au jour ouvré suivant la fermeture', () => {

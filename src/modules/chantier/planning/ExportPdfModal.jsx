@@ -1,8 +1,12 @@
 import { useState, useMemo, useEffect } from 'react'
 import { FileDown, X } from 'lucide-react'
 import { parseDate, formatDateISO, addWorkingDays } from './types'
-import { generatePlanningChantierPdf, intervallesTache } from './generatePlanningChantierPdf'
+import { generatePlanningChantierPdf, htmlApercuChantier, intervallesTache } from './generatePlanningChantierPdf'
 import { SectionTextesPdf } from '../../../shared/planning/export/SectionTextesPdf'
+import { ApercuPlanning } from '../../../shared/planning/export/ApercuPlanning'
+import {
+  STYLE_FENETRE, STYLE_CORPS, STYLE_REGLAGES, STYLE_COLONNE_APERCU,
+} from '../../../shared/planning/export/styleFenetreExport'
 import { lireTextesExport, ecrireTextesExport } from '../../../shared/planning/export/textesExport'
 
 const LABEL = {
@@ -161,32 +165,40 @@ export function ExportPdfModal({
     setCustomH(customW)
   }
 
+  // Mêmes paramètres pour l'aperçu et pour le PDF : ce qui se voit est ce
+  // qui s'imprime
+  const parametresPdf = useMemo(() => ({
+    tasks: tachesInPeriod,
+    lots,
+    jalons,
+    affaire,
+    dateDebut,
+    dateFin,
+    headerDateDebut: headerDebut,
+    headerDateFin: headerFin,
+    largeurMm: finalFormat.w,
+    hauteurMm: finalFormat.h,
+    zones,
+    colorMode: exportColorMode,
+    viewMode: exportViewMode,
+    segments,
+    dependances,
+    periodes,
+    showDependances: exportDependances,
+    groupMode: zones.length > 0 ? exportGroupMode : 'lot',
+    density: exportDensity,
+    texteEntete: textes.entete,
+    textePied: textes.pied,
+  }), [
+    tachesInPeriod, lots, jalons, affaire, dateDebut, dateFin, headerDebut, headerFin,
+    finalFormat.w, finalFormat.h, zones, exportColorMode, exportViewMode, segments,
+    dependances, periodes, exportDependances, exportGroupMode, exportDensity, textes,
+  ])
+
   const handleGenerate = () => {
     if (!isValid) return
     ecrireTextesExport('chantier', affaire?.id, textes)
-    generatePlanningChantierPdf({
-      tasks: tachesInPeriod,
-      lots,
-      jalons,
-      affaire,
-      dateDebut,
-      dateFin,
-      headerDateDebut: headerDebut,
-      headerDateFin: headerFin,
-      largeurMm: finalFormat.w,
-      hauteurMm: finalFormat.h,
-      zones,
-      colorMode: exportColorMode,
-      viewMode: exportViewMode,
-      segments,
-      dependances,
-      periodes,
-      showDependances: exportDependances,
-      groupMode: zones.length > 0 ? exportGroupMode : 'lot',
-      density: exportDensity,
-      texteEntete: textes.entete,
-      textePied: textes.pied,
-    })
+    generatePlanningChantierPdf(parametresPdf)
     onClose()
   }
 
@@ -197,7 +209,7 @@ export function ExportPdfModal({
       style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}
     >
       <div
-        style={{ backgroundColor: 'white', borderRadius: 0, padding: 28, width: '100%', maxWidth: 520, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 8px 40px rgba(0,0,0,0.12)' }}
+        style={STYLE_FENETRE}
       >
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 22 }}>
@@ -210,7 +222,8 @@ export function ExportPdfModal({
           </button>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+        <div style={STYLE_CORPS}>
+        <div style={STYLE_REGLAGES}>
 
           {/* ── A) PÉRIODE ── */}
           <div>
@@ -532,10 +545,21 @@ export function ExportPdfModal({
               {' · '}
               {DENSITY_OPTIONS.find(o => o.value === exportDensity)?.label}
               <br />
-              <span style={{ color: '#9C9591', fontSize: 10 }}>Le tableau sera mis à l'échelle pour tenir sur une page.</span>
+              <span style={{ color: '#9C9591', fontSize: 10 }}>Le tableau sera mis à l'échelle pour tenir dans la largeur de la page.</span>
             </p>
           </div>
 
+        </div>
+
+        <div style={STYLE_COLONNE_APERCU}>
+          <ApercuPlanning
+            parametres={parametresPdf}
+            construire={htmlApercuChantier}
+            largeurMm={finalFormat.w}
+            hauteurMm={finalFormat.h}
+            valide={isValid}
+          />
+        </div>
         </div>
 
         {/* Footer */}

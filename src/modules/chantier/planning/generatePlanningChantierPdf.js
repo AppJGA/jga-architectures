@@ -6,6 +6,7 @@ import { echapperHtml } from '../../../shared/echapperHtml'
 import {
   bordureGauche, niveauDuJour, moisDuJour, pastelPdf, fondPeriode, traitPeriode, stylePause,
   estBloquante, groupesDePeriodes, TRAIT_HORIZONTAL, SCRIPT_MISE_A_ECHELLE,
+  STYLE_APERCU, scriptFin,
 } from '../../../shared/planning/export/grilleExport'
 import { nettoyerHtml, estVide } from '../../../shared/planning/export/texteRiche'
 
@@ -463,7 +464,7 @@ function buildHtml({
   zones = [], colorMode = 'lot', viewMode = 'day',
   segments = [], dependances = [], periodes = [], showDependances = true,
   groupMode = 'lot', density = 'normal',
-  texteEntete = '', textePied = '',
+  texteEntete = '', textePied = '', apercu = false,
 }) {
   const dens = densityConfig(density)
   const dStart = parseDate(dateDebut)
@@ -631,6 +632,7 @@ function buildHtml({
   .leg-sep { border-left: 0.5px solid #ddd; height: 8px; margin: 0 2mm; }
 
   .footer { margin-top: 4mm; padding-top: 2mm; border-top: 0.5px solid #eee; font-size: 6pt; color: #9C9591; display: flex; justify-content: space-between; }
+  ${apercu ? STYLE_APERCU : ''}
 </style>
 </head>
 <body>
@@ -824,11 +826,16 @@ window.onload = function() {
 
   // ── 2. Mise à l'échelle pour tenir sur une page + impression ────────────────
 ${SCRIPT_MISE_A_ECHELLE}
-  setTimeout(function() { window.print(); }, 400);
+  ${scriptFin(apercu)}
 };
 </script>
 </body>
 </html>`
+}
+
+/** Page de l'aperçu de la fenêtre d'export : la même, sans impression. */
+export function htmlApercuChantier(params) {
+  return buildHtml({ ...params, apercu: true })
 }
 
 export function generatePlanningChantierPdf(params) {

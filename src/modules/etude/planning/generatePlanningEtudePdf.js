@@ -7,7 +7,7 @@ import { assignLabelLanes } from '../../chantier/planning/jalonLayout'
 import { echapperHtml } from '../../../shared/echapperHtml'
 import {
   bordureGauche, pastelPdf, fondPeriode, traitPeriode, stylePause, estBloquante, groupesDePeriodes,
-  TRAIT_HORIZONTAL, SCRIPT_MISE_A_ECHELLE,
+  TRAIT_HORIZONTAL, SCRIPT_MISE_A_ECHELLE, STYLE_APERCU, scriptFin,
 } from '../../../shared/planning/export/grilleExport'
 import { nettoyerHtml, estVide } from '../../../shared/planning/export/texteRiche'
 
@@ -288,7 +288,7 @@ function buildJalonBand(jalons, weeks, labelColMm, weekWidthMm) {
 function buildHtml({
   phases, jalons, affaire, semaineDebut, anneeDebut, semaineFin, anneeFin,
   largeurMm, hauteurMm, segments = [], periodes = [], density = 'normal',
-  texteEntete = '', textePied = '',
+  texteEntete = '', textePied = '', apercu = false,
 }) {
   const dens = densityConfig(density)
   const weeks = buildWeeksList(semaineDebut, anneeDebut, semaineFin, anneeFin)
@@ -373,6 +373,7 @@ function buildHtml({
   .leg-num   { width: 4mm; height: 4mm; background: rgba(232,162,0,0.25); color: #B07C00; font-size: 5.5pt; font-weight: bold; display: flex; align-items: center; justify-content: center; }
 
   .footer { margin-top: 4mm; padding-top: 2mm; border-top: 0.5px solid #eee; font-size: 6pt; color: #9C9591; display: flex; justify-content: space-between; }
+  ${apercu ? STYLE_APERCU : ''}
 </style>
 </head>
 <body>
@@ -443,11 +444,16 @@ ${pied ? `<div class="texte-pied">${pied}</div>` : ''}
 <script>
 window.onload = function() {
 ${SCRIPT_MISE_A_ECHELLE}
-  setTimeout(function() { window.print(); }, 400);
+  ${scriptFin(apercu)}
 };
 </script>
 </body>
 </html>`
+}
+
+/** Page de l'aperçu de la fenêtre d'export : la même, sans impression. */
+export function htmlApercuEtude(params) {
+  return buildHtml({ ...params, apercu: true })
 }
 
 export function generatePlanningEtudePdf(params) {

@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 998 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans, gestion de l'application)
+npm test         # 1004 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans, gestion de l'application)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -1081,6 +1081,19 @@ ensemble :
 Chantier (`chantier/planning/generatePlanningChantierPdf.js`) et étude
 (`etude/planning/generatePlanningEtudePdf.js`) : une page HTML imprimée par le
 navigateur. Ce qui leur est commun vit dans `src/shared/planning/export/`.
+
+- **Aperçu dans la fenêtre d'export** (`ApercuPlanning.jsx`, commun aux deux
+  fenêtres, réglages à gauche et aperçu à droite, `styleFenetreExport.js`) :
+  la **même page** (`htmlApercuChantier` / `htmlApercuEtude`, paramètre
+  `apercu` du générateur), dans un cadre isolé (`sandbox="allow-scripts"`)
+  réduit à la largeur disponible, refaite 450 ms après le dernier réglage.
+  Les paramètres du PDF et de l'aperçu sont un seul objet (`parametresPdf`)
+  : ce qui se voit est ce qui s'imprime. En aperçu, la marge de la feuille
+  est posée sur le corps (`STYLE_APERCU`) et la page envoie sa hauteur par
+  `postMessage` au lieu d'imprimer (`scriptFin`) ; les sauts de page sont
+  estimés en pointillés (`sautsDePage`, testé) — à l'impression l'en-tête du
+  tableau se répète, ils arrivent un peu plus tôt. « Agrandir » en plein
+  écran (✕, Échap).
 
 - **Textes libres** en tête (entre logo et titre) et sous le planning :
   `EditeurTexte.jsx` (gras, italique, souligné, puces), mémorisés par affaire

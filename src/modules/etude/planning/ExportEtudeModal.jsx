@@ -1,9 +1,13 @@
 import { useState, useMemo, useEffect } from 'react'
 import { FileDown, X } from 'lucide-react'
 import { weeksBetween, densityFromRowHeight, normaliserSemaine } from './types'
-import { generatePlanningEtudePdf } from './generatePlanningEtudePdf'
+import { generatePlanningEtudePdf, htmlApercuEtude } from './generatePlanningEtudePdf'
 import { calculerPeriodeExport, phasesDansPeriode, segmentsDansPeriode } from './periodeExportEtude'
 import { SectionTextesPdf } from '../../../shared/planning/export/SectionTextesPdf'
+import { ApercuPlanning } from '../../../shared/planning/export/ApercuPlanning'
+import {
+  STYLE_FENETRE, STYLE_CORPS, STYLE_REGLAGES, STYLE_COLONNE_APERCU,
+} from '../../../shared/planning/export/styleFenetreExport'
 import { lireTextesExport, ecrireTextesExport } from '../../../shared/planning/export/textesExport'
 
 const LABEL = {
@@ -135,25 +139,32 @@ export function ExportEtudeModal({
     setCustomH(customW)
   }
 
+  // Mêmes paramètres pour l'aperçu et pour le PDF : ce qui se voit est ce
+  // qui s'imprime
+  const parametresPdf = useMemo(() => (isValid ? {
+    phases: tachesInPeriod,
+    jalons: jalonInPeriod,
+    affaire,
+    semaineDebut: debut.semaine,
+    anneeDebut: debut.annee,
+    semaineFin: fin.semaine,
+    anneeFin: fin.annee,
+    largeurMm: finalFormat.w,
+    hauteurMm: finalFormat.h,
+    segments: segmentsInPeriod,
+    periodes,
+    density: exportDensity,
+    texteEntete: textes.entete,
+    textePied: textes.pied,
+  } : null), [
+    isValid, tachesInPeriod, jalonInPeriod, affaire, debut, fin, finalFormat.w, finalFormat.h,
+    segmentsInPeriod, periodes, exportDensity, textes,
+  ])
+
   const handleGenerate = () => {
     if (!isValid) return
     ecrireTextesExport('etude', affaire?.id, textes)
-    generatePlanningEtudePdf({
-      phases: tachesInPeriod,
-      jalons: jalonInPeriod,
-      affaire,
-      semaineDebut: debut.semaine,
-      anneeDebut: debut.annee,
-      semaineFin: fin.semaine,
-      anneeFin: fin.annee,
-      largeurMm: finalFormat.w,
-      hauteurMm: finalFormat.h,
-      segments: segmentsInPeriod,
-      periodes,
-      density: exportDensity,
-      texteEntete: textes.entete,
-      textePied: textes.pied,
-    })
+    generatePlanningEtudePdf(parametresPdf)
     onClose()
   }
 
@@ -164,7 +175,7 @@ export function ExportEtudeModal({
       style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}
     >
       <div
-        style={{ backgroundColor: 'white', borderRadius: 0, padding: 28, width: '100%', maxWidth: 520, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 8px 40px rgba(0,0,0,0.12)' }}
+        style={STYLE_FENETRE}
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
@@ -178,7 +189,8 @@ export function ExportEtudeModal({
           </button>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+        <div style={STYLE_CORPS}>
+        <div style={STYLE_REGLAGES}>
 
           {/* ── A) PÉRIODE ── */}
           <div>
@@ -331,10 +343,21 @@ export function ExportEtudeModal({
               {' · '}
               {DENSITY_OPTIONS.find(o => o.value === exportDensity)?.label}
               <br />
-              <span style={{ color: '#9C9591', fontSize: 10 }}>Le tableau sera mis à l'échelle pour tenir sur une page.</span>
+              <span style={{ color: '#9C9591', fontSize: 10 }}>Le tableau sera mis à l'échelle pour tenir dans la largeur de la page.</span>
             </p>
           </div>
 
+        </div>
+
+        <div style={STYLE_COLONNE_APERCU}>
+          <ApercuPlanning
+            parametres={parametresPdf}
+            construire={htmlApercuEtude}
+            largeurMm={finalFormat.w}
+            hauteurMm={finalFormat.h}
+            valide={isValid}
+          />
+        </div>
         </div>
 
         {/* Footer */}

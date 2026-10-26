@@ -7,7 +7,7 @@ import { assignLabelLanes } from '../../chantier/planning/jalonLayout'
 import { echapperHtml } from '../../../shared/echapperHtml'
 import {
   bordureGauche, pastelPdf, fondPeriode, traitPeriode, stylePause, estBloquante, groupesDePeriodes,
-  TRAIT_HORIZONTAL,
+  TRAIT_HORIZONTAL, SCRIPT_MISE_A_ECHELLE,
 } from '../../../shared/planning/export/grilleExport'
 import { nettoyerHtml, estVide } from '../../../shared/planning/export/texteRiche'
 
@@ -442,15 +442,7 @@ ${pied ? `<div class="texte-pied">${pied}</div>` : ''}
 
 <script>
 window.onload = function() {
-  var gw = document.getElementById('gw');
-  var pw = document.body.clientWidth;
-  var tw = gw.scrollWidth;
-  if (tw > pw * 1.02) {
-    var s = pw / tw;
-    gw.style.transformOrigin = 'top left';
-    gw.style.transform = 'scale(' + s + ')';
-    gw.style.marginBottom = ((s - 1) * gw.offsetHeight) + 'px';
-  }
+${SCRIPT_MISE_A_ECHELLE}
   setTimeout(function() { window.print(); }, 400);
 };
 </script>

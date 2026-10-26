@@ -4,8 +4,8 @@ import { buildRowsByZone } from './groupByZone'
 import { legendeCouleurs } from './legende'
 import { echapperHtml } from '../../../shared/echapperHtml'
 import {
-  bordureGauche, niveauDuJour, pastelPdf, fondPeriode, traitPeriode, stylePause,
-  estBloquante, groupesDePeriodes, TRAIT_HORIZONTAL,
+  bordureGauche, niveauDuJour, moisDuJour, pastelPdf, fondPeriode, traitPeriode, stylePause,
+  estBloquante, groupesDePeriodes, TRAIT_HORIZONTAL, SCRIPT_MISE_A_ECHELLE,
 } from '../../../shared/planning/export/grilleExport'
 import { nettoyerHtml, estVide } from '../../../shared/planning/export/texteRiche'
 
@@ -136,10 +136,10 @@ export function intervallesTache(task, segments = [], periodes = []) {
 // du tableau (une par <col> du colgroup), ce qui écrase tous les groupes suivants
 // dans les premières colonnes et laisse le reste de la ligne d'en-tête vide : c'est
 // la cause du rendu « semaines entassées en début de tableau ».
-function buildYearHeaders(days) {
+function buildYearHeaders(days, granularite) {
   const years = []
   days.forEach((d) => {
-    const y = d.getFullYear()
+    const y = moisDuJour(d, granularite).getFullYear()
     const last = years[years.length - 1]
     if (last && last.year === y) last.count++
     else years.push({ year: y, count: 1 })
@@ -152,15 +152,16 @@ function buildYearHeaders(days) {
 function buildMonthHeaders(days, includeYear, granularite) {
   const months = []
   days.forEach((d) => {
+    const mois = moisDuJour(d, granularite)
     const label = includeYear
-      ? d.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })
-      : d.toLocaleDateString('fr-FR', { month: 'long' })
+      ? mois.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })
+      : mois.toLocaleDateString('fr-FR', { month: 'long' })
     const last = months[months.length - 1]
     if (last && last.label === label) last.count++
     else months.push({ label, count: 1, premier: d })
   })
   return months.map(m =>
-    `<th class="hdr-month" colspan="${m.count}" style="border-left:${bordureGauche(niveauDuJour(m.premier), granularite)}">${m.label.charAt(0).toUpperCase() + m.label.slice(1)}</th>`
+    `<th class="hdr-month" colspan="${m.count}" style="border-left:${bordureGauche(niveauDuJour(m.premier, granularite), granularite)}">${m.label.charAt(0).toUpperCase() + m.label.slice(1)}</th>`
   ).join('')
 }
 
@@ -178,7 +179,7 @@ function buildWeekHeaders(days, granularite) {
     else weeks.push({ key: wKey, wn, count: 1, premier: d })
   })
   return weeks.map(w =>
-    `<th class="hdr-week" colspan="${w.count}" style="border-left:${bordureGauche(niveauDuJour(w.premier), granularite)}">S${w.wn}</th>`
+    `<th class="hdr-week" colspan="${w.count}" style="border-left:${bordureGauche(niveauDuJour(w.premier, granularite), granularite)}">S${w.wn}</th>`
   ).join('')
 }
 
@@ -284,9 +285,9 @@ function buildJalonBand(jalons, days, dayWidths) {
 function buildBandePeriodes(days, periodes, granularite) {
   const parJour = days.map(d => periodeDuJour(d, periodes))
   if (!parJour.some(Boolean)) return ''
-  const debutsDeMois = days.map(d => d.getDate() === 1)
+  const debutsDeMois = days.map(d => niveauDuJour(d, granularite) === 'mois')
   const cellules = groupesDePeriodes(parJour, debutsDeMois).map(({ periode, debut, nombre, premier }) => {
-    const trait = `border-left:${bordureGauche(niveauDuJour(days[debut]), granularite)};`
+    const trait = `border-left:${bordureGauche(niveauDuJour(days[debut], granularite), granularite)};`
     if (!periode) return `<th class="hdr-periode" colspan="${nombre}" style="${trait}"></th>`
     const couleur = echapperHtml(pastelPdf(periode.couleur ?? '#B8412C', 1))
     // Le libellé n'est écrit qu'une fois, au début de la période ; il peut
@@ -432,7 +433,7 @@ function buildTaskRow(task, color, days, dayWidths, jalons, todayStr, ctx, rowIn
   const cells = days.map((d, idx) => {
     // Le grisé du week-end n'a de sens que là où les jours se lisent
     const isWE = granularite === 'day' && isWeekend(d)
-    const borderLeft = bordureGauche(niveauDuJour(d), granularite)
+    const borderLeft = bordureGauche(niveauDuJour(d, granularite), granularite)
     const bg = isWE ? 'rgba(0,0,0,0.03)' : 'transparent'
 
     // Repère vertical du jalon, sans libellé : celui-ci est rendu une seule fois
@@ -512,7 +513,7 @@ function buildHtml({
   const showYearRow = viewMode !== 'day'
   const showWeekRow = viewMode !== 'month'
   const showDayRow = viewMode === 'day'
-  const yearHeaders  = showYearRow ? buildYearHeaders(days) : ''
+  const yearHeaders  = showYearRow ? buildYearHeaders(days, viewMode) : ''
   const monthHeaders = buildMonthHeaders(days, !showYearRow, viewMode)
   const weekHeaders  = showWeekRow ? buildWeekHeaders(days, viewMode) : ''
   const bandePeriodes = buildBandePeriodes(days, periodes, viewMode)
@@ -738,7 +739,7 @@ window.onload = function() {
   // ── 1. Flèches de chemin critique ──────────────────────────────────────────
   // Mesurées dans le repère naturel (non mis à l'échelle) du tableau : la mise
   // à l'échelle qui suit (étape 2) s'applique à #gw dans son ensemble (tableau
-  // + overlay SVG), donc les tracés restent alignés une fois transform:scale()
+  // + overlay SVG), donc les tracés restent alignés une fois le zoom
   // appliqué — pas besoin de recalculer après coup.
   var table = document.getElementById('gantt-table');
   var svg = document.getElementById('arrows-svg');
@@ -822,15 +823,7 @@ window.onload = function() {
   svg.style.height = table.offsetHeight + 'px';
 
   // ── 2. Mise à l'échelle pour tenir sur une page + impression ────────────────
-  var gw = document.getElementById('gw');
-  var pw = document.body.clientWidth;
-  var tw = gw.scrollWidth;
-  if (tw > pw * 1.02) {
-    var s = pw / tw;
-    gw.style.transformOrigin = 'top left';
-    gw.style.transform = 'scale(' + s + ')';
-    gw.style.marginBottom = ((s - 1) * gw.offsetHeight) + 'px';
-  }
+${SCRIPT_MISE_A_ECHELLE}
   setTimeout(function() { window.print(); }, 400);
 };
 </script>

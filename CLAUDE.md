@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 994 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans, gestion de l'application)
+npm test         # 998 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans, gestion de l'application)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -1092,7 +1092,13 @@ navigateur. Ce qui leur est commun vit dans `src/shared/planning/export/`.
   seulement les mois. L'étude est traitée en Semaines. Les lignes
   horizontales prennent la teinte des mois, un peu plus fines
   (`TRAIT_HORIZONTAL`), et le bandeau des périodes est coupé à chaque début
-  de mois pour que la ligne de mois le traverse.
+  de mois pour que la ligne de mois le traverse. Au chantier en vue
+  Semaines, le mois commence à son **premier lundi** et une semaine
+  appartient au mois de son lundi (`niveauDuJour(d, 'week')`, `moisDuJour`),
+  comme dans l'éditeur : un trait au 1er coupait une semaine en deux.
+- **Mise à l'échelle** (`SCRIPT_MISE_A_ECHELLE`, deux plannings) : par
+  `zoom`, jamais `transform: scale` + marge négative — sur un tableau de
+  plusieurs pages, la légende remontait sur les dernières lignes.
 - **Périodes** : fond uni (les hachures moiraient à l'impression), trait aux
   vraies dates de début et de fin, bandeau qui les nomme sous les dates. Au
   chantier, **un seul bloc par période et par ligne**, sous la grille

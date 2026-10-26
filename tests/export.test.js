@@ -238,6 +238,22 @@ describe('PDF chantier — grille selon la granularité', () => {
     assert.ok(!c.includes(SEMAINE) && !c.includes(JOUR))
   })
 
+  test('en semaines : le trait du mois passe entre deux semaines, pas au 1er', () => {
+    generatePlanningChantierPdf(paramsPdfChantier({ viewMode: 'week', dateDebut: '2026-03-23', dateFin: '2026-04-24' }))
+    const cellules = corpsPdf().split('</tr>')[1].match(/<td style="[^"]*"/g)
+    // 1er avril (mercredi, 10e jour) : rien ; lundi 6 avril (15e jour) : le mois
+    assert.ok(!cellules[9].includes(MOIS))
+    assert.ok(cellules[14].includes(MOIS))
+    // En-tête : mars garde la semaine du 30 mars au 5 avril (14 jours)
+    assert.match(htmlGenere, /<th class="hdr-month" colspan="14"[^>]*>Mars<\/th>/)
+  })
+
+  test('le tableau se réduit par zoom : la légende ne remonte pas sur les lignes', () => {
+    generatePlanningChantierPdf(params('week'))
+    assert.ok(htmlGenere.includes('gw.style.zoom'))
+    assert.ok(!htmlGenere.includes('scale('))
+  })
+
   test('le grisé du week-end ne reste qu’en vue jours', () => {
     generatePlanningChantierPdf(params('week'))
     assert.ok(!corpsPdf().includes('rgba(0,0,0,0.03)'))

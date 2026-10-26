@@ -6,7 +6,7 @@ import { test, describe } from 'node:test'
 
 import { nettoyerHtml, estVide } from '../src/shared/planning/export/texteRiche.js'
 import {
-  bordureGauche, niveauDuJour, fondPeriode, pastelPdf, groupesDePeriodes, TRAITS_GRILLE,
+  bordureGauche, niveauDuJour, moisDuJour, fondPeriode, pastelPdf, groupesDePeriodes, TRAITS_GRILLE,
 } from '../src/shared/planning/export/grilleExport.js'
 import { lireTextesExport, ecrireTextesExport } from '../src/shared/planning/export/textesExport.js'
 
@@ -71,6 +71,21 @@ describe('grille selon la granularité', () => {
     assert.equal(niveauDuJour(new Date(2026, 5, 1)), 'mois')   // lundi 1er juin 2026
     assert.equal(niveauDuJour(new Date(2026, 5, 8)), 'semaine')
     assert.equal(niveauDuJour(new Date(2026, 5, 9)), 'jour')
+  })
+
+  test('vue Semaines : le mois commence à son premier lundi, jamais au milieu d’une semaine', () => {
+    assert.equal(niveauDuJour(new Date(2026, 3, 1), 'week'), 'jour')     // mercredi 1er avril 2026
+    assert.equal(niveauDuJour(new Date(2026, 3, 6), 'week'), 'mois')     // premier lundi d'avril
+    assert.equal(niveauDuJour(new Date(2026, 3, 13), 'week'), 'semaine')
+    assert.equal(niveauDuJour(new Date(2026, 5, 1), 'week'), 'mois')     // lundi 1er juin
+  })
+
+  test('vue Semaines : une semaine appartient au mois et à l’année de son lundi', () => {
+    // Mercredi 1er avril 2026 : sa semaine commence le lundi 30 mars
+    assert.equal(moisDuJour(new Date(2026, 3, 1), 'week').getMonth(), 2)
+    assert.equal(moisDuJour(new Date(2026, 3, 1)).getMonth(), 3)
+    // Jeudi 1er janvier 2026 : semaine du lundi 29 décembre 2025
+    assert.equal(moisDuJour(new Date(2026, 0, 1), 'week').getFullYear(), 2025)
   })
 })
 

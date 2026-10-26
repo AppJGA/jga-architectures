@@ -32,12 +32,41 @@ export function bordureGauche(niveau, granularite = 'day') {
   return visibles.has(niveau) ? TRAITS_GRILLE[niveau] : 'none'
 }
 
-/** Niveau de la séparation qui précède un jour (chantier). */
-export function niveauDuJour(date) {
+/**
+ * Niveau de la séparation qui précède un jour (chantier).
+ * En vue Semaines, le mois commence au premier lundi du mois, comme dans
+ * l'éditeur : un trait posé au 1er coupait une semaine en deux.
+ */
+export function niveauDuJour(date, granularite = 'day') {
+  if (granularite === 'week') {
+    if (date.getDay() !== 1) return 'jour'
+    return date.getDate() <= 7 ? 'mois' : 'semaine'
+  }
   if (date.getDate() === 1) return 'mois'
   if (date.getDay() === 1) return 'semaine'
   return 'jour'
 }
+
+/**
+ * Premier jour du mois auquel un jour se rattache dans les en-têtes : en vue
+ * Semaines, une semaine appartient au mois (et à l'année) de son lundi.
+ */
+export function moisDuJour(date, granularite = 'day') {
+  const d = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+  if (granularite === 'week') d.setDate(d.getDate() - (d.getDay() + 6) % 7)
+  return new Date(d.getFullYear(), d.getMonth(), 1)
+}
+
+// Script des pages imprimées : réduit le bloc du planning à la largeur de la
+// page. Par `zoom`, qui réduit aussi la place occupée, et non par
+// `transform: scale` : celui-ci ne réduit que le dessin, et la marge négative
+// qui rattrapait la hauteur ne valait que sur une page — dès que le tableau
+// en prenait deux, la légende remontait sur ses dernières lignes.
+export const SCRIPT_MISE_A_ECHELLE = `
+  var gw = document.getElementById('gw');
+  var pw = document.body.clientWidth;
+  var tw = gw.scrollWidth;
+  if (tw > pw * 1.02) gw.style.zoom = pw / tw;`
 
 // ─── Périodes ──────────────────────────────────────────────────────────────────
 //

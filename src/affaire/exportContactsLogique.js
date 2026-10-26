@@ -8,15 +8,12 @@
 // Pur, pour être testé (tests/export-contacts.test.js). Les fiches viennent
 // d'`annuaireAffaire`.
 
-import { telephones } from './annuaireLogique'
+import { numerosFiche, estPortable } from '../shared/telephones'
 
 const nomComplet = (f) => [f.prenom, f.nomFamille].filter(Boolean).join(' ')
 
 // 06 / 07 en France : Outlook range un mobile dans sa propre colonne
-export function estMobile(numero) {
-  const chiffres = String(numero ?? '').replace(/[^\d+]/g, '')
-  return /^(0[67]|\+33[67]|0033[67])/.test(chiffres)
-}
+export const estMobile = estPortable
 
 // Ce qui permet de retrouver, dans le téléphone, pourquoi on a ce contact
 export function noteContact(fiche, affaire) {
@@ -57,8 +54,8 @@ export function vcard(fiche, affaire) {
   // Sans personne nommée, l'iPhone affiche la société plutôt qu'un nom vide
   if (!personne) lignes.push('X-ABShowAs:COMPANY')
   if (fiche.fonction) lignes.push(`TITLE:${echapper(fiche.fonction)}`)
-  for (const n of telephones(fiche.telephone)) {
-    lignes.push(`TEL;TYPE=${estMobile(n) ? 'CELL' : 'WORK'},VOICE:${n}`)
+  for (const { numero, portable } of numerosFiche(fiche.telephone, fiche.telephonePortable)) {
+    lignes.push(`TEL;TYPE=${portable ? 'CELL' : 'WORK'},VOICE:${numero}`)
   }
   if (fiche.email) lignes.push(`EMAIL;TYPE=INTERNET,WORK:${fiche.email}`)
   const note = noteContact(fiche, affaire)
@@ -84,9 +81,9 @@ export const COLONNES_OUTLOOK = [
 const cellule = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`
 
 export function ligneOutlook(fiche, affaire) {
-  const numeros = telephones(fiche.telephone)
-  const mobiles = numeros.filter(estMobile)
-  const fixes = numeros.filter((n) => !estMobile(n))
+  const numeros = numerosFiche(fiche.telephone, fiche.telephonePortable)
+  const mobiles = numeros.filter((n) => n.portable).map((n) => n.numero)
+  const fixes = numeros.filter((n) => !n.portable).map((n) => n.numero)
   const personne = nomComplet(fiche)
   return {
     'First Name': fiche.prenom ?? '',

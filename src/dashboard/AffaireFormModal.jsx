@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { X, ImagePlus } from 'lucide-react'
+import { X, ImagePlus, Plus, Trash2 } from 'lucide-react'
 import { CollaborateursSection } from '../shared/components/CollaborateursSection'
 import { PHASES_AFFAIRE } from '../affaire/phaseAffaire'
 import { InterlocuteursEditeur } from '../modules/chantier/comptes-rendus/InterlocuteursModal'
@@ -7,13 +7,15 @@ import { supabase } from '../core/supabase/client'
 import { useAuth } from '../core/auth/useAuth'
 import { compressImage, COVER_OPTIONS, TAILLE_MAX_OCTETS } from '../shared/utils/compressImage'
 import { htDe, ttcDe, tvaAffaire, formatEuros } from '../shared/montants'
+import { lignesCadastre, ligneVide, colonnesCadastre, superficieTotale } from '../affaire/cadastreLogique'
 
 // ─── Valeurs par défaut ────────────────────────────────────────────────────
 const DEFAULTS = {
   code_affaire: '', nom: '', phase: 'esq', avancement: 0,
-  moa_nom: '', moa_adresse: '', moa_telephone: '', moa_email: '',
+  moa_nom: '', moa_adresse: '', moa_telephone: '', moa_telephone_portable: '', moa_email: '',
   projet_adresse: '', projet_commune: '', projet_code_postal: '',
-  cadastre_section: '', cadastre_parcelle: '', cadastre_superficie: '',
+  // Une ligne par section cadastrale ; enregistrées par `colonnesCadastre`
+  cadastre_lignes: [ligneVide()],
   terrain_statut: null,
   viab_voirie: false, viab_electricite: false, viab_gaz: false,
   viab_assainissement: false, viab_eaux_pluviales: false, viab_courants_faibles: false,
@@ -44,7 +46,7 @@ function detectTvaPreset(taux) {
 }
 
 const NUMERIC_FIELDS = [
-  'cadastre_superficie', 'enveloppe_ht', 'montant_travaux_ht', 'honoraires_ht',
+  'enveloppe_ht', 'montant_travaux_ht', 'honoraires_ht',
   'surface_plancher', 'surface_habitable', 'surface_terrain', 'cos_autorise',
 ]
 const DATE_FIELDS = [
@@ -59,6 +61,7 @@ function initialForm(affaire) {
   if (!affaire) return { ...DEFAULTS }
   return Object.fromEntries(
     Object.keys(DEFAULTS).map(k => {
+      if (k === 'cadastre_lignes') return [k, lignesCadastre(affaire)]
       // Une affaire d'avant la migration 064 n'a que le TTC : son HT s'en déduit
       if (TTC_DE[k]) return [k, htDe(affaire[k], affaire[TTC_DE[k]], tvaAffaire(affaire)) ?? '']
       const v = affaire[k]
@@ -82,8 +85,9 @@ function avecTTC(donnees) {
 }
 
 function cleanData(form) {
+  const { cadastre_lignes: lignes, ...reste } = form
   return Object.fromEntries(
-    Object.entries(form).map(([k, v]) => {
+    Object.entries({ ...reste, ...colonnesCadastre(lignes) }).map(([k, v]) => {
       if ((NUMERIC_FIELDS.includes(k) || DATE_FIELDS.includes(k)) && v === '') return [k, null]
       if (NUMERIC_FIELDS.includes(k) && v !== null && v !== '') return [k, parseFloat(v)]
       if (k === 'taux_tva') return [k, parseFloat(v) || 1.20]
@@ -274,6 +278,8 @@ function RadioRow({ label, value, current, onChange }) {
 }
 
 const grid2 = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }
+// Section, parcelles, superficie, corbeille
+const LIGNE_CADASTRE = { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1.6fr) minmax(0, 1fr) 38px', gap: 10, alignItems: 'center' }
 
 // ─── Composant principal ───────────────────────────────────────────────────
 // `file` est déjà compressé (cf. handlePhotoSelect) : cette fonction ne fait
@@ -343,6 +349,8 @@ export function AffaireFormModal({ affaire = null, onSave, onClose, scrollToSect
       DATE_FIELDS.forEach(k => { if (typeof f[k] === 'string') f[k] = f[k].slice(0, 10) })
       setForm({
         ...f,
+        moa_telephone_portable: affaire.moa_telephone_portable ?? '',
+        cadastre_lignes: lignesCadastre(affaire),
         terrain_statut: affaire.terrain_statut ?? null,
         taux_tva: affaire.taux_tva ?? 1.20,
         seuil_aleas_pct: affaire.seuil_aleas_pct ?? 5.00,
@@ -377,6 +385,15 @@ export function AffaireFormModal({ affaire = null, onSave, onClose, scrollToSect
   const set = (key) => (e) => setForm(f => ({ ...f, [key]: e.target.value }))
   const setNum = (key) => (e) => setForm(f => ({ ...f, [key]: e.target.value }))
   const toggle = (key) => (e) => setForm(f => ({ ...f, [key]: e.target.checked }))
+  const setLigneCadastre = (i, champ) => (e) => setForm(f => ({
+    ...f, cadastre_lignes: f.cadastre_lignes.map((l, j) => (j === i ? { ...l, [champ]: e.target.value } : l)),
+  }))
+  const ajouterLigneCadastre = () => setForm(f => ({ ...f, cadastre_lignes: [...f.cadastre_lignes, ligneVide()] }))
+  const retirerLigneCadastre = (i) => setForm(f => {
+    const reste = f.cadastre_lignes.filter((_, j) => j !== i)
+    return { ...f, cadastre_lignes: reste.length ? reste : [ligneVide()] }
+  })
+  const totalCadastre = superficieTotale(form.cadastre_lignes ?? [])
 
   // La compression a lieu ici, à la sélection, et non à l'enregistrement : un
   // fichier illisible est signalé tout de suite, et la soumission du formulaire
@@ -677,13 +694,16 @@ export function AffaireFormModal({ affaire = null, onSave, onClose, scrollToSect
               </Field>
             </div>
             <div style={grid2}>
-              <Field label="Téléphone">
+              <Field label="Téléphone fixe">
                 <TextInput type="tel" value={form.moa_telephone} onChange={set('moa_telephone')} placeholder="04 00 00 00 00" />
               </Field>
-              <Field label="Adresse">
-                <TextInput value={form.moa_adresse} onChange={set('moa_adresse')} placeholder="1 place de la Mairie" />
+              <Field label="Téléphone portable">
+                <TextInput type="tel" value={form.moa_telephone_portable} onChange={set('moa_telephone_portable')} placeholder="06 00 00 00 00" />
               </Field>
             </div>
+            <Field label="Adresse">
+              <TextInput value={form.moa_adresse} onChange={set('moa_adresse')} placeholder="1 place de la Mairie" />
+            </Field>
           </div>
 
           {/* ── Interlocuteurs : les mêmes que dans les visites de chantier ── */}
@@ -719,16 +739,48 @@ export function AffaireFormModal({ affaire = null, onSave, onClose, scrollToSect
                 <TextInput value={form.projet_code_postal} onChange={set('projet_code_postal')} placeholder="62100" />
               </Field>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14 }}>
-              <Field label="Section cadastrale">
-                <TextInput value={form.cadastre_section} onChange={set('cadastre_section')} placeholder="AB" />
-              </Field>
-              <Field label="Numéro(s) de parcelle(s)">
-                <TextInput value={form.cadastre_parcelle} onChange={set('cadastre_parcelle')} placeholder="0142" />
-              </Field>
-              <Field label="Superficie (m²)">
-                <TextInput type="number" value={form.cadastre_superficie} onChange={setNum('cadastre_superficie')} placeholder="4200" />
-              </Field>
+            <div>
+              <div style={{ ...LIGNE_CADASTRE, marginBottom: 5 }}>
+                <Label>Section cadastrale</Label>
+                <Label>Numéro(s) de parcelle(s)</Label>
+                <Label>Superficie (m²)</Label>
+                <span />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {(form.cadastre_lignes ?? []).map((ligne, i) => (
+                  <div key={i} style={LIGNE_CADASTRE}>
+                    <TextInput value={ligne.section} onChange={setLigneCadastre(i, 'section')} placeholder="AB"
+                      aria-label={`Section cadastrale ${i + 1}`} />
+                    <TextInput value={ligne.parcelles} onChange={setLigneCadastre(i, 'parcelles')} placeholder="0142, 0143"
+                      aria-label={`Parcelles de la section ${i + 1}`} />
+                    <TextInput type="number" step="0.01" value={ligne.superficie} onChange={setLigneCadastre(i, 'superficie')} placeholder="4200"
+                      aria-label={`Superficie de la section ${i + 1}`} />
+                    <button type="button" onClick={() => retirerLigneCadastre(i)} title="Retirer cette section"
+                      aria-label={`Retirer la section ${i + 1}`}
+                      style={{
+                        width: 38, height: 38, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        border: 'none', background: 'none', cursor: 'pointer', color: '#9C9591', padding: 0,
+                      }}>
+                      <Trash2 size={14} strokeWidth={1.5} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: 8, flexWrap: 'wrap' }}>
+                <button type="button" onClick={ajouterLigneCadastre}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 5, minHeight: 32,
+                    background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+                    fontSize: 12, color: 'var(--jga-orange)',
+                  }}>
+                  <Plus size={13} strokeWidth={1.5} /> Ajouter une section
+                </button>
+                {(form.cadastre_lignes ?? []).length > 1 && totalCadastre != null && (
+                  <span style={{ fontSize: 11, color: '#9C9591' }}>
+                    Superficie totale : {totalCadastre.toLocaleString('fr-FR')} m²
+                  </span>
+                )}
+              </div>
             </div>
 
             <Field label="Statut du terrain">

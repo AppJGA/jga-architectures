@@ -3,6 +3,9 @@ import { supabase } from '../../core/supabase/client'
 import { photosDeLAffaire, nettoyerFichiers } from '../../modules/chantier/comptes-rendus/photosStockage'
 import { useAuth } from '../../core/auth/useAuth'
 import { erreurColonnesHT, sansColonnesHT } from '../montants'
+import { erreurPortable, sansPortable } from '../telephones'
+import { erreurCadastre, sansReferences } from '../../affaire/cadastreLogique'
+import { ecrireAvecReplis } from '../repliColonnes'
 import { echecDeReseau } from '../../core/auth/sessionHorsLigne'
 
 // La table `affaires` porte des montants : un compte extérieur la lit par une
@@ -11,9 +14,9 @@ const sourceAffaires = (estAgence) => (estAgence ? 'affaires' : 'affaires_resume
 
 const AFFAIRE_FIELDS = [
   'code_affaire', 'nom', 'phase', 'avancement',
-  'moa_nom', 'moa_adresse', 'moa_telephone', 'moa_email',
+  'moa_nom', 'moa_adresse', 'moa_telephone', 'moa_telephone_portable', 'moa_email',
   'projet_adresse', 'projet_commune', 'projet_code_postal',
-  'cadastre_section', 'cadastre_parcelle', 'cadastre_superficie', 'terrain_statut',
+  'cadastre_section', 'cadastre_parcelle', 'cadastre_superficie', 'cadastre_references', 'terrain_statut',
   'viab_voirie', 'viab_electricite', 'viab_gaz',
   'viab_assainissement', 'viab_eaux_pluviales', 'viab_courants_faibles',
   'doc_cadastre', 'doc_geometre', 'doc_etude_sol', 'doc_servitudes',
@@ -34,6 +37,14 @@ function buildPayload(formData) {
   })
   return payload
 }
+
+// Colonnes que la base peut ne pas avoir encore : HT (064), portable du
+// maître d'ouvrage et références cadastrales (076)
+const REPLIS_AFFAIRE = [
+  [erreurColonnesHT, sansColonnesHT],
+  [erreurPortable, sansPortable],
+  [erreurCadastre, sansReferences],
+]
 
 export function useAffaires() {
   // L'utilisateur est lu sur l'appareil (useAuth), pas demandé au serveur :
@@ -123,9 +134,7 @@ export function useAffaires() {
     if (!user) throw new Error('Non authentifié')
 
     const inserer = (payload) => supabase.from('affaires').insert([payload]).select().single()
-    let { data: newAffaire, error: affaireError } = await inserer(buildPayload(formData))
-    // Sans la migration 064, pas de colonnes HT : l'affaire part avec son TTC
-    if (erreurColonnesHT(affaireError)) ({ data: newAffaire, error: affaireError } = await inserer(sansColonnesHT(buildPayload(formData))))
+    const { data: newAffaire, error: affaireError } = await ecrireAvecReplis(inserer, buildPayload(formData), REPLIS_AFFAIRE)
     if (affaireError) throw affaireError
 
     const { error: collabError } = await supabase
@@ -152,8 +161,7 @@ export function useAffaires() {
         { onConflict: 'affaire_id,user_id' }
       )
     const ecrire = (payload) => supabase.from('affaires').update(payload).eq('id', id)
-    let { error } = await ecrire(buildPayload(formData))
-    if (erreurColonnesHT(error)) ({ error } = await ecrire(sansColonnesHT(buildPayload(formData))))
+    const { error } = await ecrireAvecReplis(ecrire, buildPayload(formData), REPLIS_AFFAIRE)
     if (error) throw error
     await refetch()
   }
@@ -213,8 +221,7 @@ export function useAffaire(id) {
   }, [id, refetch])
 
   const updateAffaire = useCallback(async (data) => {
-    let { error } = await supabase.from('affaires').update(data).eq('id', id)
-    if (erreurColonnesHT(error)) ({ error } = await supabase.from('affaires').update(sansColonnesHT(data)).eq('id', id))
+    const { error } = await ecrireAvecReplis((ligne) => supabase.from('affaires').update(ligne).eq('id', id), data, REPLIS_AFFAIRE)
     if (!error) await refetch()
     return { error }
   }, [id, refetch])

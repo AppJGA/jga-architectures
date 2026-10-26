@@ -273,7 +273,7 @@ const cellulePresence = ({ p, absentConvoque }) => {
     : { text: '—', color: COULEUR.grisClair, alignment: 'center', fontSize: 8 }
 }
 const celluleConvoque = ({ p }) => ({ text: p.convoque ? `Oui${p.heure_convocation ? ` ${p.heure_convocation.slice(0, 5)}` : ''}` : '—', fontSize: 8, color: p.convoque ? '#2A8A4E' : COULEUR.grisClair })
-const celluleContact = ({ v }) => ({ stack: [v.email, v.telephone].filter(Boolean).map((t) => ({ text: t, fontSize: 8 })) })
+const celluleContact = ({ v }) => ({ stack: [v.email, v.telephone, v.telephonePortable].filter(Boolean).map((t) => ({ text: t, fontSize: 8 })) })
 
 /**
  * Description pdfmake du compte rendu.

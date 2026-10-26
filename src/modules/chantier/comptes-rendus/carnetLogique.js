@@ -24,14 +24,17 @@ export function ficheCarnet(form = {}) {
   const raison = organisation || personne
   if (!raison) return null
   const telephone = propre(form.telephone) || null
+  // Le portable seulement s'il y en a un : une base sans la migration 076
+  // accepte alors la fiche telle quelle
+  const portable = propre(form.telephone_portable) ? { telephone_portable: propre(form.telephone_portable) } : {}
   const email = propre(form.email) || null
   const adresse = propre(form.adresse) || null
   if (!organisation) {
-    return { entreprise: { raison_sociale: raison, adresse, telephone, email }, interlocuteur: null }
+    return { entreprise: { raison_sociale: raison, adresse, telephone, ...portable, email }, interlocuteur: null }
   }
   return {
-    entreprise: { raison_sociale: organisation, adresse, ...(personne ? {} : { telephone, email }) },
-    interlocuteur: personne ? { prenom: prenom || null, nom: nom || null, fonction: propre(form.fonction) || null, telephone, email } : null,
+    entreprise: { raison_sociale: organisation, adresse, ...(personne ? {} : { telephone, ...portable, email }) },
+    interlocuteur: personne ? { prenom: prenom || null, nom: nom || null, fonction: propre(form.fonction) || null, telephone, ...portable, email } : null,
   }
 }
 
@@ -66,7 +69,7 @@ export function correspondanceCarnet(form = {}, entreprises = []) {
 
 const LIBELLES = {
   raison_sociale: 'Organisation', adresse: 'Adresse', prenom: 'Prénom', nom: 'Nom',
-  fonction: 'Fonction', telephone: 'Téléphone', email: 'E-mail',
+  fonction: 'Fonction', telephone: 'Téléphone fixe', telephone_portable: 'Téléphone portable', email: 'E-mail',
 }
 
 /** L'adresse du carnet telle qu'elle remplit le formulaire (rue, code postal ville). */
@@ -104,10 +107,12 @@ export function ecartsCarnet(liaison, form = {}) {
     ajouter('personne', p.id, 'nom', p.nom, form.nom)
     ajouter('personne', p.id, 'fonction', p.fonction, form.fonction)
     ajouter('personne', p.id, 'telephone', p.telephone || e.telephone, form.telephone)
+    ajouter('personne', p.id, 'telephone_portable', p.telephone_portable || e.telephone_portable, form.telephone_portable)
     ajouter('personne', p.id, 'email', p.email || e.email, form.email)
   } else if (!organisation || !nomPersonne(form)) {
     // Fiche sans personne à part : ses coordonnées sont celles de la fiche
     ajouter('entreprise', e.id, 'telephone', e.telephone, form.telephone)
+    ajouter('entreprise', e.id, 'telephone_portable', e.telephone_portable, form.telephone_portable)
     ajouter('entreprise', e.id, 'email', e.email, form.email)
   }
   return ecarts

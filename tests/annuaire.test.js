@@ -36,6 +36,17 @@ describe('annuaire', () => {
   })
 })
 
+describe('fixe et portable', () => {
+  test('chaque numéro manquant du représentant est pris à l’entreprise', () => {
+    const { interlocuteurs, entreprises } = annuaireAffaire({
+      interlocuteurs: [{ id: 'i', categorie: 'moa', nom: 'X', telephone: '04 00 00 00 00', telephone_portable: '06 00 00 00 00' }],
+      lots: [{ id: 'l', numero: 1, nom: 'GO', entreprise_id: 'e', raison_sociale: 'R', entreprise_tel: '03 85 00 00 00', interlocuteur_portable: '07 00 00 00 00' }],
+    })
+    assert.deepEqual([interlocuteurs[0].telephone, interlocuteurs[0].telephonePortable], ['04 00 00 00 00', '06 00 00 00 00'])
+    assert.deepEqual([entreprises[0].telephone, entreprises[0].telephonePortable], ['03 85 00 00 00', '07 00 00 00 00'])
+  })
+})
+
 describe('téléphones', () => {
   test('un lien d’appel que le téléphone compose', () => {
     assert.equal(lienTelephone('06 28 20 02 06'), 'tel:0628200206')

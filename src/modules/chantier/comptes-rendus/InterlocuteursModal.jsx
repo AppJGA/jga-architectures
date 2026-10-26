@@ -6,6 +6,7 @@ import { verserAuCarnet, chercherDansCarnet, mettreAJourCarnet } from './carnet'
 import { ecartsCarnet, lienDepuisLiaison } from './carnetLogique'
 import { RechercheCarnet } from './RechercheCarnet'
 import { remplirDepuis } from './rechercheCarnetLogique'
+import { texteTelephones } from '../../../shared/telephones'
 
 const CATEGORIES = Object.entries(CATEGORIE_META).map(([id, m]) => ({ id, ...m }))
 
@@ -23,7 +24,7 @@ function focusOn(e)  { e.target.style.borderColor = '#E8602C'; e.target.style.bo
 function focusOff(e) { e.target.style.borderColor = 'rgba(0,0,0,0.12)'; e.target.style.boxShadow = 'none' }
 
 function emptyForm(defaultCat = 'moa') {
-  return { categorie: defaultCat, categorie_label: '', prenom: '', nom: '', fonction: '', organisation: '', adresse: '', email: '', telephone: '' }
+  return { categorie: defaultCat, categorie_label: '', prenom: '', nom: '', fonction: '', organisation: '', adresse: '', email: '', telephone: '', telephone_portable: '' }
 }
 
 function InterloForm({ initial, onSave, onCancel, onDelete }) {
@@ -165,14 +166,20 @@ function InterloForm({ initial, onSave, onCancel, onDelete }) {
             <input value={form.organisation} onChange={e => set('organisation', e.target.value)} style={INPUT} onFocus={focusOn} onBlur={focusOff} />
           </div>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <div>
+            <label style={LABEL}>Téléphone fixe</label>
+            <input type="tel" value={form.telephone ?? ''} onChange={e => set('telephone', e.target.value)} style={INPUT} onFocus={focusOn} onBlur={focusOff} />
+          </div>
+          <div>
+            <label style={LABEL}>Téléphone portable</label>
+            <input type="tel" value={form.telephone_portable ?? ''} onChange={e => set('telephone_portable', e.target.value)} style={INPUT} onFocus={focusOn} onBlur={focusOff} />
+          </div>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 10 }}>
           <div>
             <label style={LABEL}>Email</label>
             <input type="email" value={form.email} onChange={e => set('email', e.target.value)} style={INPUT} onFocus={focusOn} onBlur={focusOff} />
-          </div>
-          <div>
-            <label style={LABEL}>Téléphone</label>
-            <input value={form.telephone} onChange={e => set('telephone', e.target.value)} style={INPUT} onFocus={focusOn} onBlur={focusOff} />
           </div>
           <div>
             <label style={LABEL}>Adresse</label>
@@ -339,7 +346,9 @@ function CategorySection({ cat, items, onAdd, onEdit, onDelete, onReorder }) {
                 {item.fonction && <p style={{ fontSize: 11, color: '#5E5854' }}>{item.fonction}{item.organisation ? ` · ${item.organisation}` : ''}</p>}
                 <div style={{ display: 'flex', gap: 10 }}>
                   {item.email && <a href={`mailto:${item.email}`} style={{ fontSize: 11, color: '#1B3A5C' }}>{item.email}</a>}
-                  {item.telephone && <span style={{ fontSize: 11, color: '#5E5854' }}>{item.telephone}</span>}
+                  {(item.telephone || item.telephone_portable) && (
+                    <span style={{ fontSize: 11, color: '#5E5854' }}>{texteTelephones(item.telephone, item.telephone_portable)}</span>
+                  )}
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>

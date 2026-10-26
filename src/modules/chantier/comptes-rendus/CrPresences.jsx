@@ -1,5 +1,6 @@
 import { CATEGORIE_META } from '../../../shared/hooks/useAffaireInterlocuteurs'
 import { affichagePresence } from './crLogique'
+import { texteTelephones } from '../../../shared/telephones'
 import { useCr } from './CrContexte'
 import { MentionConvocation, CompteurConvoquesAbsents, FOND_ABSENT } from './MentionConvocation'
 import { convocationDe, convoquesDabord, estConvoqueAbsent, convoquesAbsents } from './convocationLogique'
@@ -76,7 +77,7 @@ function InterloRow({ presence, convocation, absent, onPresence }) {
       </td>
       <td style={{ padding: '10px 12px', verticalAlign: 'top' }}>
         {i.email && <a href={`mailto:${i.email}`} style={{ display: 'block', fontSize: 11, color: '#1B3A5C', textDecoration: 'none' }}>{i.email}</a>}
-        {i.telephone && <span style={{ fontSize: 11, color: '#5E5854' }}>{i.telephone}</span>}
+        {(i.telephone || i.telephonePortable) && <span style={{ fontSize: 11, color: '#5E5854' }}>{texteTelephones(i.telephone, i.telephonePortable)}</span>}
       </td>
       <td style={{ padding: '10px 12px', verticalAlign: 'middle' }}>
         <PresencePills value={presence.presence} disabled={lectureSeule} onChange={val => onPresence(presence.id, val)} />
@@ -103,7 +104,7 @@ function LotRow({ presence, convocation, absent, onPresence }) {
       </td>
       <td style={{ padding: '10px 12px', verticalAlign: 'top' }}>
         {e.email && <a href={`mailto:${e.email}`} style={{ display: 'block', fontSize: 11, color: '#1B3A5C', textDecoration: 'none' }}>{e.email}</a>}
-        {e.telephone && <span style={{ fontSize: 11, color: '#5E5854' }}>{e.telephone}</span>}
+        {(e.telephone || e.telephonePortable) && <span style={{ fontSize: 11, color: '#5E5854' }}>{texteTelephones(e.telephone, e.telephonePortable)}</span>}
       </td>
       <td style={{ padding: '10px 12px', verticalAlign: 'middle' }}>
         <PresencePills value={presence.presence} disabled={lectureSeule} onChange={val => onPresence(presence.id, val)} />

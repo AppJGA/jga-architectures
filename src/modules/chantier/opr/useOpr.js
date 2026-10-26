@@ -11,10 +11,11 @@ import { creerFtmDepuis } from '../ftm/creerDepuis'
 // Volumes modestes (quelques visites, quelques centaines de réserves) : tout
 // est chargé en une fois et rechargé après chaque écriture.
 
+// Fiches entières : le portable (migration 076) n'y est que si la base l'a
 const SELECT_PRESENCES = `
   *,
-  affaire_interlocuteurs:interlocuteur_id(id, categorie, categorie_label, prenom, nom, fonction, organisation, adresse, email, telephone, ordre),
-  lot_entreprises:lot_entreprise_id(id, lot_id, lots:lot_id(*), entreprises:entreprise_id(id, raison_sociale, email, telephone), interlocuteurs:interlocuteur_id(prenom, nom, telephone, email))
+  affaire_interlocuteurs:interlocuteur_id(*),
+  lot_entreprises:lot_entreprise_id(id, lot_id, lots:lot_id(*), entreprises:entreprise_id(*), interlocuteurs:interlocuteur_id(*))
 `
 
 function verifier(resultat) {
@@ -39,7 +40,7 @@ export function useOpr(affaireId) {
       supabase.from('opr_presences').select(SELECT_PRESENCES).eq('affaire_id', affaireId),
       supabase.from('opr_archives').select('*').eq('affaire_id', affaireId).order('emis_le', { ascending: false }),
       supabase.from('lots').select('*').eq('affaire_id', affaireId).order('numero'),
-      supabase.from('lot_entreprises').select('id, lot_id, lots(*), entreprises(id, raison_sociale, email, telephone), interlocuteurs:interlocuteur_id(prenom, nom, telephone, email)').eq('affaire_id', affaireId),
+      supabase.from('lot_entreprises').select('id, lot_id, lots(*), entreprises(*), interlocuteurs:interlocuteur_id(*)').eq('affaire_id', affaireId),
       supabase.from('planning_zones').select('id, nom, couleur, ordre').eq('affaire_id', affaireId).order('ordre'),
       supabase.from('ftm').select('id, numero, decision, source_type, source_reserve_id').eq('affaire_id', affaireId),
     ])
@@ -103,8 +104,8 @@ export function useOpr(affaireId) {
 
     // Feuille de présence : interlocuteurs de l'affaire et entreprises des lots concernés
     const [interlos, lotsEnt] = await Promise.all([
-      supabase.from('affaire_interlocuteurs').select('id, categorie, categorie_label, prenom, nom, fonction, organisation, adresse, email, telephone, ordre').eq('affaire_id', affaireId),
-      supabase.from('lot_entreprises').select('id, lot_id, lots:lot_id(*), entreprises:entreprise_id(id, raison_sociale, email, telephone), interlocuteurs:interlocuteur_id(prenom, nom, telephone, email)').eq('affaire_id', affaireId),
+      supabase.from('affaire_interlocuteurs').select('*').eq('affaire_id', affaireId),
+      supabase.from('lot_entreprises').select('id, lot_id, lots:lot_id(*), entreprises:entreprise_id(*), interlocuteurs:interlocuteur_id(*)').eq('affaire_id', affaireId),
     ])
     const concernes = new Set(lot_ids)
     const lignes = [

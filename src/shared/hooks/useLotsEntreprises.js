@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../../core/supabase/client'
+import { erreurPortable, sansPortable } from '../telephones'
+import { ecrireAvecReplis } from '../repliColonnes'
 
 function flattenLot(lot) {
   const le = lot.lot_entreprises?.[0] ?? null
@@ -25,12 +27,14 @@ function flattenLot(lot) {
     ville: e?.ville ?? null,
     siret: e?.siret ?? null,
     entreprise_tel: e?.telephone ?? null,
+    entreprise_portable: e?.telephone_portable ?? null,
     entreprise_email: e?.email ?? null,
     interlocuteur_id: i?.id ?? null,
     prenom: i?.prenom ?? null,
     nom_contact: i?.nom ?? null,
     fonction: i?.fonction ?? null,
     interlocuteur_tel: i?.telephone ?? null,
+    interlocuteur_portable: i?.telephone_portable ?? null,
     interlocuteur_email: i?.email ?? null,
   }
 }
@@ -148,16 +152,18 @@ export function useEntreprises() {
   const createEntreprise = async (data) => {
     // Type « entreprise » d'office ; retenté sans lui tant que la migration 072 manque
     const inserer = (champs) => supabase.from('entreprises').insert(champs).select().single()
-    let { data: result, error } = await inserer({ type: 'entreprise', ...data })
-    if (error && ['42703', 'PGRST204'].includes(error.code) && /['"]type['"]|\.type\b/.test(error.message ?? '')) {
-      ;({ data: result, error } = await inserer(data))
-    }
+    const sansType = (champs) => { const reste = { ...champs }; delete reste.type; return reste }
+    const { data: result, error } = await ecrireAvecReplis(inserer, { type: 'entreprise', ...data }, [
+      [(e) => ['42703', 'PGRST204'].includes(e.code) && /['"]type['"]|\.type\b/.test(e.message ?? ''), sansType],
+      // Sans la migration 076, le portable rejoint le fixe
+      [erreurPortable, sansPortable],
+    ])
     if (!error) await fetch()
     return { data: result, error }
   }
 
   const updateEntreprise = async (id, data) => {
-    const { error } = await supabase.from('entreprises').update(data).eq('id', id)
+    const { error } = await ecrireAvecReplis((c) => supabase.from('entreprises').update(c).eq('id', id), data, [[erreurPortable, sansPortable]])
     if (!error) await fetch()
     return { error }
   }

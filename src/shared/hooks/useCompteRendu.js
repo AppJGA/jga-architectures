@@ -15,17 +15,16 @@ import { envoyerOperation, erreurReseau } from '../../modules/chantier/comptes-r
 import { MAGASINS, ecrire as ecrireLocal } from '../../modules/chantier/comptes-rendus/horsLigne/baseLocale'
 import { cheminsPhoto } from '../../modules/chantier/comptes-rendus/photosLogique'
 
-// Jointures d'une présence : la fiche liée sert à tenir sa copie à jour
+// Jointures d'une présence : la fiche liée sert à tenir sa copie à jour.
+// Fiches entières : le portable (migration 076) n'y est que si la base l'a.
 const SELECT_PRESENCES = `
   *,
-  affaire_interlocuteurs:interlocuteur_id(
-    id, categorie, categorie_label, prenom, nom, fonction, organisation, adresse, email, telephone, ordre
-  ),
+  affaire_interlocuteurs:interlocuteur_id(*),
   lot_entreprises:lot_entreprise_id(
     id, lot_id,
     lots:lot_id(*),
-    entreprises:entreprise_id(id, raison_sociale, email, telephone),
-    interlocuteurs:interlocuteur_id(prenom, nom, telephone, email)
+    entreprises:entreprise_id(*),
+    interlocuteurs:interlocuteur_id(*)
   )
 `
 

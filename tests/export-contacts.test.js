@@ -93,3 +93,17 @@ test('noms de fichier', () => {
   assert.equal(nomFichierContact(csps), 'Damien Vinot.vcf')
   assert.equal(nomFichierContact(bet), 'ICT; Ingénierie.vcf')
 })
+
+describe('fixe et portable rangés à leur place', () => {
+  const fiche = { prenom: 'Alix', nomFamille: 'Durand', telephone: '03 21 00 00 00', telephonePortable: '06 12 34 56 78' }
+  test('vCard : le portable en CELL, le fixe en WORK', () => {
+    const v = vcard(fiche, affaire)
+    assert.ok(v.includes('TEL;TYPE=WORK,VOICE:03 21 00 00 00\r\n'))
+    assert.ok(v.includes('TEL;TYPE=CELL,VOICE:06 12 34 56 78\r\n'))
+  })
+  test('Outlook : chacun dans sa colonne', () => {
+    const l = ligneOutlook(fiche, affaire)
+    assert.equal(l['Business Phone'], '03 21 00 00 00')
+    assert.equal(l['Mobile Phone'], '06 12 34 56 78')
+  })
+})

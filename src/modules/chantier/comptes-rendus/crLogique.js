@@ -269,6 +269,8 @@ export function preparerReprise({ sections = [], sousSections = [], remarques = 
 //
 // Chaque présence garde une copie du participant (colonnes `copie_*`, migration
 // 037) : supprimer ensuite la fiche ne vide plus les anciens comptes rendus.
+// Le portable (migration 076) n'est recopié que si la fiche lue porte la
+// colonne : envoyé à une base qui ne l'a pas, la présence serait refusée.
 
 const COPIE_VIDE = {
   copie_type: null, copie_categorie: null, copie_categorie_label: null,
@@ -292,6 +294,7 @@ export function copiePresence(p) {
       copie_prenom: i.prenom ?? null, copie_nom: i.nom ?? null, copie_fonction: i.fonction ?? null,
       copie_organisation: i.organisation ?? null, copie_adresse: i.adresse ?? null,
       copie_email: i.email ?? null, copie_telephone: i.telephone ?? null, copie_ordre: i.ordre ?? null,
+      ...('telephone_portable' in i ? { copie_telephone_portable: i.telephone_portable ?? null } : {}),
     }
   }
   const le = p.lot_entreprises
@@ -308,6 +311,8 @@ export function copiePresence(p) {
       copie_prenom: contact.prenom ?? null, copie_nom: contact.nom ?? null,
       copie_email: contact.email ?? le.entreprises?.email ?? null,
       copie_telephone: contact.telephone ?? le.entreprises?.telephone ?? null,
+      ...('telephone_portable' in contact || 'telephone_portable' in (le.entreprises ?? {})
+        ? { copie_telephone_portable: contact.telephone_portable ?? le.entreprises?.telephone_portable ?? null } : {}),
     }
   }
   return null
@@ -341,6 +346,7 @@ export function affichagePresence(p) {
     adresse: c.copie_adresse ?? null,
     email: c.copie_email ?? null,
     telephone: c.copie_telephone ?? null,
+    telephonePortable: c.copie_telephone_portable ?? null,
     ordre: c.copie_ordre ?? 99,
     lotNumero: c.copie_lot_numero ?? null,
     // À afficher : le numéro saisi s'il a été recopié, sinon le nombre

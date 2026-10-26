@@ -6,6 +6,11 @@
 
 import { supabase } from '../../../core/supabase/client'
 import { ficheCarnet, memeNom, correspondanceCarnet, ecrituresCarnet, typeDepuisCategorie } from './carnetLogique'
+import { erreurPortable, sansPortable } from '../../../shared/telephones'
+import { ecrireAvecReplis } from '../../../shared/repliColonnes'
+
+// Sans la migration 076, le portable rejoint le fixe
+const REPLI_PORTABLE = [erreurPortable, sansPortable]
 
 /** @returns { ficheCreee, personneCreee, entrepriseId, interlocuteurId } ou null s'il n'y avait rien à verser */
 export async function verserAuCarnet(form, categorie) {
@@ -22,10 +27,11 @@ export async function verserAuCarnet(form, categorie) {
   if (!entreprise) {
     // Type d'après la catégorie du contact ; retenté sans lui tant que la migration 072 manque
     const inserer = (champs) => supabase.from('entreprises').insert(champs).select('id').single()
-    let { data, error: erreur } = await inserer({ ...fiche.entreprise, type: typeDepuisCategorie(categorie) })
-    if (erreur && ['42703', 'PGRST204'].includes(erreur.code) && /['"]type['"]|\.type\b/.test(erreur.message ?? '')) {
-      ;({ data, error: erreur } = await inserer(fiche.entreprise))
-    }
+    const sansType = (champs) => { const reste = { ...champs }; delete reste.type; return reste }
+    const { data, error: erreur } = await ecrireAvecReplis(inserer, { ...fiche.entreprise, type: typeDepuisCategorie(categorie) }, [
+      [(e) => ['42703', 'PGRST204'].includes(e.code) && /['"]type['"]|\.type\b/.test(e.message ?? ''), sansType],
+      REPLI_PORTABLE,
+    ])
     if (erreur) throw erreur
     entreprise = data
     ficheCreee = true
@@ -41,7 +47,8 @@ export async function verserAuCarnet(form, categorie) {
     const trouvee = (personnes ?? []).find((x) => memeNom(`${x.prenom ?? ''} ${x.nom ?? ''}`, `${p.prenom ?? ''} ${p.nom ?? ''}`))
     if (trouvee) interlocuteurId = trouvee.id
     else {
-      const { data, error: e2 } = await supabase.from('interlocuteurs').insert({ ...p, entreprise_id: entreprise.id }).select('id').single()
+      const { data, error: e2 } = await ecrireAvecReplis((c) => supabase.from('interlocuteurs').insert(c).select('id').single(),
+        { ...p, entreprise_id: entreprise.id }, [REPLI_PORTABLE])
       if (e2) throw e2
       interlocuteurId = data.id
       personneCreee = true
@@ -59,7 +66,8 @@ export async function chercherDansCarnet(form) {
   if (!nomFiche) return null
   const { data, error } = await supabase
     .from('entreprises')
-    .select('id, raison_sociale, adresse, code_postal, ville, telephone, email, interlocuteurs(id, prenom, nom, fonction, telephone, email)')
+    // Tout, pour le portable (migration 076) quand la base l'a
+    .select('*, interlocuteurs(*)')
     .ilike('raison_sociale', `%${nomFiche.replace(/[%_\\]/g, ' ').trim()}%`).limit(20)
   if (error) throw error
   return correspondanceCarnet(form, data ?? [])
@@ -68,7 +76,7 @@ export async function chercherDansCarnet(form) {
 /** Reporte les écarts choisis dans le carnet. */
 export async function mettreAJourCarnet(ecarts) {
   for (const { table, id, champs } of ecrituresCarnet(ecarts)) {
-    const { error } = await supabase.from(table).update(champs).eq('id', id)
+    const { error } = await ecrireAvecReplis((c) => supabase.from(table).update(c).eq('id', id), champs, [REPLI_PORTABLE])
     if (error) throw error
   }
 }

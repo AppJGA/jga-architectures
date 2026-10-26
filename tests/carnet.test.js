@@ -65,7 +65,7 @@ describe('interlocuteur déjà au carnet', () => {
     const ecarts = ecartsCarnet(l, modifie)
     assert.deepEqual(ecarts.map((x) => [x.libelle, x.avant, x.apres]), [
       ['Adresse', '12 rue des Prés, 01000 Bourg-en-Bresse', '14 rue des Prés, 01000 Bourg-en-Bresse'],
-      ['Téléphone', '06 28 20 02 06', '07 45 12 12 12'],
+      ['Téléphone fixe', '06 28 20 02 06', '07 45 12 12 12'],
       ['E-mail', 'contact@apave.com', 'd.vinot@apave.com'],
     ], 'une fonction effacée n’efface pas celle du carnet')
     assert.deepEqual(ecrituresCarnet(ecarts), [

@@ -1,11 +1,14 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Search, Plus, Phone, Mail, Pencil, ExternalLink, X, Trash2, LayoutGrid, List, Users } from 'lucide-react'
+import { Search, Plus, Mail, Pencil, ExternalLink, X, Trash2, LayoutGrid, List, Users } from 'lucide-react'
 import { supabase } from '../core/supabase/client'
 import {
   TYPES_ORGANISATION, libelleType, usagesDOrganisation, affairesDesUsages,
 } from '../shared/carnet/carnetLiensLogique'
 import PersonnesOrganisation from './carnet/PersonnesOrganisation'
+import { LiensTelephone } from '../shared/components/LiensTelephone'
+import { erreurPortable, sansPortable } from '../shared/telephones'
+import { ecrireAvecReplis } from '../shared/repliColonnes'
 
 const INPUT = {
   width: '100%', height: 36, padding: '0 12px',
@@ -111,12 +114,8 @@ function EntrepriseCard({ entreprise, usages, onEdit, onDelete, onPersonnes }) {
 
       {/* Infos contact */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-        {entreprise.telephone && (
-          <a href={`tel:${entreprise.telephone}`} style={{ fontSize: 11, color: '#374151', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 6 }}>
-            <Phone size={11} style={{ color: '#9C9591', flexShrink: 0 }} />
-            {entreprise.telephone}
-          </a>
-        )}
+        <LiensTelephone fixe={entreprise.telephone} portable={entreprise.telephone_portable}
+          style={{ fontSize: 11, color: '#374151' }} />
         {entreprise.email && (
           <a href={`mailto:${entreprise.email}`} style={{ fontSize: 11, color: '#374151', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 6 }}>
             <Mail size={11} style={{ color: '#9C9591', flexShrink: 0 }} />
@@ -126,7 +125,7 @@ function EntrepriseCard({ entreprise, usages, onEdit, onDelete, onPersonnes }) {
         {entreprise.siret && (
           <p style={{ fontSize: 11, color: '#9C9591' }}>SIRET : {entreprise.siret}</p>
         )}
-        {!entreprise.telephone && !entreprise.email && !entreprise.siret && (
+        {!entreprise.telephone && !entreprise.telephone_portable && !entreprise.email && !entreprise.siret && (
           <p style={{ fontSize: 11, color: '#C5BEB9', fontStyle: 'italic' }}>Aucune coordonnée renseignée</p>
         )}
       </div>
@@ -243,8 +242,8 @@ function EntrepriseRow({ entreprise, usages, onEdit, onDelete, onPersonnes }) {
 
       {/* Téléphone */}
       <div style={{ flex: 1.5, fontSize: 12, paddingRight: 12 }}>
-        {entreprise.telephone
-          ? <a href={`tel:${entreprise.telephone}`} style={{ color: '#374151', textDecoration: 'none' }}>{entreprise.telephone}</a>
+        {entreprise.telephone || entreprise.telephone_portable
+          ? <LiensTelephone fixe={entreprise.telephone} portable={entreprise.telephone_portable} style={{ color: '#374151' }} />
           : <span style={{ color: '#C5BEB9' }}>—</span>
         }
       </div>
@@ -317,6 +316,7 @@ function EntrepriseEditModal({ entreprise, avecType, onSave, onClose }) {
     code_postal: entreprise.code_postal ?? '',
     ville: entreprise.ville ?? '',
     telephone: entreprise.telephone ?? '',
+    telephone_portable: entreprise.telephone_portable ?? '',
     email: entreprise.email ?? '',
     siret: entreprise.siret ?? '',
     type: entreprise.type ?? 'autre',
@@ -376,9 +376,15 @@ function EntrepriseEditModal({ entreprise, avecType, onSave, onClose }) {
               <input value={form.ville} onChange={set('ville')} style={INPUT} />
             </div>
           </div>
-          <div>
-            <label style={LABEL}>Téléphone</label>
-            <input type="tel" value={form.telephone} onChange={set('telephone')} style={INPUT} />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <div>
+              <label style={LABEL}>Téléphone fixe</label>
+              <input type="tel" value={form.telephone} onChange={set('telephone')} style={INPUT} />
+            </div>
+            <div>
+              <label style={LABEL}>Téléphone portable</label>
+              <input type="tel" value={form.telephone_portable} onChange={set('telephone_portable')} style={INPUT} />
+            </div>
           </div>
           <div>
             <label style={LABEL}>Email</label>
@@ -491,12 +497,12 @@ export default function CarnetAdressesPage() {
     const ecrire = (champs) => editing?.id
       ? supabase.from('entreprises').update(champs).eq('id', editing.id)
       : supabase.from('entreprises').insert(champs)
-    let { error } = await ecrire(data)
-    if (colonneAbsente(error, 'type') && 'type' in data) {
-      const sansType = { ...data }
-      delete sansType.type
-      ;({ error } = await ecrire(sansType))
-    }
+    // Colonnes des migrations 072 (type) et 076 (portable) : réécrit sans elles si elles manquent
+    const sansType = (champs) => { const reste = { ...champs }; delete reste.type; return reste }
+    const { error } = await ecrireAvecReplis(ecrire, data, [
+      [(e) => colonneAbsente(e, 'type') && 'type' in data, sansType],
+      [erreurPortable, sansPortable],
+    ])
     if (error) { console.error('Enregistrement:', error.message); return }
     await fetchEntreprises()
     setEditing(null)

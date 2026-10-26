@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { ChevronRight, ChevronDown, Phone, Mail, UserPlus, Download, Pencil } from 'lucide-react'
+import { ChevronRight, ChevronDown, Phone, Smartphone, Mail, UserPlus, Download, Pencil } from 'lucide-react'
 import { useAffaireInterlocuteurs, CATEGORIE_META } from '../shared/hooks/useAffaireInterlocuteurs'
 import { useLotsEntreprises } from '../shared/hooks/useLotsEntreprises'
-import { annuaireAffaire, lienTelephone, telephones } from './annuaireLogique'
+import { annuaireAffaire, lienTelephone } from './annuaireLogique'
+import { numerosFiche, texteTelephones } from '../shared/telephones'
 import { ModaleInterlocuteur } from '../modules/chantier/comptes-rendus/InterlocuteursModal'
 import { vcard, vcards, csvOutlook, nomFichierContacts, nomFichierContact } from './exportContactsLogique'
 
@@ -33,7 +34,8 @@ const BOUTON_FICHE = {
 }
 
 function Fiche({ fiche, couleur, onExporter, onModifier }) {
-  const numeros = telephones(fiche.telephone)
+  const numeros = numerosFiche(fiche.telephone, fiche.telephonePortable)
+  const brut = texteTelephones(fiche.telephone, fiche.telephonePortable)
   const marge = onModifier ? 60 : 28
   return (
     <div style={{
@@ -62,20 +64,24 @@ function Fiche({ fiche, couleur, onExporter, onModifier }) {
       )}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 6 }}>
         {/* Un numéro écrit d'une façon que le téléphone ne compose pas reste lisible */}
-        {numeros.length === 0 && fiche.telephone && (
-          <span style={{ ...LIEN, color: '#7A736E' }}><Phone size={12} strokeWidth={1.5} style={{ flexShrink: 0 }} />{fiche.telephone}</span>
+        {numeros.length === 0 && brut && (
+          <span style={{ ...LIEN, color: '#7A736E' }}><Phone size={12} strokeWidth={1.5} style={{ flexShrink: 0 }} />{brut}</span>
         )}
-        {numeros.map((n) => (
-          <a key={n} href={lienTelephone(n)} style={LIEN}>
-            <Phone size={12} strokeWidth={1.5} color="var(--affaire-accent, var(--jga-orange))" style={{ flexShrink: 0 }} />{n}
-          </a>
-        ))}
+        {/* Le combiné pour un fixe, le téléphone mobile pour un portable */}
+        {numeros.map(({ numero, portable }) => {
+          const Icone = portable ? Smartphone : Phone
+          return (
+            <a key={numero} href={lienTelephone(numero)} style={LIEN} title={portable ? 'Portable' : 'Fixe'}>
+              <Icone size={12} strokeWidth={1.5} color="var(--affaire-accent, var(--jga-orange))" style={{ flexShrink: 0 }} />{numero}
+            </a>
+          )
+        })}
         {fiche.email && (
           <a href={`mailto:${fiche.email}`} style={LIEN}>
             <Mail size={12} strokeWidth={1.5} color="var(--affaire-accent, var(--jga-orange))" style={{ flexShrink: 0 }} />{fiche.email}
           </a>
         )}
-        {!fiche.telephone && !fiche.email && (
+        {!brut && !fiche.email && (
           <span style={{ fontSize: 11, color: 'var(--jga-beige)' }}>Pas de coordonnées</span>
         )}
       </div>

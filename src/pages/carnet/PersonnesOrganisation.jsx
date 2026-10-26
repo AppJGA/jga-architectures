@@ -4,6 +4,8 @@ import { useNavigate } from 'react-router-dom'
 import { Plus, Pencil, Trash2, X, Star } from 'lucide-react'
 import { supabase } from '../../core/supabase/client'
 import { usagesDePersonne, personneSupprimable, affairesDesUsages } from '../../shared/carnet/carnetLiensLogique'
+import { erreurPortable, sansPortable, texteTelephones } from '../../shared/telephones'
+import { ecrireAvecReplis } from '../../shared/repliColonnes'
 
 const BLEU = 'var(--jga-blueprint)'
 const INPUT = {
@@ -25,7 +27,7 @@ const ICONE = {
 }
 
 const nomComplet = (p) => [p.prenom, p.nom].filter(Boolean).join(' ') || 'Sans nom'
-const VIDE = { prenom: '', nom: '', fonction: '', telephone: '', email: '', est_principal: false }
+const VIDE = { prenom: '', nom: '', fonction: '', telephone: '', telephone_portable: '', email: '', est_principal: false }
 
 // Fenêtre : fermée par ✕, Annuler, Échap seulement, jamais au clic à côté.
 function Fenetre({ titre, onClose, largeur = 560, children, pied }) {
@@ -88,7 +90,8 @@ export default function PersonnesOrganisation({ entreprise, lots, contacts, veri
     setErreur(null)
     setForm(personne ? {
       prenom: personne.prenom ?? '', nom: personne.nom ?? '', fonction: personne.fonction ?? '',
-      telephone: personne.telephone ?? '', email: personne.email ?? '', est_principal: !!personne.est_principal,
+      telephone: personne.telephone ?? '', telephone_portable: personne.telephone_portable ?? '',
+      email: personne.email ?? '', est_principal: !!personne.est_principal,
     } : { ...VIDE, est_principal: personnes.length === 0 })
     setMode({ personne: personne ?? null })
   }
@@ -101,16 +104,19 @@ export default function PersonnesOrganisation({ entreprise, lots, contacts, veri
     setErreur(null)
     const champs = {
       prenom: form.prenom.trim(), nom: form.nom.trim(), fonction: form.fonction.trim(),
-      telephone: form.telephone.trim(), email: form.email.trim(), est_principal: form.est_principal,
+      telephone: form.telephone.trim(), telephone_portable: form.telephone_portable.trim(),
+      email: form.email.trim(), est_principal: form.est_principal,
     }
+    // Sans la migration 076, le portable rejoint le fixe
+    const replis = [[erreurPortable, sansPortable]]
     const existante = mode.personne
     let id = existante?.id
     let res
     if (existante) {
-      res = await supabase.from('interlocuteurs').update(champs).eq('id', existante.id).select('id')
+      res = await ecrireAvecReplis((c) => supabase.from('interlocuteurs').update(c).eq('id', existante.id).select('id'), champs, replis)
       if (!res.error && (res.data?.length ?? 0) === 0) res = { error: { message: 'Modification refusée (droits insuffisants).' } }
     } else {
-      res = await supabase.from('interlocuteurs').insert({ ...champs, entreprise_id: entreprise.id }).select('id').single()
+      res = await ecrireAvecReplis((c) => supabase.from('interlocuteurs').insert(c).select('id').single(), { ...champs, entreprise_id: entreprise.id }, replis)
       id = res.data?.id
     }
     if (res.error) { setSaving(false); setErreur(res.error.message); return }
@@ -168,7 +174,7 @@ export default function PersonnesOrganisation({ entreprise, lots, contacts, veri
                     )}
                   </p>
                   <p style={{ fontSize: 11, color: '#5E5854' }}>
-                    {[p.fonction, p.telephone, p.email].filter(Boolean).join(' · ') || <span style={{ color: '#C5BEB9' }}>Aucune coordonnée</span>}
+                    {[p.fonction, texteTelephones(p.telephone, p.telephone_portable), p.email].filter(Boolean).join(' · ') || <span style={{ color: '#C5BEB9' }}>Aucune coordonnée</span>}
                   </p>
                   <ListeUsages usages={usagesDePersonne(p.id, donnees)} onNavigate={aller} />
                 </div>
@@ -208,7 +214,10 @@ export default function PersonnesOrganisation({ entreprise, lots, contacts, veri
               <div><label style={LABEL}>Nom</label><input value={form.nom} onChange={set('nom')} style={INPUT} /></div>
             </div>
             <div><label style={LABEL}>Fonction</label><input value={form.fonction} onChange={set('fonction')} style={INPUT} /></div>
-            <div><label style={LABEL}>Téléphone</label><input type="tel" value={form.telephone} onChange={set('telephone')} style={INPUT} /></div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <div><label style={LABEL}>Téléphone fixe</label><input type="tel" value={form.telephone} onChange={set('telephone')} style={INPUT} /></div>
+              <div><label style={LABEL}>Téléphone portable</label><input type="tel" value={form.telephone_portable} onChange={set('telephone_portable')} style={INPUT} /></div>
+            </div>
             <div><label style={LABEL}>E-mail</label><input type="email" value={form.email} onChange={set('email')} style={INPUT} /></div>
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#374151', cursor: 'pointer' }}>
               <input type="checkbox" checked={form.est_principal} onChange={(e) => setForm((f) => ({ ...f, est_principal: e.target.checked }))} />

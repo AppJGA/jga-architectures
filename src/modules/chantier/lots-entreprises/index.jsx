@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
-  Plus, MoreHorizontal, Phone, Mail, Pencil, X, Check, Search,
+  Plus, MoreHorizontal, Mail, Pencil, X, Check, Search,
 } from 'lucide-react'
 import { IconeEntreprisesLots } from '../../../shared/icones/IconesAffaire'
 import { ordonnerPersonnes, libellePersonne } from '../../../shared/lots/personnesEntreprise'
@@ -10,6 +10,9 @@ import { supabase } from '../../../core/supabase/client'
 import { numeroLot, lireNumeroSaisi } from '../../../shared/lots/numeroLot'
 import { ttcDe, tvaAffaire, formatEuros } from '../../../shared/montants'
 import { useAffaire } from '../../../shared/hooks/useAffaires'
+import { LiensTelephone } from '../../../shared/components/LiensTelephone'
+import { erreurPortable, sansPortable } from '../../../shared/telephones'
+import { ecrireAvecReplis } from '../../../shared/repliColonnes'
 
 const LOT_SUGGESTIONS = [
   'Gros œuvre', 'Charpente - Couverture', 'Étanchéité', 'Façades',
@@ -159,7 +162,7 @@ function EntrepriseAssignModal({ lot, entreprises, createEntreprise, tva = 1.2, 
     lot.entreprise_id ? { id: lot.entreprise_id, raison_sociale: lot.raison_sociale } : null
   )
   const [newForm, setNewForm] = useState({
-    raison_sociale: '', adresse: '', code_postal: '', ville: '', telephone: '', email: '', siret: '',
+    raison_sociale: '', adresse: '', code_postal: '', ville: '', telephone: '', telephone_portable: '', email: '', siret: '',
   })
   const [marche, setMarche] = useState({
     montant_marche_ht: lot.montant_marche_ht ?? '',
@@ -319,10 +322,14 @@ function EntrepriseAssignModal({ lot, entreprises, createEntreprise, tva = 1.2, 
               <input value={newForm.ville} onChange={e => setNewForm(f => ({ ...f, ville: e.target.value }))} style={INPUT} />
             </div>
             <div>
-              <label style={LABEL}>Téléphone</label>
-              <input value={newForm.telephone} onChange={e => setNewForm(f => ({ ...f, telephone: e.target.value }))} style={INPUT} />
+              <label style={LABEL}>Téléphone fixe</label>
+              <input type="tel" value={newForm.telephone} onChange={e => setNewForm(f => ({ ...f, telephone: e.target.value }))} style={INPUT} />
             </div>
             <div>
+              <label style={LABEL}>Téléphone portable</label>
+              <input type="tel" value={newForm.telephone_portable} onChange={e => setNewForm(f => ({ ...f, telephone_portable: e.target.value }))} style={INPUT} />
+            </div>
+            <div style={{ gridColumn: '1 / -1' }}>
               <label style={LABEL}>Email</label>
               <input type="email" value={newForm.email} onChange={e => setNewForm(f => ({ ...f, email: e.target.value }))} style={INPUT} />
             </div>
@@ -384,6 +391,7 @@ function InterlocuteurFormModal({ lot, onSave, onClose }) {
     nom: lot.nom_contact ?? '',
     fonction: lot.fonction ?? '',
     telephone: lot.interlocuteur_tel ?? '',
+    telephone_portable: lot.interlocuteur_portable ?? '',
     email: lot.interlocuteur_email ?? '',
   })
   const [saving, setSaving] = useState(false)
@@ -423,10 +431,14 @@ function InterlocuteurFormModal({ lot, onSave, onClose }) {
             </datalist>
           </div>
           <div>
-            <label style={LABEL}>Téléphone</label>
+            <label style={LABEL}>Téléphone fixe</label>
             <input type="tel" value={form.telephone} onChange={e => setForm(f => ({ ...f, telephone: e.target.value }))} style={INPUT} />
           </div>
           <div>
+            <label style={LABEL}>Téléphone portable</label>
+            <input type="tel" value={form.telephone_portable} onChange={e => setForm(f => ({ ...f, telephone_portable: e.target.value }))} style={INPUT} />
+          </div>
+          <div style={{ gridColumn: '1 / -1' }}>
             <label style={LABEL}>Email</label>
             <input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} style={INPUT} />
           </div>
@@ -664,7 +676,9 @@ function LotDetail({ lot, onEditLot, onAssign, onEditInterlocuteur }) {
               <InfoRow label="Raison sociale" value={lot.raison_sociale} />
               <InfoRow label="SIRET" value={lot.siret} />
               <InfoRow label="Adresse" value={[lot.adresse, lot.code_postal, lot.ville].filter(Boolean).join(', ') || null} />
-              <InfoRow label="Téléphone" value={lot.entreprise_tel} href={lot.entreprise_tel ? `tel:${lot.entreprise_tel}` : null} />
+              <InfoRow label="Téléphone" value={lot.entreprise_tel || lot.entreprise_portable
+                ? <LiensTelephone fixe={lot.entreprise_tel} portable={lot.entreprise_portable} taille={12} couleurIcone="var(--jga-beige)" />
+                : null} />
               <InfoRow label="Email" value={lot.entreprise_email} href={lot.entreprise_email ? `mailto:${lot.entreprise_email}` : null} />
             </div>
 
@@ -746,11 +760,10 @@ function LotDetail({ lot, onEditLot, onAssign, onEditInterlocuteur }) {
               {lot.fonction && (
                 <p style={{ fontSize: 12, color: '#9C9591', marginBottom: 6 }}>{lot.fonction}</p>
               )}
-              {lot.interlocuteur_tel && (
-                <a href={`tel:${lot.interlocuteur_tel}`} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: '#5E5854', textDecoration: 'none', marginBottom: 2 }}>
-                  <Phone size={12} style={{ color: 'var(--jga-beige)' }} /> {lot.interlocuteur_tel}
-                </a>
-              )}
+              <div style={{ marginBottom: 2 }}>
+                <LiensTelephone fixe={lot.interlocuteur_tel} portable={lot.interlocuteur_portable}
+                  taille={12} couleurIcone="var(--jga-beige)" style={{ fontSize: 12, color: '#5E5854', gap: 5 }} />
+              </div>
               {lot.interlocuteur_email && (
                 <a href={`mailto:${lot.interlocuteur_email}`} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: '#5E5854', textDecoration: 'none' }}>
                   <Mail size={12} style={{ color: 'var(--jga-beige)' }} /> {lot.interlocuteur_email}
@@ -815,17 +828,17 @@ export default function LotsEntreprisesModule({ lectureSeule = false }) {
   }
 
   const handleInterlocuteurSave = async (formData, isEdit) => {
+    const champs = {
+      prenom: formData.prenom, nom: formData.nom, fonction: formData.fonction,
+      telephone: formData.telephone, telephone_portable: formData.telephone_portable, email: formData.email,
+    }
+    // Sans la migration 076, le portable rejoint le fixe
+    const replis = [[erreurPortable, sansPortable]]
     if (isEdit) {
-      await supabase.from('interlocuteurs').update({
-        prenom: formData.prenom, nom: formData.nom,
-        fonction: formData.fonction, telephone: formData.telephone, email: formData.email,
-      }).eq('id', selectedLot.interlocuteur_id)
+      await ecrireAvecReplis((c) => supabase.from('interlocuteurs').update(c).eq('id', selectedLot.interlocuteur_id), champs, replis)
     } else {
-      const { data: newI } = await supabase.from('interlocuteurs').insert({
-        entreprise_id: selectedLot.entreprise_id,
-        prenom: formData.prenom, nom: formData.nom,
-        fonction: formData.fonction, telephone: formData.telephone, email: formData.email,
-      }).select().single()
+      const { data: newI } = await ecrireAvecReplis((c) => supabase.from('interlocuteurs').insert(c).select().single(),
+        { entreprise_id: selectedLot.entreprise_id, ...champs }, replis)
       if (newI) {
         await assignerEntreprise(selectedLotId, {
           entreprise_id: selectedLot.entreprise_id,

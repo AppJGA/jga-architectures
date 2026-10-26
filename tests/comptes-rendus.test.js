@@ -169,6 +169,18 @@ describe('historique des participants', () => {
     assert.equal(vue.contact, 'Paul Dupont')
   })
 
+  test('le portable est recopié seulement si la fiche porte la colonne (migration 076)', () => {
+    assert.equal('copie_telephone_portable' in copiePresence(interlocuteur), false, 'base sans la migration : rien envoyé')
+    const avec = { ...interlocuteur, affaire_interlocuteurs: { ...interlocuteur.affaire_interlocuteurs, telephone_portable: '06 11' } }
+    assert.equal(copiePresence(avec).copie_telephone_portable, '06 11')
+    // Représentant sans portable : celui de l'entreprise
+    const lot = { ...entreprise, lot_entreprises: { ...entreprise.lot_entreprises,
+      entreprises: { raison_sociale: 'Dupont', telephone_portable: '07 22' },
+      interlocuteurs: { prenom: 'Paul', nom: 'Dupont', telephone: '06', telephone_portable: null } } }
+    assert.equal(copiePresence(lot).copie_telephone_portable, '07 22')
+    assert.equal(affichagePresence({ presence: 'p', ...copiePresence(avec) }).telephonePortable, '06 11')
+  })
+
   test('affichagePresence : sans copie (données anciennes), le lien suffit', () => {
     const vue = affichagePresence(interlocuteur)
     assert.equal(vue.type, 'interlocuteur')

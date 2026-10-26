@@ -8,6 +8,7 @@
 const norm = (s) => String(s ?? '').toLocaleLowerCase('fr').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim()
 const chiffres = (...valeurs) => valeurs.map((v) => String(v ?? '').replace(/\D/g, '')).filter(Boolean).join(' ')
 const vide = (v) => (v == null ? '' : String(v))
+const deuxNumeros = (fixe, portable) => [fixe, portable].filter(Boolean).join(' · ')
 
 /** Les options de la liste, à partir des fiches du carnet (avec leurs `interlocuteurs`). */
 export function optionsCarnet(entreprises = []) {
@@ -15,31 +16,33 @@ export function optionsCarnet(entreprises = []) {
     const lieu = [e.code_postal, e.ville].filter(Boolean).join(' ')
     const adresse = [e.adresse, lieu].filter(Boolean).join(', ')
     const personnes = (e.interlocuteurs ?? []).map((i) => {
+      // Chaque numéro manquant de la personne est pris à son organisation
       const telephone = i.telephone || e.telephone
+      const portable = i.telephone_portable || e.telephone_portable
       const email = i.email || e.email
       return {
         cle: `i:${i.id}`, type: 'personne',
         titre: [i.prenom, i.nom].filter(Boolean).join(' ') || e.raison_sociale,
-        detail: [e.raison_sociale, i.fonction, telephone, email].filter(Boolean).join(' · '),
+        detail: [e.raison_sociale, i.fonction, deuxNumeros(telephone, portable), email].filter(Boolean).join(' · '),
         champs: {
           prenom: vide(i.prenom), nom: vide(i.nom), fonction: vide(i.fonction),
-          organisation: vide(e.raison_sociale), adresse, telephone: vide(telephone), email: vide(email),
+          organisation: vide(e.raison_sociale), adresse, telephone: vide(telephone), telephone_portable: vide(portable), email: vide(email),
           interlocuteur_id: i.id, entreprise_id: e.id,
         },
-        texte: norm([i.prenom, i.nom, i.fonction, i.telephone, i.email, e.raison_sociale, e.adresse, lieu, e.telephone, e.email].join(' ')),
-        chiffres: chiffres(i.telephone, e.telephone, e.code_postal),
+        texte: norm([i.prenom, i.nom, i.fonction, i.telephone, i.telephone_portable, i.email, e.raison_sociale, e.adresse, lieu, e.telephone, e.telephone_portable, e.email].join(' ')),
+        chiffres: chiffres(i.telephone, i.telephone_portable, e.telephone, e.telephone_portable, e.code_postal),
       }
     })
     const fiche = {
       cle: `e:${e.id}`, type: 'organisation',
       titre: e.raison_sociale,
-      detail: [adresse, e.telephone, e.email].filter(Boolean).join(' · '),
+      detail: [adresse, deuxNumeros(e.telephone, e.telephone_portable), e.email].filter(Boolean).join(' · '),
       // Une organisation ne remplace pas la personne déjà saisie
-      champs: { organisation: vide(e.raison_sociale), adresse, telephone: vide(e.telephone), email: vide(e.email),
+      champs: { organisation: vide(e.raison_sociale), adresse, telephone: vide(e.telephone), telephone_portable: vide(e.telephone_portable), email: vide(e.email),
         // La fiche seule : le lien vers une personne d'avant ne vaut plus
         entreprise_id: e.id, interlocuteur_id: null },
-      texte: norm([e.raison_sociale, e.adresse, lieu, e.telephone, e.email, e.siret].join(' ')),
-      chiffres: chiffres(e.telephone, e.code_postal, e.siret),
+      texte: norm([e.raison_sociale, e.adresse, lieu, e.telephone, e.telephone_portable, e.email, e.siret].join(' ')),
+      chiffres: chiffres(e.telephone, e.telephone_portable, e.code_postal, e.siret),
     }
     return [...personnes, fiche]
   })

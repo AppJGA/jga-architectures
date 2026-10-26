@@ -26,7 +26,8 @@ export function RechercheCarnet({ onChoisir }) {
     let annule = false
     supabase
       .from('entreprises')
-      .select('id, raison_sociale, adresse, code_postal, ville, telephone, email, siret, interlocuteurs(id, prenom, nom, fonction, telephone, email)')
+      // Tout, pour le portable (migration 076) quand la base l'a
+      .select('*, interlocuteurs(*)')
       .order('raison_sociale')
       .then(({ data }) => { if (!annule) setEntreprises(data ?? []) })
     return () => { annule = true }

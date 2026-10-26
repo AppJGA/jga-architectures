@@ -49,14 +49,14 @@ test('choisir une personne remplit toute la fiche ; une organisation garde la pe
   const personne = filtrerOptions(options, 'vinot')[0]
   assert.deepEqual(remplirDepuis(personne, { categorie: 'csps', prenom: '' }), {
     categorie: 'csps', prenom: 'Damien', nom: 'Vinot', fonction: 'Coordonnateur SPS', organisation: 'Apave',
-    adresse: '12 rue des Prés, 01000 Bourg-en-Bresse', telephone: '06 28 20 02 06', email: 'damien.vinot@apave.com',
+    adresse: '12 rue des Prés, 01000 Bourg-en-Bresse', telephone: '06 28 20 02 06', telephone_portable: '', email: 'damien.vinot@apave.com',
     interlocuteur_id: 'dv', entreprise_id: 'apave',
   })
   const marie = filtrerOptions(options, 'marie')[0]
   assert.equal(remplirDepuis(marie, {}).telephone, '04 74 00 00 00', 'à défaut, le numéro de l’organisation')
   const orga = filtrerOptions(options, 'renaud')[0]
   assert.deepEqual(remplirDepuis(orga, { prenom: 'Bastien', nom: 'Desbleds' }), {
-    prenom: 'Bastien', nom: 'Desbleds', organisation: 'RENAUD SAS', adresse: 'Mâcon', telephone: '03 85 31 01 33', email: '',
+    prenom: 'Bastien', nom: 'Desbleds', organisation: 'RENAUD SAS', adresse: 'Mâcon', telephone: '03 85 31 01 33', telephone_portable: '', email: '',
     entreprise_id: 'renaud', interlocuteur_id: null,
   })
 })
@@ -77,4 +77,19 @@ test('choisir la fiche de l’organisation de la personne liée garde ce lien', 
   assert.deepEqual([apres.interlocuteur_id, apres.entreprise_id], ['p1', 'e1'])
   const sansLien = remplirDepuis(fiche, { entreprise_id: 'e1' })
   assert.equal(sansLien.interlocuteur_id, null)
+})
+
+test('le portable de la personne, à défaut celui de l’organisation ; tous deux cherchables', () => {
+  const opts = optionsCarnet([{
+    id: 'e1', raison_sociale: 'Exemple BET', telephone: '03 00 00 00 00', telephone_portable: '06 99 99 99 99',
+    interlocuteurs: [
+      { id: 'p1', prenom: 'Alix', nom: 'Durand', telephone_portable: '07 11 11 11 11' },
+      { id: 'p2', prenom: 'Sam', nom: 'Petit' },
+    ],
+  }])
+  const alix = opts.find((o) => o.cle === 'i:p1')
+  assert.equal(alix.champs.telephone, '03 00 00 00 00')
+  assert.equal(alix.champs.telephone_portable, '07 11 11 11 11')
+  assert.equal(opts.find((o) => o.cle === 'i:p2').champs.telephone_portable, '06 99 99 99 99')
+  assert.deepEqual(filtrerOptions(opts, '0711').map((o) => o.cle), ['i:p1'])
 })

@@ -26,6 +26,8 @@ import {
 import { montantsAffaire, tvaAffaire, htDe, formatEuros } from '../shared/montants'
 import { MontantHT } from '../shared/components/MontantHT'
 import { initialesPersonne } from '../shared/initiales'
+import { referencesCadastre, texteCadastre } from './cadastreLogique'
+import { texteTelephones } from '../shared/telephones'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -455,8 +457,7 @@ function InfoBandeau({ affaire }) {
     affaire.projet_commune && (affaire.projet_code_postal
       ? `${affaire.projet_commune} (${affaire.projet_code_postal})`
       : affaire.projet_commune),
-    (affaire.cadastre_section || affaire.cadastre_parcelle) &&
-      `${affaire.cadastre_section ?? ''}${affaire.cadastre_parcelle ? ' ' + affaire.cadastre_parcelle : ''}`,
+    texteCadastre(referencesCadastre(affaire)),
     montantsAffaire(affaire).enveloppe != null && `${formatEuro(montantsAffaire(affaire).enveloppe)} HT`,
     affaire.surface_plancher && `${affaire.surface_plancher} m² SP`,
     affaire.date_livraison && `Livraison ${fmtDate(affaire.date_livraison)}`,
@@ -702,9 +703,25 @@ function ModuleTile({ icon: Icon, label, phaseColor, active, children, onClick, 
 }
 
 // ─── Vue d'ensemble ───────────────────────────────────────────────────────────
-function InfoField({ label, value }) {
+// Une ligne par section : « AB 142, 143 — 1 200 m² »
+function ReferencesCadastre({ affaire }) {
+  const refs = referencesCadastre(affaire)
+  if (refs.length === 0) return null
   return (
-    <div>
+    <span style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+      {refs.map((r, i) => (
+        <span key={i}>
+          {[r.section, r.parcelles].filter(Boolean).join(' ') || '—'}
+          {r.superficie != null && <span style={{ fontWeight: 400, color: '#7A736E' }}> — {r.superficie.toLocaleString('fr-FR')} m²</span>}
+        </span>
+      ))}
+    </span>
+  )
+}
+
+function InfoField({ label, value, style }) {
+  return (
+    <div style={style}>
       <p style={{ fontSize: 10, fontWeight: 500, color: 'var(--jga-beige)', letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 3 }}>
         {label}
       </p>
@@ -1040,12 +1057,11 @@ function AffaireOverview({ affaire, stats, affaireId, onEdit, onGererContacts, v
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px 20px' }}>
           <InfoField label="Maître d'ouvrage" value={affaire.moa_nom} />
           <InfoField label="Email MOA" value={affaire.moa_email} />
-          <InfoField label="Téléphone MOA" value={affaire.moa_telephone} />
+          <InfoField label="Téléphone MOA" value={texteTelephones(affaire.moa_telephone, affaire.moa_telephone_portable) || null} />
           <InfoField label="Adresse du site" value={affaire.projet_adresse} />
           <InfoField label="Commune" value={affaire.projet_commune} />
           <InfoField label="Code postal" value={affaire.projet_code_postal} />
-          <InfoField label="Section cadastrale" value={affaire.cadastre_section} />
-          <InfoField label="Parcelle" value={affaire.cadastre_parcelle} />
+          <InfoField label="Références cadastrales" style={{ gridColumn: 'span 2' }} value={referencesCadastre(affaire).length ? <ReferencesCadastre affaire={affaire} /> : null} />
           <InfoField label="Superficie terrain" value={affaire.surface_terrain ? `${affaire.surface_terrain} m²` : null} />
           <InfoField label="Enveloppe globale initiale" value={montantsAffaire(affaire).enveloppe != null
             ? <MontantHT ht={montantsAffaire(affaire).enveloppe} tva={tvaAffaire(affaire)} taille={13} enLigne /> : null} />

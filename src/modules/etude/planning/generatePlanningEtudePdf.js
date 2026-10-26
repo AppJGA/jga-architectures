@@ -7,8 +7,9 @@ import { assignLabelLanes } from '../../chantier/planning/jalonLayout'
 import { echapperHtml } from '../../../shared/echapperHtml'
 import {
   bordureGauche, pastelPdf, fondPeriode, traitPeriode, stylePause, estBloquante, groupesDePeriodes,
-  TRAIT_HORIZONTAL, SCRIPT_MISE_A_ECHELLE, STYLE_APERCU, scriptFin,
+  TRAIT_HORIZONTAL,
 } from '../../../shared/planning/export/grilleExport'
+import { scriptMiseEnPage, STYLE_FEUILLES, STYLE_APERCU } from '../../../shared/planning/export/miseEnPageExport'
 import { nettoyerHtml, estVide } from '../../../shared/planning/export/texteRiche'
 
 // L'étude est en semaines : pas de lignes de jour
@@ -288,7 +289,7 @@ function buildJalonBand(jalons, weeks, labelColMm, weekWidthMm) {
 function buildHtml({
   phases, jalons, affaire, semaineDebut, anneeDebut, semaineFin, anneeFin,
   largeurMm, hauteurMm, segments = [], periodes = [], density = 'normal',
-  texteEntete = '', textePied = '', apercu = false,
+  texteEntete = '', textePied = '', apercu = false, uneFeuille = true,
 }) {
   const dens = densityConfig(density)
   const weeks = buildWeeksList(semaineDebut, anneeDebut, semaineFin, anneeFin)
@@ -373,6 +374,7 @@ function buildHtml({
   .leg-num   { width: 4mm; height: 4mm; background: rgba(232,162,0,0.25); color: #B07C00; font-size: 5.5pt; font-weight: bold; display: flex; align-items: center; justify-content: center; }
 
   .footer { margin-top: 4mm; padding-top: 2mm; border-top: 0.5px solid #eee; font-size: 6pt; color: #9C9591; display: flex; justify-content: space-between; }
+  ${STYLE_FEUILLES}
   ${apercu ? STYLE_APERCU : ''}
 </style>
 </head>
@@ -442,10 +444,7 @@ ${pied ? `<div class="texte-pied">${pied}</div>` : ''}
 </div>
 
 <script>
-window.onload = function() {
-${SCRIPT_MISE_A_ECHELLE}
-  ${scriptFin(apercu)}
-};
+${scriptMiseEnPage({ largeurMm, hauteurMm, uneFeuille, apercu })}
 </script>
 </body>
 </html>`

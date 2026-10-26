@@ -5,9 +5,9 @@ import { legendeCouleurs } from './legende'
 import { echapperHtml } from '../../../shared/echapperHtml'
 import {
   bordureGauche, niveauDuJour, moisDuJour, pastelPdf, fondPeriode, traitPeriode, stylePause,
-  estBloquante, groupesDePeriodes, TRAIT_HORIZONTAL, SCRIPT_MISE_A_ECHELLE,
-  STYLE_APERCU, scriptFin,
+  estBloquante, groupesDePeriodes, TRAIT_HORIZONTAL,
 } from '../../../shared/planning/export/grilleExport'
+import { scriptMiseEnPage, STYLE_FEUILLES, STYLE_APERCU } from '../../../shared/planning/export/miseEnPageExport'
 import { nettoyerHtml, estVide } from '../../../shared/planning/export/texteRiche'
 
 // ─── Densité des lignes ───────────────────────────────────────────────────────
@@ -464,7 +464,7 @@ function buildHtml({
   zones = [], colorMode = 'lot', viewMode = 'day',
   segments = [], dependances = [], periodes = [], showDependances = true,
   groupMode = 'lot', density = 'normal',
-  texteEntete = '', textePied = '', apercu = false,
+  texteEntete = '', textePied = '', apercu = false, uneFeuille = true,
 }) {
   const dens = densityConfig(density)
   const dStart = parseDate(dateDebut)
@@ -632,6 +632,7 @@ function buildHtml({
   .leg-sep { border-left: 0.5px solid #ddd; height: 8px; margin: 0 2mm; }
 
   .footer { margin-top: 4mm; padding-top: 2mm; border-top: 0.5px solid #eee; font-size: 6pt; color: #9C9591; display: flex; justify-content: space-between; }
+  ${STYLE_FEUILLES}
   ${apercu ? STYLE_APERCU : ''}
 </style>
 </head>
@@ -680,7 +681,7 @@ function buildHtml({
   </table>
 
   <!-- Overlay SVG des flèches de chemin critique — positionné/dimensionné en JS
-       une fois le tableau rendu (cf. window.onload), exactement comme dans la
+       une fois le tableau rendu (cf. dessinerFleches), exactement comme dans la
        timeline interactive (mêmes courbes de Bézier, mêmes marqueurs). -->
   <svg id="arrows-svg" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;overflow:visible"></svg>
 </div>
@@ -737,97 +738,100 @@ ${pied ? `<div class="texte-pied">${pied}</div>` : ''}
 </div>
 
 <script>
-window.onload = function() {
-  // ── 1. Flèches de chemin critique ──────────────────────────────────────────
-  // Mesurées dans le repère naturel (non mis à l'échelle) du tableau : la mise
-  // à l'échelle qui suit (étape 2) s'applique à #gw dans son ensemble (tableau
-  // + overlay SVG), donc les tracés restent alignés une fois le zoom
-  // appliqué — pas besoin de recalculer après coup.
-  var table = document.getElementById('gantt-table');
-  var svg = document.getElementById('arrows-svg');
-  var tableRect = table.getBoundingClientRect();
-
-  var geoMap = {};
-  var barEls = document.querySelectorAll('[data-task-id], [data-segment-id]');
-  for (var i = 0; i < barEls.length; i++) {
-    var el = barEls[i];
-    var rect = el.getBoundingClientRect();
-    var key = el.dataset.segmentId ? el.dataset.segmentId : ('task:' + el.dataset.taskId);
-    // Ne garder que la barre principale (type=task) pour les clés tâche —
-    // les segments ont leur propre clé (segmentId), donc pas de collision.
-    if (!geoMap[key] || el.dataset.type === 'task') {
-      geoMap[key] = {
-        left: rect.left - tableRect.left,
-        right: rect.right - tableRect.left,
-        centerY: rect.top - tableRect.top + rect.height / 2,
-      };
-    }
-  }
-
+// Flèches de chemin critique de chaque bloc de planning (un par feuille),
+// mesurées avant toute réduction : la réduction s'applique au bloc entier,
+// flèches comprises, qui restent donc alignées. Mêmes courbes de Bézier et
+// mêmes marqueurs que la timeline interactive. Une dépendance coupée par un
+// saut de feuille part vers le bas de la sienne et reprend en haut de la
+// suivante.
+function dessinerFleches(blocs) {
   var depsDataEl = document.getElementById('deps-data');
   var deps = depsDataEl ? JSON.parse(depsDataEl.textContent) : [];
+  if (!deps.length) return;
   var NS = 'http://www.w3.org/2000/svg';
 
-  var defs = document.createElementNS(NS, 'defs');
-  var marker = document.createElementNS(NS, 'marker');
-  marker.setAttribute('id', 'pdf-dep-arrow');
-  marker.setAttribute('markerWidth', '8');
-  marker.setAttribute('markerHeight', '8');
-  marker.setAttribute('refX', '7');
-  marker.setAttribute('refY', '4');
-  marker.setAttribute('orient', 'auto');
-  var markerPath = document.createElementNS(NS, 'path');
-  markerPath.setAttribute('d', 'M0,0 L0,8 L8,4 z');
-  markerPath.setAttribute('fill', '#e4702a');
-  marker.appendChild(markerPath);
-  defs.appendChild(marker);
-  svg.appendChild(defs);
+  var places = {};
+  blocs.forEach(function (b, k) {
+    var tableRect = b.table.getBoundingClientRect();
+    var barEls = b.table.querySelectorAll('[data-task-id], [data-segment-id]');
+    for (var i = 0; i < barEls.length; i++) {
+      var el = barEls[i];
+      var rect = el.getBoundingClientRect();
+      var key = el.dataset.segmentId ? el.dataset.segmentId : ('task:' + el.dataset.taskId);
+      // Ne garder que la barre principale (type=task) pour les clés tâche —
+      // les segments ont leur propre clé (segmentId), donc pas de collision.
+      if (!places[key] || el.dataset.type === 'task') {
+        places[key] = {
+          bloc: k,
+          left: rect.left - tableRect.left,
+          right: rect.right - tableRect.left,
+          centerY: rect.top - tableRect.top + rect.height / 2,
+        };
+      }
+    }
+  });
 
-  for (var j = 0; j < deps.length; j++) {
-    var dep = deps[j];
-    var srcKey = dep.source_segment_id ? dep.source_segment_id : ('task:' + dep.source_tache_id);
-    var tgtKey = dep.cible_segment_id ? dep.cible_segment_id : ('task:' + dep.cible_tache_id);
-    var src = geoMap[srcKey];
-    var tgt = geoMap[tgtKey];
-    if (!src || !tgt) continue;
+  blocs.forEach(function (b, k) {
+    var svg = b.svg;
+    if (!svg) return;
+    // Origine et hauteur du SVG alignées sur le tableau : il est posé dans le
+    // bloc, qui commence plus haut (bande des échéances)
+    svg.style.top = b.table.offsetTop + 'px';
+    svg.setAttribute('height', b.table.offsetHeight);
+    svg.style.height = b.table.offsetHeight + 'px';
 
-    var x1 = src.right, y1 = src.centerY;
-    var x2 = tgt.left, y2 = tgt.centerY;
-    var span = Math.abs(x2 - x1);
-    var ctrl = Math.max(50, span * 0.45);
-    var d = 'M ' + x1 + ' ' + y1 + ' C ' + (x1 + ctrl) + ' ' + y1 + ', ' + (x2 - ctrl) + ' ' + y2 + ', ' + x2 + ' ' + y2;
+    var idMarqueur = 'pdf-dep-arrow-' + k;
+    var defs = document.createElementNS(NS, 'defs');
+    var marker = document.createElementNS(NS, 'marker');
+    marker.setAttribute('id', idMarqueur);
+    marker.setAttribute('markerWidth', '8');
+    marker.setAttribute('markerHeight', '8');
+    marker.setAttribute('refX', '7');
+    marker.setAttribute('refY', '4');
+    marker.setAttribute('orient', 'auto');
+    var markerPath = document.createElementNS(NS, 'path');
+    markerPath.setAttribute('d', 'M0,0 L0,8 L8,4 z');
+    markerPath.setAttribute('fill', '#e4702a');
+    marker.appendChild(markerPath);
+    defs.appendChild(marker);
+    svg.appendChild(defs);
 
-    var path = document.createElementNS(NS, 'path');
-    path.setAttribute('d', d);
-    path.setAttribute('fill', 'none');
-    path.setAttribute('stroke', '#e4702a');
-    path.setAttribute('stroke-width', '2');
-    path.setAttribute('stroke-dasharray', '6 3');
-    path.setAttribute('stroke-opacity', '0.85');
-    path.setAttribute('marker-end', 'url(#pdf-dep-arrow)');
-    svg.appendChild(path);
+    function courbe(x1, y1, x2, y2, pointe, depart) {
+      var ctrl = Math.max(50, Math.abs(x2 - x1) * 0.45);
+      var path = document.createElementNS(NS, 'path');
+      path.setAttribute('d', 'M ' + x1 + ' ' + y1 + ' C ' + (x1 + ctrl) + ' ' + y1 + ', ' + (x2 - ctrl) + ' ' + y2 + ', ' + x2 + ' ' + y2);
+      path.setAttribute('fill', 'none');
+      path.setAttribute('stroke', '#e4702a');
+      path.setAttribute('stroke-width', '2');
+      path.setAttribute('stroke-dasharray', '6 3');
+      path.setAttribute('stroke-opacity', '0.85');
+      if (pointe) path.setAttribute('marker-end', 'url(#' + idMarqueur + ')');
+      svg.appendChild(path);
+      if (depart) {
+        var circle = document.createElementNS(NS, 'circle');
+        circle.setAttribute('cx', x1);
+        circle.setAttribute('cy', y1);
+        circle.setAttribute('r', '3.5');
+        circle.setAttribute('fill', '#e4702a');
+        circle.setAttribute('fill-opacity', '0.85');
+        svg.appendChild(circle);
+      }
+    }
 
-    var circle = document.createElementNS(NS, 'circle');
-    circle.setAttribute('cx', x1);
-    circle.setAttribute('cy', y1);
-    circle.setAttribute('r', '3.5');
-    circle.setAttribute('fill', '#e4702a');
-    circle.setAttribute('fill-opacity', '0.85');
-    svg.appendChild(circle);
-  }
-
-  // Origine et hauteur du SVG alignées sur le tableau : les coordonnées ci-dessus
-  // sont mesurées depuis le haut du TABLEAU, alors que l'overlay est positionné
-  // dans #gw, qui commence plus haut (bande de jalons). Sans ce recalage, toutes
-  // les flèches seraient décalées vers le haut de la hauteur de la bande.
-  svg.style.top = table.offsetTop + 'px';
-  svg.setAttribute('height', table.offsetHeight);
-  svg.style.height = table.offsetHeight + 'px';
-
-  // ── 2. Mise à l'échelle pour tenir sur une page + impression ────────────────
-${SCRIPT_MISE_A_ECHELLE}
-  ${scriptFin(apercu)}
-};
+    var bas = b.table.offsetHeight;
+    var haut = b.table.tHead ? b.table.tHead.offsetHeight : 0;
+    for (var j = 0; j < deps.length; j++) {
+      var dep = deps[j];
+      var src = places[dep.source_segment_id ? dep.source_segment_id : ('task:' + dep.source_tache_id)];
+      var tgt = places[dep.cible_segment_id ? dep.cible_segment_id : ('task:' + dep.cible_tache_id)];
+      if (!src || !tgt) continue;
+      if (src.bloc === k && tgt.bloc === k) courbe(src.right, src.centerY, tgt.left, tgt.centerY, true, true);
+      else if (src.bloc === k && tgt.bloc > k) courbe(src.right, src.centerY, tgt.left, bas, false, true);
+      else if (tgt.bloc === k && src.bloc < k) courbe(src.right, haut, tgt.left, tgt.centerY, true, false);
+    }
+  });
+}
+${scriptMiseEnPage({ largeurMm, hauteurMm, uneFeuille, apercu, fleches: 'dessinerFleches' })}
 </script>
 </body>
 </html>`

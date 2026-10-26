@@ -57,34 +57,6 @@ export function moisDuJour(date, granularite = 'day') {
   return new Date(d.getFullYear(), d.getMonth(), 1)
 }
 
-// Script des pages imprimées : réduit le bloc du planning à la largeur de la
-// page. Par `zoom`, qui réduit aussi la place occupée, et non par
-// `transform: scale` : celui-ci ne réduit que le dessin, et la marge négative
-// qui rattrapait la hauteur ne valait que sur une page — dès que le tableau
-// en prenait deux, la légende remontait sur ses dernières lignes.
-export const SCRIPT_MISE_A_ECHELLE = `
-  var gw = document.getElementById('gw');
-  var pw = document.body.clientWidth;
-  var tw = gw.scrollWidth;
-  if (tw > pw * 1.02) gw.style.zoom = pw / tw;`
-
-// ─── Aperçu dans la fenêtre d'export ─────────────────────────────────────────
-//
-// La même page, affichée dans un cadre de la fenêtre d'export au lieu d'être
-// imprimée : la marge de la feuille est posée sur le corps (`@page` ne vaut
-// qu'à l'impression) et la page envoie sa hauteur au lieu d'ouvrir
-// l'impression — le cadre est isolé, la fenêtre ne peut pas la mesurer.
-
-export const MARGE_PAGE_MM = 10
-
-export const STYLE_APERCU = `@media screen { html { background: white; overflow: hidden; } body { margin: ${MARGE_PAGE_MM}mm; } }`
-
-export function scriptFin(apercu) {
-  if (!apercu) return 'setTimeout(function() { window.print(); }, 400);'
-  return `var corps = document.body;
-  parent.postMessage({ apercuPlanning: true, hauteur: Math.ceil(corps.getBoundingClientRect().bottom + parseFloat(getComputedStyle(corps).marginBottom)) }, '*');`
-}
-
 // ─── Périodes ──────────────────────────────────────────────────────────────────
 //
 // Fond uni, pas de hachures : les hachures bavaient à l'impression (moiré,

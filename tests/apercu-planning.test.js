@@ -1,64 +1,110 @@
-// Aperçu des PDF de planning dans la fenêtre d'export : sauts de page estimés
-// et page d'aperçu (la même que le PDF, sans impression).
+// Mise en page des PDF de planning : feuilles fabriquées par la page,
+// répartition des lignes, et page d'aperçu (la même, sans impression).
 
 import assert from 'node:assert/strict'
 import { test, describe } from 'node:test'
 
 globalThis.window = { location: { origin: 'http://localhost' } }
 
-const { sautsDePage, libellePages, PX_PAR_MM } =
+const { repartirLignes, scriptMiseEnPage } =
+  await import('../src/shared/planning/export/miseEnPageExport.js')
+const { libelleApercu } =
   await import('../src/shared/planning/export/apercuPlanningLogique.js')
-const { htmlApercuChantier } =
+const { htmlApercuChantier, generatePlanningChantierPdf } =
   await import('../src/modules/chantier/planning/generatePlanningChantierPdf.js')
 const { htmlApercuEtude } =
   await import('../src/modules/etude/planning/generatePlanningEtudePdf.js')
 
-describe('sauts de page', () => {
-  // A4 paysage : 210 mm de haut, 190 mm utiles entre les marges de 10 mm
-  const page = (mm) => mm * PX_PAR_MM
+describe('répartition des lignes sur les feuilles', () => {
+  const sansTitre = (n) => Array(n).fill(false)
 
-  test('un document qui tient dans la feuille n’a aucun saut', () => {
-    assert.deepEqual(sautsDePage(page(210), 210), [])
-    assert.deepEqual(sautsDePage(page(120), 210), [])
+  test('tout tient : une feuille, fin comprise', () => {
+    const r = repartirLignes([10, 10, 10], sansTitre(3), { premiere: 100, suivantes: 150, fin: 20 })
+    assert.deepEqual(r.pages, [[0, 1, 2]])
+    assert.equal(r.finSeule, false)
   })
 
-  test('un saut à chaque hauteur utile, compté depuis la marge du haut', () => {
-    const sauts = sautsDePage(page(20 + 190 * 2.5), 210)
-    assert.equal(sauts.length, 2)
-    assert.ok(Math.abs(sauts[0] - page(10 + 190)) < 0.01)
-    assert.ok(Math.abs(sauts[1] - page(10 + 380)) < 0.01)
+  test('la première feuille a moins de place (en-tête du document)', () => {
+    const r = repartirLignes(Array(10).fill(10), sansTitre(10), { premiere: 35, suivantes: 50, fin: 0 })
+    assert.deepEqual(r.pages, [[0, 1, 2], [3, 4, 5, 6, 7], [8, 9]])
   })
 
-  test('valeurs absurdes : aucun saut', () => {
-    assert.deepEqual(sautsDePage(0, 210), [])
-    assert.deepEqual(sautsDePage(page(500), 15), [])
+  test('un titre de groupe ne reste pas seul en bas de feuille', () => {
+    const titres = [true, false, false, true, false, false]
+    const r = repartirLignes(Array(6).fill(10), titres, { premiere: 40, suivantes: 40, fin: 0 })
+    assert.deepEqual(r.pages, [[0, 1, 2], [3, 4, 5]])
   })
 
-  test('libellé', () => {
-    assert.equal(libellePages(1), 'tient sur une page')
-    assert.equal(libellePages(3), 'environ 3 pages')
+  test('la fin du document qui ne tient pas prend sa propre feuille', () => {
+    const r = repartirLignes([10, 10], sansTitre(2), { premiere: 30, suivantes: 30, fin: 15 })
+    assert.equal(r.finSeule, true)
+  })
+
+  test('une ligne plus haute que la feuille passe quand même', () => {
+    const r = repartirLignes([80, 10], sansTitre(2), { premiere: 50, suivantes: 50, fin: 0 })
+    assert.deepEqual(r.pages, [[0], [1]])
+  })
+
+  test('aucune ligne : une feuille', () => {
+    assert.deepEqual(repartirLignes([], [], { premiere: 50, suivantes: 50, fin: 10 }).pages, [[]])
   })
 })
 
-describe('page d’aperçu', () => {
-  const chantier = () => htmlApercuChantier({
-    tasks: [], lots: [], jalons: [], affaire: { nom: 'Essai' },
-    dateDebut: '2026-03-02', dateFin: '2026-03-20', largeurMm: 420, hauteurMm: 297,
+describe('libellé de l’aperçu', () => {
+  test('feuilles et réduction', () => {
+    assert.equal(libelleApercu({ pages: 1, reduction: 1 }), '1 feuille')
+    assert.equal(libelleApercu({ pages: 3, reduction: 0.996 }), '3 feuilles')
+    assert.equal(libelleApercu({ pages: 1, reduction: 0.66 }), '1 feuille · réduit à 66 %')
+    assert.equal(libelleApercu(null), '')
   })
-  const etude = () => htmlApercuEtude({
+})
+
+describe('script de mise en page', () => {
+  test('le texte envoyé dans la page est du JavaScript valide', () => {
+    for (const apercu of [true, false]) {
+      for (const uneFeuille of [true, false]) {
+        assert.doesNotThrow(() => new Function(scriptMiseEnPage({ largeurMm: 420, hauteurMm: 297, uneFeuille, apercu })))
+      }
+    }
+  })
+})
+
+describe('pages produites', () => {
+  const paramsChantier = (extra = {}) => ({
+    tasks: [], lots: [], jalons: [], affaire: { nom: 'Essai' },
+    dateDebut: '2026-03-02', dateFin: '2026-03-20', largeurMm: 420, hauteurMm: 297, ...extra,
+  })
+  const paramsEtude = (extra = {}) => ({
     phases: [], jalons: [], affaire: { nom: 'Essai' },
     semaineDebut: 8, anneeDebut: 2026, semaineFin: 12, anneeFin: 2026,
-    largeurMm: 420, hauteurMm: 297,
+    largeurMm: 420, hauteurMm: 297, ...extra,
   })
+  const scripts = (html) => html.slice(html.lastIndexOf('<script>'))
 
-  test('n’ouvre pas l’impression et envoie sa hauteur à la fenêtre', () => {
-    for (const html of [chantier(), etude()]) {
+  test('l’aperçu n’imprime pas : il envoie sa hauteur, ses feuilles et sa réduction', () => {
+    for (const html of [htmlApercuChantier(paramsChantier()), htmlApercuEtude(paramsEtude())]) {
       assert.ok(!html.includes('window.print'))
-      assert.ok(html.includes('parent.postMessage({ apercuPlanning: true'))
+      assert.match(html, /parent\.postMessage\(\{ apercuPlanning: true, hauteur: [^,]+, pages: resultat\.pages, reduction: resultat\.reduction \}/)
+      // La marge de la feuille, qui n'existe qu'à l'impression, entoure chaque feuille
+      assert.match(html, /\.feuille \{ box-sizing: content-box; padding: 10mm;/)
     }
   })
 
-  test('pose la marge de la feuille, qui n’existe qu’à l’impression', () => {
-    for (const html of [chantier(), etude()]) assert.match(html, /body \{ margin: 10mm; \}/)
+  test('une seule feuille par défaut, plusieurs sur demande', () => {
+    assert.match(scripts(htmlApercuChantier(paramsChantier())), /uneFeuille: true/)
+    assert.match(scripts(htmlApercuChantier(paramsChantier({ uneFeuille: false }))), /uneFeuille: false/)
+    assert.match(scripts(htmlApercuEtude(paramsEtude({ uneFeuille: false }))), /uneFeuille: false/)
+  })
+
+  test('le chantier trace ses flèches feuille par feuille', () => {
+    assert.match(scripts(htmlApercuChantier(paramsChantier())), /fleches: dessinerFleches/)
+  })
+
+  test('le PDF imprimé, lui, ouvre l’impression', () => {
+    let html = ''
+    globalThis.window.open = () => ({ document: { write: (h) => { html = h }, close: () => {} } })
+    generatePlanningChantierPdf(paramsChantier())
+    assert.ok(html.includes('window.print()'))
+    assert.ok(!html.includes('postMessage'))
   })
 })

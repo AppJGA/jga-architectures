@@ -5,6 +5,7 @@ import { generatePlanningEtudePdf, htmlApercuEtude } from './generatePlanningEtu
 import { calculerPeriodeExport, phasesDansPeriode, segmentsDansPeriode } from './periodeExportEtude'
 import { SectionTextesPdf } from '../../../shared/planning/export/SectionTextesPdf'
 import { ApercuPlanning } from '../../../shared/planning/export/ApercuPlanning'
+import { ChoixFeuilles } from '../../../shared/planning/export/ChoixFeuilles'
 import {
   STYLE_FENETRE, STYLE_CORPS, STYLE_REGLAGES, STYLE_COLONNE_APERCU,
 } from '../../../shared/planning/export/styleFenetreExport'
@@ -69,6 +70,8 @@ export function ExportEtudeModal({
   const [fmtIdx,       setFmtIdx]       = useState(3)   // A3 Paysage par défaut
   const [customW,      setCustomW]      = useState(420)
   const [customH,      setCustomH]      = useState(297)
+  // Une seule feuille par défaut : un planning se lit d'un coup d'œil
+  const [uneFeuille,   setUneFeuille]   = useState(true)
   const [isLandscape,  setIsLandscape]  = useState(true)
   const [exportDensity, setExportDensity] = useState(() => densityFromRowHeight(rowHeight))
   // Textes relus à chaque ouverture : l'éditeur n'est rempli qu'à ce moment-là
@@ -156,9 +159,10 @@ export function ExportEtudeModal({
     density: exportDensity,
     texteEntete: textes.entete,
     textePied: textes.pied,
+    uneFeuille,
   } : null), [
     isValid, tachesInPeriod, jalonInPeriod, affaire, debut, fin, finalFormat.w, finalFormat.h,
-    segmentsInPeriod, periodes, exportDensity, textes,
+    segmentsInPeriod, periodes, exportDensity, textes, uneFeuille,
   ])
 
   const handleGenerate = () => {
@@ -298,6 +302,9 @@ export function ExportEtudeModal({
             </p>
           </div>
 
+          {/* ── B1) NOMBRE DE FEUILLES ── */}
+          <ChoixFeuilles uneFeuille={uneFeuille} onChange={setUneFeuille} />
+
           {/* ── B2) HAUTEUR DES LIGNES ── */}
           <div style={{ marginBottom: 20 }}>
             <label style={LABEL}>Hauteur des lignes</label>
@@ -343,7 +350,11 @@ export function ExportEtudeModal({
               {' · '}
               {DENSITY_OPTIONS.find(o => o.value === exportDensity)?.label}
               <br />
-              <span style={{ color: '#9C9591', fontSize: 10 }}>Le tableau sera mis à l'échelle pour tenir dans la largeur de la page.</span>
+              <span style={{ color: '#9C9591', fontSize: 10 }}>
+                {uneFeuille
+                  ? 'Tout le planning est réduit pour tenir sur une seule feuille.'
+                  : 'Le planning est réduit à la largeur de la feuille et continue sur les feuilles suivantes.'}
+              </span>
             </p>
           </div>
 
@@ -353,8 +364,6 @@ export function ExportEtudeModal({
           <ApercuPlanning
             parametres={parametresPdf}
             construire={htmlApercuEtude}
-            largeurMm={finalFormat.w}
-            hauteurMm={finalFormat.h}
             valide={isValid}
           />
         </div>

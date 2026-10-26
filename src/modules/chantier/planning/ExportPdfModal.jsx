@@ -4,6 +4,7 @@ import { parseDate, formatDateISO, addWorkingDays } from './types'
 import { generatePlanningChantierPdf, htmlApercuChantier, intervallesTache } from './generatePlanningChantierPdf'
 import { SectionTextesPdf } from '../../../shared/planning/export/SectionTextesPdf'
 import { ApercuPlanning } from '../../../shared/planning/export/ApercuPlanning'
+import { ChoixFeuilles } from '../../../shared/planning/export/ChoixFeuilles'
 import {
   STYLE_FENETRE, STYLE_CORPS, STYLE_REGLAGES, STYLE_COLONNE_APERCU,
 } from '../../../shared/planning/export/styleFenetreExport'
@@ -100,6 +101,8 @@ export function ExportPdfModal({
   const [fmtIdx,      setFmtIdx]      = useState(3)   // A3 Paysage par défaut
   const [customW,     setCustomW]     = useState(420)
   const [customH,     setCustomH]     = useState(297)
+  // Une seule feuille par défaut : un planning se lit d'un coup d'œil
+  const [uneFeuille,   setUneFeuille]   = useState(true)
   const [isLandscape, setIsLandscape] = useState(true)
   const [exportColorMode, setExportColorMode] = useState(colorMode ?? 'lot')
   const [exportViewMode,  setExportViewMode]  = useState(viewMode ?? 'day')
@@ -189,10 +192,11 @@ export function ExportPdfModal({
     density: exportDensity,
     texteEntete: textes.entete,
     textePied: textes.pied,
+    uneFeuille,
   }), [
     tachesInPeriod, lots, jalons, affaire, dateDebut, dateFin, headerDebut, headerFin,
     finalFormat.w, finalFormat.h, zones, exportColorMode, exportViewMode, segments,
-    dependances, periodes, exportDependances, exportGroupMode, exportDensity, textes,
+    dependances, periodes, exportDependances, exportGroupMode, exportDensity, textes, uneFeuille,
   ])
 
   const handleGenerate = () => {
@@ -361,6 +365,9 @@ export function ExportPdfModal({
               Page : {finalFormat.w} mm × {finalFormat.h} mm
             </p>
           </div>
+
+          {/* ── B1) NOMBRE DE FEUILLES ── */}
+          <ChoixFeuilles uneFeuille={uneFeuille} onChange={setUneFeuille} />
 
           {/* ── B2) COULEURS ── */}
           <div style={{ marginBottom: 20 }}>
@@ -545,7 +552,11 @@ export function ExportPdfModal({
               {' · '}
               {DENSITY_OPTIONS.find(o => o.value === exportDensity)?.label}
               <br />
-              <span style={{ color: '#9C9591', fontSize: 10 }}>Le tableau sera mis à l'échelle pour tenir dans la largeur de la page.</span>
+              <span style={{ color: '#9C9591', fontSize: 10 }}>
+                {uneFeuille
+                  ? 'Tout le planning est réduit pour tenir sur une seule feuille.'
+                  : 'Le planning est réduit à la largeur de la feuille et continue sur les feuilles suivantes.'}
+              </span>
             </p>
           </div>
 
@@ -555,8 +566,6 @@ export function ExportPdfModal({
           <ApercuPlanning
             parametres={parametresPdf}
             construire={htmlApercuChantier}
-            largeurMm={finalFormat.w}
-            hauteurMm={finalFormat.h}
             valide={isValid}
           />
         </div>

@@ -248,7 +248,7 @@ describe('PDF chantier — grille selon la granularité', () => {
     assert.match(htmlGenere, /<th class="hdr-month" colspan="14"[^>]*>Mars<\/th>/)
   })
 
-  test('le tableau se réduit par zoom : la légende ne remonte pas sur les lignes', () => {
+  test('le tableau se réduit par zoom, jamais par transform : la légende ne remonte pas sur les lignes', () => {
     generatePlanningChantierPdf(params('week'))
     assert.ok(htmlGenere.includes('gw.style.zoom'))
     assert.ok(!htmlGenere.includes('scale('))

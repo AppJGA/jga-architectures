@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 1004 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans, gestion de l'application)
+npm test         # 1024 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans, gestion de l'application)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -1082,18 +1082,38 @@ Chantier (`chantier/planning/generatePlanningChantierPdf.js`) et étude
 (`etude/planning/generatePlanningEtudePdf.js`) : une page HTML imprimée par le
 navigateur. Ce qui leur est commun vit dans `src/shared/planning/export/`.
 
+- **Feuilles faites par la page** (`miseEnPageExport.js`) : le navigateur
+  ne coupe plus les pages. Un script en fin de page range le document dans
+  des `.feuille` de la taille exacte de la zone imprimable (format moins les
+  10 mm de `@page`, quelques pixels de moins pour qu'un arrondi n'ajoute
+  jamais de page blanche). Choix « Mise en page » de la fenêtre
+  (`ChoixFeuilles`, `uneFeuille`, **une seule feuille par défaut**) : tout le
+  document élargi puis réduit (`zoom`) pour tenir sur une feuille, quel que
+  soit le nombre de lignes ; ou plusieurs feuilles, planning réduit à la
+  largeur, lignes réparties par `repartirLignes` (pure, testée, recopiée
+  dans la page par `toString` : un titre de lot ou de zone ne reste pas
+  seul en bas, la fin du document prend sa feuille si elle ne tient pas),
+  en-tête du tableau et bande des échéances répétés. Le nom d'une tâche qui
+  dépasse à droite est englobé dans le cadre avant la réduction (sinon la
+  feuille le coupait). Les flèches du chantier se tracent par bloc
+  (`dessinerFleches`) ; coupées par un saut, elles descendent au bas de la
+  feuille et reprennent en haut de la suivante. Le script tourne sans
+  attendre `load` (document.write) ; l'impression part au `load` ou au bout
+  de 2 s. Jamais `transform: scale` + marge négative : sur plusieurs pages,
+  la légende remontait sur les dernières lignes.
 - **Aperçu dans la fenêtre d'export** (`ApercuPlanning.jsx`, commun aux deux
   fenêtres, réglages à gauche et aperçu à droite, `styleFenetreExport.js`) :
   la **même page** (`htmlApercuChantier` / `htmlApercuEtude`, paramètre
   `apercu` du générateur), dans un cadre isolé (`sandbox="allow-scripts"`)
   réduit à la largeur disponible, refaite 450 ms après le dernier réglage.
   Les paramètres du PDF et de l'aperçu sont un seul objet (`parametresPdf`)
-  : ce qui se voit est ce qui s'imprime. En aperçu, la marge de la feuille
-  est posée sur le corps (`STYLE_APERCU`) et la page envoie sa hauteur par
-  `postMessage` au lieu d'imprimer (`scriptFin`) ; les sauts de page sont
-  estimés en pointillés (`sautsDePage`, testé) — à l'impression l'en-tête du
-  tableau se répète, ils arrivent un peu plus tôt. « Agrandir » en plein
-  écran (✕, Échap).
+  : ce qui se voit est ce qui s'imprime. En aperçu, les mêmes feuilles,
+  entourées de leur marge (`STYLE_APERCU`), et la page envoie hauteur,
+  nombre de feuilles et réduction par `postMessage` au lieu d'imprimer :
+  « 3 feuilles », « 1 feuille · réduit à 41 % » (`libelleApercu`). Vérifié
+  au Chrome sans écran sur 12 cas (chantier et étude, A4 à A1, une ou
+  plusieurs feuilles) : nombre de feuilles de l'aperçu = pages imprimées.
+  « Agrandir » en plein écran (✕, Échap).
 
 - **Textes libres** en tête (entre logo et titre) et sous le planning :
   `EditeurTexte.jsx` (gras, italique, souligné, puces), mémorisés par affaire
@@ -1109,9 +1129,6 @@ navigateur. Ce qui leur est commun vit dans `src/shared/planning/export/`.
   Semaines, le mois commence à son **premier lundi** et une semaine
   appartient au mois de son lundi (`niveauDuJour(d, 'week')`, `moisDuJour`),
   comme dans l'éditeur : un trait au 1er coupait une semaine en deux.
-- **Mise à l'échelle** (`SCRIPT_MISE_A_ECHELLE`, deux plannings) : par
-  `zoom`, jamais `transform: scale` + marge négative — sur un tableau de
-  plusieurs pages, la légende remontait sur les dernières lignes.
 - **Périodes** : fond uni (les hachures moiraient à l'impression), trait aux
   vraies dates de début et de fin, bandeau qui les nomme sous les dates. Au
   chantier, **un seul bloc par période et par ligne**, sous la grille

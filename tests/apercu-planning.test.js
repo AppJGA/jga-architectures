@@ -96,6 +96,23 @@ describe('pages produites', () => {
     assert.match(scripts(htmlApercuEtude(paramsEtude({ uneFeuille: false }))), /uneFeuille: false/)
   })
 
+  test('chaque feuille est son propre plan : les fonds des périodes restent visibles', () => {
+    // Sans z-index, le fond blanc de la feuille (aperçu) recouvrait les fonds
+    // de période posés sous la grille (z-index -1)
+    for (const html of [htmlApercuChantier(paramsChantier()), htmlApercuEtude(paramsEtude())]) {
+      assert.match(html, /\.feuille \{ position: relative; z-index: 0;/)
+    }
+  })
+
+  test('la flèche d’une échéance se place en % du tableau, comme les colonnes qui s’étirent', () => {
+    const jalons = [{ id: 1, date: '2026-03-11', label: 'Rendu', couleur: '#E8602C' }]
+    const html = htmlApercuChantier(paramsChantier({ jalons }))
+    // 9e jour sur 19, colonne de libellés de 45 mm comprise
+    assert.match(html, /<div style="position:absolute;left:\d+\.\d{4}%;top:0;bottom:0;width:0">/)
+    const etude = htmlApercuEtude(paramsEtude({ jalons: [{ id: 1, semaine: 10, annee: 2026, label: 'Rendu' }] }))
+    assert.match(etude, /<div style="position:absolute;left:\d+\.\d{4}%;top:0;bottom:0;width:0">/)
+  })
+
   test('le chantier trace ses flèches feuille par feuille', () => {
     assert.match(scripts(htmlApercuChantier(paramsChantier())), /fleches: dessinerFleches/)
   })

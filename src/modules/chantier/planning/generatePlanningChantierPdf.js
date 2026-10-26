@@ -244,10 +244,12 @@ function computeBarGeometry(days, dayWidths, debut, duree, periodes = []) {
 // reste tracée dans les lignes du tableau comme repère de lecture (cf.
 // buildTaskRow), mais sans texte.
 //
-// Les positions sont en mm dans le même repère que le tableau (colonne de
-// libellés + colonnes de jours), pour rester alignées après la mise à l'échelle
-// appliquée à l'ensemble du bloc.
+// Les positions sont en pourcentage de la largeur du tableau (colonne de
+// libellés + colonnes de jours) : les colonnes s'étirent quand le tableau est
+// plus large que leur somme (mise en page sur une feuille), une position en
+// mm ne les suivait pas et la flèche se décalait de son trait.
 function buildJalonBand(jalons, days, dayWidths) {
+  const totalMm = LABEL_COL_MM + dayWidths.reduce((a, b) => a + b, 0)
   const places = (jalons ?? [])
     .map((jalon) => {
       const dayStr = (jalon.date ?? '').split('T')[0]
@@ -269,7 +271,7 @@ function buildJalonBand(jalons, days, dayWidths) {
     const couleur = echapperHtml(jalon.couleur ?? '#E8602C')
     const topLabel = lanes[i] * JALON_LABEL_HEIGHT_MM
     const topTrait = (lanes[i] + 1) * JALON_LABEL_HEIGHT_MM
-    return `<div style="position:absolute;left:${x.toFixed(2)}mm;top:0;bottom:0;width:0">
+    return `<div style="position:absolute;left:${(x / totalMm * 100).toFixed(4)}%;top:0;bottom:0;width:0">
       <div style="position:absolute;top:${topLabel.toFixed(2)}mm;left:1.2mm;font-size:5pt;font-weight:bold;color:${couleur};white-space:nowrap;line-height:${JALON_LABEL_HEIGHT_MM}mm">${echapperHtml(jalon.label)}</div>
       <div style="position:absolute;top:${topTrait.toFixed(2)}mm;bottom:1.6mm;left:0;width:1.5px;background:${couleur}"></div>
       <div style="position:absolute;bottom:0;left:-2.5px;width:0;height:0;border-left:2.5px solid transparent;border-right:2.5px solid transparent;border-top:1.6mm solid ${couleur}"></div>

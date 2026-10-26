@@ -102,10 +102,13 @@ function mettreEnPage(o) {
     bloc.style.zoom = '';
     bloc.style.width = '';
     table.style.width = '';
+    if (bande) bande.style.width = '';
     var bords = bloc.offsetWidth - bloc.clientWidth;
     var sw = bloc.scrollWidth + bords;
     if (sw <= largeur + 1) return 1;
     table.style.width = table.offsetWidth + 'px';
+    // La bande des échéances se place en % : elle garde la largeur du tableau
+    if (bande) bande.style.width = table.style.width;
     bloc.style.width = sw + 'px';
     return largeur / sw;
   }
@@ -188,9 +191,14 @@ function mettreEnPage(o) {
   return { pages: rep.pages.length + (rep.finSeule ? 1 : 0), reduction: s2 };
 }`
 
-/** Styles des feuilles, communs à l'impression et à l'aperçu. */
+/**
+ * Styles des feuilles, communs à l'impression et à l'aperçu.
+ * `z-index: 0` fait de chaque feuille son propre plan : les fonds des
+ * périodes, posés sous la grille (`z-index: -1`), restent au-dessus du fond
+ * blanc de la feuille. Sans lui, l'aperçu les cachait.
+ */
 export const STYLE_FEUILLES = `
-  .feuille { position: relative; overflow: hidden; break-after: page; page-break-after: always; }
+  .feuille { position: relative; z-index: 0; overflow: hidden; break-after: page; page-break-after: always; }
   .contenu-document, .fin-document { display: flow-root; }`
 
 // Dans l'aperçu, la marge de la feuille (celle de `@page`, qui ne vaut qu'à

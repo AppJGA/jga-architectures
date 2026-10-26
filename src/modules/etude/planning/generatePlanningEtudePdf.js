@@ -258,7 +258,10 @@ function buildPhaseRows(phases, weeks, jalons, segments = [], periodes = [], den
 const JALON_GAP_MM = 26
 const JALON_LIGNE_MM = 3.2
 
+// Positions en pourcentage de la largeur du tableau, comme au chantier : les
+// colonnes s'étirent avec lui, une position en mm s'en décalait.
 function buildJalonBand(jalons, weeks, labelColMm, weekWidthMm) {
+  const totalMm = labelColMm + weeks.length * weekWidthMm
   const places = (jalons ?? [])
     .map(j => {
       const idx = weeks.findIndex(w => w.semaine === j.semaine && w.annee === j.annee)
@@ -276,7 +279,7 @@ function buildJalonBand(jalons, weeks, labelColMm, weekWidthMm) {
     const couleur = echapperHtml(jalon.couleur ?? '#8B5CF6')
     const topLabel = lanes[i] * JALON_LIGNE_MM
     const topTrait = (lanes[i] + 1) * JALON_LIGNE_MM
-    return `<div style="position:absolute;left:${x.toFixed(2)}mm;top:0;bottom:0;width:0">
+    return `<div style="position:absolute;left:${(x / totalMm * 100).toFixed(4)}%;top:0;bottom:0;width:0">
       <div style="position:absolute;top:${topLabel.toFixed(2)}mm;left:1.2mm;font-size:5pt;font-weight:bold;color:${couleur};white-space:nowrap;line-height:${JALON_LIGNE_MM}mm">${echapperHtml(jalon.label)}</div>
       <div style="position:absolute;top:${topTrait.toFixed(2)}mm;bottom:1.6mm;left:0;width:1.5px;background:${couleur}"></div>
       <div style="position:absolute;bottom:0;left:-2.5px;width:0;height:0;border-left:2.5px solid transparent;border-right:2.5px solid transparent;border-top:1.6mm solid ${couleur}"></div>

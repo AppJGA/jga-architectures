@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 1024 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans, gestion de l'application)
+npm test         # 1026 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans, gestion de l'application)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -1101,6 +1101,11 @@ navigateur. Ce qui leur est commun vit dans `src/shared/planning/export/`.
   attendre `load` (document.write) ; l'impression part au `load` ou au bout
   de 2 s. Jamais `transform: scale` + marge négative : sur plusieurs pages,
   la légende remontait sur les dernières lignes.
+  Une feuille porte `z-index: 0` (son propre plan) : sans lui, son fond
+  blanc dans l'aperçu recouvrait les fonds des périodes (`z-index: -1`).
+  Les colonnes s'étirent quand le tableau est plus large que leur somme
+  (une feuille) : la bande des échéances place ses flèches **en % du
+  tableau**, jamais en mm (elles se décalaient de leur trait).
 - **Aperçu dans la fenêtre d'export** (`ApercuPlanning.jsx`, commun aux deux
   fenêtres, réglages à gauche et aperçu à droite, `styleFenetreExport.js`) :
   la **même page** (`htmlApercuChantier` / `htmlApercuEtude`, paramètre

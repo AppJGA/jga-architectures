@@ -3,14 +3,14 @@ import {
   computePhaseFragments, distributeSegmentsAcrossFragments,
   getPhaseCouleur, adminGradient, TYPE_COLORS,
 } from './types'
-import { assignLabelLanes } from '../../chantier/planning/jalonLayout'
 import { echapperHtml } from '../../../shared/echapperHtml'
 import {
   bordureGauche, pastelPdf, fondPeriode, traitPeriode, stylePause, estBloquante, groupesDePeriodes,
-  TRAIT_HORIZONTAL,
+  TRAIT_HORIZONTAL, SEPARATION_NOMS,
 } from '../../../shared/planning/export/grilleExport'
 import { scriptMiseEnPage, STYLE_FEUILLES, STYLE_APERCU } from '../../../shared/planning/export/miseEnPageExport'
 import { nettoyerHtml, estVide } from '../../../shared/planning/export/texteRiche'
+import { bandeEcheances, traitEcheance, exempleLegendeEcheance } from '../../../shared/planning/export/echeancesExport'
 
 // L'étude est en semaines : pas de lignes de jour
 const GRANULARITE = 'week'
@@ -239,7 +239,7 @@ function buildPhaseRows(phases, weeks, jalons, segments = [], periodes = [], den
 
       const jalonsSemaine = (jalons ?? []).filter(j => j.semaine === w.semaine && j.annee === w.annee)
       const jalonLines = jalonsSemaine.map(j =>
-        `<div class="jalon-line" style="background:${echapperHtml(j.couleur)};left:50%"></div>`
+        traitEcheance(j.couleur ?? COULEUR_ECHEANCE)
       ).join('')
 
       const periode = periodeDeLaSemaine(w, periodes)
@@ -252,14 +252,12 @@ function buildPhaseRows(phases, weeks, jalons, segments = [], periodes = [], den
   }).join('')
 }
 
-// ─── Bande de jalons ──────────────────────────────────────────────────────────
-// Un seul libellé par jalon, au-dessus du tableau, décalé verticalement quand
-// deux jalons sont trop proches (même traitement que le planning chantier).
-const JALON_GAP_MM = 26
-const JALON_LIGNE_MM = 3.2
+// ─── Bande des échéances ─────────────────────────────────────────────────────
+// Étiquettes au-dessus du tableau, même dessin qu'au chantier
+// (`echeancesExport.js`). Positions en % de la largeur du tableau : les
+// colonnes s'étirent avec lui.
+const COULEUR_ECHEANCE = '#8B5CF6'
 
-// Positions en pourcentage de la largeur du tableau, comme au chantier : les
-// colonnes s'étirent avec lui, une position en mm s'en décalait.
 function buildJalonBand(jalons, weeks, labelColMm, weekWidthMm) {
   const totalMm = labelColMm + weeks.length * weekWidthMm
   const places = (jalons ?? [])
@@ -269,24 +267,7 @@ function buildJalonBand(jalons, weeks, labelColMm, weekWidthMm) {
       return { jalon: j, x: labelColMm + idx * weekWidthMm + weekWidthMm / 2 }
     })
     .filter(Boolean)
-
-  if (places.length === 0) return ''
-
-  const lanes = assignLabelLanes(places.map(p => p.x), JALON_GAP_MM)
-  const hauteurMm = (Math.max(...lanes) + 1) * JALON_LIGNE_MM + 5
-
-  const marqueurs = places.map(({ jalon, x }, i) => {
-    const couleur = echapperHtml(jalon.couleur ?? '#8B5CF6')
-    const topLabel = lanes[i] * JALON_LIGNE_MM
-    const topTrait = (lanes[i] + 1) * JALON_LIGNE_MM
-    return `<div style="position:absolute;left:${(x / totalMm * 100).toFixed(4)}%;top:0;bottom:0;width:0">
-      <div style="position:absolute;top:${topLabel.toFixed(2)}mm;left:1.2mm;font-size:5pt;font-weight:bold;color:${couleur};white-space:nowrap;line-height:${JALON_LIGNE_MM}mm">${echapperHtml(jalon.label)}</div>
-      <div style="position:absolute;top:${topTrait.toFixed(2)}mm;bottom:1.6mm;left:0;width:1.5px;background:${couleur}"></div>
-      <div style="position:absolute;bottom:0;left:-2.5px;width:0;height:0;border-left:2.5px solid transparent;border-right:2.5px solid transparent;border-top:1.6mm solid ${couleur}"></div>
-    </div>`
-  }).join('')
-
-  return `<div style="position:relative;height:${hauteurMm.toFixed(2)}mm;border-bottom:1px solid #E9E2D6;margin-bottom:1mm">${marqueurs}</div>`
+  return bandeEcheances(places, totalMm, COULEUR_ECHEANCE)
 }
 
 function buildHtml({
@@ -354,7 +335,7 @@ function buildHtml({
   .wk-cur     { background: rgba(232,96,44,0.10); color: #E8602C; font-weight: bold; }
   .hdr-periode { font-size: ${(dens.labelPt - 1.5).toFixed(1)}pt; font-weight: bold; text-align: left; white-space: nowrap; overflow: visible; position: relative; padding: ${(dens.hdrPadMm * 0.6).toFixed(2)}mm 1mm; border-bottom: 0.5px solid #ddd; }
 
-  .plabel       { border: 0.5px solid #eee; border-bottom: ${TRAIT_HORIZONTAL}; border-right: 1px solid #ccc; padding: 0 1.5mm; vertical-align: middle; overflow: hidden; white-space: nowrap; height: ${dens.rowMm}mm; }
+  .plabel       { border: 0.5px solid #eee; border-bottom: ${TRAIT_HORIZONTAL}; border-right: ${SEPARATION_NOMS}; padding: 0 1.5mm; vertical-align: middle; overflow: hidden; white-space: nowrap; height: ${dens.rowMm}mm; }
   .lbl-moe      { font-weight: bold; font-size: ${dens.labelPt}pt; color: #1F1B17; }
   .lbl-moa      { font-weight: normal; font-size: ${dens.barLabelPt}pt; color: #4b5563; padding-left: 4mm; }
   .lbl-adm      { font-style: italic; font-size: ${dens.barLabelPt}pt; color: #92400E; }
@@ -367,7 +348,6 @@ function buildHtml({
   .seg-bar      { opacity: 0.85; outline: 1px dashed rgba(255,255,255,0.6); outline-offset: -1px; z-index: 3; }
   .bar-inner-txt{ position: absolute; inset: 0; display: flex; align-items: center; padding: 0 1.5mm; font-size: ${dens.barLabelPt}pt; color: white; font-style: italic; text-shadow: 0 1px 3px rgba(0,0,0,0.5); }
 
-  .jalon-line  { position: absolute; top: 0; bottom: 0; width: 1.5px; z-index: 5; }
   .jalon-label { position: absolute; top: 1mm; left: 2px; font-size: 5.5pt; font-weight: bold; color: white; white-space: nowrap; padding: 0.3mm 1mm; }
 
   .legend    { margin-top: 5mm; padding-top: 3mm; border-top: 0.5px solid #eee; display: flex; align-items: center; gap: 5mm; flex-wrap: wrap; }
@@ -438,7 +418,7 @@ ${pied ? `<div class="texte-pied">${pied}</div>` : ''}
   <div class="leg-item"><div class="leg-swatch" style="background:${fondPeriode(exemplePeriode)};border-left:${traitPeriode(exemplePeriode)};border-right:${traitPeriode(exemplePeriode)}"></div>Période bloquante</div>
   <div class="leg-item"><div class="leg-swatch" style="background:${fondPeriode({ ...exemplePeriode, est_bloquante: false })}"></div>Période informative</div>
   <div class="leg-item"><div class="leg-swatch" style="${stylePause('#5E5854', exemplePeriode)}"></div>Phase en pause pendant une période (semaines non comptées)</div>
-  <div class="leg-item"><div style="width:8mm;border-top:2px solid #8B5CF6"></div>Échéance</div>
+  <div class="leg-item">${exempleLegendeEcheance(COULEUR_ECHEANCE)}Échéance</div>
 </div>
 
 <div class="footer">

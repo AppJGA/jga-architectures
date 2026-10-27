@@ -209,6 +209,6 @@ describe('PDF étude — textes et légende', () => {
       assert.ok(l.includes(libelle), libelle)
     }
     assert.ok(l.indexOf('Phase chantier') < l.indexOf('Conventions'))
-    assert.ok(l.includes('border-top:2px solid #8B5CF6'), 'jalon à la couleur des jalons d’étude')
+    assert.ok(l.includes('border-radius:0.6mm;background:#8B5CF6'), 'échéance à la couleur des échéances d’étude')
   })
 })

@@ -14,6 +14,11 @@ export const TRAITS_GRILLE = {
 // Lignes horizontales : la teinte des mois, un peu plus fines
 export const TRAIT_HORIZONTAL = '1px solid #5f5f5f'
 
+// Entre la colonne des noms et la première colonne du calendrier : plus
+// épais qu'un trait de mois (1,5 px), il l'emporte dans la grille fusionnée
+// et marque nettement où commence le calendrier
+export const SEPARATION_NOMS = '2.5px solid #1F1B17'
+
 // Ce que chaque granularité montre : en semaines, les jours n'ont pas de
 // colonne lisible ; en mois, les semaines non plus
 const NIVEAUX_VISIBLES = {

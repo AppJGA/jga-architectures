@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 1035 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans, gestion de l'application)
+npm test         # 1038 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans, gestion de l'application)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -1173,6 +1173,18 @@ navigateur. Ce qui leur est commun vit dans `src/shared/planning/export/`.
 - **Barre en pause** : la barre traverse la période bloquante (l'étude aussi,
   sur le papier ; l'écran garde ses fragments), la portion en pause montre la
   période à travers des rayures (`stylePause`).
+- **Échéances** (`echeancesExport.js`, commun aux deux PDF, testé) : titre
+  en **étiquette de la couleur** de l'échéance, texte blanc ou foncé selon
+  la couleur (`couleurTexteSur`), dans la bande au-dessus du tableau —
+  jamais sur une tâche ; les étiquettes trop proches passent à la ligne
+  suivante d'après leur largeur estimée (`largeurEtiquetteMm`). Dans le
+  tableau, trait **plein de 2 px**, `z-index` 7 : devant barres (4),
+  délais et segments (3) et pauses (6), derrière les noms des tâches (10),
+  qu'il ne doit pas rayer. Au chantier, il traverse aussi les lignes de
+  titre de lot ou de zone (`traitsEcheancesLigneEntiere`, sous leur texte).
+- **Séparation des noms et du calendrier** : `SEPARATION_NOMS` (2,5 px
+  foncé, plus épais qu'un trait de mois pour l'emporter dans la grille
+  fusionnée), bord droit de `.plabel` dans les deux PDF.
 - **Légende** = celle de l'écran (`legende.js` : tous les lots, ou toutes les
   zones puis « Sans zone ») + les conventions de dessin. L'Excel du chantier
   lit la même source.

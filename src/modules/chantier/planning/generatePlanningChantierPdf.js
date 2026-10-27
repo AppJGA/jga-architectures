@@ -1,14 +1,16 @@
 import { parseDate, formatDateISO, addWorkingDaysBlocked, dernierJourTache } from './types'
-import { assignLabelLanes } from './jalonLayout'
 import { buildRowsByZone } from './groupByZone'
 import { legendeCouleurs } from './legende'
 import { echapperHtml } from '../../../shared/echapperHtml'
 import {
   bordureGauche, niveauDuJour, moisDuJour, semainesEntieres, pastelPdf, fondPeriode, traitPeriode, stylePause,
-  estBloquante, groupesDePeriodes, TRAIT_HORIZONTAL,
+  estBloquante, groupesDePeriodes, TRAIT_HORIZONTAL, SEPARATION_NOMS,
 } from '../../../shared/planning/export/grilleExport'
 import { scriptMiseEnPage, STYLE_FEUILLES, STYLE_APERCU } from '../../../shared/planning/export/miseEnPageExport'
 import { nettoyerHtml, estVide } from '../../../shared/planning/export/texteRiche'
+import {
+  bandeEcheances, traitEcheance, traitsEcheancesLigneEntiere, exempleLegendeEcheance,
+} from '../../../shared/planning/export/echeancesExport'
 
 // ─── Densité des lignes ───────────────────────────────────────────────────────
 //
@@ -37,10 +39,6 @@ function mmK(x) {
   return `calc(${x.toFixed(2)}mm * var(--k, 1))`
 }
 
-// Bande de jalons : écart minimal (mm) entre deux libellés avant de les répartir
-// sur des lignes successives, et hauteur d'une de ces lignes.
-const JALON_LABEL_MIN_GAP_MM = 26
-const JALON_LABEL_HEIGHT_MM = 3.2
 
 function isWeekend(date) {
   return date.getDay() === 0 || date.getDay() === 6
@@ -260,9 +258,11 @@ function computeBarGeometry(days, dayWidths, debut, duree, periodes = [], granul
 // libellés + colonnes de jours) : les colonnes s'étirent quand le tableau est
 // plus large que leur somme (mise en page sur une feuille), une position en
 // mm ne les suivait pas et la flèche se décalait de son trait.
-function buildJalonBand(jalons, days, dayWidths) {
-  const totalMm = LABEL_COL_MM + dayWidths.reduce((a, b) => a + b, 0)
-  const places = (jalons ?? [])
+const COULEUR_ECHEANCE = '#E8602C'
+
+// Échéances de la plage, avec la position (mm) du milieu de leur jour
+function placesEcheances(jalons, days, dayWidths) {
+  return (jalons ?? [])
     .map((jalon) => {
       const dayStr = (jalon.date ?? '').split('T')[0]
       const idx = days.findIndex((d) => formatDateISO(d) === dayStr)
@@ -272,25 +272,6 @@ function buildJalonBand(jalons, days, dayWidths) {
       return { jalon, x: x + dayWidths[idx] / 2 }
     })
     .filter(Boolean)
-
-  if (places.length === 0) return ''
-
-  const lanes = assignLabelLanes(places.map((p) => p.x), JALON_LABEL_MIN_GAP_MM)
-  const nbLignes = Math.max(...lanes) + 1
-  const hauteurMm = nbLignes * JALON_LABEL_HEIGHT_MM + 5
-
-  const marqueurs = places.map(({ jalon, x }, i) => {
-    const couleur = echapperHtml(jalon.couleur ?? '#E8602C')
-    const topLabel = lanes[i] * JALON_LABEL_HEIGHT_MM
-    const topTrait = (lanes[i] + 1) * JALON_LABEL_HEIGHT_MM
-    return `<div style="position:absolute;left:${(x / totalMm * 100).toFixed(4)}%;top:0;bottom:0;width:0">
-      <div style="position:absolute;top:${topLabel.toFixed(2)}mm;left:1.2mm;font-size:5pt;font-weight:bold;color:${couleur};white-space:nowrap;line-height:${JALON_LABEL_HEIGHT_MM}mm">${echapperHtml(jalon.label)}</div>
-      <div style="position:absolute;top:${topTrait.toFixed(2)}mm;bottom:1.6mm;left:0;width:1.5px;background:${couleur}"></div>
-      <div style="position:absolute;bottom:0;left:-2.5px;width:0;height:0;border-left:2.5px solid transparent;border-right:2.5px solid transparent;border-top:1.6mm solid ${couleur}"></div>
-    </div>`
-  }).join('')
-
-  return `<div style="position:relative;height:${hauteurMm.toFixed(2)}mm;border-bottom:1px solid #E9E2D6;margin-bottom:1mm">${marqueurs}</div>`
 }
 
 // Bandeau qui nomme les périodes, sous les en-têtes de dates : une cellule
@@ -451,11 +432,11 @@ function buildTaskRow(task, color, days, dayWidths, jalons, todayStr, ctx, rowIn
     const bg = isWE ? 'rgba(0,0,0,0.03)' : 'transparent'
 
     // Repère vertical du jalon, sans libellé : celui-ci est rendu une seule fois
-    // dans la bande dédiée au-dessus du tableau (buildJalonBand).
+    // dans la bande dédiée au-dessus du tableau (bandeEcheances).
     const dayStr = formatDateISO(d)
     const jalonLines = (jalons ?? [])
       .filter(j => (j.date ?? '').split('T')[0] === dayStr)
-      .map(j => `<div style="position:absolute;top:0;bottom:0;left:50%;width:1.5px;background:${echapperHtml(j.couleur)};opacity:0.55;z-index:5"></div>`)
+      .map(j => traitEcheance(j.couleur ?? COULEUR_ECHEANCE))
       .join('')
 
     return `<td style="width:${mmK(dayWidths[idx])};border-bottom:${TRAIT_HORIZONTAL};border-left:${borderLeft};height:${dens.rowMm}mm;padding:0;overflow:visible;position:relative;background:${bg}">${fonds.get(idx) ?? ''}${parJour.get(idx) ?? ''}${jalonLines}</td>`
@@ -533,6 +514,14 @@ function buildHtml({
   const bandePeriodes = buildBandePeriodes(days, periodes, viewMode)
   const dayHeaders   = showDayRow ? buildDayHeaders(days, dayWidths, todayStr) : ''
 
+  // Échéances : étiquettes dans la bande au-dessus du tableau, traits dans
+  // les lignes. Une ligne de titre (lot, zone) couvre tout le tableau : elle
+  // reçoit les traits à part, sous son texte.
+  const echeances = placesEcheances(jalons, days, dayWidths)
+  const largeurTableauMm = LABEL_COL_MM + dayWidths.reduce((a, b) => a + b, 0)
+  const traitsTitre = traitsEcheancesLigneEntiere(echeances, largeurTableauMm, COULEUR_ECHEANCE)
+  const titreLigne = (texte) => `<span style="position:relative;z-index:10">${texte}</span>${traitsTitre}`
+
   // ── Corps du tableau : groupé par lot (défaut) ou par zone ──
   let lotsRows = ''
 
@@ -544,8 +533,8 @@ function buildHtml({
       if (row.type === 'header-zone') {
         const couleur = echapperHtml(row.couleur ?? '#C9C4C0')
         lotsRows += `<tr>
-          <td colspan="${1 + days.length}" style="background:${couleur}18;color:${couleur};font-weight:bold;font-size:${dens.groupPt}pt;padding:0 2mm;height:${dens.groupMm}mm;border-bottom:${TRAIT_HORIZONTAL}">
-            ${echapperHtml((row.displayName ?? '').toUpperCase())}
+          <td colspan="${1 + days.length}" style="position:relative;background:${couleur}18;color:${couleur};font-weight:bold;font-size:${dens.groupPt}pt;padding:0 2mm;height:${dens.groupMm}mm;border-bottom:${TRAIT_HORIZONTAL}">
+            ${titreLigne(echapperHtml((row.displayName ?? '').toUpperCase()))}
           </td>
         </tr>`
         return
@@ -571,15 +560,15 @@ function buildHtml({
       if (!lotTasks.length) return
       const couleurLot = echapperHtml(lot.couleur)
       lotsRows += `<tr>
-        <td colspan="${1 + days.length}" style="background:${couleurLot}18;color:${couleurLot};font-weight:bold;font-size:${dens.groupPt}pt;padding:0 2mm;height:${dens.groupMm}mm;border-bottom:${TRAIT_HORIZONTAL}">
-          ${echapperHtml(lot.num_lot)} – ${echapperHtml(lot.nom)}
+        <td colspan="${1 + days.length}" style="position:relative;background:${couleurLot}18;color:${couleurLot};font-weight:bold;font-size:${dens.groupPt}pt;padding:0 2mm;height:${dens.groupMm}mm;border-bottom:${TRAIT_HORIZONTAL}">
+          ${titreLigne(`${echapperHtml(lot.num_lot)} – ${echapperHtml(lot.nom)}`)}
         </td>
       </tr>`
       lotTasks.forEach(t => { lotsRows += buildTaskRow(t, getBarColor(t, lot, zones, colorMode), days, dayWidths, jalons, todayStr, rowCtx) })
     })
     const unassigned = tasks.filter(t => t.lot_id == null)
     if (unassigned.length > 0) {
-      lotsRows += `<tr><td colspan="${1 + days.length}" style="color:#9C9591;font-weight:bold;font-size:${dens.groupPt}pt;padding:0 2mm;height:${dens.groupMm}mm;border-bottom:${TRAIT_HORIZONTAL}">Sans lot</td></tr>`
+      lotsRows += `<tr><td colspan="${1 + days.length}" style="position:relative;color:#9C9591;font-weight:bold;font-size:${dens.groupPt}pt;padding:0 2mm;height:${dens.groupMm}mm;border-bottom:${TRAIT_HORIZONTAL}">${titreLigne('Sans lot')}</td></tr>`
       unassigned.forEach(t => { lotsRows += buildTaskRow(t, getBarColor(t, null, zones, colorMode), days, dayWidths, jalons, todayStr, rowCtx) })
     }
   }
@@ -635,7 +624,7 @@ function buildHtml({
   .hdr-periode { font-size: ${(dens.labelPt - 1).toFixed(1)}pt; font-weight: bold; text-align: left; white-space: nowrap; overflow: visible; position: relative; padding: ${(dens.hdrPadMm * 0.6).toFixed(2)}mm 1mm; border-bottom: 0.5px solid #ddd; }
   .hdr-day   { font-size: ${(dens.labelPt - 1.5).toFixed(1)}pt; text-align: center; border-bottom: 0.5px solid #ddd; padding: ${(dens.hdrPadMm * 0.5).toFixed(2)}mm 0; }
 
-  .plabel { width: ${mmK(LABEL_COL_MM)}; border: 0.5px solid #eee; border-bottom: ${TRAIT_HORIZONTAL}; border-right: 1px solid #ccc; padding: 0 1.5mm; vertical-align: middle; overflow: hidden; white-space: nowrap; height: ${dens.rowMm}mm; font-size: ${dens.labelPt}pt; color: #1F1B17; }
+  .plabel { width: ${mmK(LABEL_COL_MM)}; border: 0.5px solid #eee; border-bottom: ${TRAIT_HORIZONTAL}; border-right: ${SEPARATION_NOMS}; padding: 0 1.5mm; vertical-align: middle; overflow: hidden; white-space: nowrap; height: ${dens.rowMm}mm; font-size: ${dens.labelPt}pt; color: #1F1B17; }
 
   .legend { margin-top: 5mm; padding-top: 3mm; border-top: 0.5px solid #eee; display: flex; align-items: center; gap: 5mm; flex-wrap: wrap; }
   .leg-title { font-size: 5.5pt; font-weight: bold; color: #9C9591; text-transform: uppercase; letter-spacing: 0.05em; }
@@ -665,7 +654,7 @@ function buildHtml({
 </div>
 
 <div class="gantt-wrap" id="gw">
-  ${buildJalonBand(jalons, days, dayWidths)}
+  ${bandeEcheances(echeances, largeurTableauMm, COULEUR_ECHEANCE)}
   <table class="gantt-table" id="gantt-table" data-largeur-mm="${(LABEL_COL_MM + dayWidths.reduce((a, b) => a + b, 0)).toFixed(2)}">
     <colgroup>
       <col class="col-label">
@@ -739,7 +728,7 @@ ${pied ? `<div class="texte-pied">${pied}</div>` : ''}
     Dépendance (chemin critique)
   </div>` : ''}
   <div class="leg-item">
-    <div style="width:8mm;border-top:2px solid #E8602C"></div>
+    ${exempleLegendeEcheance(COULEUR_ECHEANCE)}
     Échéance
   </div>
   ${legNoteHtml}

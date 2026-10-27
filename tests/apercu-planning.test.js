@@ -8,6 +8,8 @@ globalThis.window = { location: { origin: 'http://localhost' } }
 
 const { repartirLignes, scriptMiseEnPage } =
   await import('../src/shared/planning/export/miseEnPageExport.js')
+const { couleurTexteSur, largeurEtiquetteMm, bandeEcheances } =
+  await import('../src/shared/planning/export/echeancesExport.js')
 const { libelleApercu } =
   await import('../src/shared/planning/export/apercuPlanningLogique.js')
 const { htmlApercuChantier, generatePlanningChantierPdf } =
@@ -47,6 +49,44 @@ describe('répartition des lignes sur les feuilles', () => {
 
   test('aucune ligne : une feuille', () => {
     assert.deepEqual(repartirLignes([], [], { premiere: 50, suivantes: 50, fin: 10 }).pages, [[]])
+  })
+})
+
+describe('échéances dans les PDF', () => {
+  test('texte foncé sur une couleur claire, blanc sur une couleur foncée', () => {
+    assert.equal(couleurTexteSur('#F2C94C'), '#1F1B17')
+    assert.equal(couleurTexteSur('#7C3AED'), '#FFFFFF')
+    assert.equal(couleurTexteSur('#E8602C'), '#FFFFFF')
+    assert.equal(couleurTexteSur('pas une couleur'), '#FFFFFF')
+  })
+
+  test('deux étiquettes trop proches passent sur deux lignes, éloignées sur une', () => {
+    const lignes = (html) => [...html.matchAll(/top:([\d.]+)mm;left:1.2mm/g)].map(m => Number(m[1]))
+    const jalon = (label) => ({ label, couleur: '#E8602C' })
+    // 30 mm d'écart : un titre court tient, un titre long déborde sur le suivant
+    const courts = bandeEcheances([{ jalon: jalon('OPR'), x: 50 }, { jalon: jalon('DCE'), x: 80 }], 400, '#E8602C')
+    assert.deepEqual(lignes(courts), [0, 0])
+    const longs = bandeEcheances([{ jalon: jalon('Réception des offres entreprises'), x: 50 }, { jalon: jalon('DCE'), x: 80 }], 400, '#E8602C')
+    assert.deepEqual(lignes(longs), [0, 4.6])
+    assert.ok(largeurEtiquetteMm('Réception des offres entreprises') > 30)
+  })
+
+  test('le trait passe devant les barres et derrière les noms des tâches', () => {
+    let html = ''
+    globalThis.window.open = () => ({ document: { write: (h) => { html = h }, close: () => {} } })
+    generatePlanningChantierPdf({
+      tasks: [{ id: 1, nom: 'Gros œuvre', debut: '2026-03-02', duree: 10, lot_id: 7 }],
+      lots: [{ id: 7, num_lot: '01', nom: 'GO', couleur: '#2A8A4E', ordre: 0 }],
+      jalons: [{ id: 1, date: '2026-03-04', label: 'Rendu', couleur: '#7C3AED' }],
+      affaire: { nom: 'Essai' }, dateDebut: '2026-03-02', dateFin: '2026-03-20', largeurMm: 420, hauteurMm: 297,
+    })
+    const corps = html.slice(html.indexOf('<tbody>'), html.indexOf('</tbody>'))
+    const z = (motif) => Number(corps.match(motif)[1])
+    const trait = z(/data-echeance="1" style="[^"]*z-index:(\d+)/)
+    assert.ok(trait > z(/data-type="task" style="[^"]*z-index:(\d+)/), 'devant la barre')
+    assert.ok(trait < z(/white-space:nowrap;font-size:[\d.]+pt;color:#1F1B17;z-index:(\d+)/), 'derrière le nom')
+    // La ligne de titre du lot est traversée aussi, sous son texte
+    assert.match(corps, /<span style="position:relative;z-index:10">01 – GO<\/span><div data-echeance="1"/)
   })
 })
 

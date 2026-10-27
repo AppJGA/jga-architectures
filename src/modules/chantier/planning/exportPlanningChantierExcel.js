@@ -10,6 +10,7 @@ import XLSX from 'xlsx-js-style'
 import { parseDate, formatDateISO, addWorkingDaysBlocked, dernierJourTache } from './types'
 import { etenduePlanning } from './geometrie'
 import { buildRowsByZone } from './groupByZone'
+import { resumePlanning } from './resumeLogique'
 import { legendeCouleurs, sansDiese } from './legende'
 import { numeroLot } from '../../../shared/lots/numeroLot'
 
@@ -47,8 +48,10 @@ export const EXCEL_DENSITY = {
 export function exporterPlanningChantierExcel({
   tasks, lots, zones = [], segments = [], jalons = [], periodes = [], affaire = {},
   viewMode = 'day', colorMode = 'lot', groupMode = 'lot', density, dateDebut, dateFin,
+  resume = false,
 }) {
   const dens = EXCEL_DENSITY[density] ?? EXCEL_DENSITY.normal
+  const titreColonne = resume ? (groupMode === 'zone' && zones.length > 0 ? 'Zone' : 'Lot') : 'Tâche'
   const fontSize = dens.fontSize
   // Hauteur de chaque ligne, renseignée au fil des émissions
   const rowHeights = []
@@ -203,7 +206,7 @@ export function exporterPlanningChantierExcel({
     rowIdx = 1
 
     setCell(0, rowIdx, 'N°', styleHeader(0))
-    setCell(1, rowIdx, 'Tâche', styleHeader(1))
+    setCell(1, rowIdx, titreColonne, styleHeader(1))
     setCell(2, rowIdx, 'Av.%', styleHeader(2))
     noteHauteur(0, dens.headerRow)
     noteHauteur(rowIdx, dens.headerRow)
@@ -255,7 +258,7 @@ export function exporterPlanningChantierExcel({
     })
 
     setCell(0, 1, 'N°', styleHeader(0))
-    setCell(1, 1, 'Tâche', styleHeader(1))
+    setCell(1, 1, titreColonne, styleHeader(1))
     setCell(2, 1, 'Av.%', styleHeader(2))
     noteHauteur(0, dens.headerRow)
     noteHauteur(1, dens.headerRow)
@@ -280,7 +283,7 @@ export function exporterPlanningChantierExcel({
     rowIdx = 2
   } else {
     setCell(0, 0, 'N°', styleHeader(0))
-    setCell(1, 0, 'Tâche', styleHeader(1))
+    setCell(1, 0, titreColonne, styleHeader(1))
     setCell(2, 0, 'Av.%', styleHeader(2))
     noteHauteur(0, dens.headerRow)
 
@@ -436,6 +439,36 @@ export function exporterPlanningChantierExcel({
     rowIdx++
   }
 
+  // ── Ligne du mode Résumé : une par lot ou par zone (`resumePlanning`, le
+  // même calcul que l'écran et le PDF), cases colorées sur ses périodes
+  // d'activité seulement ──
+  const emitResumeRow = (ligne) => {
+    const hex = (ligne.couleur ?? '#94a3b8').replace('#', '')
+    setCell(0, rowIdx, ligne.numero ?? '', styleSidebar(true, 0))
+    setCell(1, rowIdx, ligne.nom, styleSidebar(true, 1))
+    setCell(2, rowIdx, ligne.avancement ?? 0, { ...styleSidebar(true, 2), alignment: { horizontal: 'center' } })
+    timeUnits.forEach((unit, i) => {
+      const active = ligne.morceaux.some((m) => overlaps(unit, m.debut, lendemain(m.fin)))
+      const couvrantes = periodes.filter((pp) => isInPeriode(unit, pp))
+      const periode = couvrantes.find((pp) => pp.est_bloquante !== false) ?? couvrantes[0] ?? null
+      let fillHex = 'FFFFFF'
+      if (active) fillHex = hex
+      else if (periode) fillHex = pastel(periode.couleur, periode.est_bloquante !== false ? 0.22 : 0.08)
+      else if (viewMode === 'day' && (unit.getDay() === 0 || unit.getDay() === 6)) fillHex = 'F0EDE8'
+      const isMonthStart = viewMode === 'day'
+        ? unit.getDate() === 1
+        : viewMode === 'week'
+          ? (i > 0 && unit.getMonth() !== timeUnits[i - 1]?.getMonth())
+          : true
+      setCell(FIXED_COLS + i, rowIdx, '', {
+        fill: { fgColor: { rgb: fillHex } },
+        border: borderTask(isMonthStart, false),
+      })
+    })
+    noteHauteur(rowIdx, dens.taskRow)
+    rowIdx++
+  }
+
   // ── En-tête de groupe (lot ou zone) ──
   const emitGroupHeader = (couleur, libelle) => {
     const hexGroupe = (couleur ?? '#E8602C').replace('#', '')
@@ -455,7 +488,10 @@ export function exporterPlanningChantierExcel({
     rowIdx++
   }
 
-  if (groupMode === 'zone') {
+  const groupeResume = groupMode === 'zone' && zones.length > 0 ? 'zone' : 'lot'
+  if (resume) {
+    resumePlanning({ tasks, segments, lots, zones, periodes, groupMode: groupeResume }).forEach(emitResumeRow)
+  } else if (groupMode === 'zone') {
     // Mêmes lignes que la vue « Par zone » de l'éditeur
     buildRowsByZone(tasks, zones, segments).forEach((row) => {
       if (row.type === 'header-zone') {
@@ -532,7 +568,10 @@ export function exporterPlanningChantierExcel({
   // Couleurs de barres (zones ou lots) — même source que l'export PDF.
   // Disposées comme les entrées ci-dessous : paires pastille + libellé, par
   // rangs de six pour qu'une opération à douze zones ne parte pas hors page.
-  const legCouleurs = legendeCouleurs({ tasks, lots, zones, colorMode, groupMode })
+  // En résumé, une barre a la couleur de son lot ou de sa zone
+  const legCouleurs = resume
+    ? { ...legendeCouleurs({ lots, zones, colorMode: groupeResume, groupMode: 'lot' }), note: `Résumé : une ligne par ${groupeResume}, colorée sur ses périodes d’activité` }
+    : legendeCouleurs({ tasks, lots, zones, colorMode, groupMode })
   const PAIRES_PAR_RANG = 6
   let colMax = FIXED_COLS
 
@@ -562,8 +601,10 @@ export function exporterPlanningChantierExcel({
   }
 
   const legendItems = [
-    { color: 'E8602C', label: `Tâche (couleur ${colorMode === 'zone' ? 'de la zone' : 'du lot'})` },
-    { color: pastel('#E8602C', 0.4), label: 'Délai avant / après' },
+    resume
+      ? { color: 'E8602C', label: `Période d’activité (couleur ${groupeResume === 'zone' ? 'de la zone' : 'du lot'})` }
+      : { color: 'E8602C', label: `Tâche (couleur ${colorMode === 'zone' ? 'de la zone' : 'du lot'})` },
+    ...(resume ? [] : [{ color: pastel('#E8602C', 0.4), label: 'Délai avant / après' }]),
     { color: BLOQUANTE_FILL, label: 'Période bloquante' },
     { color: INFORMATIVE_FILL, label: 'Période informative' },
     { color: 'F0EDE8', label: 'Week-end' },

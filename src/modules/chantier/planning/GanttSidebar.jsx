@@ -63,8 +63,13 @@ function ChampAvancement({ valeur, onValider, style, onFocus, onBlur }) {
 export function GanttSidebar({
   tasks, lots, rows = null, rowHeight, headerHeight, onEdit, onAvancementChange, zones = [], colorMode = 'lot',
   onReorderTask, dragOverTaskId = null, onDragOverTaskChange, tacheSelectionneeId = null,
+  resume = null,
 }) {
   const [draggedTaskId, setDraggedTaskId] = useState(null)
+
+  if (resume) {
+    return <ResumeSidebar lignes={resume} rowHeight={rowHeight} headerHeight={headerHeight} />
+  }
 
   if (rows) {
     return (
@@ -411,6 +416,47 @@ function ZoneGroupedSidebar({ rows, lots, rowHeight, headerHeight, onEdit, onAva
           </div>
         )
       })}
+    </div>
+  )
+}
+
+// ─── Mode Résumé ──────────────────────────────────────────────────────────────
+// Une ligne par lot (ou par zone) : nom et avancement global, pondéré par la
+// durée des tâches (`resumePlanning`). Consultation seule, rien à saisir.
+function ResumeSidebar({ lignes, rowHeight, headerHeight }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column' }}>
+      <div style={{
+        position: 'sticky', top: 0, zIndex: 10, flexShrink: 0,
+        display: 'flex', alignItems: 'center',
+        padding: '0 12px', height: headerHeight,
+        backgroundColor: 'rgba(245,242,240,0.8)',
+        borderBottom: '0.5px solid rgba(0,0,0,0.08)',
+        fontSize: 10, fontWeight: 700, textTransform: 'uppercase',
+        letterSpacing: '0.08em', color: '#9C9591',
+      }}>
+        <span style={{ flex: 1, minWidth: 0 }}>Résumé</span>
+        <span style={{ width: 56, flexShrink: 0, textAlign: 'center' }}>Av. %</span>
+      </div>
+      {lignes.map((ligne) => (
+        <div key={ligne.id} title={`${ligne.nbTaches} tâche${ligne.nbTaches > 1 ? 's' : ''}`} style={{
+          display: 'flex', alignItems: 'center', gap: 8,
+          padding: '0 12px', height: rowHeight, boxSizing: 'border-box',
+          backgroundColor: `${ligne.couleur}12`,
+          borderBottom: '0.5px solid rgba(0,0,0,0.05)',
+        }}>
+          <div style={{ width: 10, height: 10, borderRadius: 2, flexShrink: 0, backgroundColor: ligne.couleur }} />
+          <span style={{
+            flex: 1, minWidth: 0, fontSize: 12, fontWeight: 600, color: '#1F1B17',
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}>
+            {ligne.numero ? `${ligne.numero} – ` : ''}{ligne.nom}
+          </span>
+          <span style={{ width: 56, flexShrink: 0, textAlign: 'center', fontSize: 11, color: '#5E5854', fontVariantNumeric: 'tabular-nums' }}>
+            {ligne.avancement} %
+          </span>
+        </div>
+      ))}
     </div>
   )
 }

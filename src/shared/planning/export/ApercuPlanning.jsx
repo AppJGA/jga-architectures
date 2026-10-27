@@ -114,7 +114,9 @@ function Feuilles({ page, pali = false, onMesure }) {
   useEffect(() => {
     const surMessage = (e) => {
       if (e.source !== cadre.current?.contentWindow || !e.data?.apercuPlanning) return
-      setHauteur(e.data.hauteur)
+      // Une mesure prise avant que le cadre soit dessiné vaut 0 : on garde
+      // alors la hauteur d'une feuille, la page renverra la sienne au chargement
+      if (e.data.hauteur > 0) setHauteur(e.data.hauteur)
       surMesure.current?.({ pages: e.data.pages, reduction: e.data.reduction })
     }
     window.addEventListener('message', surMessage)

@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 1038 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans, gestion de l'application)
+npm test         # 1057 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans, gestion de l'application)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -1444,6 +1444,23 @@ ligne », plus haut).
   supprimée → la base remet l'ancre à `null`. Décaler ignore les jalons
   accrochés ; l'import remappe leur ancre. Les jalons de l'étude sont désormais
   dans l'instantané d'historique (semaine, ancres).
+- **Mode « Résumé » du planning de chantier** (choix « Vue : Détail /
+  Résumé » en tête du panneau Options d'affichage, mémorisé par affaire,
+  `planning-resume-<affaire>`) : une ligne par lot, ou par zone si le
+  planning est groupé par zone. Calcul unique dans `resumeLogique.js`
+  (`resumePlanning`, testé) lu par l'écran (`ResumeBarRow` de la timeline,
+  `ResumeSidebar`), le PDF (`buildResumeRow`, option `resume`) et l'Excel
+  (`emitResumeRow`) : la barre montre les **périodes réelles d'activité**
+  (tâches et segments, pas les délais), un morceau par plage — deux plages
+  séparées seulement par un week-end ou une fermeture bloquante n'en font
+  qu'une (`fusionnerPlages`), un jour ouvré libre fait un trou ; avancement
+  pondéré par la durée. Un segment compte pour sa zone, à défaut celle de
+  sa tâche ; une tâche d'un lot ou d'une zone supprimés passe sous « Sans
+  lot » / « Sans zone ». **Consultation seule** : ni geste sur les lignes, ni
+  dessin, ni toucher d'échéance, ni flèches de dépendance. Arrondis à la
+  semaine, deux morceaux qui se touchent se fusionnent à l'affichage. La
+  fenêtre d'export a son choix « Détail des tâches / Résumé », réglé comme
+  l'écran ; le bouton Excel de la barre suit l'écran. Aucune migration.
 - **Décaler tout le planning** (report du démarrage, bouton « Décaler » de la
   barre d'outils du chantier, `decalage.js` + `DecalagePlanningModal.jsx`) :
   on donne la nouvelle date de démarrage, tout ce qui est concerné (option

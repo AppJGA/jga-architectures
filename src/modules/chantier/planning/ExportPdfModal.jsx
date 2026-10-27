@@ -82,7 +82,7 @@ const TEXTES_VIDES = { entete: '', pied: '' }
 export function ExportPdfModal({
   open, onClose, lots = [], tasks = [], jalons = [], affaire = {},
   zones = [], colorMode = 'lot', viewMode = 'day', groupMode = 'lot', rowHeight = 36,
-  onExportExcel,
+  resume = false, onExportExcel,
   segments = AUCUN, dependances = [], periodes = AUCUN,
 }) {
   const computed = useMemo(() => computeRange(tasks, segments, periodes), [tasks, segments, periodes])
@@ -107,6 +107,7 @@ export function ExportPdfModal({
   const [exportColorMode, setExportColorMode] = useState(colorMode ?? 'lot')
   const [exportViewMode,  setExportViewMode]  = useState(viewMode ?? 'day')
   const [exportDependances, setExportDependances] = useState(true)
+  const [exportResume, setExportResume] = useState(resume)
   const [exportGroupMode, setExportGroupMode] = useState(groupMode ?? 'lot')
   const [exportDensity, setExportDensity] = useState(() => densityFromRowHeight(rowHeight))
   // Textes relus à chaque ouverture : l'éditeur n'est rempli qu'à ce moment-là
@@ -129,7 +130,8 @@ export function ExportPdfModal({
     setExportViewMode(viewMode ?? 'day')
     setExportGroupMode(groupMode ?? 'lot')
     setExportDensity(densityFromRowHeight(rowHeight))
-  }, [open, computed, colorMode, viewMode, groupMode, rowHeight])
+    setExportResume(resume)
+  }, [open, computed, colorMode, viewMode, groupMode, rowHeight, resume])
 
   const { totalDays, totalWeeks } = useMemo(() => {
     if (!dateDebut || !dateFin) return { totalDays: 0, totalWeeks: 0 }
@@ -193,10 +195,11 @@ export function ExportPdfModal({
     texteEntete: textes.entete,
     textePied: textes.pied,
     uneFeuille,
+    resume: exportResume,
   }), [
     tachesInPeriod, lots, jalons, affaire, dateDebut, dateFin, headerDebut, headerFin,
     finalFormat.w, finalFormat.h, zones, exportColorMode, exportViewMode, segments,
-    dependances, periodes, exportDependances, exportGroupMode, exportDensity, textes, uneFeuille,
+    dependances, periodes, exportDependances, exportGroupMode, exportDensity, textes, uneFeuille, exportResume,
   ])
 
   const handleGenerate = () => {
@@ -363,6 +366,37 @@ export function ExportPdfModal({
             )}
             <p style={{ fontSize: 11, color: '#9C9591', marginTop: 8 }}>
               Page : {finalFormat.w} mm × {finalFormat.h} mm
+            </p>
+          </div>
+
+          {/* ── B0) DÉTAIL OU RÉSUMÉ ── */}
+          <div>
+            <label style={LABEL}>Contenu</label>
+            <div style={{ display: 'flex', border: '0.5px solid rgba(0,0,0,0.15)', overflow: 'hidden' }}>
+              {[
+                { value: false, label: 'Détail des tâches' },
+                { value: true, label: 'Résumé' },
+              ].map((opt, idx) => (
+                <button
+                  key={opt.label}
+                  type="button"
+                  onClick={() => setExportResume(opt.value)}
+                  style={{
+                    flex: 1, padding: '7px 0', fontSize: 12, border: 'none',
+                    borderRight: idx === 0 ? '0.5px solid rgba(0,0,0,0.15)' : 'none',
+                    background: exportResume === opt.value ? '#E8602C' : 'transparent',
+                    color: exportResume === opt.value ? 'white' : '#5E5854',
+                    cursor: 'pointer', fontWeight: exportResume === opt.value ? 500 : 400,
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            <p style={{ fontSize: 11, color: '#9C9591', marginTop: 6, fontStyle: 'italic' }}>
+              {exportResume
+                ? `Une barre par ${zones.length > 0 && exportGroupMode === 'zone' ? 'zone' : 'lot'}, sur ses périodes d’activité. Pré-sélectionné selon l’écran.`
+                : 'Toutes les tâches. Pré-sélectionné selon l’écran.'}
             </p>
           </div>
 
@@ -582,6 +616,7 @@ export function ExportPdfModal({
                   density: exportDensity, dateDebut, dateFin, tasks: tachesInPeriod,
                   viewMode: exportViewMode, colorMode: exportColorMode,
                   groupMode: zones.length > 0 ? exportGroupMode : 'lot',
+                  resume: exportResume,
                 })
                 onClose()
               }}

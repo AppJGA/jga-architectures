@@ -109,3 +109,25 @@ describe('export Excel chantier', () => {
     assert.deepEqual(jours, [14, 15, 16, 17, 18, 19, 20])
   })
 })
+
+describe('export Excel chantier — résumé', () => {
+  const TACHES = [
+    { id: 1, num_tache: '01', nom: 'Fondations', debut: '2026-09-07', duree: 5, lot_id: 'l1', avancement: 100 },
+    { id: 2, num_tache: '02', nom: 'Élévations', debut: '2026-09-21', duree: 5, lot_id: 'l1', avancement: 0 },
+    { id: 3, num_tache: '03', nom: 'Fermes', debut: '2026-09-14', duree: 3, lot_id: 'l2', avancement: 0 },
+  ]
+
+  test('une ligne par lot, colorée sur ses périodes d’activité, trou compris', () => {
+    exporterPlanningChantierExcel({ tasks: TACHES, lots: LOTS, resume: true, dateDebut: '2026-09-01', dateFin: '2026-09-30' })
+    const go = ligneDe('Gros œuvre')
+    assert.ok(go > 0)
+    assert.equal(feuille()[XLSX.utils.encode_cell({ c: 2, r: go })].v, 50)
+    assert.equal(remplissage(go, new Date(2026, 8, 7)), 'E8602C')
+    // Semaine du 14 : le gros œuvre n'intervient pas
+    assert.equal(remplissage(go, new Date(2026, 8, 15)), 'FFFFFF')
+    assert.equal(remplissage(go, new Date(2026, 8, 21)), 'E8602C')
+    // Les tâches elles-mêmes ne sont plus listées
+    assert.equal(ligneDe('Fondations'), -1)
+    assert.equal(feuille()[XLSX.utils.encode_cell({ c: 1, r: 1 })].v, 'Lot')
+  })
+})

@@ -661,3 +661,38 @@ describe('Excel étude — mise en forme', () => {
     assert.ok(feuille()['!ref'])
   })
 })
+
+describe('PDF chantier — résumé', () => {
+  const TACHES_R = [
+    { id: 1, nom: 'Terrassement', debut: '2026-03-02', duree: 5, lot_id: 7, avancement: 100 },
+    { id: 2, nom: 'Fondations', debut: '2026-03-16', duree: 5, lot_id: 7, avancement: 0 },
+    { id: 3, nom: 'Fermes', debut: '2026-03-09', duree: 3, lot_id: 8, avancement: 0 },
+  ]
+
+  test('une ligne par lot, un morceau par période d’activité, sans tâches ni flèches', () => {
+    generatePlanningChantierPdf(paramsPdfChantier({ tasks: TACHES_R, resume: true, dependances: [{ source_tache_id: 1, cible_tache_id: 2 }] }))
+    const c = corpsPdf()
+    assert.equal((c.match(/data-type="resume"/g) ?? []).length, 3)   // 2 morceaux pour le gros œuvre, 1 pour la charpente
+    assert.ok(!c.includes('data-type="task"'))
+    assert.ok(!c.includes('Terrassement'))
+    assert.match(c, /Gros œuvre<span[^>]*>50 %<\/span>/)
+    assert.match(htmlGenere, /<script id="deps-data" type="application\/json">\[\]<\/script>/)
+    assert.ok(htmlGenere.includes('Résumé : une barre par lot'))
+    assert.ok(htmlGenere.includes('>Lots</th>') || htmlGenere.includes('>Lots<'))
+  })
+
+  test('groupé par zone, une ligne par zone', () => {
+    generatePlanningChantierPdf(paramsPdfChantier({ tasks: TACHES.map(t => ({ ...t })), resume: true, groupMode: 'zone' }))
+    const c = corpsPdf()
+    assert.ok(c.includes('Bâtiment A') && c.includes('Bâtiment B'))
+    assert.ok(htmlGenere.includes('Résumé : une barre par zone'))
+  })
+
+  test('la légende ne garde que ce qui se voit', () => {
+    generatePlanningChantierPdf(paramsPdfChantier({ tasks: TACHES_R, resume: true }))
+    const l = legendePdf()
+    assert.ok(!l.includes('Délai avant / après') && !l.includes('Segment') && !l.includes('Dépendance'))
+    assert.ok(l.includes('Période bloquante') && l.includes('Échéance'))
+  })
+})
+

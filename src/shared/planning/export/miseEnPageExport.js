@@ -226,8 +226,12 @@ export const STYLE_APERCU = `@media screen {
  */
 export function scriptMiseEnPage({ largeurMm, hauteurMm, uneFeuille, apercu, fleches = null }) {
   const options = `{ largeurMm: ${Number(largeurMm)}, hauteurMm: ${Number(hauteurMm)}, margeMm: ${MARGE_PAGE_MM}, uneFeuille: ${!!uneFeuille}, fleches: ${fleches ?? 'null'} }`
+  // En aperçu, la mesure part tout de suite, puis de nouveau une fois la page
+  // chargée : une mesure prise trop tôt (cadre pas encore dessiné) vaut 0
   const finale = apercu
-    ? `parent.postMessage({ apercuPlanning: true, hauteur: Math.ceil(document.body.scrollHeight), pages: resultat.pages, reduction: resultat.reduction }, '*');`
+    ? `function envoyerMesure() { parent.postMessage({ apercuPlanning: true, hauteur: Math.ceil(document.body.scrollHeight), pages: resultat.pages, reduction: resultat.reduction }, '*'); }
+envoyerMesure();
+window.addEventListener('load', envoyerMesure);`
     : `var imprime = false;
 function imprimer() { if (imprime) return; imprime = true; setTimeout(function () { window.print(); }, 300); }
 window.addEventListener('load', imprimer);

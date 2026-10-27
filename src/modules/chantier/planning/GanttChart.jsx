@@ -14,6 +14,7 @@ import {
   propagerDepuisRacines, skipBlockedPeriods,
 } from './propagation'
 import { buildRowsByZone } from './groupByZone'
+import { resumePlanning } from './resumeLogique'
 import { exporterPlanningChantierExcel } from './exportPlanningChantierExcel'
 import { trierZones } from '../../../shared/hooks/ordreZones'
 import { useUndoRedo } from '../../../shared/hooks/useUndoRedo'
@@ -126,6 +127,14 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
     localStorage.setItem(`planning-group-mode-${affaireId}`, groupMode)
   }, [groupMode, affaireId])
 
+  // Mode Résumé : une ligne par lot (ou par zone), consultation seule
+  const [vueResume, setVueResume] = useState(
+    () => localStorage.getItem(`planning-resume-${affaireId}`) === '1'
+  )
+  useEffect(() => {
+    localStorage.setItem(`planning-resume-${affaireId}`, vueResume ? '1' : '0')
+  }, [vueResume, affaireId])
+
   const [viewMode, setViewMode] = useState(
     () => localStorage.getItem(`planning-view-mode-${affaireId}`) ?? 'day'
   )
@@ -212,6 +221,17 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
   const rows = useMemo(
     () => (groupMode === 'zone' ? buildRowsByZone(sortedTasks, zones, segments) : null),
     [groupMode, sortedTasks, zones, segments]
+  )
+
+  // Lignes du résumé : le même calcul que le PDF et l'Excel
+  const lignesResume = useMemo(
+    () => (vueResume
+      ? resumePlanning({
+          tasks: sortedTasks, segments, lots, zones, periodes,
+          groupMode: groupMode === 'zone' && zones.length > 0 ? 'zone' : 'lot',
+        })
+      : null),
+    [vueResume, sortedTasks, segments, lots, zones, periodes, groupMode]
   )
 
   // ── Scroll sync ───────────────────────────────────────────────────────────────
@@ -1155,7 +1175,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
   const handleExportExcel = (options = {}) => {
     exporterPlanningChantierExcel({
       tasks: sortedTasks, lots, zones, segments, jalons, periodes, affaire,
-      viewMode, colorMode, groupMode,
+      viewMode, colorMode, groupMode, resume: vueResume,
       density: densityFromRowHeight(rowHeight),
       ...(options?.nativeEvent ? {} : options),
     })
@@ -1339,6 +1359,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
             dragOverTaskId={dragOverTaskId}
             onDragOverTaskChange={setDragOverTaskId}
             tacheSelectionneeId={tacheSelectionneeId}
+            resume={lignesResume}
           />
           <div style={{ height: margeDefilement }} />
         </div>
@@ -1361,10 +1382,11 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
             rows={rows}
             scrollRef={timelineRef}
             dayWidth={dayWidth}
-            drawMode={drawMode}
+            drawMode={drawMode && !lignesResume}
             onDrawCreate={handleDrawCreate}
             rowHeight={rowHeight}
-            showConnections={showConnections}
+            showConnections={showConnections && !lignesResume}
+            resume={lignesResume}
             jalons={jalonsAffiches}
             peutAccrocher={peutAccrocher}
             onJalonModif={handleJalonModif}
@@ -1449,6 +1471,41 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
 
           {/* Contenu scrollable */}
           <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
+
+            {/* ── Détail ou résumé ── */}
+            <div style={{ marginBottom: 24 }}>
+              <p style={{
+                fontSize: 10, fontWeight: 500, color: '#9C9591',
+                textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10,
+              }}>
+                Vue
+              </p>
+              <div style={{ display: 'flex', border: '0.5px solid rgba(0,0,0,0.15)', overflow: 'hidden' }}>
+                {[
+                  { value: false, label: 'Détail' },
+                  { value: true, label: 'Résumé' },
+                ].map((opt, idx) => (
+                  <button
+                    key={opt.label}
+                    onClick={() => setVueResume(opt.value)}
+                    style={{
+                      flex: 1, padding: '7px 0', fontSize: 12, border: 'none',
+                      borderRight: idx === 0 ? '0.5px solid rgba(0,0,0,0.15)' : 'none',
+                      background: vueResume === opt.value ? '#1F1B17' : 'transparent',
+                      color: vueResume === opt.value ? 'white' : '#5E5854',
+                      cursor: 'pointer', fontWeight: vueResume === opt.value ? 500 : 400,
+                    }}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+              <p style={{ fontSize: 11, color: '#9C9591', marginTop: 6, lineHeight: 1.4 }}>
+                {vueResume
+                  ? `Une barre par ${groupMode === 'zone' && zones.length > 0 ? 'zone' : 'lot'}, sur ses périodes d’activité. Consultation seule : repassez en Détail pour modifier.`
+                  : 'Toutes les tâches, modifiables.'}
+              </p>
+            </div>
 
             {/* ── Hauteur des lignes ── */}
             <div style={{ marginBottom: 24 }}>
@@ -1764,6 +1821,7 @@ export function GanttChart({ affaireId, affaireNumero = '', affaireTitre = '', a
       <ExportPdfModal
         open={showExportModal}
         onClose={() => setShowExportModal(false)}
+        resume={vueResume}
         lots={lots}
         tasks={sortedTasks}
         jalons={jalons}

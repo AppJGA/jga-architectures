@@ -325,6 +325,7 @@ export function GanttTimeline({
   dependances = [], onSegmentDependencyCreate, onSegmentDependencyDelete,
   periodes = [], dragOverTaskId = null,
   drawMode = false, onDrawCreate, scrollRef = null,
+  resume = null,
 }) {
   const BAR_PAD = barPadFor(rowHeight)
   const weekWidth = WEEK_WIDTH_BASE * zoomLevel
@@ -627,7 +628,10 @@ export function GanttTimeline({
     [rows, rowOffsetsZone, rowHeight]
   )
 
-  const totalBodyHeight = rows
+  // Mode Résumé : une ligne par lot (ou zone), lignes de tâches masquées
+  const totalBodyHeight = resume
+    ? resume.length * rowHeight
+    : rows
     ? (rows.length > 0
         ? rowOffsetsZone[rows.length - 1] + (rows[rows.length - 1].type === 'header-zone' ? HEADER_HEIGHT : rowHeight)
         : 0)
@@ -1663,7 +1667,7 @@ export function GanttTimeline({
               data-jalonid={jalon.id}
               style={{
                 position: 'absolute', left: x - 10, width: 22, top: 0, bottom: 0,
-                zIndex: 15, pointerEvents: drawMode ? 'none' : 'auto', cursor: 'pointer',
+                zIndex: 15, pointerEvents: drawMode || resume ? 'none' : 'auto', cursor: resume ? 'default' : 'pointer',
               }}
               title={`${jalon.label} — ${new Date(jalon.date + 'T00:00:00').toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })}${jalon.ancre ? ' · accrochée à une barre' : ''}${jalon.fixe_direction ? ' · fixée par la direction' : ''}${jalon.notion ? ' · liée à Notion' : ''}${jalon.notionVerrou ? ' (plusieurs dates : à modifier dans Notion)' : ''}`}
               onClick={(e) => { e.stopPropagation(); toucherJalon(jalon, labelTop, scrollRef?.current?.scrollTop ?? 0) }}
@@ -1697,7 +1701,12 @@ export function GanttTimeline({
           )
         })}
 
-        {rows ? (
+        {resume ? (
+          /* ── Mode Résumé : une ligne par lot ou par zone, sans geste ─────────── */
+          resume.map((ligne) => (
+            <ResumeBarRow key={ligne.id} ligne={ligne} geo={geo} rowHeight={rowHeight} />
+          ))
+        ) : rows ? (
           /* ── Mode "par zone" : lignes précalculées par le parent ────────────── */
           rows.map((row) => {
             if (row.type === 'header-zone') {
@@ -2155,6 +2164,63 @@ export function GanttTimeline({
 }
 
 // ─── TaskBarRow ───────────────────────────────────────────────────────────────
+
+// Ligne du mode Résumé : un morceau par période d'activité du lot (ou de la
+// zone), calculé par `resumePlanning`. Chaque morceau passe par la même
+// géométrie qu'une barre de tâche (semaines entières en vue Semaines, jours
+// ouvrés, fermetures) : sa durée est celle qui ramène à sa date de fin.
+// Aucun geste : le résumé se consulte, on le quitte pour modifier.
+function ResumeBarRow({ ligne, geo, rowHeight }) {
+  const BAR_PAD = barPadFor(rowHeight)
+  const labelFontSize = rowHeight <= 28 ? 10 : rowHeight >= 44 ? 12 : 11
+  const showLabel = geo.viewMode === 'month' ? geo.monthWidth >= 32
+    : geo.viewMode === 'week' ? geo.weekWidth >= 16
+      : geo.dayWidth >= 10
+  // Arrondis à la semaine (ou au mois), deux morceaux proches se touchent ou
+  // se chevauchent : ils n'en font plus qu'un à l'écran, sans double ombre
+  const morceaux = []
+  ligne.morceaux
+    .map((m) => computeGeometry(m.debut, dureeEntre(m.debut, m.fin, geo.periodes ?? []), geo))
+    .forEach((g) => {
+      const prec = morceaux[morceaux.length - 1]
+      if (prec && g.left <= prec.left + prec.width + 0.5) {
+        prec.width = Math.max(prec.width, g.left + g.width - prec.left)
+      } else {
+        morceaux.push({ left: g.left, width: g.width })
+      }
+    })
+  const dernier = morceaux[morceaux.length - 1]
+  const fmt = (d) => d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })
+  const titre = `${ligne.nom} · ${ligne.morceaux.map((m) => `${fmt(m.debut)} → ${fmt(m.fin)}`).join(' · ')}`
+
+  return (
+    <div style={{ position: 'relative', height: rowHeight, borderBottom: '0.5px solid rgba(0,0,0,0.05)' }}>
+      {morceaux.map(({ left, width }, i) => (
+        <div
+          key={i}
+          title={titre}
+          style={{
+            position: 'absolute', left, width, top: BAR_PAD, bottom: BAR_PAD,
+            backgroundColor: ligne.couleur, boxShadow: '0 1px 3px rgba(0,0,0,0.15)', zIndex: 10,
+          }}
+        />
+      ))}
+      {dernier && showLabel && (
+        <div style={{
+          position: 'absolute', left: dernier.left + dernier.width + 4, top: 0, bottom: 0,
+          display: 'flex', alignItems: 'center', whiteSpace: 'nowrap',
+          fontSize: labelFontSize, fontWeight: 600, color: '#1F1B17',
+          pointerEvents: 'none', userSelect: 'none', zIndex: 10,
+        }}>
+          {ligne.nom}
+          {ligne.avancement > 0 && (
+            <span style={{ marginLeft: 4, fontSize: 10, fontWeight: 400, color: '#9C9591' }}>{ligne.avancement} %</span>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
 
 function TaskBarRow({
   task, lot, geo, rowHeight, barColor,

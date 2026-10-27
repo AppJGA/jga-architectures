@@ -1,5 +1,6 @@
 import { parseDate, formatDateISO, addWorkingDaysBlocked, dernierJourTache } from './types'
 import { buildRowsByZone } from './groupByZone'
+import { resumePlanning } from './resumeLogique'
 import { legendeCouleurs } from './legende'
 import { echapperHtml } from '../../../shared/echapperHtml'
 import {
@@ -306,6 +307,110 @@ function buildDayHeaders(days, dayWidths, todayStr) {
   }).join('')
 }
 
+// Portions d'une barre qui traversent une période bloquante : la barre
+// continue, mais ces jours ne comptent pas — on y laisse voir la période
+function pausesBarre(geo, couleur, { days, dayWidths, periodes, dens }) {
+  let html = ''
+  let i = geo.startIdx
+  while (i <= geo.endIdx) {
+    const p = periodeDuJour(days[i], periodes)
+    if (!p || !estBloquante(p)) { i++; continue }
+    let fin = i
+    while (fin + 1 <= geo.endIdx && periodeDuJour(days[fin + 1], periodes) === p) fin++
+    let gauche = 0
+    for (let k = geo.startIdx; k < i; k++) gauche += dayWidths[k]
+    let largeur = 0
+    for (let k = i; k <= fin; k++) largeur += dayWidths[k]
+    html += `<div data-pause="1" style="position:absolute;left:${mmK(gauche)};width:${mmK(largeur)};top:${dens.barPadMm}mm;bottom:${dens.barPadMm}mm;${stylePause(couleur, p)}z-index:6;pointer-events:none"></div>`
+    i = fin + 1
+  }
+  return html
+}
+
+// Cases de jour d'une ligne (tâche ou résumé) : grille, fond des périodes,
+// trait des échéances, et ce que la ligne pose dans chaque case (`parJour`).
+function cellulesLigne(parJour, { days, dayWidths, jalons, periodes, granularite, dens }) {
+  // Fond des périodes : un seul bloc par période et par ligne, posé sous la
+  // grille et les barres (z-index négatif). Un fond par cellule laissait voir
+  // un fil clair entre deux jours à l'écran (chaque bord adouci séparément).
+  const fonds = new Map()
+  groupesDePeriodes(days.map(d => periodeDuJour(d, periodes))).forEach(({ periode, debut, nombre }) => {
+    if (!periode) return
+    let largeur = 0
+    for (let k = debut; k < debut + nombre; k++) largeur += dayWidths[k]
+    // Le trait est calé sur les dates réelles de la période : une période qui
+    // déborde de la plage imprimée continue hors cadre et ne s'y ferme pas
+    let bords = ''
+    if (estBloquante(periode)) {
+      const trait = echapperHtml(traitPeriode(periode))
+      if (formatDateISO(days[debut]) === periode.date_debut) bords += `border-left:${trait};`
+      if (formatDateISO(days[debut + nombre - 1]) === periode.date_fin) bords += `border-right:${trait};`
+    }
+    fonds.set(debut, `<div data-periode="1" style="position:absolute;left:0;top:0;bottom:0;width:${mmK(largeur)};background:${fondPeriode(periode)};${bords}box-sizing:border-box;z-index:-1;pointer-events:none"></div>`)
+  })
+
+  return days.map((d, idx) => {
+    // Le grisé du week-end n'a de sens que là où les jours se lisent
+    const isWE = granularite === 'day' && isWeekend(d)
+    const borderLeft = bordureGauche(niveauDuJour(d, granularite), granularite)
+    const bg = isWE ? 'rgba(0,0,0,0.03)' : 'transparent'
+
+    // Repère vertical du jalon, sans libellé : celui-ci est rendu une seule fois
+    // dans la bande dédiée au-dessus du tableau (bandeEcheances).
+    const dayStr = formatDateISO(d)
+    const jalonLines = (jalons ?? [])
+      .filter(j => (j.date ?? '').split('T')[0] === dayStr)
+      .map(j => traitEcheance(j.couleur ?? COULEUR_ECHEANCE))
+      .join('')
+
+    return `<td style="width:${mmK(dayWidths[idx])};border-bottom:${TRAIT_HORIZONTAL};border-left:${borderLeft};height:${dens.rowMm}mm;padding:0;overflow:visible;position:relative;background:${bg}">${fonds.get(idx) ?? ''}${parJour.get(idx) ?? ''}${jalonLines}</td>`
+  }).join('')
+}
+
+// Ligne du mode Résumé : un morceau par période d'activité du lot (ou de la
+// zone), calculé par `resumePlanning` comme à l'écran. Chaque morceau se
+// dessine comme une barre de tâche (semaines entières en vue Semaines,
+// pauses sur les fermetures) ; nom et avancement après le dernier.
+function buildResumeRow(ligne, days, dayWidths, jalons, ctx) {
+  const { periodes = [], density, granularite = 'day' } = ctx ?? {}
+  const dens = densityConfig(density)
+  const couleur = echapperHtml(ligne.couleur)
+  const parJour = new Map()
+  const ajouter = (idx, html) => parJour.set(idx, (parJour.get(idx) ?? '') + html)
+  // Arrondis à la semaine, deux morceaux proches se touchent : un seul alors,
+  // pour que le nom du lot ne s'écrive pas dans le morceau suivant
+  const visibles = []
+  ligne.morceaux
+    .map(m => plageVisible(days, dayWidths, m.debut, m.fin, granularite))
+    .filter(g => g && g.widthMm > 0)
+    .forEach(g => {
+      const prec = visibles[visibles.length - 1]
+      if (prec && g.startIdx <= prec.endIdx + 1) {
+        prec.endIdx = Math.max(prec.endIdx, g.endIdx)
+        prec.widthMm = 0
+        for (let k = prec.startIdx; k <= prec.endIdx; k++) prec.widthMm += dayWidths[k]
+      } else {
+        visibles.push({ ...g })
+      }
+    })
+  visibles.forEach((geo, i) => {
+    let html = `<div data-type="resume" style="position:absolute;left:0;width:${mmK(geo.widthMm)};top:${dens.barPadMm}mm;bottom:${dens.barPadMm}mm;background:${couleur};z-index:4"></div>${pausesBarre(geo, couleur, { days, dayWidths, periodes, dens })}`
+    if (i === visibles.length - 1) {
+      const avancement = ligne.avancement > 0
+        ? `<span style="margin-left:1.5mm;font-size:5.5pt;font-weight:normal;color:#9C9591">${ligne.avancement} %</span>`
+        : ''
+      html += `<div style="position:absolute;left:${mmK(geo.widthMm)};padding-left:3px;top:0;bottom:0;display:flex;align-items:center;white-space:nowrap;font-size:${dens.barLabelPt}pt;font-weight:bold;color:#1F1B17;z-index:10">${echapperHtml(ligne.nom)}${avancement}</div>`
+    }
+    ajouter(geo.startIdx, html)
+  })
+  const cells = cellulesLigne(parJour, { days, dayWidths, jalons, periodes, granularite, dens })
+  const numero = ligne.numero ? `<span style="color:#9C9591;margin-right:1.5mm">${echapperHtml(ligne.numero)}</span>` : ''
+  return `<tr>
+    <td class="plabel" style="font-weight:bold;background:${couleur}12"><span style="display:inline-block;width:2.2mm;height:2.2mm;background:${couleur};margin-right:1.5mm;vertical-align:middle"></span>${numero}${echapperHtml(ligne.nom)}<span style="float:right;font-weight:normal;color:#5E5854">${ligne.avancement} %</span></td>
+    ${cells}
+  </tr>`
+}
+
 function buildTaskRow(task, color, days, dayWidths, jalons, todayStr, ctx, rowInfo) {
   const { segments = [], periodes = [], zones = [], density, granularite = 'day' } = ctx ?? {}
   const dens = densityConfig(density)
@@ -354,25 +459,7 @@ function buildTaskRow(task, color, days, dayWidths, jalons, todayStr, ctx, rowIn
     }
   }
 
-  // Portions d'une barre qui traversent une période bloquante : la barre
-  // continue, mais ces jours ne comptent pas — on y laisse voir la période
-  const pauses = (geo, couleur) => {
-    let html = ''
-    let i = geo.startIdx
-    while (i <= geo.endIdx) {
-      const p = periodeDuJour(days[i], periodes)
-      if (!p || !estBloquante(p)) { i++; continue }
-      let fin = i
-      while (fin + 1 <= geo.endIdx && periodeDuJour(days[fin + 1], periodes) === p) fin++
-      let gauche = 0
-      for (let k = geo.startIdx; k < i; k++) gauche += dayWidths[k]
-      let largeur = 0
-      for (let k = i; k <= fin; k++) largeur += dayWidths[k]
-      html += `<div data-pause="1" style="position:absolute;left:${mmK(gauche)};width:${mmK(largeur)};top:${dens.barPadMm}mm;bottom:${dens.barPadMm}mm;${stylePause(couleur, p)}z-index:6;pointer-events:none"></div>`
-      i = fin + 1
-    }
-    return html
-  }
+  const pauses = (geo, couleur) => pausesBarre(geo, couleur, { days, dayWidths, periodes, dens })
 
   const mainGeo = showMainBar && bornes
     ? plageVisible(days, dayWidths, bornes.debut, bornes.dernierJour, granularite)
@@ -406,41 +493,7 @@ function buildTaskRow(task, color, days, dayWidths, jalons, todayStr, ctx, rowIn
       ajouter(geo.startIdx, html)
     })
 
-  // Fond des périodes : un seul bloc par période et par ligne, posé sous la
-  // grille et les barres (z-index négatif). Un fond par cellule laissait voir
-  // un fil clair entre deux jours à l'écran (chaque bord adouci séparément).
-  const fonds = new Map()
-  groupesDePeriodes(days.map(d => periodeDuJour(d, periodes))).forEach(({ periode, debut, nombre }) => {
-    if (!periode) return
-    let largeur = 0
-    for (let k = debut; k < debut + nombre; k++) largeur += dayWidths[k]
-    // Le trait est calé sur les dates réelles de la période : une période qui
-    // déborde de la plage imprimée continue hors cadre et ne s'y ferme pas
-    let bords = ''
-    if (estBloquante(periode)) {
-      const trait = echapperHtml(traitPeriode(periode))
-      if (formatDateISO(days[debut]) === periode.date_debut) bords += `border-left:${trait};`
-      if (formatDateISO(days[debut + nombre - 1]) === periode.date_fin) bords += `border-right:${trait};`
-    }
-    fonds.set(debut, `<div data-periode="1" style="position:absolute;left:0;top:0;bottom:0;width:${mmK(largeur)};background:${fondPeriode(periode)};${bords}box-sizing:border-box;z-index:-1;pointer-events:none"></div>`)
-  })
-
-  const cells = days.map((d, idx) => {
-    // Le grisé du week-end n'a de sens que là où les jours se lisent
-    const isWE = granularite === 'day' && isWeekend(d)
-    const borderLeft = bordureGauche(niveauDuJour(d, granularite), granularite)
-    const bg = isWE ? 'rgba(0,0,0,0.03)' : 'transparent'
-
-    // Repère vertical du jalon, sans libellé : celui-ci est rendu une seule fois
-    // dans la bande dédiée au-dessus du tableau (bandeEcheances).
-    const dayStr = formatDateISO(d)
-    const jalonLines = (jalons ?? [])
-      .filter(j => (j.date ?? '').split('T')[0] === dayStr)
-      .map(j => traitEcheance(j.couleur ?? COULEUR_ECHEANCE))
-      .join('')
-
-    return `<td style="width:${mmK(dayWidths[idx])};border-bottom:${TRAIT_HORIZONTAL};border-left:${borderLeft};height:${dens.rowMm}mm;padding:0;overflow:visible;position:relative;background:${bg}">${fonds.get(idx) ?? ''}${parJour.get(idx) ?? ''}${jalonLines}</td>`
-  }).join('')
+  const cells = cellulesLigne(parJour, { days, dayWidths, jalons, periodes, granularite, dens })
 
   const suffixe = rowInfo?.suffixe
     ? `<span style="color:#9C9591;font-size:5.5pt;margin-left:1.5mm">${echapperHtml(rowInfo.suffixe)}</span>`
@@ -459,6 +512,7 @@ function buildHtml({
   segments = [], dependances = [], periodes = [], showDependances = true,
   groupMode = 'lot', density = 'normal',
   texteEntete = '', textePied = '', apercu = false, uneFeuille = true,
+  resume = false,
 }) {
   const dens = densityConfig(density)
   const dStart = parseDate(dateDebut)
@@ -481,7 +535,9 @@ function buildHtml({
     .map(t => ({ source_tache_id: t.depends_on, cible_tache_id: t.id }))
   // Option « Afficher les chemins critiques » : sans elle, aucune dépendance
   // n'est transmise au script de rendu, qui ne trace donc aucune flèche.
-  const allDeps = showDependances ? [...legacyDeps, ...dependances] : []
+  // En résumé, plus de tâches visibles : plus de flèches entre elles
+  const avecDependances = showDependances && !resume
+  const allDeps = avecDependances ? [...legacyDeps, ...dependances] : []
   // Échappe "</" pour ne pas fermer prématurément le <script> hôte si un champ
   // texte venait à contenir cette séquence.
   const depsJson = JSON.stringify(allDeps).replace(/</g, '\\u003c')
@@ -524,8 +580,13 @@ function buildHtml({
 
   // ── Corps du tableau : groupé par lot (défaut) ou par zone ──
   let lotsRows = ''
+  // Résumé : une ligne par lot, ou par zone si le planning est groupé par zone
+  const groupeResume = groupMode === 'zone' && zones.length > 0 ? 'zone' : 'lot'
 
-  if (groupMode === 'zone') {
+  if (resume) {
+    resumePlanning({ tasks, segments, lots, zones, periodes, groupMode: groupeResume })
+      .forEach(ligne => { lotsRows += buildResumeRow(ligne, days, dayWidths, jalons, rowCtx) })
+  } else if (groupMode === 'zone') {
     // Mêmes lignes que la vue « Par zone » de l'éditeur : une tâche peut
     // apparaître dans plusieurs zones — une fois avec sa barre principale, une
     // fois par ses seuls segments.
@@ -575,7 +636,10 @@ function buildHtml({
 
   // Légende : d'abord celle de l'écran (source commune avec l'export Excel),
   // puis les conventions de dessin utiles au lecteur du papier
-  const legCouleurs = legendeCouleurs({ lots, zones, colorMode, groupMode })
+  // En résumé, la couleur d'une barre est celle de son lot ou de sa zone
+  const legCouleurs = resume
+    ? { ...legendeCouleurs({ lots, zones, colorMode: groupeResume, groupMode: 'lot' }), note: `Résumé : une barre par ${groupeResume}, sur ses périodes d’activité` }
+    : legendeCouleurs({ lots, zones, colorMode, groupMode })
   const legCouleursHtml = legCouleurs.entrees.length
     ? `<span class="leg-sous-titre">${echapperHtml(legCouleurs.titre)}</span>` + legCouleurs.entrees.map(e => `
   <div class="leg-item">
@@ -587,6 +651,7 @@ function buildHtml({
     ? `<div class="leg-item" style="font-style:italic;color:#9C9591">${echapperHtml(legCouleurs.note)}</div>`
     : ''
   const exemplePeriode = { couleur: '#B8412C' }
+  const titreColonne = resume ? (groupeResume === 'zone' ? 'Zones' : 'Lots') : 'Tâches'
 
   return `<!DOCTYPE html>
 <html lang="fr">
@@ -650,6 +715,7 @@ function buildHtml({
       Référence : ${codeAffaire}
     </div>
     <div class="header-period">${periodeStr}</div>
+    ${resume ? `<div class="header-sub" style="margin-top:1mm">Résumé : une barre par ${groupeResume}</div>` : ''}
   </div>
 </div>
 
@@ -662,11 +728,11 @@ function buildHtml({
     </colgroup>
     <thead>
       ${showYearRow ? `<tr>
-        <th class="plabel" style="background:#F5F2F0;font-size:6pt;color:#9C9591;text-align:center">Tâches</th>
+        <th class="plabel" style="background:#F5F2F0;font-size:6pt;color:#9C9591;text-align:center">${titreColonne}</th>
         ${yearHeaders}
       </tr>` : ''}
       <tr>
-        <th class="plabel" style="background:#FAF7F2;font-size:6pt;color:#9C9591;text-align:center">${showYearRow ? '' : 'Tâches'}</th>
+        <th class="plabel" style="background:#FAF7F2;font-size:6pt;color:#9C9591;text-align:center">${showYearRow ? '' : titreColonne}</th>
         ${monthHeaders}
       </tr>
       ${showWeekRow ? `<tr>
@@ -696,7 +762,7 @@ ${pied ? `<div class="texte-pied">${pied}</div>` : ''}
   <span class="leg-title">Légende</span>
   ${legCouleursHtml}
   <span class="leg-sous-titre">Conventions</span>
-  <div class="leg-item">
+  ${resume ? '' : `<div class="leg-item">
     <div class="leg-swatch" style="background:#9C9591;position:relative;overflow:hidden"><div style="position:absolute;left:0;top:0;bottom:0;width:45%;background:rgba(0,0,0,0.22)"></div></div>
     Avancement
   </div>
@@ -707,7 +773,7 @@ ${pied ? `<div class="texte-pied">${pied}</div>` : ''}
   <div class="leg-item">
     <div class="leg-swatch" style="background:#C9C4C0;outline:1px dashed rgba(255,255,255,0.6);outline-offset:-1px"></div>
     Segment
-  </div>
+  </div>`}
   <div class="leg-item">
     <div class="leg-swatch" style="background:${fondPeriode(exemplePeriode)};border-left:${traitPeriode(exemplePeriode)};border-right:${traitPeriode(exemplePeriode)}"></div>
     Période bloquante
@@ -718,9 +784,9 @@ ${pied ? `<div class="texte-pied">${pied}</div>` : ''}
   </div>
   <div class="leg-item">
     <div class="leg-swatch" style="${stylePause('#5E5854', exemplePeriode)}"></div>
-    Tâche en pause pendant une période (jours non comptés)
+    ${resume ? 'En pause pendant une période (jours non comptés)' : 'Tâche en pause pendant une période (jours non comptés)'}
   </div>
-  ${showDependances ? `<div class="leg-item">
+  ${avecDependances ? `<div class="leg-item">
     <svg width="10mm" height="4mm" viewBox="0 0 38 16" style="overflow:visible">
       <path d="M 0 8 C 15 8, 23 8, 34 8" fill="none" stroke="#e4702a" stroke-width="2" stroke-dasharray="6 3" stroke-opacity="0.85" />
       <path d="M34,8 L28,4 L28,12 z" fill="#e4702a" />

@@ -98,11 +98,17 @@ function mettreEnPage(o) {
   // Le nom d'une tâche qui finit tard dépasse à droite du tableau : le cadre
   // est élargi pour l'englober (le tableau garde sa largeur), puis l'ensemble
   // est réduit à la largeur voulue. Sans cela, la feuille coupait ce nom.
+  // Largeur naturelle du tableau (chantier) : ses longueurs sont écrites
+  // « × --k ». Le facteur fait que les colonnes remplissent exactement le
+  // cadre ; sans lui, le navigateur étirait les colonnes et laissait les
+  // barres à leur longueur, trop courtes.
+  var largeurTable = parseFloat(table.getAttribute('data-largeur-mm')) * PX;
   function echelleLargeur(bloc, largeur) {
     bloc.style.zoom = '';
     bloc.style.width = '';
     table.style.width = '';
     if (bande) bande.style.width = '';
+    if (largeurTable > 0) bloc.style.setProperty('--k', bloc.clientWidth / largeurTable);
     var bords = bloc.offsetWidth - bloc.clientWidth;
     var sw = bloc.scrollWidth + bords;
     if (sw <= largeur + 1) return 1;

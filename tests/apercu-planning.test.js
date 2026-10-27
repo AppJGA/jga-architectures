@@ -113,6 +113,23 @@ describe('pages produites', () => {
     assert.match(etude, /<div style="position:absolute;left:\d+\.\d{4}%;top:0;bottom:0;width:0">/)
   })
 
+  test('chantier : toutes les largeurs du tableau suivent l’étirement des colonnes', () => {
+    // Sur une feuille, la page élargit le tableau : ses colonnes s'étirent.
+    // Une barre en mm fixes s'arrêtait alors au milieu de sa dernière semaine.
+    const tache = { id: 1, nom: 'Gros œuvre', debut: '2026-03-04', duree: 5, lot_id: 7 }
+    const html = htmlApercuChantier(paramsChantier({
+      tasks: [tache], lots: [{ id: 7, num_lot: '01', nom: 'GO', couleur: '#E8602C', ordre: 0 }],
+      periodes: [{ date_debut: '2026-03-09', date_fin: '2026-03-13', couleur: '#B8412C' }],
+      viewMode: 'week',
+    }))
+    assert.match(html, /data-largeur-mm="400\.00"/)
+    const corps = html.slice(html.indexOf('<tbody>'), html.indexOf('</tbody>'))
+    assert.ok(!/(width|left):[\d.]+mm/.test(corps), 'une largeur du tableau est restée en mm fixes')
+    assert.match(corps, /data-type="task" style="position:absolute;left:0;width:calc\([\d.]+mm \* var\(--k, 1\)\)/)
+    assert.match(corps, /data-periode="1" style="position:absolute;left:0;top:0;bottom:0;width:calc\(/)
+    assert.match(scripts(html), /setProperty\('--k'/)
+  })
+
   test('le chantier trace ses flèches feuille par feuille', () => {
     assert.match(scripts(htmlApercuChantier(paramsChantier())), /fleches: dessinerFleches/)
   })

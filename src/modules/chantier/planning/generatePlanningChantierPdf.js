@@ -28,6 +28,15 @@ function densityConfig(density) {
 const WEEKEND_RATIO = 0.35
 const LABEL_COL_MM = 45
 
+// Longueur horizontale dans le tableau. En mise en page « une seule feuille »,
+// la page élargit le tableau avant de le réduire : ses colonnes s'étirent,
+// et une barre écrite en mm fixes ne les suivait plus (elle s'arrêtait au
+// milieu de sa dernière semaine). Toutes les largeurs du tableau passent donc
+// par le même facteur `--k`, que la mise en page règle (miseEnPageExport.js).
+function mmK(x) {
+  return `calc(${x.toFixed(2)}mm * var(--k, 1))`
+}
+
 // Bande de jalons : écart minimal (mm) entre deux libellés avant de les répartir
 // sur des lignes successives, et hauteur d'une de ces lignes.
 const JALON_LABEL_MIN_GAP_MM = 26
@@ -309,11 +318,10 @@ function buildDayHeaders(days, dayWidths, todayStr) {
     const isWE = isWeekend(d)
     const isToday = formatDateISO(d) === todayStr
     const label = d.toLocaleDateString('fr-FR', { weekday: 'narrow' })
-    const w = dayWidths[i].toFixed(2)
     const bg = isToday ? 'rgba(232,96,44,0.10)' : isWE ? 'rgba(0,0,0,0.04)' : 'transparent'
     const color = isToday ? '#E8602C' : isWE ? 'rgba(155,143,133,0.5)' : '#9C9591'
     const borderLeft = bordureGauche(niveauDuJour(d), 'day')
-    return `<th class="hdr-day" style="width:${w}mm;background:${bg};color:${color};border-left:${borderLeft}">${dayWidths[i] >= 2.5 ? label : ''}</th>`
+    return `<th class="hdr-day" style="width:${mmK(dayWidths[i])};background:${bg};color:${color};border-left:${borderLeft}">${dayWidths[i] >= 2.5 ? label : ''}</th>`
   }).join('')
 }
 
@@ -346,7 +354,7 @@ function buildTaskRow(task, color, days, dayWidths, jalons, todayStr, ctx, rowIn
     if (geoAvant && geoAvant.widthMm > 0) {
       // Motif à l'intérieur de la barre, aligné à gauche et tronqué si trop long
       const lbl = echapperHtml(task.appro_materiau || `Appro. ${task.appro_duree}j`)
-      ajouter(geoAvant.startIdx, `<div style="position:absolute;left:0;width:${geoAvant.widthMm.toFixed(2)}mm;top:${dens.barPadMm}mm;bottom:${dens.barPadMm}mm;background:${fondDelai};border:1px dashed ${color}80;display:flex;align-items:center;overflow:hidden;z-index:3;pointer-events:none">
+      ajouter(geoAvant.startIdx, `<div style="position:absolute;left:0;width:${mmK(geoAvant.widthMm)};top:${dens.barPadMm}mm;bottom:${dens.barPadMm}mm;background:${fondDelai};border:1px dashed ${color}80;display:flex;align-items:center;overflow:hidden;z-index:3;pointer-events:none">
         <span style="font-size:5pt;font-style:italic;color:${color};filter:brightness(0.6);white-space:nowrap;overflow:hidden;padding:0 1mm">${lbl}</span>
       </div>`)
     }
@@ -357,9 +365,9 @@ function buildTaskRow(task, color, days, dayWidths, jalons, todayStr, ctx, rowIn
   if (showMainBar && bornes?.debutApres) {
     const geoApres = plageVisible(days, dayWidths, bornes.debutApres, bornes.finApres, granularite)
     if (geoApres && geoApres.widthMm > 0) {
-      let html = `<div style="position:absolute;left:0;width:${geoApres.widthMm.toFixed(2)}mm;top:${dens.barPadMm}mm;bottom:${dens.barPadMm}mm;background:${fondDelai};border:1px dashed ${color}80;z-index:3;pointer-events:none"></div>`
+      let html = `<div style="position:absolute;left:0;width:${mmK(geoApres.widthMm)};top:${dens.barPadMm}mm;bottom:${dens.barPadMm}mm;background:${fondDelai};border:1px dashed ${color}80;z-index:3;pointer-events:none"></div>`
       if (task.label_apres) {
-        html += `<div style="position:absolute;left:${geoApres.widthMm.toFixed(2)}mm;padding-left:3px;top:0;bottom:0;display:flex;align-items:center;white-space:nowrap;font-size:5.5pt;font-style:italic;color:#9C9591;z-index:10">${echapperHtml(task.label_apres)}</div>`
+        html += `<div style="position:absolute;left:${mmK(geoApres.widthMm)};padding-left:3px;top:0;bottom:0;display:flex;align-items:center;white-space:nowrap;font-size:5.5pt;font-style:italic;color:#9C9591;z-index:10">${echapperHtml(task.label_apres)}</div>`
       }
       ajouter(geoApres.startIdx, html)
     }
@@ -379,7 +387,7 @@ function buildTaskRow(task, color, days, dayWidths, jalons, todayStr, ctx, rowIn
       for (let k = geo.startIdx; k < i; k++) gauche += dayWidths[k]
       let largeur = 0
       for (let k = i; k <= fin; k++) largeur += dayWidths[k]
-      html += `<div data-pause="1" style="position:absolute;left:${gauche.toFixed(2)}mm;width:${largeur.toFixed(2)}mm;top:${dens.barPadMm}mm;bottom:${dens.barPadMm}mm;${stylePause(couleur, p)}z-index:6;pointer-events:none"></div>`
+      html += `<div data-pause="1" style="position:absolute;left:${mmK(gauche)};width:${mmK(largeur)};top:${dens.barPadMm}mm;bottom:${dens.barPadMm}mm;${stylePause(couleur, p)}z-index:6;pointer-events:none"></div>`
       i = fin + 1
     }
     return html
@@ -397,8 +405,8 @@ function buildTaskRow(task, color, days, dayWidths, jalons, todayStr, ctx, rowIn
       ? `<span style="margin-left:1.5mm;font-size:5.5pt;color:#9C9591">${avancement}%</span>`
       : ''
     ajouter(mainGeo.startIdx, `
-        <div data-task-id="${echapperHtml(task.id)}" data-type="task" style="position:absolute;left:0;width:${mainGeo.widthMm.toFixed(2)}mm;top:${dens.barPadMm}mm;bottom:${dens.barPadMm}mm;background:${color};z-index:4;overflow:hidden">${progressBar}</div>${pauses(mainGeo, color)}
-        <div style="position:absolute;left:${mainGeo.widthMm.toFixed(2)}mm;padding-left:3px;top:0;bottom:0;display:flex;align-items:center;white-space:nowrap;font-size:${dens.barLabelPt}pt;color:#1F1B17;z-index:10">${labelLigne}${labelAvancement}</div>`)
+        <div data-task-id="${echapperHtml(task.id)}" data-type="task" style="position:absolute;left:0;width:${mmK(mainGeo.widthMm)};top:${dens.barPadMm}mm;bottom:${dens.barPadMm}mm;background:${color};z-index:4;overflow:hidden">${progressBar}</div>${pauses(mainGeo, color)}
+        <div style="position:absolute;left:${mmK(mainGeo.widthMm)};padding-left:3px;top:0;bottom:0;display:flex;align-items:center;white-space:nowrap;font-size:${dens.barLabelPt}pt;color:#1F1B17;z-index:10">${labelLigne}${labelAvancement}</div>`)
   }
 
   // Segments supplémentaires : le nom n'est écrit que si « afficher le nom » est
@@ -410,9 +418,9 @@ function buildTaskRow(task, color, days, dayWidths, jalons, todayStr, ctx, rowIn
       const geo = computeBarGeometry(days, dayWidths, seg.date_debut, seg.duree_jours, periodes, granularite)
       if (!geo || geo.widthMm <= 0) return
       const segColor = getSegColor(seg, color, zones)
-      let html = `<div data-segment-id="${echapperHtml(seg.id)}" data-task-id="${echapperHtml(task.id)}" data-type="segment" style="position:absolute;left:0;width:${geo.widthMm.toFixed(2)}mm;top:${dens.barPadMm}mm;bottom:${dens.barPadMm}mm;background:${segColor};outline:1px dashed rgba(255,255,255,0.6);outline-offset:-1px;z-index:3;overflow:hidden"></div>${pauses(geo, segColor)}`
+      let html = `<div data-segment-id="${echapperHtml(seg.id)}" data-task-id="${echapperHtml(task.id)}" data-type="segment" style="position:absolute;left:0;width:${mmK(geo.widthMm)};top:${dens.barPadMm}mm;bottom:${dens.barPadMm}mm;background:${segColor};outline:1px dashed rgba(255,255,255,0.6);outline-offset:-1px;z-index:3;overflow:hidden"></div>${pauses(geo, segColor)}`
       if (seg.afficher_nom) {
-        html += `<div style="position:absolute;left:${geo.widthMm.toFixed(2)}mm;padding-left:3px;top:0;bottom:0;display:flex;align-items:center;white-space:nowrap;font-size:5.5pt;color:#1F1B17;z-index:10">${echapperHtml(seg.nom ?? task.nom)}</div>`
+        html += `<div style="position:absolute;left:${mmK(geo.widthMm)};padding-left:3px;top:0;bottom:0;display:flex;align-items:center;white-space:nowrap;font-size:5.5pt;color:#1F1B17;z-index:10">${echapperHtml(seg.nom ?? task.nom)}</div>`
       }
       ajouter(geo.startIdx, html)
     })
@@ -433,7 +441,7 @@ function buildTaskRow(task, color, days, dayWidths, jalons, todayStr, ctx, rowIn
       if (formatDateISO(days[debut]) === periode.date_debut) bords += `border-left:${trait};`
       if (formatDateISO(days[debut + nombre - 1]) === periode.date_fin) bords += `border-right:${trait};`
     }
-    fonds.set(debut, `<div data-periode="1" style="position:absolute;left:0;top:0;bottom:0;width:${largeur.toFixed(2)}mm;background:${fondPeriode(periode)};${bords}box-sizing:border-box;z-index:-1;pointer-events:none"></div>`)
+    fonds.set(debut, `<div data-periode="1" style="position:absolute;left:0;top:0;bottom:0;width:${mmK(largeur)};background:${fondPeriode(periode)};${bords}box-sizing:border-box;z-index:-1;pointer-events:none"></div>`)
   })
 
   const cells = days.map((d, idx) => {
@@ -450,7 +458,7 @@ function buildTaskRow(task, color, days, dayWidths, jalons, todayStr, ctx, rowIn
       .map(j => `<div style="position:absolute;top:0;bottom:0;left:50%;width:1.5px;background:${echapperHtml(j.couleur)};opacity:0.55;z-index:5"></div>`)
       .join('')
 
-    return `<td style="width:${dayWidths[idx].toFixed(2)}mm;border-bottom:${TRAIT_HORIZONTAL};border-left:${borderLeft};height:${dens.rowMm}mm;padding:0;overflow:visible;position:relative;background:${bg}">${fonds.get(idx) ?? ''}${parJour.get(idx) ?? ''}${jalonLines}</td>`
+    return `<td style="width:${mmK(dayWidths[idx])};border-bottom:${TRAIT_HORIZONTAL};border-left:${borderLeft};height:${dens.rowMm}mm;padding:0;overflow:visible;position:relative;background:${bg}">${fonds.get(idx) ?? ''}${parJour.get(idx) ?? ''}${jalonLines}</td>`
   }).join('')
 
   const suffixe = rowInfo?.suffixe
@@ -619,7 +627,7 @@ function buildHtml({
   .gantt-table tbody tr:last-child td:first-child   { border-bottom: none; border-left: none; }
   .gantt-table tbody tr:last-child td:last-child    { border-bottom: none; border-right: none; }
 
-  .col-label { width: ${LABEL_COL_MM}mm; min-width: ${LABEL_COL_MM}mm; }
+  .col-label { width: ${mmK(LABEL_COL_MM)}; min-width: ${mmK(LABEL_COL_MM)}; }
 
   .hdr-year  { background: #F5F2F0; font-size: ${dens.groupPt}pt; font-weight: bold; color: #1F1B17; text-align: center; border: 0.5px solid #ddd; padding: ${dens.hdrPadMm}mm 0; }
   .hdr-month { background: #FAF7F2; font-size: ${dens.labelPt}pt; font-weight: bold; color: #E8602C; text-align: center; border: 0.5px solid #ddd; padding: ${dens.hdrPadMm}mm 0; }
@@ -627,7 +635,7 @@ function buildHtml({
   .hdr-periode { font-size: ${(dens.labelPt - 1).toFixed(1)}pt; font-weight: bold; text-align: left; white-space: nowrap; overflow: visible; position: relative; padding: ${(dens.hdrPadMm * 0.6).toFixed(2)}mm 1mm; border-bottom: 0.5px solid #ddd; }
   .hdr-day   { font-size: ${(dens.labelPt - 1.5).toFixed(1)}pt; text-align: center; border-bottom: 0.5px solid #ddd; padding: ${(dens.hdrPadMm * 0.5).toFixed(2)}mm 0; }
 
-  .plabel { width: ${LABEL_COL_MM}mm; border: 0.5px solid #eee; border-bottom: ${TRAIT_HORIZONTAL}; border-right: 1px solid #ccc; padding: 0 1.5mm; vertical-align: middle; overflow: hidden; white-space: nowrap; height: ${dens.rowMm}mm; font-size: ${dens.labelPt}pt; color: #1F1B17; }
+  .plabel { width: ${mmK(LABEL_COL_MM)}; border: 0.5px solid #eee; border-bottom: ${TRAIT_HORIZONTAL}; border-right: 1px solid #ccc; padding: 0 1.5mm; vertical-align: middle; overflow: hidden; white-space: nowrap; height: ${dens.rowMm}mm; font-size: ${dens.labelPt}pt; color: #1F1B17; }
 
   .legend { margin-top: 5mm; padding-top: 3mm; border-top: 0.5px solid #eee; display: flex; align-items: center; gap: 5mm; flex-wrap: wrap; }
   .leg-title { font-size: 5.5pt; font-weight: bold; color: #9C9591; text-transform: uppercase; letter-spacing: 0.05em; }
@@ -658,10 +666,10 @@ function buildHtml({
 
 <div class="gantt-wrap" id="gw">
   ${buildJalonBand(jalons, days, dayWidths)}
-  <table class="gantt-table" id="gantt-table">
+  <table class="gantt-table" id="gantt-table" data-largeur-mm="${(LABEL_COL_MM + dayWidths.reduce((a, b) => a + b, 0)).toFixed(2)}">
     <colgroup>
       <col class="col-label">
-      ${days.map((_, i) => `<col style="width:${dayWidths[i].toFixed(2)}mm">`).join('')}
+      ${days.map((_, i) => `<col style="width:${mmK(dayWidths[i])}">`).join('')}
     </colgroup>
     <thead>
       ${showYearRow ? `<tr>

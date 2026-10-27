@@ -197,7 +197,7 @@ describe('PDF chantier — périodes', () => {
       tasks: [TACHES[0]],
       periodes: [{ id: 'p', label: 'Fermeture', date_debut: '2026-03-03', date_fin: '2026-03-05', couleur: '#B8412C' }],
     }))
-    const pauses = [...corpsPdf().matchAll(/data-pause="1" style="position:absolute;left:([\d.]+)mm;width:([\d.]+)mm/g)]
+    const pauses = [...corpsPdf().matchAll(/data-pause="1" style="position:absolute;left:calc\(([\d.]+)mm \* var\(--k, 1\)\);width:calc\(([\d.]+)mm \* var\(--k, 1\)\)/g)]
     assert.equal(pauses.length, 1)
     assert.ok(Number(pauses[0][1]) > 0, 'la pause commence après le premier jour')
     assert.ok(corpsPdf().includes('repeating-linear-gradient(45deg, #E8602C'), 'rayures de la couleur de la barre')
@@ -260,7 +260,7 @@ describe('PDF chantier — grille selon la granularité', () => {
     const tache = { id: 9, nom: 'Maçonnerie', debut: '2026-03-04', duree: 5, lot_id: 7, avancement: 0 }
     const largeurJour = (420 - 20 - 45) / 28   // 28 jours du 23/02 au 22/03
     generatePlanningChantierPdf(paramsPdfChantier({ tasks: [tache], viewMode: 'week', dateDebut: '2026-02-23', dateFin: '2026-03-22' }))
-    const barre = corpsPdf().match(/data-task-id="9" data-type="task" style="[^"]*width:([\d.]+)mm/)
+    const barre = corpsPdf().match(/data-task-id="9" data-type="task" style="[^"]*width:calc\(([\d.]+)mm/)
     assert.ok(barre)
     assert.ok(Math.abs(Number(barre[1]) - 14 * largeurJour) < 0.05)
     // Elle part du lundi 2 mars : 8e cellule de jour de la ligne
@@ -368,7 +368,7 @@ describe('PDF chantier — géométrie des barres', () => {
     assert.ok(ligne, `aucune barre ${attribut}`)
     const cellules = ligne.split('<td style="width:')
     const idx = cellules.findIndex(c => c.includes(attribut)) - 1
-    const largeur = Number(ligne.slice(ligne.indexOf(attribut)).match(/;width:([\d.]+)mm/)[1])
+    const largeur = Number(ligne.slice(ligne.indexOf(attribut)).match(/;width:calc\(([\d.]+)mm/)[1])
     return { idx, largeur }
   }
   const proche = (reel, attendu) => assert.ok(Math.abs(reel - attendu) < 0.05, `${reel} ≠ ${attendu}`)

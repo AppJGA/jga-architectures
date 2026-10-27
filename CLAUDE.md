@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 1031 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans, gestion de l'application)
+npm test         # 1035 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans, gestion de l'application)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -1127,6 +1127,14 @@ navigateur. Ce qui leur est commun vit dans `src/shared/planning/export/`.
   Les colonnes s'étirent quand le tableau est plus large que leur somme
   (une feuille) : la bande des échéances place ses flèches **en % du
   tableau**, jamais en mm (elles se décalaient de leur trait).
+  Au chantier, **toute longueur horizontale du tableau** (colonnes, barres,
+  délais, segments, pauses, fonds de période) s'écrit par `mmK` —
+  `calc(Xmm * var(--k, 1))` — et la mise en page règle `--k` pour que les
+  colonnes remplissent exactement le cadre (`data-largeur-mm` du tableau).
+  En mm fixes, les colonnes s'étiraient seules : sur un grand planning mis
+  sur une feuille, les barres s'arrêtaient au milieu de leur dernière
+  semaine et les congés ne couvraient pas leur bandeau. L'étude écrit ses
+  barres en % des cases : rien à faire.
 - **Aperçu dans la fenêtre d'export** (`ApercuPlanning.jsx`, commun aux deux
   fenêtres, réglages à gauche et aperçu à droite, `styleFenetreExport.js`) :
   la **même page** (`htmlApercuChantier` / `htmlApercuEtude`, paramètre

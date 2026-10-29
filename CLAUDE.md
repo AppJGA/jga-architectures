@@ -57,6 +57,14 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
   nom et maître d'ouvrage au bandeau du haut (`useTitreBandeau`), et le
   retour s'affiche dans la barre de l'affaire, dessous (`RetourCourant`,
   même calcul que le bandeau). Hors affaire, le bandeau garde le retour.
+- **Animation d'ouverture** (logo construit pièce à pièce, 2,55 s) : tout
+  dans `index.html` (styles, calques SVG, moteur), hors React pour couvrir
+  le chargement. Une fois par session (`sessionStorage` `jga-intro-vue`),
+  jamais dans un cadre (« Préparer pour le chantier »), « Passer », toucher
+  ou Échap l'abrègent. Le logo vient se poser sur l'élément
+  `[data-logo-intro]` (accueil, connexion), qui doit afficher
+  `public/logo-jga.svg` (même cadrage que les calques) ; sur ces pages la
+  tenue attend son rendu 1,5 s au plus, ailleurs le logo s'efface.
 - **Titre des modules** : `AffairePage` pose en tête de chaque module son
   icône et son nom tels qu'au menu (`TitreModule`). Un module n'écrit pas
   son propre titre, seulement ce qui le précise (compteurs, actions) ; un

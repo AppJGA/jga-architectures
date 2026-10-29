@@ -319,10 +319,8 @@ export default function HomePage() {
         }}
       />
 
-      {/* `position: relative` SANS z-index : suffisant pour passer au-dessus du
-          décor (positionné, plus haut dans le DOM) sans créer de contexte
-          d'empilement — lequel isolerait le mix-blend-mode du logo et laisserait
-          son fond blanc visible sur le crème. */}
+      {/* `position: relative` : suffisant pour passer au-dessus du décor
+          (positionné, plus haut dans le DOM). */}
       <div
         style={{
           position: 'relative',
@@ -330,12 +328,14 @@ export default function HomePage() {
           width: '100%', maxWidth: visibles.length === 5 ? 1320 : 1040,
         }}
       >
+        {/* Le logo de l'animation d'ouverture (index.html) vient s'y poser :
+            même fichier, même cadrage, sans quoi le raccord saute. */}
         <img
-          src="/Logo_JGA_Archi.jpg"
+          src="/logo-jga.svg"
           alt="JGA Architectures"
+          data-logo-intro=""
           style={{
             height: 76, width: 'auto', marginBottom: 34,
-            mixBlendMode: 'multiply',
             animation: reduit ? 'none' : 'jga-fade 0.7s ease both',
           }}
         />

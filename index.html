@@ -22,9 +22,283 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@300;400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+
+    <!-- Animation d'ouverture (1/3). Dans la page plutôt que dans React : elle
+         couvre le chargement de l'app au lieu de l'attendre. Une fois par session
+         (une app relancée sur l'iPad la rejoue) ; jamais dans un cadre caché
+         (« Préparer pour le chantier »). -->
+    <script>try{if(window.top!==window||sessionStorage.getItem('jga-intro-vue'))document.documentElement.classList.add('jga-intro-vue');else document.documentElement.classList.add('jga-intro-actif')}catch(e){}</script>
+    <style>
+      :root { --jga-intro-fond: #FAF7F2; }
+      html.jga-intro-actif { overflow: hidden; }
+      html.jga-intro-vue .jga-intro { display: none; }
+
+      .jga-intro {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: grid;
+        place-items: center;
+        overflow: hidden;
+        background: transparent;
+        cursor: pointer;
+        -webkit-tap-highlight-color: transparent;
+        touch-action: none;
+        transition: opacity .35s cubic-bezier(.4, 0, .2, 1), visibility 0s linear .35s;
+        /* Sécurité : si le script ne tourne pas, le voile disparaît seul */
+        animation: jga-intro-secours 0s linear 7s forwards;
+      }
+      .jga-intro.is-sortie { opacity: 0; visibility: hidden; pointer-events: none; }
+      .jga-intro.is-attente .jga-intro__logo { visibility: hidden; }
+      .jga-intro.is-fini { display: none; }
+      .jga-intro.is-transition .jga-intro__passer { visibility: hidden; }
+      .jga-intro__fond { position: absolute; inset: 0; background: var(--jga-intro-fond); }
+
+      /* Largeur bornée aussi par la hauteur : sur un téléphone couché, le logo
+         (2 pour 1) dépassait l'écran par le haut et le bas. */
+      .jga-intro__logo {
+        position: relative;
+        width: min(78vw, 680px, 130vh);
+        width: min(78vw, 680px, 130svh);
+        aspect-ratio: 1995.75 / 988.5;
+      }
+      @media (max-width: 600px) { .jga-intro__logo { width: min(88vw, 130svh); } }
+      .jga-intro.is-sortie .jga-intro__logo { transform: translateY(-8px) scale(.985); transition: transform .35s cubic-bezier(.4, 0, .2, 1); }
+      .jga-intro__logo svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+
+      .jga-intro__passer {
+        position: absolute;
+        right: max(20px, env(safe-area-inset-right, 0px));
+        bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+        min-height: 44px;
+        padding: 10px 8px;
+        border: 0;
+        background: none;
+        color: #5A554F;
+        font: 400 13px/1 'Archivo', Arial, sans-serif;
+        letter-spacing: .1em;
+        text-transform: uppercase;
+        cursor: pointer;
+      }
+      .jga-intro__passer:hover { color: #B9481B; }
+      .jga-intro__passer:focus-visible { outline: 2px solid #EF6524; outline-offset: 2px; }
+      @keyframes jga-intro-secours { to { opacity: 0; visibility: hidden; pointer-events: none; } }
+    </style>
   </head>
   <body>
+    <!-- Animation d'ouverture (2/3) : le logo en calques, construit pièce à pièce -->
+    <div id="jga-intro" class="jga-intro is-attente" role="img" aria-label="Jacques Gerbe &amp; Associés, Architectures">
+  <div class="jga-intro__fond"></div>
+  <div class="jga-intro__logo">
+    <svg class="l l-cote" viewBox="0 0 1995.75 988.5" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false"><g fill="none" stroke="#938980" stroke-width="1.2" stroke-linecap="square"><line x1="96" y1="578" x2="1884" y2="578" vector-effect="non-scaling-stroke"/><line class="trait-extremite" x1="93" y1="600" x2="137" y2="556" vector-effect="non-scaling-stroke"/><line class="trait-extremite" x1="1836" y1="600" x2="1880" y2="556" vector-effect="non-scaling-stroke"/></g></svg>
+    <svg class="l l-j-barre" viewBox="0 0 1995.75 988.5" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false"><path d="M507.79,191.42l-331.16,1.81-.52-95.24,331.15-1.81.52,95.13Z" fill="#ef6524"/></svg>
+    <svg class="l l-j-jambage" viewBox="0 0 1995.75 988.5" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false"><path d="M508.21,262.14l1.27,239.46c.79,144.17-70.47,215.33-205.03,216.07-76.89.42-146.96-30.65-189.21-87.21l64.23-78.12c33.45,45.25,73.78,69.5,121.83,69.24,62.91-.34,95.03-38.09,94.62-113.24l-1.3-245.58,113.59-.62Z" fill="#ef6524"/></svg>
+    <svg class="l l-g-arc" viewBox="0 0 1995.75 988.5" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false"><path d="M677.5,577.93c-33.6-49.22-52.83-109.42-53.2-176.56-1-182.61,138.08-315.31,329.43-316.36,102.23-.56,188.04,33.05,246.07,98.26l-71.26,70.29c-48.32-47.79-103.49-69.34-169.02-68.98-130.19.71-221.45,89.46-220.76,216.16.41,75.75,35.8,139.67,92.08,177.24l-153.34-.05Z" fill="#ef6524"/></svg>
+    <svg class="l l-g-barre" viewBox="0 0 1995.75 988.5" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false"><path d="M1086.64,577.98l-1.04-186.13,107.47-.59,1.02,186.71h-107.45Z" fill="#ef6524"/></svg>
+    <svg class="l l-a" viewBox="0 0 1995.75 988.5" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false"><path d="M1740.14,559.53l-154.85-355.65-157.82,374.32-114.14.14,216.29-487.75,111.84-.61,223.52,488.02-116.78-.08-8.07-18.39Z" fill="#938980"/></svg>
+    <svg class="l l-ligne1" viewBox="0 0 1995.75 988.5" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false"><path d="M542.94,691.61l7.52-9.02c3.85,5.28,8.51,8.13,14.09,8.14,7.3.01,11.06-4.34,11.08-13.07l.06-36.73-25.26-.04.02-11.06,38.45.06-.08,47.08c-.03,16.74-8.36,24.94-23.99,24.92-8.93-.01-17.04-3.68-21.9-10.28Z" fill="#ef6524"/><path d="M651.43,669.26l-.05,31.76-11.97-.02v-6.59c-3.04,4.66-8.93,7.29-17.05,7.28-12.38-.02-20.18-6.83-20.16-16.27.02-9.03,6.11-16.12,22.55-16.09l14,.02v-.81c.01-7.41-4.44-11.78-13.47-11.79-6.09-.01-12.38,2.01-16.45,5.35l-4.96-9.24c5.79-4.45,14.21-6.67,22.94-6.66,15.62.03,24.64,7.45,24.62,23.07ZM638.72,684.05v-6.29s-13.08-.02-13.08-.02c-8.62-.01-10.96,3.23-10.97,7.19,0,4.57,3.84,7.51,10.34,7.52,6.19.01,11.57-2.82,13.71-8.4Z" fill="#ef6524"/><path d="M663.69,673.95c.03-16.23,12.22-27.68,29.37-27.65,10.55.02,18.96,4.39,23.11,12.62l-9.75,5.67c-3.24-5.18-8.1-7.52-13.48-7.53-9.33-.02-16.45,6.47-16.46,16.92-.02,10.55,7.07,16.96,16.41,16.97,5.38,0,10.25-2.32,13.51-7.49l9.73,5.7c-4.17,8.11-12.6,12.66-23.15,12.64-17.15-.03-29.3-11.61-29.28-27.85Z" fill="#ef6524"/><path d="M779.29,647.05l-.12,73.86-12.68-.02.04-26.28c-4.37,4.96-10.46,7.29-17.36,7.28-15.83-.03-27.38-11-27.35-27.84.03-16.74,11.61-27.68,27.44-27.65,7.41.01,13.69,2.56,17.94,7.74v-7.1s12.08.02,12.08.02ZM766.77,674.12c.02-10.35-6.87-16.95-16.1-16.97-9.13-.02-16.04,6.57-16.06,16.92s6.87,16.95,16,16.97c9.23.02,16.14-6.57,16.16-16.92Z" fill="#ef6524"/><path d="M848.38,647.17l-.09,54.18-12.07-.02v-6.9c-4.05,4.97-10.45,7.59-17.45,7.58-13.9-.02-23.32-7.65-23.3-23.98l.05-30.94,12.68.02-.05,29.22c-.02,9.84,4.64,14.52,12.66,14.53,8.83.01,14.82-5.45,14.84-16.31l.04-27.39,12.68.02Z" fill="#ef6524"/><path d="M915.69,678.43l-42.51-.07c1.51,7.92,8.1,13,17.53,13.02,6.09,0,10.86-1.91,14.72-5.86l6.79,7.82c-4.88,5.77-12.49,8.8-21.83,8.79-18.16-.03-29.91-11.72-29.88-27.85.03-16.13,11.92-27.68,28.05-27.65,15.83.03,27.38,11.1,27.35,28.05,0,1.01-.11,2.54-.21,3.75ZM873.09,669.94l30.74.05c-1-7.81-6.98-13.2-15.3-13.21-8.22-.01-14.21,5.25-15.44,13.16Z" fill="#ef6524"/><path d="M921.84,696.09l4.89-9.63c4.76,3.15,12.06,5.4,18.86,5.41,8.01.01,11.37-2.21,11.37-5.97.02-10.35-33.48-.66-33.44-22.27.02-10.25,9.26-16.93,23.87-16.9,7.2.01,15.42,1.75,20.28,4.7l-4.89,9.63c-5.17-3.05-10.34-4.08-15.52-4.08-7.71-.01-11.37,2.52-11.37,6.07-.02,10.96,33.48,1.27,33.44,22.48-.02,10.15-9.36,16.72-24.58,16.7-9.03-.01-18.05-2.67-22.92-6.12Z" fill="#ef6524"/><path d="M1058.04,665.37l12.48.02-.05,28.31c-7.42,5.97-17.77,9-27.81,8.98-22.02-.04-38.22-15.38-38.19-36.59s16.29-36.5,38.51-36.46c11.87.02,21.81,3.99,28.49,11.61l-8.33,8.1c-5.57-5.59-11.96-8.14-19.57-8.15-15.12-.03-25.79,10.2-25.81,24.92-.02,14.41,10.61,24.98,25.63,25,5.07,0,10.05-1,14.62-3.63l.04-22.12Z" fill="#ef6524"/><path d="M1137.35,678.79l-42.51-.07c1.51,7.92,8.09,13,17.53,13.02,6.09,0,10.86-1.91,14.72-5.86l6.79,7.82c-4.88,5.78-12.49,8.81-21.83,8.79-18.16-.03-29.91-11.72-29.88-27.85.03-16.13,11.92-27.68,28.05-27.65,15.83.03,27.37,11.1,27.35,28.05,0,1.01-.11,2.54-.21,3.75ZM1094.76,670.3l30.74.05c-1-7.81-6.98-13.2-15.3-13.21-8.22-.01-14.21,5.25-15.44,13.16Z" fill="#ef6524"/><path d="M1181.13,647.11l-.02,12.07c-1.12-.21-2.03-.31-2.94-.31-9.64-.02-15.73,5.66-15.75,16.71l-.04,26.28-12.68-.02.09-54.18,12.07.02v7.91c3.65-5.68,10.25-8.51,19.28-8.49Z" fill="#ef6524"/><path d="M1249.36,674.92c-.03,16.84-11.71,27.78-27.54,27.75-7.41-.01-13.69-2.56-17.95-7.74v7s-12.08-.02-12.08-.02l.12-75.28,12.68.02-.05,27.7c4.37-4.86,10.46-7.19,17.36-7.17,15.83.03,27.48,10.9,27.45,27.74ZM1236.48,674.9c.02-10.35-6.87-16.96-16-16.97-9.13-.01-16.14,6.57-16.16,16.92-.02,10.35,6.97,16.96,16.1,16.97,9.13.02,16.04-6.57,16.06-16.92Z" fill="#ef6524"/><path d="M1312.15,679.08l-42.51-.07c1.51,7.92,8.09,13,17.53,13.02,6.09,0,10.86-1.91,14.72-5.86l6.79,7.82c-4.88,5.78-12.49,8.81-21.83,8.79-18.16-.03-29.91-11.72-29.88-27.85.03-16.13,11.92-27.68,28.05-27.65,15.83.03,27.37,11.1,27.35,28.05,0,1.01-.11,2.54-.21,3.75ZM1269.55,670.59l30.74.05c-1-7.81-6.98-13.2-15.3-13.21-8.22-.01-14.21,5.25-15.44,13.16Z" fill="#ef6524"/><path d="M1405.34,703.39l-9.42-9.45c-6.2,5.98-14.32,9.11-23.76,9.09-14.41-.02-24.84-7.65-24.83-18.51.01-8.73,5-14.8,17.28-21.78-6.38-6.4-8.5-10.97-8.49-16.25.02-9.54,7.53-15.92,19.2-15.9,10.75.02,17.64,5.61,17.63,14.84-.01,7.2-4.28,12.37-15.15,18.54l17.52,17.48c1.93-3.65,3.46-7.91,4.38-12.88l7.81,2.55c-1.23,6.29-3.37,11.76-6.22,16.22l9.52,9.55-5.49,6.48ZM1390.15,688.24l-20.16-20.12c-9.95,5.56-13.1,9.72-13.11,15.4-.01,6.8,6.37,11.37,15.91,11.39,6.8.01,12.79-2.21,17.36-6.67ZM1365.16,646.3c0,3.65,1.41,6.29,7.18,12.19,9.34-5.26,12.39-8.5,12.4-12.97,0-4.67-3.33-7.82-9.42-7.83-6.39-.01-10.15,3.53-10.16,8.61Z" fill="#938980"/><path d="M1494.54,685.98l-35.51-.06-7.03,16.42-13.59-.02,32.08-70.97,12.99.02,31.94,71.07-13.8-.02-7.07-16.45ZM1490.2,675.63l-13.34-31.07-13.34,31.02,26.68.04Z" fill="#938980"/><path d="M1516.54,697.08l4.89-9.63c4.76,3.15,12.06,5.4,18.86,5.41,8.01.01,11.37-2.21,11.37-5.97.02-10.35-33.48-.66-33.44-22.27.02-10.25,9.26-16.93,23.87-16.9,7.2.01,15.42,1.75,20.28,4.7l-4.88,9.63c-5.17-3.05-10.34-4.08-15.52-4.08-7.71-.01-11.37,2.52-11.37,6.07-.02,10.96,33.48,1.27,33.44,22.48-.02,10.15-9.36,16.72-24.58,16.7-9.03-.02-18.06-2.67-22.92-6.12Z" fill="#938980"/><path d="M1568.78,697.17l4.89-9.63c4.76,3.15,12.06,5.4,18.86,5.41,8.01.01,11.37-2.21,11.37-5.97.02-10.35-33.48-.66-33.44-22.27.02-10.25,9.26-16.93,23.87-16.9,7.2.01,15.42,1.75,20.28,4.7l-4.88,9.63c-5.17-3.05-10.34-4.08-15.52-4.08-7.71-.01-11.37,2.52-11.37,6.07-.02,10.96,33.48,1.27,33.44,22.48-.02,10.15-9.36,16.72-24.58,16.7-9.03-.02-18.06-2.67-22.92-6.12Z" fill="#938980"/><path d="M1622.79,675.54c.03-16.23,12.22-27.68,28.86-27.65,16.84.03,28.9,11.51,28.87,27.75-.03,16.23-12.12,27.78-28.96,27.75-16.64-.03-28.79-11.61-28.77-27.85ZM1667.74,675.62c.02-10.35-6.87-16.96-16.1-16.97-9.13-.01-16.04,6.57-16.06,16.92-.02,10.35,6.87,16.96,16,16.97,9.23.02,16.14-6.57,16.16-16.92Z" fill="#938980"/><path d="M1688.23,675.65c.03-16.23,12.22-27.68,29.37-27.65,10.55.02,18.97,4.39,23.11,12.62l-9.75,5.66c-3.24-5.18-8.1-7.52-13.48-7.53-9.33-.02-16.45,6.47-16.46,16.92-.02,10.55,7.07,16.96,16.41,16.97,5.38,0,10.25-2.32,13.51-7.49l9.73,5.7c-4.17,8.11-12.6,12.66-23.15,12.64-17.15-.03-29.3-11.61-29.27-27.85Z" fill="#938980"/><path d="M1749.98,632.13c0-4.26,3.46-7.6,8.13-7.6s8.11,3.16,8.1,7.32c0,4.46-3.36,7.91-8.13,7.9-4.67,0-8.11-3.36-8.1-7.62ZM1751.68,648.67l12.68.02-.09,54.18-12.68-.02.09-54.18Z" fill="#938980"/><path d="M1831.67,679.95l-42.51-.07c1.51,7.92,8.09,13,17.53,13.02,6.09,0,10.86-1.91,14.72-5.86l6.79,7.82c-4.88,5.77-12.49,8.8-21.83,8.79-18.16-.03-29.91-11.72-29.88-27.85.03-16.13,11.92-27.68,28.05-27.65,15.83.03,27.37,11.1,27.35,28.05,0,1.01-.11,2.54-.21,3.75ZM1789.07,671.46l30.74.05c-1-7.81-6.98-13.2-15.3-13.21-8.22-.01-14.21,5.25-15.44,13.16ZM1806.67,641.35l-10.96-.02,13.72-13.88,14.91.02-17.68,13.87Z" fill="#938980"/><path d="M1837.83,697.61l4.89-9.63c4.76,3.15,12.06,5.4,18.86,5.41,8.01.01,11.37-2.21,11.37-5.97.02-10.35-33.48-.66-33.44-22.27.02-10.25,9.26-16.93,23.87-16.9,7.2.01,15.42,1.75,20.28,4.7l-4.88,9.63c-5.17-3.05-10.34-4.08-15.52-4.08-7.71-.01-11.37,2.52-11.37,6.07-.02,10.96,33.48,1.27,33.44,22.48-.02,10.15-9.36,16.72-24.58,16.7-9.03-.01-18.06-2.67-22.92-6.12Z" fill="#938980"/></svg>
+    <svg class="l l-ligne2" viewBox="0 0 1995.75 988.5" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false"><path d="M230.92,909.05l-84.53-.14-18.6,40.99-11.45-.02,67.28-145.63,10.62.02,66.8,145.86-11.45-.02-18.67-41.05ZM226.97,900.09l-38.17-84.18-38.24,84.05,76.41.13Z" fill="#ef6524"/><path d="M388.67,950.33l-34.69-48.78c-4.58.62-9.16,1.03-14.16,1.02l-41.64-.07-.08,47.68-10.62-.02.24-145.74,52.26.09c36.64.06,58.68,18.42,58.63,49.23-.04,23.11-12.56,39.12-34.22,45.54l36.35,51.07-12.08-.02ZM339.83,893.2c31.23.05,47.91-14.49,47.95-39.48.04-25.19-16.59-39.59-47.82-39.64l-41.64-.07-.13,79.12,41.64.07Z" fill="#ef6524"/><path d="M423.56,877.52c.07-42.47,32.39-73.86,75.7-73.79,20.61.03,39.13,6.73,51.81,20.28l-6.67,6.86c-12.47-12.3-27.66-17.33-44.74-17.36-37.27-.06-65.42,27.38-65.48,64.02-.06,36.64,28,64.17,65.27,64.24,17.07.03,32.28-5.15,44.79-17.42l6.65,6.88c-12.72,13.51-31.26,20.35-51.88,20.32-43.31-.07-75.53-31.56-75.46-74.04Z" fill="#ef6524"/><path d="M705.38,805.11l-.24,145.74-10.62-.02.12-69.33-97.44-.16-.12,69.33-10.62-.02.24-145.74,10.62.02-.11,67.04,97.44.16.11-67.04,10.62.02Z" fill="#ef6524"/><path d="M756.19,805.2l10.62.02-.24,145.74-10.62-.02.24-145.74Z" fill="#ef6524"/><path d="M845.49,814.92l-52.47-.09.02-9.58,115.55.19-.02,9.58-52.47-.09-.23,136.17-10.62-.02.23-136.17Z" fill="#938980"/><path d="M1035.17,941.83l-.02,9.58-100.56-.17.24-145.74,97.44.16-.02,9.58-86.82-.14-.09,57.46,77.66.13-.02,9.37-77.66-.13-.1,59.76,89.95.15Z" fill="#938980"/><path d="M1059.21,878.57c.07-42.47,32.39-73.86,75.7-73.79,20.61.03,39.13,6.73,51.81,20.28l-6.67,6.86c-12.47-12.3-27.66-17.33-44.74-17.36-37.27-.06-65.42,27.38-65.48,64.02-.06,36.64,28,64.17,65.27,64.24,17.07.03,32.28-5.15,44.79-17.42l6.65,6.88c-12.72,13.51-31.26,20.35-51.88,20.32-43.31-.07-75.53-31.57-75.46-74.04Z" fill="#938980"/><path d="M1248.37,815.59l-52.47-.09.02-9.58,115.55.19-.02,9.58-52.47-.09-.23,136.17-10.62-.02.23-136.17Z" fill="#938980"/><path d="M1333.41,890.06l.14-83.91,10.62.02-.14,83.49c-.06,36.44,17.4,53.54,47.8,53.59,30.4.05,47.71-16.99,47.77-53.43l.14-83.49,10.62.02-.14,83.91c-.07,41.64-22.38,62.84-58.61,62.78-36.23-.06-58.26-21.33-58.19-62.97Z" fill="#938980"/><path d="M1600.85,952.34l-34.69-48.78c-4.58.62-9.16,1.03-14.16,1.02l-41.64-.07-.08,47.68-10.62-.02.24-145.74,52.26.09c36.64.06,58.68,18.42,58.63,49.23-.04,23.11-12.56,39.12-34.22,45.54l36.35,51.07-12.08-.02ZM1552.02,895.21c31.23.05,47.91-14.5,47.95-39.48.04-25.19-16.59-39.59-47.82-39.64l-41.64-.07-.13,79.12,41.64.07Z" fill="#938980"/><path d="M1750.15,943.02l-.02,9.58-100.56-.17.24-145.74,97.44.16-.02,9.58-86.82-.14-.09,57.46,77.66.13-.02,9.37-77.66-.13-.1,59.76,89.95.15Z" fill="#938980"/><path d="M1774.11,933.89l4.8-7.9c9.98,10.43,28.49,18.37,48.07,18.4,29.15.05,42.08-12.63,42.1-28.45.07-43.72-90.96-17.64-90.87-71.36.03-20.61,15.89-38.7,51.7-38.64,16.03.03,32.68,5.05,43.91,13.19l-3.97,8.53c-12.06-8.35-26.84-12.33-39.96-12.35-28.32-.05-41.04,13.05-41.06,29.08-.07,43.72,90.96,18.06,90.87,70.94-.03,20.61-16.51,38.49-52.53,38.43-21.65-.04-42.46-8.19-53.06-19.87Z" fill="#938980"/></svg>
+  </div>
+  <button type="button" class="jga-intro__passer">Passer</button>
+    </div>
     <div id="root"></div>
+    <script>
+    /* Animation d'ouverture (3/3) — moteur. Durée : 2,55 s
+         0 → 1,75 s    construction du logo
+         1,75 → 1,9    tenue sur le logo complet
+         1,9 → 2,55    le logo se réduit et se pose sur celui de la page
+       Le logo de la page ([data-logo-intro], même fichier logo-jga.svg) est
+       rendu par React après le chargement : il est cherché à chaque image, et
+       sur l'accueil ou la connexion la tenue se prolonge (1,5 s au plus) tant
+       qu'il n'est pas là. Ailleurs (lien reçu vers une affaire), le logo
+       recule et s'efface avec le fond. */
+    (function () {
+      var racine = document.getElementById('jga-intro');
+      if (!racine) return;
+      racine.style.animation = 'none';
+
+      var W = 1995.75, H = 988.5;
+      var FIN_ANIM = 1750, TRANS_DEBUT = 1900, TRANS_FIN = 2550;
+      var ATTENTE_MAX = 1500;
+      var PAGES_AVEC_LOGO = ['/', '/home', '/login'];
+
+      function q(s) { return racine.querySelector(s); }
+      function qa(s) { return Array.prototype.slice.call(racine.querySelectorAll(s)); }
+      var logo = q('.jga-intro__logo');
+      var fond = q('.jga-intro__fond');
+      var C = {
+        cote: q('.l-cote'), traits: qa('.l-cote .trait-extremite'),
+        jBarre: q('.l-j-barre'), jJambage: q('.l-j-jambage'),
+        gArc: q('.l-g-arc'), gBarre: q('.l-g-barre'), a: q('.l-a'),
+        ligne1: qa('.l-ligne1 path'), ligne2: qa('.l-ligne2 path')
+      };
+      // Centres horizontaux des lettres d'ARCHITECTURES (unités du logo)
+      var CX2 = [183, 344, 487, 645, 761, 851, 985, 1123, 1253, 1392, 1556, 1700, 1824];
+      var CENTRE2 = 994.5;
+
+      var cible = null;
+      function chercherCible() {
+        if (cible && cible.isConnected) return cible;
+        var els = document.querySelectorAll('[data-logo-intro]');
+        for (var i = 0; i < els.length; i++) {
+          if (els[i].getBoundingClientRect().width > 0) { cible = els[i]; return cible; }
+        }
+        cible = null;
+        return null;
+      }
+      function cacherCible(oui) { var c = chercherCible(); if (c) c.style.visibility = oui ? 'hidden' : ''; }
+
+      function borne(v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
+      function av(t, debut, duree) { return borne((t - debut) / duree); }
+      var sortieCub = function (p) { return 1 - Math.pow(1 - p, 3); };
+      var sortieQuart = function (p) { return 1 - Math.pow(1 - p, 4); };
+      var inOutCub = function (p) { return p < .5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2; };
+
+      function px(x) { return (x / W * 100).toFixed(3) + '%'; }
+      function py(y) { return (y / H * 100).toFixed(3) + '%'; }
+      function decoupe(el, haut, droite, bas, gauche) {
+        var v = 'inset(' + py(haut) + ' ' + px(droite) + ' ' + py(bas) + ' ' + px(gauche) + ')';
+        el.style.clipPath = v; el.style.webkitClipPath = v;
+      }
+      function libre(el) { el.style.clipPath = 'none'; el.style.webkitClipPath = 'none'; }
+      function vis(el, p) { el.style.visibility = p > 0 ? 'visible' : 'hidden'; return p > 0 && p < 1; }
+
+      function construction(t) {
+        var p;
+        // 1. Ligne de cote : se trace de gauche à droite, puis s'efface
+        p = inOutCub(av(t, 0, 340));
+        if (vis(C.cote, p)) decoupe(C.cote, 0, W - (90 + 1800 * p), 0, 0); else libre(C.cote);
+        C.cote.style.opacity = (1 - av(t, 1300, 300)).toFixed(3);
+        C.traits.forEach(function (tr, i) { tr.style.opacity = av(t, i ? 300 : 40, 100).toFixed(3); });
+
+        // 2. J : la barre se tire de gauche à droite, puis le jambage descend
+        p = sortieCub(av(t, 80, 300));
+        if (vis(C.jBarre, p)) decoupe(C.jBarre, 0, W - (176 + 336 * p), 0, 0); else libre(C.jBarre);
+        p = sortieCub(av(t, 230, 400));
+        if (vis(C.jJambage, p)) decoupe(C.jJambage, 0, 0, H - (255 + 466 * p), 0); else libre(C.jJambage);
+
+        // 3. G : l'arc est tracé au compas, puis le jambage se lève
+        p = inOutCub(av(t, 420, 480));
+        if (vis(C.gArc, p)) {
+          var s = 215 * p;
+          var m = 'conic-gradient(from ' + (56 - s).toFixed(2) + 'deg at 47.35% 40.47%, #000 0deg ' +
+            s.toFixed(2) + 'deg, transparent ' + (s + .6).toFixed(2) + 'deg)';
+          C.gArc.style.webkitMaskImage = m; C.gArc.style.maskImage = m;
+        } else { C.gArc.style.webkitMaskImage = 'none'; C.gArc.style.maskImage = 'none'; }
+        p = sortieCub(av(t, 780, 280));
+        if (vis(C.gBarre, p)) decoupe(C.gBarre, 579 - 189 * p, 0, 0, 0); else libre(C.gBarre);
+
+        // 4. A : s'élève depuis le sol, comme un pignon
+        p = sortieQuart(av(t, 680, 500));
+        if (vis(C.a, p)) decoupe(C.a, 579 - 510 * p, 0, 0, 0); else libre(C.a);
+
+        // 5. « Jacques Gerbe & Associés » : lettre après lettre
+        C.ligne1.forEach(function (el, i) {
+          var k = sortieCub(av(t, 1000 + i * 15, 300));
+          el.style.opacity = k.toFixed(3);
+          el.style.transform = 'translate(0px,' + (24 * (1 - k)).toFixed(2) + 'px)';
+        });
+
+        // 6. « ARCHITECTURES » : les lettres s'espacent jusqu'à leur approche
+        var e = sortieCub(av(t, 1200, 550));
+        C.ligne2.forEach(function (el, i) {
+          var k = sortieCub(av(t, 1200 + Math.abs(i - 6) * 20, 280));
+          el.style.opacity = k.toFixed(3);
+          el.style.transform = 'translate(' + ((CENTRE2 - CX2[i]) * .38 * (1 - e)).toFixed(2) + 'px,0px)';
+        });
+      }
+
+      // 7. Le logo se pose à la place de celui de la page, le fond se dissout
+      function transition(t) {
+        var p = av(t, TRANS_DEBUT, TRANS_FIN - TRANS_DEBUT);
+        if (p <= 0) {
+          logo.style.transform = ''; fond.style.opacity = '1'; logo.style.opacity = '1';
+          racine.classList.remove('is-transition');
+          return;
+        }
+        racine.classList.add('is-transition');
+        cacherCible(enCours && t < TRANS_FIN);
+        var e = inOutCub(p);
+        // Position mesurée à chaque image : une rotation de la tablette en cours
+        // de route déplace le logo de la page.
+        var L = logo.offsetLeft, T = logo.offsetTop, w = logo.offsetWidth;
+        var c = chercherCible();
+        var r = c ? c.getBoundingClientRect() : null;
+        if (r && r.width > 0 && r.bottom > 0 && r.top < racine.clientHeight) {
+          var k = r.width / w;
+          logo.style.transformOrigin = '0 0';
+          logo.style.transform = 'translate(' + ((r.left - L) * e).toFixed(2) + 'px,' + ((r.top - T) * e).toFixed(2) + 'px) scale(' + (1 + (k - 1) * e).toFixed(4) + ')';
+          logo.style.opacity = '1';
+        } else {
+          logo.style.transformOrigin = '50% 50%';
+          logo.style.transform = 'scale(' + (1 - .12 * e).toFixed(4) + ')';
+          logo.style.opacity = (1 - inOutCub(av(t, TRANS_DEBUT + 150, 450))).toFixed(3);
+        }
+        fond.style.opacity = (1 - inOutCub(av(t, TRANS_DEBUT + 280, 370))).toFixed(3);
+      }
+
+      function rendu(t) { construction(t); transition(t); }
+
+      // ----- Lecture -----
+      var debut = null, precedent = null, attendu = 0, rafId = null, enCours = false;
+      var reduit = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      var attendLogo = PAGES_AVEC_LOGO.indexOf(location.pathname.replace(/\/+$/, '') || '/') >= 0;
+      function memo(cle, val) { try { if (val) sessionStorage.setItem(cle, '1'); return sessionStorage.getItem(cle); } catch (e) { return null; } }
+
+      function image(maintenant) {
+        if (debut === null) debut = maintenant;
+        // Tenue prolongée tant que l'app n'a pas affiché son logo : le temps
+        // de l'animation s'arrête sur le logo complet.
+        if (attendLogo && precedent !== null && maintenant - debut >= TRANS_DEBUT &&
+            attendu < ATTENTE_MAX && !chercherCible()) {
+          var pas = maintenant - precedent;
+          debut += pas; attendu += pas;
+        }
+        precedent = maintenant;
+        var t = maintenant - debut;
+        rendu(t);
+        if (t < TRANS_FIN) rafId = requestAnimationFrame(image); else terminer(false);
+      }
+      function terminer(fondu) {
+        if (!enCours) return;
+        enCours = false;
+        cancelAnimationFrame(rafId);
+        document.documentElement.classList.remove('jga-intro-actif');
+        memo('jga-intro-vue', true);
+        racine.classList.add(fondu ? 'is-sortie' : 'is-fini');
+        cacherCible(false);
+        setTimeout(function () {
+          if (fondu) racine.classList.add('is-fini');
+          document.dispatchEvent(new CustomEvent('jga-intro:fin'));
+        }, fondu ? 350 : 0);
+      }
+      function passer() { if (!enCours) return; cancelAnimationFrame(rafId); rendu(FIN_ANIM); terminer(true); }
+      function jouer() {
+        cancelAnimationFrame(rafId);
+        enCours = true; debut = null; precedent = null; attendu = 0;
+        racine.classList.remove('is-sortie', 'is-fini');
+        document.documentElement.classList.add('jga-intro-actif');
+        rendu(0);
+        racine.classList.remove('is-attente');
+        if (reduit) { rendu(FIN_ANIM); setTimeout(function () { terminer(true); }, 900); return; }
+        rafId = requestAnimationFrame(image);
+      }
+
+      racine.addEventListener('click', passer);
+      document.addEventListener('keydown', function (ev) {
+        if (enCours && (ev.key === 'Escape' || ev.key === 'Enter' || ev.key === ' ')) { ev.preventDefault(); passer(); }
+      });
+
+      window.JGAIntro = { rejouer: jouer, passer: passer };
+
+      rendu(0);
+      if (document.documentElement.classList.contains('jga-intro-vue')) {
+        racine.style.display = 'none';
+        return;
+      }
+      jouer();
+    })();
+    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

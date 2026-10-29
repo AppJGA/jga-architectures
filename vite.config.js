@@ -18,7 +18,7 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: [
-        'Logo_JGA_Archi.jpg',
+        'Logo_JGA_Archi.jpg', 'logo-jga.svg',
         'icons/icon-16.png', 'icons/icon-32.png',
         'icons/icon-152.png', 'icons/icon-167.png', 'icons/icon-180.png',
         'icons/icon-192.png', 'icons/icon-512.png',

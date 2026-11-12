@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 1057 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans, gestion de l'application)
+npm test         # 1067 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans, gestion de l'application)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -1423,6 +1423,17 @@ ligne », plus haut).
   défile. Piège déjà rencontré : le drapeau « le geste a bougé » doit se
   remettre à zéro **à chaque contact**, pas seulement au début d'un
   glissement — sinon le toucher qui suit un glissement est avalé.
+- **Barre qui enjambe une période bloquante, à l'écran** (demande de
+  l'agence, 2026-11-12) : sur les jours en pause, la barre n'est plus pochée,
+  seul son contour reste, sous des hachures de la couleur de la période
+  (`shared/planning/pauseBarre.js`, testé dans `pauses-barres.test.js`).
+  Chantier : `pausesDeLaBarre` (`geometrie.js`) pour la barre et ses
+  segments ; le remplissage et l'avancement sont retirés par un masque CSS
+  (`styleMasque`). En vue Semaines, une semaine n'est en pause que si la
+  tâche n'y travaille aucun jour. Étude : la barre était déjà coupée en
+  fragments ; `pausesEntreFragments` (`types.js`) dessine le contour qui les
+  relie. Rien pour les périodes informatives ni pour les segments d'étude
+  (ils ne sautent pas les périodes).
 - **Zoom au pincement (iPad)** : `usePincementZoom` (`shared/planning/`),
   branché sur le volet défilant des deux éditeurs, calcul pur dans
   `pincement.js`. Il suit les événements **tactiles** (les pointeurs finissent

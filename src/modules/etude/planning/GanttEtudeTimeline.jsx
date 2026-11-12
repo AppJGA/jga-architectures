@@ -5,12 +5,14 @@ import { MarqueNotion } from '../../../shared/notion/MarqueNotion'
 import { ACTIONS_SEGMENT, actionsJalon } from '../../../shared/planning/positionsPetales'
 import { estAncre, bordTouche } from '../../../shared/planning/ancrage'
 import { ReperesAccroche } from '../../../shared/planning/ReperesAccroche'
+import { stylePauseEcran } from '../../../shared/planning/pauseBarre'
 import { semaineAncre } from './jalonsAncresEtude'
 import { recadrerSurBarre, arreterRecadrageAuPincement } from '../../../shared/planning/recadrage'
 import {
   getWeekStart, addWeeks, weeksBetween, getCurrentWeek, computeLagSemaines,
   getPhaseCouleur, adminGradient, rowMetrics,
   weekOfDate, computePhaseFragments, finEffectivePhase, distributeSegmentsAcrossFragments,
+  pausesEntreFragments,
   creeraitUnCycle,
 } from './types'
 import { clePhase } from './snapshotDiffEtude'
@@ -1284,6 +1286,9 @@ function PhaseBarRow({
     [phase, periodes]
   )
 
+  // Trous entre fragments : la phase enjambe la période sans avancer
+  const pauses = useMemo(() => pausesEntreFragments(fragments, periodes), [fragments, periodes])
+
   // Répartition ①②③ étalée sur TOUS les fragments : une sous-durée interrompue
   // par des congés reprend sur le fragment suivant.
   const segsParFragment = useMemo(
@@ -1311,6 +1316,23 @@ function PhaseBarRow({
         <ReperesAccroche left={debutLeft} width={finLeft - debutLeft} y={rh / 2} nom={`« ${phase.nom} »`}
           onChoisir={(bord) => onAccrocherBord?.({ type: 'phase', id: phase.id }, bord)} />
       )}
+      {/* ── Pauses — contour seul entre deux fragments, sous les hachures
+          de la période : la barre se suit, mais n'avance pas ─────────── */}
+      {pauses.map((pause, i) => (
+          <div
+            key={`${phase.id}-pause-${i}`}
+            title={`${phase.nom} — en pause (${pause.periode?.label ?? 'période bloquante'})`}
+            style={{
+              position: 'absolute',
+              left: weeksBetween(refSemaine, refAnnee, pause.semaine_debut, pause.annee_debut) * semWidth,
+              width: pause.duree_semaines * semWidth,
+              top: barPad, bottom: barPad,
+              ...stylePauseEcran(color, pause.periode?.couleur),
+              zIndex: enEdition ? 35 : isDragging ? 29 : 9,
+            }}
+          />
+      ))}
+
       {/* ── Barres de phase — un fragment par plage travaillée ───────────
           Les semaines couvertes par une période bloquante coupent la barre :
           la durée travaillée est conservée, la fin effective recule. */}

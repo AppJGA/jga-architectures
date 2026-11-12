@@ -5,6 +5,7 @@ import { MarqueNotion } from '../../../shared/notion/MarqueNotion'
 import { ACTIONS_SEGMENT, actionsJalon } from '../../../shared/planning/positionsPetales'
 import { estAncre, bordTouche } from '../../../shared/planning/ancrage'
 import { ReperesAccroche } from '../../../shared/planning/ReperesAccroche'
+import { styleMasque, stylePauseEcran } from '../../../shared/planning/pauseBarre'
 import { dateAncre } from './jalonsAncres'
 import { recadrerSurBarre, arreterRecadrageAuPincement } from '../../../shared/planning/recadrage'
 import {
@@ -28,6 +29,7 @@ import {
   weekIndexFromRef,
   xAtDateMonth,
   barreSemaine,
+  pausesDeLaBarre,
   barreMois,
   deplacerJalon,
   lendemain,
@@ -2237,6 +2239,10 @@ function TaskBarRow({
   const color = barColor ?? lot?.couleur ?? '#94a3b8'
   const debut = parseDate(task.debut)
   const { left, width } = computeGeometry(debut, task.duree, geo)
+  const pauses = useMemo(
+    () => pausesDeLaBarre(task.debut, task.duree, geo, { left, width }),
+    [task.debut, task.duree, geo, left, width]
+  )
   const unitWidth = geo.viewMode === 'month' ? geo.monthWidth : geo.viewMode === 'week' ? geo.weekWidth : geo.dayWidth
   const HANDLE_W = Math.max(6, Math.min(10, unitWidth * 0.25))
   // En ligne compacte, des pastilles plus petites évitent qu'elles débordent
@@ -2282,7 +2288,7 @@ function TaskBarRow({
         style={{
           position: 'absolute', left, width,
           top: barTop, bottom: barTop,
-          backgroundColor: color, borderRadius: 0,
+          backgroundColor: pauses.length ? 'transparent' : color, borderRadius: 0,
           display: 'flex', alignItems: 'center', overflow: 'hidden',
           boxShadow: enEdition || isDragging ? '0 4px 14px rgba(0,0,0,0.25)' : '0 1px 3px rgba(0,0,0,0.15)',
           zIndex: enEdition ? 36 : isDragging ? 30 : 10,
@@ -2297,6 +2303,8 @@ function TaskBarRow({
           onBarDragStart(e, task, 'move')
         }}
       >
+        {pauses.length > 0 && <FondAvecPauses pauses={pauses} couleur={color} largeur={width} />}
+
         {/* Resize gauche */}
         <div
           data-handle="left"
@@ -2319,6 +2327,8 @@ function TaskBarRow({
           <div style={{
             position: 'absolute', inset: 0, pointerEvents: 'none',
             width: `${task.avancement}%`, backgroundColor: 'rgba(0,0,0,0.22)',
+            // Même origine que la barre : le masque des pauses s'y applique tel quel
+            ...styleMasque(pauses),
           }} />
         )}
 
@@ -2380,6 +2390,7 @@ function TaskBarRow({
         .filter((seg) => !visibleSegmentIds || visibleSegmentIds.includes(seg.id))
         .map((seg) => {
         const segGeo = computeGeometry(parseDate(seg.date_debut), seg.duree_jours, geo)
+        const segPauses = pausesDeLaBarre(seg.date_debut, seg.duree_jours, geo, segGeo)
         const segColor = seg.zone_id
           ? zones.find((z) => z.id === seg.zone_id)?.couleur ?? color
           : color
@@ -2407,7 +2418,7 @@ function TaskBarRow({
                 position: 'absolute',
                 left: segGeo.left, width: segGeo.width,
                 top: BAR_PAD, bottom: BAR_PAD,
-                backgroundColor: segColor,
+                backgroundColor: segPauses.length ? 'transparent' : segColor,
                 opacity: isDraggingThis ? 0.7 : 0.85,
                 outline: '1.5px dashed rgba(255,255,255,0.5)',
                 outlineOffset: -2,
@@ -2428,6 +2439,7 @@ function TaskBarRow({
                 onBarClick(task)
               }}
             >
+              {segPauses.length > 0 && <FondAvecPauses pauses={segPauses} couleur={segColor} largeur={segGeo.width} />}
               {/* Poignées de redimensionnement — mêmes gestes que sur une barre de tâche */}
               <div
                 data-seghandle="left"
@@ -2513,6 +2525,31 @@ function TaskBarRow({
       })}
 
     </div>
+  )
+}
+
+// ─── Pauses d'une barre ─────────────────────────────────────────────────────
+
+// Remplissage d'une barre retiré sur ses pauses (fermetures bloquantes
+// enjambées) : il ne reste que le contour, sous les hachures de la période.
+// Rendu en premier enfant de la barre, sous les poignées.
+function FondAvecPauses({ pauses, couleur, largeur }) {
+  return (
+    <>
+      <div style={{ position: 'absolute', inset: 0, backgroundColor: couleur, pointerEvents: 'none', ...styleMasque(pauses) }} />
+      {pauses.map((p, i) => (
+        <div
+          key={i}
+          title={`${p.periode.label ?? 'Période bloquante'} — la tâche n'avance pas`}
+          style={{
+            position: 'absolute', left: p.x, width: p.largeur, top: 0, bottom: 0,
+            ...stylePauseEcran(couleur, p.periode.couleur, {
+              bordGauche: p.x <= 0.5, bordDroit: p.x + p.largeur >= largeur - 0.5,
+            }),
+          }}
+        />
+      ))}
+    </>
   )
 }
 

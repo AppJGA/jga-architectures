@@ -269,3 +269,90 @@ export function etenduePlanning({ tasks = [], segments = [], jalons = [], period
 
   return debut ? { debut, fin } : null
 }
+
+// ── Portions en pause ────────────────────────────────────────────────────────
+
+function periodeBloquanteDu(date, periodes) {
+  return periodes.find((p) => p.est_bloquante !== false && p.date_debut && p.date_fin
+    && date >= parseDate(p.date_debut) && date <= parseDate(p.date_fin)) ?? null
+}
+
+/**
+ * Plages d'une barre (tâche ou segment) qui traversent une fermeture
+ * bloquante : la barre les enjambe mais la tâche n'y avance pas. L'écran les
+ * dessine en contour seul, sous les hachures de la période — une barre pleine
+ * laissait croire que l'on travaillait pendant les congés.
+ *
+ * Vue semaine : la barre couvre des semaines entières, une semaine n'est donc
+ * en pause que si la tâche n'y travaille aucun jour (une fermeture du lundi au
+ * mardi ne coupe pas la semaine). Vues jour et mois : au jour près.
+ *
+ * @returns [{ debut, fin, periode }] — dates incluses, `periode` : celle du
+ *   premier jour bloqué de la plage (sa couleur)
+ */
+export function plagesEnPause(debut, duree, periodes = [], viewMode = 'day') {
+  if (!periodes.some((p) => p.est_bloquante !== false)) return []
+  const d0 = parseDate(debut)
+  const fin = dernierJourTache(d0, duree, periodes)
+
+  if (viewMode === 'week') {
+    const plages = []
+    for (let l = lundi(d0); l <= fin; l = decaler(l, 7)) {
+      let travaille = false
+      let periode = null
+      for (let k = 0; k < 7; k++) {
+        const jour = decaler(l, k)
+        if (jour < d0 || jour > fin) continue
+        const p = periodeBloquanteDu(jour, periodes)
+        if (p) periode ??= p
+        else if (jour.getDay() !== 0 && jour.getDay() !== 6) travaille = true
+      }
+      if (travaille || !periode) continue
+      const precedente = plages[plages.length - 1]
+      if (precedente && joursEntre(precedente.fin, l) === 1) precedente.fin = decaler(l, 6)
+      else plages.push({ debut: l, fin: decaler(l, 6), periode })
+    }
+    return plages
+  }
+
+  const plages = []
+  let courante = null
+  for (let jour = d0; jour <= fin; jour = decaler(jour, 1)) {
+    const p = periodeBloquanteDu(jour, periodes)
+    if (p) {
+      if (courante) courante.fin = jour
+      else courante = { debut: jour, fin: jour, periode: p }
+    } else if (courante) {
+      plages.push(courante)
+      courante = null
+    }
+  }
+  if (courante) plages.push(courante)
+  return plages
+}
+
+/**
+ * Les mêmes plages en pixels, relatives au bord gauche de la barre et rognées
+ * à sa largeur. Positions calculées comme les barres et les périodes.
+ *
+ * @returns [{ x, largeur, periode }]
+ */
+export function pausesDeLaBarre(debut, duree, geo, barre) {
+  return plagesEnPause(debut, duree, geo.periodes ?? [], geo.viewMode).map((plage) => {
+    let gauche
+    let droite
+    if (geo.viewMode === 'week') {
+      gauche = weekIndexFromRef(plage.debut, geo.dateRef) * geo.weekWidth
+      droite = (weekIndexFromRef(plage.fin, geo.dateRef) + 1) * geo.weekWidth
+    } else if (geo.viewMode === 'month') {
+      gauche = xAtDateMonth(plage.debut, geo.months, geo.monthWidth)
+      droite = xAtDateMonth(lendemain(plage.fin), geo.months, geo.monthWidth)
+    } else {
+      gauche = xAtDate(plage.debut, geo.dateRef, geo.dayPositions)
+      droite = xAtDate(lendemain(plage.fin), geo.dateRef, geo.dayPositions)
+    }
+    const x = Math.max(0, gauche - barre.left)
+    const largeur = Math.min(barre.width, droite - barre.left) - x
+    return { x, largeur, periode: plage.periode }
+  }).filter((p) => p.largeur > 0.5)
+}

@@ -231,6 +231,29 @@ export function computePhaseFragments(phase, periodes) {
 }
 
 /**
+ * Semaines en pause d'une phase : les trous entre deux fragments, où la barre
+ * enjambe une période bloquante sans avancer. L'écran y dessine le contour de
+ * la barre sous les hachures de la période, pour relier les morceaux.
+ *
+ * @returns [{ semaine_debut, annee_debut, duree_semaines, periode }] —
+ *   `periode` : la période bloquante de la première semaine du trou (sa couleur)
+ */
+export function pausesEntreFragments(fragments, periodes) {
+  const bloquantes = (periodes ?? []).filter((p) => p.est_bloquante !== false)
+  const pauses = []
+  for (let i = 0; i + 1 < (fragments?.length ?? 0); i++) {
+    const a = fragments[i]
+    const b = fragments[i + 1]
+    const debut = addWeeks(a.semaine_debut, a.annee_debut, a.duree_semaines)
+    const duree = weeksBetween(debut.semaine, debut.annee, b.semaine_debut, b.annee_debut)
+    if (duree <= 0) continue
+    const periode = bloquantes.find((p) => semaineEstBloquee(debut.semaine, debut.annee, rangesBloquants([p]))) ?? null
+    pauses.push({ semaine_debut: debut.semaine, annee_debut: debut.annee, duree_semaines: duree, periode })
+  }
+  return pauses
+}
+
+/**
  * Fin effective d'une phase : fin du dernier fragment, périodes bloquantes
  * déduites. C'est cette date que voient les phases dépendantes.
  */

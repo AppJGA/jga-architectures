@@ -328,12 +328,9 @@ export default function HomePage() {
           width: '100%', maxWidth: visibles.length === 5 ? 1320 : 1040,
         }}
       >
-        {/* Le logo de l'animation d'ouverture (index.html) vient s'y poser :
-            même fichier, même cadrage, sans quoi le raccord saute. */}
         <img
           src="/logo-jga.svg"
           alt="JGA Architectures"
-          data-logo-intro=""
           style={{
             height: 76, width: 'auto', marginBottom: 34,
             animation: reduit ? 'none' : 'jga-fade 0.7s ease both',

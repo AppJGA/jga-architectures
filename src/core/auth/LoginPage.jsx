@@ -126,7 +126,6 @@ export function LoginPage() {
           <img
             src="/logo-jga.svg"
             alt="Jacques Gerbe & Associés Architectures"
-            data-logo-intro=""
             style={{ width: 220, display: 'block', margin: '0 auto' }}
           />
         </div>

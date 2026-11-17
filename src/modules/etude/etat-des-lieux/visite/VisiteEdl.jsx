@@ -186,6 +186,7 @@ export function VisiteEdl({ affaireId, visite, obtenirLiens, onFermer }) {
     // Le contexte plutôt que l'état : une entrée toute récente n'est peut-être
     // pas encore rendue
     const ctx = contexte.current
+    if (!ctx.pieceId) return // second appui rapide : déjà sorti
     contexte.current = { ...ctx, pieceId: null }
     setPieceId(null)
     setPointId(null)

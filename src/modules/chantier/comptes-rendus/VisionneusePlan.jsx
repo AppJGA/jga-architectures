@@ -11,7 +11,7 @@ import { zoomAutour, limiterVue, pointSurPlan } from './plansLogique'
 
 const SEUIL_APPUI = 6 // px de déplacement au-delà desquels ce n'est plus un appui
 
-export function VisionneusePlan({ version, obtenirLiens, pastilles = [], idActive, onToucher, onPastille }) {
+export function VisionneusePlan({ version, obtenirLiens, pastilles = [], idActive, onToucher, onPastille, calque }) {
   const conteneur = useRef(null)
   const image = useRef(null)
   const [taille, setTaille] = useState({ largeur: 0, hauteur: 0 })
@@ -142,6 +142,7 @@ export function VisionneusePlan({ version, obtenirLiens, pastilles = [], idActiv
               style={{ width: bw, height: bh, display: 'block', background: 'white', boxShadow: '0 6px 24px -12px rgba(0,0,0,0.4)' }}
             />
           )}
+          {calque?.({ largeur: bw, hauteur: bh, zoom: vue.zoom })}
           {pastilles.map(p => {
             const active = p.id === idActive
             return (

@@ -35,7 +35,7 @@ export function PlanVisite({ niveau, pieces, points, nbPhotos, visitees, piece, 
   const touchable = (p) => (!piece || p.piece_id === piece.id)
 
   // Un point différent, ou plus de glisser : on repart d'un compte de doigts sain
-  useEffect(() => { pointeurs.current.clear(); glisseCourant.current = null; setGlisse(null) }, [pointId])
+  useEffect(() => { pointeurs.current.clear(); glisseCourant.current = null }, [pointId])
 
   const depuisEvenement = (e) => {
     const r = svg.current.getBoundingClientRect()

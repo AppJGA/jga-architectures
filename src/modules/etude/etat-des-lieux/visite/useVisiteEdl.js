@@ -88,7 +88,8 @@ export function useVisiteEdl(affaireId) {
   }, [recharger])
 
   useEffect(() => {
-    // Une relecture réussie efface l'erreur d'avant : elle ne vaut plus
+    // Choix retenu : toute relecture locale réussie (instantané + file de
+    // l'appareil) efface l'erreur affichée, même si elle venait du réseau
     const surFile = () => {
       relire().then(
         () => { if (affaireCourante.current === affaireId) setStatut((s) => (s.erreur ? { ...s, erreur: null } : s)) },

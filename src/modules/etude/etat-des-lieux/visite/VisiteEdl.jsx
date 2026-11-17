@@ -215,27 +215,31 @@ export function VisiteEdl({ affaireId, visite, obtenirLiens, onFermer }) {
   const choisirType = async (code) => {
     if (!point || !actif) return
     const t = typeEdl(code)
-    noterGeste({ type: 'modification', id: point.id, avant: { type: point.type ?? null, calque: point.calque ?? null } })
+    const avant = { type: point.type ?? null, calque: point.calque ?? null }
+    // Une écriture ratée (elle lève une erreur) ne laisse rien à annuler
     try {
       await visite.modifierPoint(point, { type: t?.code ?? null, calque: t?.calque ?? null }, contexte.current)
+      noterGeste({ type: 'modification', id: point.id, avant })
     } catch (err) { echouer(err) }
   }
 
   const deplacer = async (id, [x, y]) => {
     const p = (donnees?.points ?? []).find((q) => q.id === id)
     if (!p || !actif) return
-    noterGeste({ type: 'modification', id, avant: { x: p.x, y: p.y } })
+    const avant = { x: p.x, y: p.y }
     try {
       await visite.modifierPoint(p, { x: arrondirMetre(x), y: arrondirMetre(y) }, contexte.current)
+      noterGeste({ type: 'modification', id, avant })
     } catch (err) { echouer(err) }
   }
 
   const supprimer = async () => {
     if (!point || !actif) return
-    noterGeste({ type: 'suppression', point, photos: photosDuPoint })
+    const geste = { type: 'suppression', point, photos: photosDuPoint }
     setPointId(null)
     try {
       await visite.supprimerPoint(point, contexte.current)
+      noterGeste(geste)
     } catch (err) { echouer(err) }
   }
 
@@ -246,8 +250,8 @@ export function VisiteEdl({ affaireId, visite, obtenirLiens, onFermer }) {
     } catch (err) { echouer(err) }
   }
 
-  // Le geste est retiré de l'historique avant d'être défait : un second
-  // appui pendant l'écriture défait le geste d'avant, pas le même
+  // Une seule annulation à la fois : un second appui pendant l'écriture est
+  // ignoré (`annulation`) ; le geste est retiré de l'historique avant d'être défait
   const annuler = async () => {
     if (!historique.length || annulation.current || !actif) return
     const geste = historique[historique.length - 1]
@@ -320,7 +324,9 @@ export function VisiteEdl({ affaireId, visite, obtenirLiens, onFermer }) {
   }
 
   // ─── Avant de démarrer ─────────────────────────────────────────────────────
-  if (!enCours) {
+  // Tant que la visite n'est pas écrite (micro ouvert, `commencer` en cours),
+  // l'accueil reste : « Terminer » ne doit pas pouvoir partir avant elle
+  if (!enCours || demarrage) {
     let contenu
     if (visite.sansMemoire) contenu = <p style={{ margin: 0 }}>Ce navigateur ne garde rien sur l’appareil (navigation privée ?) : la visite a besoin de sa mémoire pour ne rien perdre sans réseau.</p>
     else if (!visite.charge) contenu = <p style={{ margin: 0 }}>Chargement…</p>
@@ -361,7 +367,7 @@ export function VisiteEdl({ affaireId, visite, obtenirLiens, onFermer }) {
         <header style={{ background: 'white', borderBottom: '0.5px solid rgba(0,0,0,0.1)', padding: '6px 16px', display: 'flex', alignItems: 'center', gap: 10 }}>
           <p style={{ flex: 1, margin: 0, fontSize: 17, fontWeight: 600, color: '#1F1B17' }}>État des lieux · visite</p>
           {visite.resume.enAttente > 0 && <span style={{ fontSize: 12, color: '#9C9591', whiteSpace: 'nowrap' }}>{visite.resume.enAttente} à envoyer</span>}
-          <button type="button" style={bouton} onClick={onFermer}><X size={16} /> Fermer</button>
+          <button type="button" style={{ ...bouton, ...(demarrage ? { opacity: 0.45, cursor: 'default' } : {}) }} disabled={demarrage} onClick={onFermer}><X size={16} /> Fermer</button>
         </header>
         {alerte}
         {erreurLecture}

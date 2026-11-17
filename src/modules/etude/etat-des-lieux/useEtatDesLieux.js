@@ -92,5 +92,15 @@ export function useEtatDesLieux(affaireId) {
     }
   }, [recharger])
 
-  return { ...etat, erreur, setErreur, recharger, modifierPiece, ajouterPiece, supprimerPiece, renommerNiveau }
+  // Affichée tout de suite ; sans la migration 078, gardée pour la séance seulement
+  const enregistrerRelecture = useCallback(async (niveauId, relecture) => {
+    setEtat((e) => ({ ...e, niveaux: e.niveaux.map((n) => (n.id === niveauId ? { ...n, relecture } : n)) }))
+    try {
+      await donnees.enregistrerRelecture(niveauId, relecture)
+    } catch (err) {
+      setErreur(err?.message ?? String(err))
+    }
+  }, [])
+
+  return { ...etat, erreur, setErreur, recharger, modifierPiece, ajouterPiece, supprimerPiece, renommerNiveau, enregistrerRelecture }
 }

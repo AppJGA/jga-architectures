@@ -8,6 +8,9 @@ import {
 import { imageIaDepuisUrl } from './renduNiveau'
 import { proposerPiecesIa } from './piecesIa'
 import { versPiecesEdl } from './piecesIaLogique'
+import { controlesAutomatiques, signalementsVisibles } from './relectureLogique'
+import { relireNiveau } from './relectureIa'
+import { PanneauRelecture } from './PanneauRelecture'
 
 // ─── Corriger les pièces d'un étage ──────────────────────────────────────────
 //
@@ -35,7 +38,7 @@ const HISTORIQUE_MAX = 50
 
 const designation = (p) => [p.numero, p.nom].filter(Boolean).join(' · ') || 'une autre pièce'
 
-export function EditeurPieces({ niveau, pieces, obtenirLiens, lectureSeule, onModifier, onAjouter, onSupprimer, onAjouterPlusieurs }) {
+export function EditeurPieces({ niveau, pieces, obtenirLiens, lectureSeule, onModifier, onAjouter, onSupprimer, onAjouterPlusieurs, onRelecture }) {
   const [choisie, setChoisie] = useState(null)
   const [sommet, setSommet] = useState(null) // dernier sommet touché de la pièce choisie
   const [trace, setTrace] = useState(null) // contour en cours de dessin (mètres)
@@ -57,6 +60,9 @@ export function EditeurPieces({ niveau, pieces, obtenirLiens, lectureSeule, onMo
   const version = useMemo(() => ({ id: niveau.id, chemin: niveau.chemin, chemin_apercu: niveau.chemin_apercu, largeur: niveau.largeur, hauteur: niveau.hauteur }), [niveau])
   const tries = useMemo(() => [...pieces].sort((a, b) => (a.nom || '').localeCompare(b.nom || '', 'fr', { numeric: true })), [pieces])
   const piece = pieces.find((p) => p.id === choisie)
+  const controles = useMemo(() => controlesAutomatiques(pieces, niveau.textes ?? []), [pieces, niveau.textes])
+  const ecartes = niveau.relecture?.ecartes ?? []
+  const aVerifier = signalementsVisibles([...(niveau.relecture?.signalements ?? []), ...controles], pieces, ecartes)
   const contourDe = (p) => (glisse?.id === p.id ? glisse.contour : p.contour)
 
   const versCalque = (largeur, hauteur) => (p) => {
@@ -235,6 +241,23 @@ export function EditeurPieces({ niveau, pieces, obtenirLiens, lectureSeule, onMo
     }
   }
 
+  // Nouvelle relecture : les signalements de Claude sont remplacés, les
+  // contrôles écartés à la main le restent
+  const relire = async () => {
+    setErreur(null)
+    setAttente('Claude relit le découpage…')
+    try {
+      const liens = await obtenirLiens([niveau.chemin_apercu])
+      const relecture = await relireNiveau({ niveau, pieces, source: liens.get(niveau.chemin_apercu) })
+      await onRelecture({ ...relecture, ecartes: ecartes.filter((c) => c.startsWith('regle:')) })
+    } catch (err) {
+      setErreur(err?.message ?? String(err))
+    } finally {
+      setAttente(null)
+    }
+  }
+  const ecarter = (cle) => onRelecture({ ...(niveau.relecture ?? {}), ecartes: [...ecartes, cle] })
+
   const calque = ({ largeur, hauteur, zoom }) => {
     const enCalque = versCalque(largeur, hauteur)
     const rayon = 9 / zoom
@@ -327,6 +350,12 @@ export function EditeurPieces({ niveau, pieces, obtenirLiens, lectureSeule, onMo
           <p role="status" style={encadreAmbre}>
             Échelle à vérifier : les surfaces dessinées valent environ ×{echelle.toLocaleString('fr-FR', { maximumFractionDigits: 2 })} les surfaces écrites.
           </p>
+        )}
+        {pieces.length > 0 && (
+          <PanneauRelecture
+            signalements={aVerifier} pieces={pieces} relueLe={niveau.relecture?.le} lectureSeule={lectureSeule}
+            enCours={!!attente} onRelire={relire} onChoisir={choisir} onEcarter={ecarter}
+          />
         )}
         {attente && <p style={{ margin: 0, fontSize: 12, color: '#5E5854' }}>{attente}</p>}
         {erreur && <p role="alert" style={{ margin: 0, fontSize: 12, color: '#B8412C', background: '#FDF2F0', border: '0.5px solid rgba(184,65,44,0.4)', padding: '8px 10px' }}>{erreur}</p>}

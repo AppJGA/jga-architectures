@@ -178,6 +178,7 @@ export default function EtatDesLieuxModule({ lectureSeule = false }) {
             onAjouter={edl.ajouterPiece}
             onSupprimer={edl.supprimerPiece}
             onAjouterPlusieurs={async (niveauIdCible, pieces) => { await enregistrerPieces(affaireId, niveauIdCible, pieces); edl.recharger() }}
+            onRelecture={(relecture) => edl.enregistrerRelecture(niveau.id, relecture)}
           />
         </div>
       )}

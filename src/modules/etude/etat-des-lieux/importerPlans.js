@@ -14,7 +14,8 @@ import { proposerNiveaux, uniteParDefaut } from './niveauxLogique'
 import { versPiecesEdl } from './piecesIaLogique'
 import { proposerPiecesIa } from './piecesIa'
 import { rendreNiveauDxf } from './renduNiveau'
-import { assurerEtat, envoyerSource, enregistrerNiveau, enregistrerPieces, annulerImport } from './edlDonnees'
+import { assurerEtat, envoyerSource, enregistrerNiveau, enregistrerPieces, enregistrerRelecture, annulerImport } from './edlDonnees'
+import { relireNiveau } from './relectureIa'
 
 const TEXTES_GARDES = 3000
 
@@ -49,7 +50,7 @@ async function importerDxf(affaireId, etatId, prep, ordre, surEtape, avertisseme
     const { cadrage, rendu, ia } = await rendreNiveauDxf(n)
     const niveau = await enregistrerNiveau(affaireId, etatId, {
       nom: n.nom, ordre: ordre.valeur++, format: 'dxf', sourceNom: prep.nom, cheminSource, rendu, cadrage,
-      unitesParMetre: prep.unitesParMetre, textes: textesGardes(n.textes.map((t) => ({ texte: t.texte, pos: t.pos }))),
+      unitesParMetre: prep.unitesParMetre, textes: textesGardes(n.textes.map((t) => ({ texte: t.texte, calque: t.calque, pos: t.pos }))),
     })
     noterNiveau(suivi, niveau)
     let pieces = n.pieces.map((p) => ({ ...p, origine: 'dxf', aVerifier: false }))
@@ -68,7 +69,19 @@ async function importerDxf(affaireId, etatId, prep, ordre, surEtape, avertisseme
       }
     }
     surEtape(`Enregistrement de « ${n.nom} »…`)
-    await enregistrerPieces(affaireId, niveau.id, pieces)
+    const lignes = await enregistrerPieces(affaireId, niveau.id, pieces)
+    // Claude relit le découpage avant le premier affichage ; il signale, ne
+    // modifie rien. Un échec n'arrête pas l'import : la relecture se relance
+    // depuis l'écran de correction.
+    if (lignes.length) {
+      surEtape(`Claude relit le découpage de « ${n.nom} »…`)
+      try {
+        const relecture = await relireNiveau({ niveau, pieces: lignes, source: rendu.apercu.blob })
+        await enregistrerRelecture(niveau.id, { ...relecture, ecartes: [] })
+      } catch (err) {
+        avertissements.push(`« ${n.nom} » : relecture par Claude non faite (${err.message}). Elle se relance depuis l’écran de correction.`)
+      }
+    }
   }
 }
 

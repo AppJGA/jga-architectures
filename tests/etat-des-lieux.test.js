@@ -13,6 +13,8 @@ import {
 import { lireDxf, decoderDxf, nettoyerMtext } from '../src/modules/etude/etat-des-lieux/dxfLecture.js'
 import { detecterPieces, lireSurface, lireHsp, lireNumero, estNom } from '../src/modules/etude/etat-des-lieux/piecesDxfLogique.js'
 
+import { controlesAutomatiques, signalementsVisibles } from '../src/modules/etude/etat-des-lieux/relectureLogique.js'
+import { construireDemandeRelecture, lireRelecture, SCHEMA_RELECTURE } from '../src/modules/etude/etat-des-lieux/relectureIaLogique.js'
 import { piecesDesRestes } from '../src/modules/etude/etat-des-lieux/restesLogique.js'
 import { niveauDeNom, uniteParDefaut, proposerNiveaux } from '../src/modules/etude/etat-des-lieux/niveauxLogique.js'
 import { construireDemandePieces, lirePropositionsPieces, versPiecesEdl, SCHEMA_PIECES, TEXTES_MAX } from '../src/modules/etude/etat-des-lieux/piecesIaLogique.js'
@@ -115,6 +117,61 @@ describe('pièces superposées', () => {
     const autres = [{ id: 'a', nom: 'Chambre', contour: rectangle(0, 0, 4, 5) }, { id: 'b', nom: 'Bureau', contour: rectangle(4, 0, 3, 5) }]
     assert.equal(pieceChevauchee(rectangle(3, 0, 3, 5), autres)?.nom, 'Chambre')
     assert.equal(pieceChevauchee(rectangle(7, 0, 2, 5), autres), null)
+  })
+})
+
+describe('relecture du découpage', () => {
+  const rectangle = (x, y, l, h) => [[x, y], [x + l, y], [x + l, y + h], [x, y + h]]
+  const piece = (id, nom, numero, contour, surface_lue = null) => ({ id, nom, numero, contour, surface_lue })
+  const pieces = [
+    piece('a', 'Chambre', '0001', rectangle(0, 0, 4, 5), 20),
+    piece('b', '', '0002', rectangle(4, 0, 3, 5)),
+    piece('c', 'Bureau', '0003', rectangle(7, 0, 3, 5), 20),
+    piece('d', 'Placard', '0004', rectangle(10, 0, 0.5, 0.5)),
+    piece('e', 'Chambre', '0001', rectangle(0, 6, 4, 5)),
+  ]
+  const textes = [
+    { texte: 'CIRC.', calque: 'P-DÉSIGNATION_DES_PIECES_R', pos: [20, 20] },
+    { texte: 'Chambre', calque: 'P-DÉSIGNATION_DES_PIECES_R', pos: [2, 2] },
+    { texte: 'Armoire', calque: 'A-MOBILIER_RDC', pos: [30, 30] },
+  ]
+  test('contrôles sans IA : nom sans pièce, pièce sans nom, surface, très petite, doublon', () => {
+    const r = controlesAutomatiques(pieces, textes)
+    const motifs = (id) => r.filter((x) => x.pieceId === id).map((x) => x.type)
+    assert.deepEqual(r.filter((x) => x.pieceId === null).map((x) => x.motif), ['« CIRC. » est écrit sur le plan, mais aucune pièce ne l’entoure.'])
+    assert.deepEqual(motifs('a'), ['doublon'])
+    assert.deepEqual(motifs('b'), ['sans-nom'])
+    assert.deepEqual(motifs('c'), ['surface'])
+    assert.deepEqual(motifs('d'), ['petite'])
+    assert.deepEqual(motifs('e'), ['doublon'])
+  })
+  test('textes sans calque (étages importés avant) : pas de contrôle des noms sans pièce', () => {
+    const r = controlesAutomatiques(pieces, textes.map(({ texte, pos }) => ({ texte, pos })))
+    assert.equal(r.some((x) => x.pieceId === null), false)
+  })
+  test('signalements écartés à la main, ou visant une pièce supprimée : masqués', () => {
+    const tous = [...controlesAutomatiques(pieces, textes), { cle: 'ia:x', pieceId: 'zz', motif: 'pièce disparue', source: 'ia' }]
+    const visibles = signalementsVisibles(tous, pieces, ['regle:sans-nom:b'])
+    assert.equal(visibles.some((x) => x.pieceId === 'b'), false)
+    assert.equal(visibles.some((x) => x.pieceId === 'zz'), false)
+    assert.ok(visibles.some((x) => x.pieceId === 'c'))
+  })
+  test('demande à Claude : image numérotée, liste des pièces, noms sans pièce, schéma imposé', () => {
+    const d = construireDemandeRelecture({
+      image: 'QUJD', largeur: 2000, hauteur: 900,
+      pieces: [{ n: 1, nom: 'Chambre', numero: '0001', surface: 20, surfaceLue: 20 }, { n: 2, nom: '', numero: null, surface: 3.5, surfaceLue: null }],
+      nomsSansPiece: ['CIRC.'],
+    })
+    assert.equal(d.messages[0].content[0].type, 'image')
+    const texte = d.messages[0].content[1].text
+    assert.match(texte, /1\tChambre\t0001\t20\t20/)
+    assert.match(texte, /2\t\t\t3,5\t/)
+    assert.match(texte, /CIRC\./)
+    assert.equal(d.output_config.format.schema, SCHEMA_RELECTURE)
+  })
+  test('réponse relue : numéros hors liste écartés, motifs vides écartés, 0 = sans pièce', () => {
+    const r = lireRelecture({ signalements: [{ piece: 2, motif: ' déborde sur le couloir ' }, { piece: 9, motif: 'x' }, { piece: 1, motif: '' }, { piece: 0, motif: 'Un local fermé sans pièce en haut à droite' }] }, 2)
+    assert.deepEqual(r, [{ index: 2, motif: 'déborde sur le couloir' }, { index: 0, motif: 'Un local fermé sans pièce en haut à droite' }])
   })
 })
 

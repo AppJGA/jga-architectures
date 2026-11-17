@@ -118,6 +118,19 @@ export async function renommerNiveau(id, nom) {
   if (!data?.length) throw new Error(LECTURE_SEULE)
 }
 
+// Relecture du découpage d'un étage (migration 078). Sans la colonne, la
+// relecture s'affiche mais ne survit pas à la fermeture : on le dit.
+export async function enregistrerRelecture(niveauId, relecture) {
+  const { data, error } = await supabase.from('edl_niveaux').update({ relecture }).eq('id', niveauId).select('id')
+  if (error) {
+    if (error.code === 'PGRST204' || error.code === '42703' || /relecture/i.test(error.message ?? '')) {
+      throw new Error('La relecture n’est pas gardée : la migration 078 doit être passée dans Supabase.')
+    }
+    throw error
+  }
+  if (!data?.length) throw new Error(LECTURE_SEULE)
+}
+
 // Un import interrompu retire ce qu'il a déjà enregistré : sinon « Importer »,
 // relancé, recréait ces étages en double. Les fichiers ne partent qu'une fois
 // les lignes retirées (un refus RLS ne rend pas d'erreur : on compte), pour

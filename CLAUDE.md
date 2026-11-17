@@ -191,7 +191,7 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
   Toujours lire par `referencesCadastre` (repli sur les anciennes colonnes) ;
   l'enregistrement (`colonnesCadastre`) tient aussi à jour `cadastre_section`
   / `cadastre_parcelle` (première ligne) et `cadastre_superficie` (total).
-- **Base** : `supabase/migrations/`, numérotées, 77 fichiers, **passées à la
+- **Base** : `supabase/migrations/`, numérotées, 78 fichiers, **passées à la
   main** dans le SQL Editor de Supabase : un code qui dépend d'une nouvelle
   colonne doit tolérer son absence tant que la migration n'est pas faite.
   **Toute table créée depuis le 2026-10-30 doit recevoir ses droits d'API
@@ -728,6 +728,19 @@ lot 1 : `docs/superpowers/plans/2026-11-17-etat-des-lieux-lot1-preparer.md`.
   forfait Max (organisation « JGA's Individual Org »). **Aucune entrée dans
   `vercel.json`** pour cette fonction : au-delà de 60 s sans Fluid compute,
   Vercel refuse tout le déploiement ; durée par défaut du projet.
+- **Relecture du découpage** (`relectureLogique.js`, `relectureIaLogique.js`,
+  `relectureIa.js`, `api/edl-relecture.js`, `PanneauRelecture.jsx`) : on
+  **signale, on ne corrige jamais** (Claude dessine mal les contours sur un
+  plan dense ; ceux du DXF sont exacts). Contrôles sans IA recalculés à
+  l'affichage : nom écrit sans pièce autour (textes d'étage gardés **avec
+  leur calque** depuis cette version ; étages plus anciens : contrôle
+  sauté), pièce sans nom, surface dessinée ≠ écrite, pièce < 0,5 m², même
+  nom et même numéro. Claude relit chaque étage **à l'import** (aperçu
+  2 000 px, pièces numérotées dessus, liste des pièces, noms sans pièce) et
+  sur demande (« Relire avec Claude ») ; ses signalements et les écartés
+  (« C'est juste ») sont dans `edl_niveaux.relecture` (migration 078 ; sans
+  elle, gardés pour la séance seulement, message). Un échec de la relecture
+  n'arrête pas l'import.
 - **Repère** : contours en mètres dans le repère du plan d'origine (y vers
   le haut) ; `edl_niveaux.cadrage` lie mètres et pixels de l'image
   (`versPixels` / `versMetres`).

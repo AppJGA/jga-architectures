@@ -1,4 +1,5 @@
-// Appel de api/edl-pieces depuis le navigateur (compte agence, réseau requis)
+// Appel des fonctions serveur de l'état des lieux depuis le navigateur
+// (compte agence, réseau requis)
 
 import { supabase } from '../../../core/supabase/client'
 import { lirePropositionsPieces } from './piecesIaLogique'
@@ -15,14 +16,16 @@ const MESSAGES = {
   'reponse-tronquee': 'La réponse de Claude était trop longue pour cet étage.',
 }
 
-export async function proposerPiecesIa(demande) {
+// Appel d'une fonction serveur de l'état des lieux (pièces, relecture) : même
+// session vérifiée, mêmes messages d'erreur
+export async function appelerClaude(route, demande) {
   if (!navigator.onLine) throw new ErreurPiecesIa('reseau', 'Pas de réseau.')
   const { data } = await supabase.auth.getSession()
   const jeton = data?.session?.access_token
   if (!jeton) throw new ErreurPiecesIa('session', MESSAGES.session)
   let reponse
   try {
-    reponse = await fetch('/api/edl-pieces', {
+    reponse = await fetch(route, {
       method: 'POST',
       headers: { Authorization: `Bearer ${jeton}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(demande),
@@ -34,5 +37,10 @@ export async function proposerPiecesIa(demande) {
   if (!reponse.ok) {
     throw new ErreurPiecesIa(json?.erreur ?? 'erreur', MESSAGES[json?.erreur] ?? `L’analyse a échoué (${json?.detail ?? reponse.status}).`)
   }
-  return lirePropositionsPieces(json?.resultat, { largeur: demande.largeur, hauteur: demande.hauteur })
+  return json?.resultat
+}
+
+export async function proposerPiecesIa(demande) {
+  const resultat = await appelerClaude('/api/edl-pieces', demande)
+  return lirePropositionsPieces(resultat, { largeur: demande.largeur, hauteur: demande.hauteur })
 }

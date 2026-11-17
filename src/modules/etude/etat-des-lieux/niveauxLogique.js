@@ -125,7 +125,7 @@ export function proposerNiveaux(lecture, detection, unitesParMetre, nomFichier =
     return {
       nom: n.nom,
       traits,
-      textes: textes.map(({ texte, hauteur, pos }) => ({ texte, hauteur, pos })),
+      textes,
       pieces: [...gardees, ...couloirs],
       ecartees: ecartees.length,
       couloirs: couloirs.length,

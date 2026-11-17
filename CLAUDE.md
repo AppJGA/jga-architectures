@@ -685,25 +685,36 @@ lot 1 : `docs/superpowers/plans/2026-11-17-etat-des-lieux-lot1-preparer.md`.
   binaire et PDF scanné refusés aussi.
 - **DXF** (`dxfLecture.js`) : blocs déployés (ArchiCAD range le plan dans
   des blocs de vues, un par étage), espace papier ignoré sauf si l'espace
-  objet est vide, MTEXT nettoyés (`^J`, `\P`, codes de police). Fichiers
+  objet est vide, MTEXT nettoyés (`^J`, `\P`, `\p…;`, codes de police). Fichiers
   R14 décodés en Windows-1252.
 - **Pièces** (`piecesDxfLogique.js`) : **jamais reconstruites depuis les
   murs**. Le calque des pièces est celui dont les polylignes fermées
   contiennent une surface écrite égale à la surface dessinée ; le rapport
-  donne l'unité (zones ArchiCAD en cm, géomètre en m). « HP » = hauteur sous
+  donne l'unité (zones ArchiCAD en cm, géomètre en m). **Plusieurs calques
+  retenus** s'ils passent ce test avec la même unité que le meilleur (zones
+  rangées par étage : `S-SURFACES_RDC`, `S-SURFACES_R+1`…). « HP » = hauteur sous
   plafond ; « Hp » (porte) et « HSP » (poutre) ignorés — la casse compte.
 - **Étages** (`niveauxLogique.js`) : par nom de bloc ou de calque (RDC,
   SSOL / SOUS-SOL, R+n, Combles — les étages d'ArchiCAD sont superposés),
   sinon grappes de traits (cellule d'un mètre) et grappe qui porte les
-  pièces ; nom d'après le fichier s'il n'y a qu'un étage.
+  pièces ; nom d'après le fichier s'il n'y a qu'un étage ; dessin morcelé
+  sans pièces : tout en un étage.
 - **Claude** (`piecesIaLogique.js`, `api/edl-pieces.js`, SDK Anthropic,
   `claude-opus-5-5`, sortie JSON imposée, replis `fallbacks: 'default'`) :
   seulement pour un PDF ou un étage sans contours ; reçoit l'image (2 000 px)
   et les textes positionnés ; pièces « à vérifier » (bleu). Crédits API du
-  forfait Max (organisation « JGA's Individual Org »).
+  forfait Max (organisation « JGA's Individual Org »). **Aucune entrée dans
+  `vercel.json`** pour cette fonction : au-delà de 60 s sans Fluid compute,
+  Vercel refuse tout le déploiement ; durée par défaut du projet.
 - **Repère** : contours en mètres dans le repère du plan d'origine (y vers
   le haut) ; `edl_niveaux.cadrage` lie mètres et pixels de l'image
-  (`versPixels` / `versMetres`). Un PDF : 1 point = 0,0254 / 72 m × échelle.
+  (`versPixels` / `versMetres`). Un PDF : 1 point = 0,0254 / 72 m × échelle,
+  mesuré sur la **feuille affichée** (`pointFeuilleEnMetres`,
+  `cadrageDecoupe`), jamais par `convertToPdfPoint` : une page en /Rotate
+  90 transposait tout.
+- **Import** (`importerPlans.js`) : un import interrompu retire ce qu'il a
+  écrit (`annulerImport` : étages, état des lieux qu'il a créé, fichiers) —
+  relancer ne double rien. Un fichier illisible n'est refusé que seul.
 - **Données** (migration 077) : `edl_etats` (un par affaire), `edl_niveaux`
   (image 6 000 px + aperçu, textes du plan, source compressée), `edl_pieces`
   (contour, surface et HP lues, origine dxf / ia / main, `a_verifier`,
@@ -715,7 +726,11 @@ lot 1 : `docs/superpowers/plans/2026-11-17-etat-des-lieux-lot1-preparer.md`.
   bucket s'ouvre à tout compte agence).
 - **Écran** : `EditeurPieces` sur `VisionneusePlan` (nouvelle prop `calque`,
   SVG au-dessus de l'image) : sommets déplacés au doigt, rond de milieu =
-  nouveau sommet, `pointercancel` = rien d'enregistré.
+  nouveau sommet (zone sensible de 44 px sous chaque rond),
+  `pointercancel` = rien d'enregistré. Bandeau « Échelle à vérifier » par
+  étage si la médiane surface dessinée / écrite s'écarte de plus de 15 %
+  (`ecartEchelle`, au moins trois surfaces écrites). Lecture ratée : ni
+  anciens étages, ni import proposé (« Réessayer »).
 
 ## To-do list (`src/modules/etude/todo/`)
 

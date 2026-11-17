@@ -7,6 +7,10 @@
 // organisation « JGA's Individual Org » : crédits mensuels du forfait Max).
 // Consignes et schéma viennent de piecesIaLogique.js : depuis le navigateur,
 // on n'envoie que des données. Réservé à l'agence.
+//
+// Durée : celle par défaut du projet (pas d'entrée dans vercel.json — au-delà
+// de 60 s sans Fluid compute, Vercel refuse tout le déploiement). Un très
+// grand étage pourrait demander de découper l'appel, un étage à la fois.
 
 import Anthropic from '@anthropic-ai/sdk'
 import { verifierAgence, jetonDe } from './_agence.js'

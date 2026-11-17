@@ -7,9 +7,9 @@
 // numéros et heures sont décidés avant d'écrire.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { disponible as memoireDisponible, operationsDeLAffaire, ecrire, effacer, MAGASINS_EDL } from './baseEdl'
+import { disponible as memoireDisponible, operationsDeLAffaire, lire, ecrire, effacer, MAGASINS_EDL } from './baseEdl'
 import { preparerVisite, instantaneGarde } from './visiteDonnees'
-import { envoyerFileEdl, signalerFileEdl, EVENEMENT_FILE_EDL } from './synchroEdl'
+import { envoyerFileEdl, signalerFileEdl, sousVerrouEdl, EVENEMENT_FILE_EDL } from './synchroEdl'
 import {
   TYPES_EDL, operationEdl, etatAvecFileEdl, horodatageSuivant, evenementEdl, operationInverse, resumeFileEdl,
 } from './fileEdlLogique'
@@ -38,8 +38,22 @@ export function useVisiteEdl(affaireId) {
   const numeros = useRef({ affaireId: null, dernier: 0 })
   const donneesCourantes = useRef(null)
 
+  // Affaire affichée et ordre des relectures : un résultat qui arrive après un
+  // changement d'affaire, ou après une relecture plus récente, est jeté.
+  const affaireCourante = useRef(affaireId)
+  const sequence = useRef(0)
+  useEffect(() => {
+    affaireCourante.current = affaireId
+    sequence.current++
+  }, [affaireId])
+
+  // Instantané et file lus ensemble sous le verrou de l'envoi : sans lui, on
+  // pouvait voir l'ancien instantané avec la file déjà vidée (un point
+  // disparaissait un instant).
   const relire = useCallback(async () => {
-    const [g, ops] = await Promise.all([instantaneGarde(affaireId), operationsDeLAffaire(affaireId)])
+    const rang = ++sequence.current
+    const [g, ops] = await sousVerrouEdl(() => Promise.all([instantaneGarde(affaireId), operationsDeLAffaire(affaireId)]))
+    if (rang !== sequence.current || affaireCourante.current !== affaireId) return
     for (const o of ops) dernierCreeLe.current = Math.max(dernierCreeLe.current, o.creeLe)
     setGarde(g)
     setFile(ops)
@@ -57,7 +71,12 @@ export function useVisiteEdl(affaireId) {
         erreur = err?.message ?? String(err)
       }
     }
-    await relire().catch(() => {})
+    try {
+      await relire()
+    } catch (err) {
+      erreur = erreur ?? err?.message ?? String(err)
+    }
+    if (affaireCourante.current !== affaireId) return
     setStatut({ charge: true, indisponible, erreur })
   }, [affaireId, relire])
 
@@ -69,7 +88,11 @@ export function useVisiteEdl(affaireId) {
   }, [recharger])
 
   useEffect(() => {
-    const surFile = () => { relire().catch(() => {}) }
+    const surFile = () => {
+      relire().catch((err) => {
+        if (affaireCourante.current === affaireId) setStatut((s) => ({ ...s, erreur: err?.message ?? String(err) }))
+      })
+    }
     const surReseau = () => { envoyerFileEdl(affaireId).catch(() => {}) }
     window.addEventListener(EVENEMENT_FILE_EDL, surFile)
     window.addEventListener('online', surReseau)
@@ -105,8 +128,10 @@ export function useVisiteEdl(affaireId) {
   }, [affaireId])
 
   const commencer = useCallback(async (visiteId, ctx) => {
+    const etatId = donneesCourantes.current?.etat?.id
+    if (!etatId) throw new Error('L’état des lieux n’est pas chargé : impossible de commencer la visite.')
     await executer(TYPES_EDL.visiteCreer, {
-      visite: { id: visiteId, etat_id: donneesCourantes.current?.etat?.id, affaire_id: affaireId, debut: new Date().toISOString(), fin: null },
+      visite: { id: visiteId, etat_id: etatId, affaire_id: affaireId, debut: new Date().toISOString(), fin: null },
     })
     await noter('debut', { ...ctx, visiteId })
   }, [affaireId, executer, noter])
@@ -152,20 +177,26 @@ export function useVisiteEdl(affaireId) {
     await noter(inverse.evenement, { ...ctx, pointId }, { annulation: true })
   }, [executer, noter])
 
+  // L'opération se lit en base, sous le verrou de l'envoi : la copie de
+  // l'écran peut être en retard, et un envoi en cours ne doit pas perdre
+  // le fichier de la photo qu'il téléverse.
   const rejouer = useCallback(async (opId) => {
-    const op = file.find((o) => o.id === opId)
-    if (!op) return
-    await ecrire(MAGASINS_EDL.operations, { ...op, essais: 0, erreur: null })
+    await sousVerrouEdl(async () => {
+      const op = await lire(MAGASINS_EDL.operations, opId).catch(() => null)
+      if (op) await ecrire(MAGASINS_EDL.operations, { ...op, essais: 0, erreur: null })
+    })
     signalerFileEdl()
     envoyerFileEdl(affaireId).catch(() => {})
-  }, [affaireId, file])
+  }, [affaireId])
 
   const abandonner = useCallback(async (opId) => {
-    const op = file.find((o) => o.id === opId)
-    await effacer(MAGASINS_EDL.operations, opId)
-    if (op?.type === TYPES_EDL.photoAjouter) await effacer(MAGASINS_EDL.fichiers, op.charge.photo.id).catch(() => {})
+    await sousVerrouEdl(async () => {
+      const op = await lire(MAGASINS_EDL.operations, opId).catch(() => null)
+      await effacer(MAGASINS_EDL.operations, opId)
+      if (op?.type === TYPES_EDL.photoAjouter) await effacer(MAGASINS_EDL.fichiers, op.charge.photo.id).catch(() => {})
+    })
     signalerFileEdl()
-  }, [file])
+  }, [])
 
   // Objet stable : un objet neuf à chaque rendu relancerait les effets qui en dépendent
   return useMemo(() => ({

@@ -254,7 +254,7 @@ describe('étages', () => {
     assert.equal(niveauDeNom('Plan R+1').cle, 'R+1')
     assert.equal(niveauDeNom('2EME ETAGE').cle, 'R+2')
     assert.equal(niveauDeNom('Combles').cle, 'COMBLES')
-    assert.equal(niveauDeNom('24073-RDC.dxf').cle, 'RDC')
+    assert.equal(niveauDeNom('PLAN-RDC.dxf').cle, 'RDC')
     assert.equal(niveauDeNom('PARS'), null)
     assert.equal(niveauDeNom('00_MURS'), null)
     assert.equal(niveauDeNom(null), null)
@@ -283,7 +283,7 @@ describe('étages', () => {
     const batiment = traitsDe(null, 'MURS', 60, 0)
     const ailleurs = traitsDe(null, 'CADRE', 60, 10_000)
     const piece = { nom: 'Salon', calque: 'PIECES', bloc: null, contour: [[1, 1], [5, 1], [5, 5], [1, 5]] }
-    const n = proposerNiveaux({ traits: [...batiment, ...ailleurs], textes: [] }, { pieces: [piece] }, 1, '24073-RDC.dxf')
+    const n = proposerNiveaux({ traits: [...batiment, ...ailleurs], textes: [] }, { pieces: [piece] }, 1, 'PLAN-RDC.dxf')
     assert.equal(n.length, 1)
     assert.equal(n[0].nom, 'Rez-de-chaussée')
     assert.equal(n[0].traits.length, 60)

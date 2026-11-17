@@ -123,7 +123,16 @@ export function nettoyerMtext(brut) {
     .replace(/\\P/g, '\n')
     // \pxqc; (alignement de paragraphe) : la majuscule, déjà traitée, est un saut de ligne
     .replace(/\\p[^;]*;/g, '')
-    .replace(/\\[Ss]([^;]*?)[#^/]([^;]*);/g, '$1/$2')
+    // \A1 (alignement) : certains exports l'écrivent sans point-virgule
+    // (« \A1{\H.66x;… ») — il passait sinon dans le texte et la surface
+    // « 16,12\A1/ m\A12/ » n'était plus lue
+    .replace(/\\A[0-2];?/g, '')
+    // Empilement \Sa^b; : exposant seul quand b est vide (« m\S2^ ; » = m²),
+    // sinon fraction ou tolérance écrite avec une barre
+    .replace(/\\[Ss]([^;]*?)([#^/])([^;]*);/g, (_, haut, signe, bas) => {
+      if (signe === '^' && !bas.trim()) return { 2: '²', 3: '³' }[haut.trim()] ?? haut.trim()
+      return `${haut}/${bas}`
+    })
     .replace(/\\[ACcFfHhQqTtWw][^;\\]*;/g, '')
     .replace(/\\[LlOoKk]/g, '')
     .replace(/\\~/g, ' ')

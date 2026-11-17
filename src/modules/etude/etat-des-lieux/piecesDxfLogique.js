@@ -46,6 +46,8 @@ export function estNom(texte) {
   const premiere = premiereLigne(texte)
   if (!premiere || premiere.includes('_')) return false // « 02_RDC » : code de niveau ArchiCAD
   if (/^(S\s*=|HP\b|HSP\b|Hp\b|Hf\b)/.test(premiere)) return false
+  // Trois lettres au moins (« SU » d'ArchiCAD n'est pas un nom), sauf les WC
+  if (/^W\.?C\.?$/i.test(premiere.trim())) return true
   return (premiere.match(/\p{L}/gu) ?? []).length >= 3
 }
 

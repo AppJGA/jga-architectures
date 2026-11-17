@@ -306,6 +306,14 @@ describe('lecture DXF', () => {
     assert.equal(nettoyerMtext('{\\H2.5x;\\C1;Couloir}'), 'Couloir')
     assert.equal(nettoyerMtext('Hauteur\\~2,50\\U+00B2'), 'Hauteur 2,50²')
   })
+  test('alignement \\A sans point-virgule et exposant \\S…^ ; (marques de zone exportées)', () => {
+    const brut = '\\A1;{\\pqc;\\pt0,4600;\\fArial|b0|i0|c0|p0;\\W1.000000;16,12\\fArial|b0|i0|c0|p0;\\W1.000000;\\A1{\\H.66x;\\S^  ;}\\fArial|b0|i0|c0|p0;\\W1.000000; m\\fArial|b0|i0|c0|p0;\\W1.000000;\\A1{\\H.66x;\\S2^  ;}}'
+    assert.equal(nettoyerMtext(brut), '16,12 m²')
+    assert.equal(nettoyerMtext('{\\A1\\H.66x;\\S^ ;}0,90'), '0,90')
+    // Fraction et tolérance gardent leur barre
+    assert.equal(nettoyerMtext('\\S1/2;'), '1/2')
+    assert.equal(nettoyerMtext('\\S+0,1^-0,1;'), '+0,1/-0,1')
+  })
   test('code de paragraphe \\p…; retiré (minuscule ; \\P reste un saut de ligne)', () => {
     assert.equal(nettoyerMtext('{\\pxqc;Salon\\PS=12 m²}'), 'Salon\nS=12 m²')
     assert.equal(nettoyerMtext('\\pi-2,l2;Entrée'), 'Entrée')
@@ -337,6 +345,8 @@ describe('pièces d’un DXF', () => {
     assert.equal(lireNumero('Chambre'), null)
     assert.equal(estNom('Ch. 1 lit'), true)
     assert.equal(estNom('SU'), false)
+    assert.equal(estNom('WC'), true)
+    assert.equal(estNom('W.C.'), true)
     assert.equal(estNom('02_RDC'), false)
     assert.equal(estNom('S=4.0 m²'), false)
   })

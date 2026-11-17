@@ -6,7 +6,7 @@ import { test, describe } from 'node:test'
 import {
   choisirFormat, extensionDe, dureeLisible, bilanEssai, regrouperTranches, dureeSourdine,
   cleVisite, deLaVisite, champsVisite, etatApresEvenement, enregistrementActif, etatPourLeCr, messageDemarrage,
-  minuterieActive, enregistrementsARecuperer,
+  minuterieActive, enregistrementsARecuperer, erreurApresMoteur,
 } from '../src/modules/chantier/comptes-rendus/enregistrement/enregistrementLogique.js'
 
 describe('format', () => {
@@ -183,5 +183,22 @@ describe('état du moteur d’après ses signaux', () => {
   test('micro refusé : ce qu’il faut faire', () => {
     assert.match(messageDemarrage({ name: 'NotAllowedError' }), /Micro refusé/)
     assert.match(messageDemarrage(new Error('occupé')), /n’a pas pu démarrer : occupé/)
+  })
+})
+
+describe('erreur affichée : le moteur n’efface que la sienne', () => {
+  const refus = '2 morceaux refusés par la transcription'
+  const micro = 'Micro refusé : autorisez-le'
+  test('« Arrêter » laisse une erreur de transcription affichée', () => {
+    assert.equal(erreurApresMoteur(refus, null, null), refus)
+  })
+  test('le moteur efface son erreur tant qu’elle est affichée', () => {
+    assert.equal(erreurApresMoteur(micro, null, micro), null)
+  })
+  test('remplacée depuis par la transcription : elle reste', () => {
+    assert.equal(erreurApresMoteur(refus, null, micro), refus)
+  })
+  test('une erreur du moteur s’affiche toujours', () => {
+    assert.equal(erreurApresMoteur(refus, micro, null), micro)
   })
 })

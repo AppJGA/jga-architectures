@@ -153,3 +153,10 @@ export function cleDeCadre(cadre, taille) {
   if (!cadre) return 'plan'
   return `${cadre.x0},${cadre.y0},${cadre.x1},${cadre.y1}|${taille.largeur}x${taille.hauteur}`
 }
+
+/**
+ * La vue se réajuste-t-elle ? `retenue` est la dernière clé non nulle. Une clé
+ * nulle (conteneur masqué, mesuré à 0) ne compte pas : au retour, la même clé
+ * ne défait pas le zoom de l'utilisateur.
+ */
+export const recadrerVue = (retenue, cle) => cle !== null && cle !== retenue

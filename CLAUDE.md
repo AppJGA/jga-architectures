@@ -838,8 +838,14 @@ lot 1 : `docs/superpowers/plans/2026-11-17-etat-des-lieux-lot1-preparer.md`.
   file**, même en ligne (`fileEdlLogique.js`, testé) : écran = instantané +
   file ; après chaque envoi réussi, l'opération est reportée dans
   l'instantané avant d'être retirée (`synchroEdl.js`, verrou
-  `jga-envoi-edl`). Instantané relu sous le même verrou, en lectures
-  `synchro_id:id` (hors cache du service worker), paginées par identifiant.
+  `jga-envoi-edl`). Instantané écrit sous le même verrou, en lectures
+  `synchro_id:id` (hors cache du service worker), paginées par identifiant,
+  **8 s au plus par requête** (`bornerDelai` ; délai dépassé = pas de
+  réseau, sans message). La visite s'ouvre d'abord sur la copie de
+  l'appareil, relue d'un seul tenant (`instantaneEtOperations`, sans le
+  verrou), puis la lecture réseau suit ; deux `recharger` simultanés n'en
+  font qu'un. Un point ou une entrée dont la pièce a été supprimée au
+  bureau est renvoyé sans pièce (23503, `insererSansPieceDisparue`).
   Envoi aussi par `useMoteurSynchro` (`envoyerToutEdl`). Le témoin du
   bandeau du haut reste celui des CR ; le module et la visite comptent
   leurs gestes à envoyer. La visite exige IndexedDB.

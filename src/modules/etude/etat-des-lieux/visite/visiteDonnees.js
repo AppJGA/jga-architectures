@@ -9,11 +9,16 @@
 // service worker (vite.config.js), sans quoi un réseau lent ferait garder un
 // état ancien. Pagination par identifiant (1 000 lignes par page) : un grand
 // bâtiment dépasse vite 1 000 points.
+//
+// Chaque requête est bornée (`bornerDelai`) : ces lectures échappent au
+// repli de 6 s du service worker, et un réseau faible (l'appareil se croit en
+// ligne, rien ne répond) tenait le verrou de l'envoi près d'une minute.
 
 import { supabase } from '../../../../core/supabase/client'
 import { edlIndisponible } from '../edlConstantes'
-import { MAGASINS_EDL, ecrire, lire, disponible } from './baseEdl'
+import { MAGASINS_EDL, ecrire } from './baseEdl'
 import { sousVerrouEdl } from './synchroEdl'
+import { bornerDelai, DELAI_LECTURE_MS } from './visiteLogique'
 
 const FRAIS = 'synchro_id:id, *'
 const COLONNES_ETAT = 'synchro_id:id, id, affaire_id'
@@ -28,13 +33,13 @@ const propre = (ligne) => {
   return copie
 }
 
-async function toutes(table, colonnes, filtrer) {
+async function toutes(table, colonnes, filtrer, delaiMs) {
   const lignes = []
   let dernier = null
   for (;;) {
     let requete = filtrer(supabase.from(table).select(colonnes)).order('id').limit(PAGE)
     if (dernier) requete = requete.gt('id', dernier)
-    const { data, error } = await requete
+    const { data, error } = await bornerDelai((signal) => requete.abortSignal(signal), delaiMs)
     if (error) throw error
     lignes.push(...(data ?? []).map(propre))
     if (!data || data.length < PAGE) return lignes
@@ -42,23 +47,26 @@ async function toutes(table, colonnes, filtrer) {
   }
 }
 
-export async function lireToutEdl(affaireId) {
+export async function lireToutEdl(affaireId, { delaiMs = DELAI_LECTURE_MS } = {}) {
   const deLAffaire = (q) => q.eq('affaire_id', affaireId)
   let visites
   try {
-    visites = await toutes('edl_visites', FRAIS, deLAffaire)
+    visites = await toutes('edl_visites', FRAIS, deLAffaire, delaiMs)
   } catch (err) {
     if (edlIndisponible(err)) return { indisponible: true }
     throw err
   }
-  const { data: etat, error } = await supabase.from('edl_etats').select(COLONNES_ETAT).eq('affaire_id', affaireId).maybeSingle()
+  const { data: etat, error } = await bornerDelai(
+    (signal) => supabase.from('edl_etats').select(COLONNES_ETAT).eq('affaire_id', affaireId).abortSignal(signal).maybeSingle(),
+    delaiMs,
+  )
   if (error) throw error
   const [niveaux, pieces, points, photos, entrees] = await Promise.all([
-    toutes('edl_niveaux', COLONNES_NIVEAUX, deLAffaire),
-    toutes('edl_pieces', COLONNES_PIECES, deLAffaire),
-    toutes('edl_points', FRAIS, deLAffaire),
-    toutes('edl_photos', FRAIS, deLAffaire),
-    toutes('edl_evenements', 'synchro_id:id, id, visite_id, niveau_id, piece_id, type, le', (q) => deLAffaire(q).eq('type', 'entree')),
+    toutes('edl_niveaux', COLONNES_NIVEAUX, deLAffaire, delaiMs),
+    toutes('edl_pieces', COLONNES_PIECES, deLAffaire, delaiMs),
+    toutes('edl_points', FRAIS, deLAffaire, delaiMs),
+    toutes('edl_photos', FRAIS, deLAffaire, delaiMs),
+    toutes('edl_evenements', 'synchro_id:id, id, visite_id, niveau_id, piece_id, type, le', (q) => deLAffaire(q).eq('type', 'entree'), delaiMs),
   ])
   return {
     indisponible: false,
@@ -74,18 +82,17 @@ export async function lireToutEdl(affaireId) {
   }
 }
 
-/** Lit tout et le garde sur l'appareil ; une erreur (réseau) laisse l'ancien instantané en place. */
-export function preparerVisite(affaireId) {
+/**
+ * Lit tout et le garde sur l'appareil ; une erreur (réseau, délai dépassé)
+ * laisse l'ancien instantané en place. L'écriture reste sous le verrou : un
+ * envoi ne peut pas reporter une opération dans un instantané qu'on écrase.
+ */
+export function preparerVisite(affaireId, options) {
   return sousVerrouEdl(async () => {
-    const lu = await lireToutEdl(affaireId)
+    const lu = await lireToutEdl(affaireId, options)
     if (lu.indisponible) return { indisponible: true }
     const prepareLe = Date.now()
     await ecrire(MAGASINS_EDL.instantanes, { affaireId, donnees: lu.donnees, prepareLe })
     return { indisponible: false, prepareLe }
   })
-}
-
-export async function instantaneGarde(affaireId) {
-  if (!disponible()) return null
-  return (await lire(MAGASINS_EDL.instantanes, affaireId).catch(() => null)) ?? null
 }

@@ -73,6 +73,24 @@ export function appliquerOperationEdl(etat, op) {
   }
 }
 
+// Pièce supprimée au bureau pendant que le geste attendait : la base refuse
+// la ligne (clé étrangère, 23503) et la refuserait à chaque essai. Le point
+// ou l'événement reste à l'étage, sans pièce — ce que la base ferait d'elle-même
+// si la pièce avait été supprimée après l'envoi (079 : on delete set null).
+const TABLES_A_PIECE = new Set(['edl_points', 'edl_evenements'])
+export const pieceDisparue = (error) =>
+  error?.code === '23503' && /piece_id/.test(`${error.message ?? ''} ${error.details ?? ''}`)
+
+/**
+ * Insère par `inserer(ligne)` (rend l'erreur de la base ou null), une seconde
+ * fois sans pièce si la pièce n'existe plus. Rend l'erreur du dernier essai.
+ */
+export async function insererSansPieceDisparue(table, ligne, inserer) {
+  const error = await inserer(ligne)
+  if (TABLES_A_PIECE.has(table) && ligne?.piece_id && pieceDisparue(error)) return inserer({ ...ligne, piece_id: null })
+  return error
+}
+
 /**
  * L'instantané emporté, puis la file par-dessus. Les opérations refusées par
  * la base restent appliquées : un point posé pendant la visite ne disparaît

@@ -9,11 +9,11 @@ import { cadrage } from '../src/modules/etude/etat-des-lieux/geometrieEdl.js'
 import {
   ZOOM_MAX_VISITE, penseBete, pieceSous, pointProche, cadrePiece, numeroSuivant, numeroPourRestauration,
   piecesVisitees, etatPiece, visiteEnCours, evenementPourEtat, messageArret, cheminsPhotoEdl,
-  arrondirMetre, designationPiece,
+  arrondirMetre, designationPiece, bornerDelai, delaiDepasse,
 } from '../src/modules/etude/etat-des-lieux/visite/visiteLogique.js'
 import {
   TYPES_EDL, ESSAIS_MAX, operationEdl, horodatageSuivant, appliquerOperationEdl, etatAvecFileEdl,
-  resumeFileEdl, evenementEdl, operationInverse,
+  resumeFileEdl, evenementEdl, operationInverse, pieceDisparue, insererSansPieceDisparue,
 } from '../src/modules/etude/etat-des-lieux/visite/fileEdlLogique.js'
 
 const proche = (a, b, ecart = 1e-9) => assert.ok(Math.abs(a - b) < ecart, `${a} ≠ ${b}`)
@@ -257,5 +257,86 @@ describe('annuler un geste de la visite', () => {
   })
   test('geste inconnu : rien', () => {
     assert.equal(operationInverse({ type: 'autre' }, []), null)
+  })
+})
+
+describe('lecture bornée dans le temps (réseau qui ne répond pas)', () => {
+  test('une requête qui ne répond jamais est abandonnée : signal levé, erreur « délai »', async () => {
+    let recu = null
+    const debut = Date.now()
+    await assert.rejects(
+      bornerDelai((signal) => { recu = signal; return new Promise(() => {}) }, 30),
+      (err) => delaiDepasse(err),
+    )
+    assert.ok(recu.aborted)
+    assert.ok(Date.now() - debut < 1000)
+  })
+  test('rend la main même si la requête n’écoute pas le signal (renouvellement du jeton)', async () => {
+    // Thenable qui ignore le signal, comme supabase-js avant son fetch
+    const sourd = { then: () => {} }
+    await assert.rejects(bornerDelai(() => sourd, 20), (err) => delaiDepasse(err))
+  })
+  test('une réponse à temps passe telle quelle, signal intact', async () => {
+    let recu = null
+    const r = await bornerDelai((signal) => { recu = signal; return Promise.resolve({ data: [1], error: null }) }, 1000)
+    assert.deepEqual(r, { data: [1], error: null })
+    assert.equal(recu.aborted, false)
+  })
+  test('une autre erreur n’est pas un délai dépassé', async () => {
+    await assert.rejects(bornerDelai(() => Promise.reject(new TypeError('Load failed')), 1000), (err) => !delaiDepasse(err))
+    assert.equal(delaiDepasse({ code: '42P01' }), false)
+    assert.equal(delaiDepasse(null), false)
+  })
+})
+
+describe('geste en attente dont la pièce a été supprimée au bureau', () => {
+  const refusPiece = {
+    code: '23503',
+    message: 'insert or update on table "edl_points" violates foreign key constraint "edl_points_piece_id_fkey"',
+    details: 'Key (piece_id)=(p-1) is not present in table "edl_pieces".',
+  }
+  // Base simulée : refuse toute ligne qui désigne une pièce absente
+  const base = (pieces) => {
+    const essais = []
+    return {
+      essais,
+      inserer: async (ligne) => {
+        essais.push(ligne)
+        return ligne.piece_id && !pieces.includes(ligne.piece_id) ? refusPiece : null
+      },
+    }
+  }
+  test('reconnaît le refus de clé étrangère sur la pièce, et lui seul', () => {
+    assert.ok(pieceDisparue(refusPiece))
+    assert.ok(pieceDisparue({ code: '23503', message: 'violates foreign key', details: 'Key (piece_id)=(x)' }))
+    assert.equal(pieceDisparue({ code: '23503', message: 'violates foreign key constraint "edl_points_niveau_id_fkey"', details: 'Key (niveau_id)=(x)' }), false)
+    assert.equal(pieceDisparue({ code: '23505', message: 'piece_id' }), false)
+    assert.equal(pieceDisparue(null), false)
+  })
+  test('point : réessayé une fois sans pièce, il reste à l’étage', async () => {
+    const b = base([])
+    const point = { id: 'pt-1', niveau_id: 'n-1', piece_id: 'p-1', numero: 3 }
+    assert.equal(await insererSansPieceDisparue('edl_points', point, b.inserer), null)
+    assert.equal(b.essais.length, 2)
+    assert.deepEqual(b.essais[1], { ...point, piece_id: null })
+  })
+  test('événement : même règle', async () => {
+    const b = base([])
+    const ev = { id: 'e-1', type: 'entree', piece_id: 'p-1' }
+    assert.equal(await insererSansPieceDisparue('edl_evenements', ev, b.inserer), null)
+    assert.equal(b.essais[1].piece_id, null)
+  })
+  test('pièce présente, autre table ou autre refus : un seul essai, erreur rendue', async () => {
+    const b = base(['p-1'])
+    assert.equal(await insererSansPieceDisparue('edl_points', { id: 'pt-2', piece_id: 'p-1' }, b.inserer), null)
+    assert.equal(b.essais.length, 1)
+    const autre = base([])
+    assert.deepEqual(await insererSansPieceDisparue('edl_photos', { id: 'ph-1', piece_id: 'p-1' }, autre.inserer), refusPiece)
+    assert.equal(autre.essais.length, 1)
+    const doublon = { code: '23505', message: 'duplicate key' }
+    const essais = []
+    const r = await insererSansPieceDisparue('edl_points', { id: 'pt-3', piece_id: 'p-1' }, async (l) => { essais.push(l); return doublon })
+    assert.equal(r, doublon)
+    assert.equal(essais.length, 1)
   })
 })

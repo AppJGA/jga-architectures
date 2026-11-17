@@ -8,7 +8,7 @@
 
 import { supabase } from '../../../../core/supabase/client'
 import { BUCKET_EDL } from '../edlConstantes'
-import { TYPES_EDL } from './fileEdlLogique'
+import { TYPES_EDL, insererSansPieceDisparue } from './fileEdlLogique'
 import { MAGASINS_EDL, lire, effacer } from './baseEdl'
 
 const DOUBLON = '23505'
@@ -26,7 +26,7 @@ async function modifier(table, id, champs) {
 // Une ligne à la fois : un doublon dans un envoi groupé ferait croire que
 // toutes les lignes sont passées
 async function inserer(table, ligne) {
-  verifier((await supabase.from(table).insert(ligne)).error)
+  verifier(await insererSansPieceDisparue(table, ligne, async (l) => (await supabase.from(table).insert(l)).error))
 }
 
 // Lectures de décision : alias `synchro_id` (exclu du cache du service worker,

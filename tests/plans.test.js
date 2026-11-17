@@ -5,7 +5,7 @@ import { test, describe } from 'node:test'
 
 import {
   dimensionsPlan, indiceSuivant, versionCourante, versionsInutilisees,
-  cadrageExtrait, pointSurPlan, zoomAutour, limiterVue, vueSurCadre, cleDeCadre,
+  cadrageExtrait, pointSurPlan, zoomAutour, limiterVue, vueSurCadre, cleDeCadre, recadrerVue,
 } from '../src/modules/chantier/comptes-rendus/plansLogique.js'
 import { preparerReprise } from '../src/modules/chantier/comptes-rendus/crLogique.js'
 
@@ -153,5 +153,31 @@ describe('cleDeCadre (quand réajuster la vue)', () => {
     assert.notEqual(avant, apres)
     assert.equal(cleDeCadre(cadre, { largeur: 1000, hauteur: 700 }), avant)
     assert.notEqual(cleDeCadre({ ...cadre, x1: 0.35 }, { largeur: 1000, hauteur: 700 }), avant)
+  })
+})
+
+describe('recadrerVue (clé retenue)', () => {
+  // Rejoue la suite des clés comme la visionneuse : rend les recadrages faits
+  const recadrages = (cles) => {
+    let retenue = null
+    const faits = []
+    for (const cle of cles) if (recadrerVue(retenue, cle)) { retenue = cle; faits.push(cle) }
+    return faits
+  }
+  const cadre = { x0: 0.1, y0: 0.2, x1: 0.3, y1: 0.4 }
+  const taille = { largeur: 1000, hauteur: 700 }
+  test('sans cadre : conteneur masqué puis rendu, la vue (zoom de l’utilisateur) n’est pas réajustée', () => {
+    const cles = [cleDeCadre(null, taille), cleDeCadre(null, { largeur: 0, hauteur: 0 }), cleDeCadre(null, taille)]
+    assert.deepEqual(recadrages(cles), ['plan'])
+  })
+  test('avec un cadre : masqué puis rendu à la même taille, pas de recadrage ; à une autre taille, recadrage', () => {
+    const k = cleDeCadre(cadre, taille)
+    const autre = cleDeCadre(cadre, { largeur: 1000, hauteur: 520 })
+    assert.deepEqual(recadrages([k, null, k]), [k])
+    assert.deepEqual(recadrages([k, null, autre]), [k, autre])
+  })
+  test('un vrai changement de cadre recadre toujours', () => {
+    const k = cleDeCadre(cadre, taille)
+    assert.deepEqual(recadrages([k, cleDeCadre(null, taille), k]), [k, 'plan', k])
   })
 })

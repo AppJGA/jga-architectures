@@ -178,3 +178,14 @@ export function messageDemarrage(err) {
     ? 'Micro refusé : autorisez-le pour ce site dans les réglages de l’iPad ou du navigateur.'
     : `L’enregistrement n’a pas pu démarrer : ${err?.message ?? err}`
 }
+
+/**
+ * Erreur affichée après un signal du moteur (`message`, nul pour effacer ;
+ * `sienne` = la dernière qu'il avait donnée). Le moteur n'efface que la
+ * sienne : une erreur de transcription affichée depuis survit à « Arrêter »
+ * comme à une reprise.
+ */
+export function erreurApresMoteur(affichee, message, sienne) {
+  if (message !== null) return message
+  return affichee === sienne ? null : affichee
+}

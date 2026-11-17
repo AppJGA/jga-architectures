@@ -113,3 +113,31 @@ export function cheminsPhotoEdl(affaireId, id, extension) {
     chemin_miniature: `${affaireId}/edl/photos/${id}-mini.${extension}`,
   }
 }
+
+// ─── Lecture bornée dans le temps ────────────────────────────────────────────
+
+export const DELAI_LECTURE_MS = 8000
+const CODE_DELAI = 'DELAI_DEPASSE'
+
+/** Lecture abandonnée faute de réponse : vaut « pas de réseau ». */
+export const delaiDepasse = (err) => err?.code === CODE_DELAI
+
+/**
+ * `construire(signal)` rend une requête (promesse ou thenable) ; passé
+ * `delaiMs`, la requête est abandonnée et la promesse rejetée (`delaiDepasse`).
+ * La course rend la main même si la requête n'écoute pas le signal :
+ * supabase-js attend le renouvellement du jeton avant de lancer le fetch, et
+ * cette attente-là ne s'abandonne pas.
+ */
+export function bornerDelai(construire, delaiMs = DELAI_LECTURE_MS) {
+  const controleur = new AbortController()
+  let minuteur
+  const delai = new Promise((_, rejeter) => {
+    minuteur = setTimeout(() => {
+      // Rejet avant l'abandon : la course rend notre erreur, pas celle du fetch
+      rejeter(Object.assign(new Error('Le réseau ne répond pas.'), { code: CODE_DELAI }))
+      controleur.abort()
+    }, delaiMs)
+  })
+  return Promise.race([construire(controleur.signal), delai]).finally(() => clearTimeout(minuteur))
+}

@@ -166,20 +166,27 @@ export function VisiteEdl({ affaireId, visite, obtenirLiens, onFermer }) {
   // pièce depuis le plan de l'étage)
   const entrer = async (p, choisir = null) => {
     const ctx = contexte.current
+    const dedans = { visiteId, niveauId: niveau.id, pieceId: p.id }
+    // Tout de suite, pas au rendu : un second toucher rapide sur une autre
+    // pièce doit noter la sortie de celle-ci
+    contexte.current = dedans
     setPieceId(p.id)
     setPointId(choisir)
     try {
       const notes = [rec.couper()]
       // Passage direct d'une pièce à une autre : la sortie de la première d'abord
       if (ctx.pieceId && ctx.pieceId !== p.id) notes.push(visite.noter('sortie', ctx))
-      notes.push(visite.noter('entree', { visiteId, niveauId: niveau.id, pieceId: p.id }))
+      notes.push(visite.noter('entree', dedans))
       await Promise.all(notes)
     } catch (err) { echouer(err) }
   }
 
   const sortir = async () => {
     if (!actif) return
-    const ctx = { visiteId, niveauId: niveau.id, pieceId }
+    // Le contexte plutôt que l'état : une entrée toute récente n'est peut-être
+    // pas encore rendue
+    const ctx = contexte.current
+    contexte.current = { ...ctx, pieceId: null }
     setPieceId(null)
     setPointId(null)
     try {

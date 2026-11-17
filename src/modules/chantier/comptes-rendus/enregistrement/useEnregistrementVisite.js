@@ -15,7 +15,7 @@ import { enregistrementPossible } from './enregistreur'
 import { recupererMorceaux, morceauxEnAttente, enregistrementsInterrompus } from './audioLocal'
 import { transcrireEnAttente, enregistrementsDisponibles, messageTranscription, ECHECS_MAX } from './transcription'
 import { useEnregistreur } from './useEnregistreur'
-import { etatPourLeCr, enregistrementsARecuperer } from './enregistrementLogique'
+import { etatPourLeCr, enregistrementsARecuperer, erreurApresMoteur } from './enregistrementLogique'
 
 export function useEnregistrementVisite({ crId, affaireId, vocabulaire = [], actif = true }) {
   const [disponible, setDisponible] = useState(false)
@@ -47,8 +47,11 @@ export function useEnregistrementVisite({ crId, affaireId, vocabulaire = [], act
 
   const champs = useMemo(() => ({ crId, affaireId }), [crId, affaireId])
   // Une seule erreur affichée, la plus récente : celle du moteur (démarrage,
-  // reprise) arrive par `surErreur` et se remplace par celle de la transcription
-  const moteur = useEnregistreur({ champs, surMorceau: () => { transcrire() }, surErreur: setErreur })
+  // reprise) arrive par `surErreur` et se remplace par celle de la transcription.
+  // Le moteur n'efface que la sienne (« Arrêter » ne fait plus disparaître
+  // « morceaux refusés »).
+  const surErreur = useCallback((message, sienne) => setErreur((e) => erreurApresMoteur(e, message, sienne)), [])
+  const moteur = useEnregistreur({ champs, surMorceau: () => { transcrire() }, surErreur })
   const { demarrer: demarrerMoteur, enregistrementCourant } = moteur
   // Appelé tel quel par un onClick : l'événement ne doit jamais partir comme
   // champs de visite sur les morceaux

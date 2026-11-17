@@ -7,13 +7,13 @@
 // numéros et heures sont décidés avant d'écrire.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { disponible as memoireDisponible, operationsDeLAffaire, lire, ecrire, effacer, MAGASINS_EDL } from './baseEdl'
-import { preparerVisite, instantaneGarde } from './visiteDonnees'
+import { disponible as memoireDisponible, instantaneEtOperations, lire, ecrire, effacer, MAGASINS_EDL } from './baseEdl'
+import { preparerVisite } from './visiteDonnees'
 import { envoyerFileEdl, signalerFileEdl, sousVerrouEdl, EVENEMENT_FILE_EDL } from './synchroEdl'
 import {
   TYPES_EDL, operationEdl, etatAvecFileEdl, horodatageSuivant, evenementEdl, operationInverse, resumeFileEdl,
 } from './fileEdlLogique'
-import { numeroSuivant } from './visiteLogique'
+import { numeroSuivant, delaiDepasse } from './visiteLogique'
 import { preparerPhoto } from './photosEdl'
 
 const enLigne = () => typeof navigator === 'undefined' || navigator.onLine !== false
@@ -47,37 +47,65 @@ export function useVisiteEdl(affaireId) {
     sequence.current++
   }, [affaireId])
 
-  // Instantané et file lus ensemble sous le verrou de l'envoi : sans lui, on
-  // pouvait voir l'ancien instantané avec la file déjà vidée (un point
-  // disparaissait un instant).
+  // Instantané et file lus d'un seul tenant (`instantaneEtOperations`) : lus
+  // séparément, on pouvait voir l'ancien instantané avec la file déjà vidée
+  // (un point disparaissait un instant). Pas sous le verrou de l'envoi : un
+  // envoi bloqué par un réseau faible retenait l'ouverture de la visite.
+  // Rend l'instantané retenu (`undefined` si le résultat a été jeté).
   const relire = useCallback(async () => {
     const rang = ++sequence.current
-    const [g, ops] = await sousVerrouEdl(() => Promise.all([instantaneGarde(affaireId), operationsDeLAffaire(affaireId)]))
-    if (rang !== sequence.current || affaireCourante.current !== affaireId) return
+    const [g, ops] = await instantaneEtOperations(affaireId)
+    if (rang !== sequence.current || affaireCourante.current !== affaireId) return undefined
     for (const o of ops) dernierCreeLe.current = Math.max(dernierCreeLe.current, o.creeLe)
     setGarde(g)
     setFile(ops)
+    return g
   }, [affaireId])
 
-  const recharger = useCallback(async () => {
-    if (!memoireDisponible()) return
-    let indisponible = false
-    let erreur = null
-    if (enLigne()) {
+  // Une recharge à la fois : après un rechargement en ?visite=1, le module et
+  // l'écran de la visite la demandent ensemble ; la seconde rejoint la première
+  // au lieu d'attendre une deuxième lecture derrière le verrou.
+  const enVol = useRef(null)
+
+  const recharger = useCallback(() => {
+    if (!memoireDisponible()) return Promise.resolve()
+    if (enVol.current?.affaireId === affaireId) return enVol.current.promesse
+    const promesse = (async () => {
+      const message = (err) => err?.message ?? String(err)
+      let erreurLocale = null
+      let erreurReseau = null
+      let indisponible = null
+      // La copie de l'appareil d'abord : la visite s'ouvre sans attendre le
+      // réseau, qui peut se dire présent sans rien répondre
       try {
-        indisponible = (await preparerVisite(affaireId)).indisponible
+        const g = await relire()
+        if (g?.donnees && affaireCourante.current === affaireId) setStatut((s) => (s.charge ? s : { ...s, charge: true }))
       } catch (err) {
-        // Réseau qui lâche : on garde ce qui est déjà sur l'appareil
-        erreur = err?.message ?? String(err)
+        erreurLocale = message(err)
       }
-    }
-    try {
-      await relire()
-    } catch (err) {
-      erreur = erreur ?? err?.message ?? String(err)
-    }
-    if (affaireCourante.current !== affaireId) return
-    setStatut({ charge: true, indisponible, erreur })
+      if (enLigne()) {
+        try {
+          indisponible = (await preparerVisite(affaireId)).indisponible
+        } catch (err) {
+          // Délai dépassé = pas de réseau : la copie de l'appareil reste, sans
+          // message, comme hors ligne. Un autre échec est signalé.
+          if (!delaiDepasse(err)) erreurReseau = message(err)
+        }
+        try {
+          await relire()
+          erreurLocale = null
+        } catch (err) {
+          erreurLocale = message(err)
+        }
+      }
+      if (affaireCourante.current !== affaireId) return
+      const erreur = erreurReseau ?? erreurLocale
+      setStatut((s) => ({ charge: true, indisponible: indisponible ?? s.indisponible, erreur }))
+    })()
+    enVol.current = { affaireId, promesse }
+    const fin = () => { if (enVol.current?.promesse === promesse) enVol.current = null }
+    promesse.then(fin, fin)
+    return promesse
   }, [affaireId, relire])
 
   // Chargement initial, asynchrone (pas de setState synchrone dans l'effet)

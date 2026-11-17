@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useLayoutEffect } from 'react'
 import { Plus, Minus, Maximize } from 'lucide-react'
-import { zoomAutour, limiterVue, pointSurPlan, vueSurCadre, cleDeCadre } from './plansLogique'
+import { zoomAutour, limiterVue, pointSurPlan, vueSurCadre, cleDeCadre, recadrerVue } from './plansLogique'
 
 // ─── Visionneuse de plan ─────────────────────────────────────────────────────
 //
@@ -60,11 +60,12 @@ export function VisionneusePlan({ version, obtenirLiens, pastilles = [], idActiv
   const vueDuCadre = () => (cadre ? limiterVue(vueSurCadre(cadre, taille, { bw, bh, ox, oy }, { zoomMax }), bw, bh) : { zoom: 1, dx: 0, dy: 0 })
   // Nouveau cadre (pièce ouverte, refermée), ou conteneur redimensionné alors
   // qu'un cadre est posé : la vue s'y ajuste (cleDeCadre, testé). Le pincement
-  // qui suit reste libre.
+  // qui suit reste libre. Conteneur masqué un instant : la clé retenue reste
+  // (recadrerVue, testé), le zoom de l'utilisateur n'est pas défait.
   const cleCadre = echelle > 0 ? cleDeCadre(cadre, taille) : null
-  if (cleCadre !== cadreVu) {
+  if (recadrerVue(cadreVu, cleCadre)) {
     setCadreVu(cleCadre)
-    if (cleCadre !== null) setVue(vueDuCadre())
+    setVue(vueDuCadre())
   }
 
   const appliquer = (v) => setVue(limiterVue(v, bw, bh))

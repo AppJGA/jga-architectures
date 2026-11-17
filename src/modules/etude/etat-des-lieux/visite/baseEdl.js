@@ -64,3 +64,22 @@ export async function operationsDeLAffaire(affaireId) {
   const ops = await transaction(MAGASINS_EDL.operations, 'readonly', (m) => m.index('affaireId').getAll(affaireId)).then((r) => r ?? [])
   return ops.sort((a, b) => a.creeLe - b.creeLe)
 }
+
+/**
+ * L'instantané d'une affaire et ses gestes, lus dans une même transaction.
+ * Report dans l'instantané puis retrait de la file sont deux écritures
+ * successives : une lecture d'un seul tenant voit l'un des états qu'elles
+ * traversent, jamais l'ancien instantané avec la file déjà vidée (et
+ * l'application d'une opération est idempotente). D'où une vue cohérente sans
+ * attendre le verrou de l'envoi, qu'un réseau faible peut tenir longtemps.
+ */
+export function instantaneEtOperations(affaireId) {
+  return ouvrir().then((db) => new Promise((resolve, reject) => {
+    const tx = db.transaction([MAGASINS_EDL.instantanes, MAGASINS_EDL.operations], 'readonly')
+    const garde = tx.objectStore(MAGASINS_EDL.instantanes).get(affaireId)
+    const ops = tx.objectStore(MAGASINS_EDL.operations).index('affaireId').getAll(affaireId)
+    tx.oncomplete = () => resolve([garde.result ?? null, (ops.result ?? []).sort((a, b) => a.creeLe - b.creeLe)])
+    tx.onerror = () => reject(tx.error)
+    tx.onabort = () => reject(tx.error)
+  }))
+}

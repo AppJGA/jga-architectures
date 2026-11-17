@@ -36,9 +36,15 @@ export function useEnregistreur({ champs = {}, surMorceau, surEtat, surErreur } 
   const rappels = useRef({ champs, surMorceau, surEtat, surErreur })
   useEffect(() => { rappels.current = { champs, surMorceau, surEtat, surErreur } })
 
+  // `surErreur(message, sienne)` : l'écran peut afficher d'autres erreurs
+  // (transcription) ; le moteur n'efface jamais que la sienne
+  const erreurPropre = useRef(null)
   const setErreur = useCallback((message) => {
+    const sienne = erreurPropre.current
+    if (message === null && sienne === null) return
+    erreurPropre.current = message
     setErreurEtat(message)
-    rappels.current.surErreur?.(message)
+    rappels.current.surErreur?.(message, sienne)
   }, [])
 
   const changerEtat = useCallback((nouveau) => {

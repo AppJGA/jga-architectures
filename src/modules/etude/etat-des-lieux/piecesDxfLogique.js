@@ -71,7 +71,7 @@ function textesParPolygone(polys, textes) {
   return propres
 }
 
-const CALQUE_DESIGNATION = /D[EÉ]SIGNATION|NOM|PIECE|PIÈCE|LOCA/i
+export const CALQUE_DESIGNATION = /D[EÉ]SIGNATION|NOM|PIECE|PIÈCE|LOCA/i
 
 function lirePiece(poly, propres) {
   const memeCalque = propres.filter((t) => t.calque === poly.calque)

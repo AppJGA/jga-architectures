@@ -706,6 +706,16 @@ lot 1 : `docs/superpowers/plans/2026-11-17-etat-des-lieux-lot1-preparer.md`.
   « SDO », tout l'étage : 24 sur le DXF ArchiCAD d'essai, 199 pièces
   gardées) ; même règle pour les pièces de Claude ; à l'écran, un geste qui
   ferait chevaucher une autre pièce n'est pas enregistré (message).
+- **Couloirs = reste des zones englobantes** (`restesLogique.js`, testé) :
+  dans ArchiCAD les circulations n'ont souvent pas de zone « SU », elles
+  n'existent que dans les zones « SDO ». Le reste d'une zone écartée (moins
+  ses pièces) est calculé sur une grille de 10 cm ; chaque morceau qui porte
+  un nom du calque des désignations devient une pièce (numéro écrit dedans),
+  un morceau à deux noms est partagé au plus proche, un reste sans nom est
+  ignoré. Zones traitées de la plus petite à la plus grande ; un nom déjà
+  dans une pièce n'est pas repris ; une case de marge le long des pièces
+  voisines (pas de la façade) garde la règle « jamais superposées ». DXF
+  ArchiCAD d'essai : 24 couloirs retrouvés, 0 superposition.
 - **Étages** (`niveauxLogique.js`) : par nom de bloc ou de calque (RDC,
   SSOL / SOUS-SOL, R+n, Combles — les étages d'ArchiCAD sont superposés),
   sinon grappes de traits (cellule d'un mètre) et grappe qui porte les
@@ -741,7 +751,11 @@ lot 1 : `docs/superpowers/plans/2026-11-17-etat-des-lieux-lot1-preparer.md`.
   200 pièces étirait la rangée et le plan sortait de l'écran.
 - **Écran** : `EditeurPieces` sur `VisionneusePlan` (nouvelle prop `calque`,
   SVG au-dessus de l'image) : sommets déplacés au doigt, rond de milieu =
-  nouveau sommet (zone sensible de 44 px sous chaque rond),
+  nouveau sommet (zone sensible de 44 px sous chaque rond), **« Annuler »**
+  (⌘Z / Ctrl+Z hors des champs) défait les derniers gestes — contour
+  modifié, pièce dessinée, pièce supprimée (qui revient sous un nouvel id,
+  les gestes plus anciens suivent) ; en dessin, ⌘Z et « Dernier angle »
+  retirent le dernier angle touché,
   `pointercancel` = rien d'enregistré. Bandeau « Échelle à vérifier » par
   étage si la médiane surface dessinée / écrite s'écarte de plus de 15 %
   (`ecartEchelle`, au moins trois surfaces écrites). Lecture ratée : ni

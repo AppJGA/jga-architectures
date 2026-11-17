@@ -8,6 +8,7 @@
 // pièces. L'utilisateur relit, renomme ou écarte avant l'import.
 
 import { boite, dansBoite, centre, retirerSuperpositions } from './geometrieEdl'
+import { piecesDesRestes } from './restesLogique'
 
 const MIN_TRAITS_NIVEAU = 50
 const CELLULES_MAX_PAR_TRAIT = 4000
@@ -116,16 +117,20 @@ export function proposerNiveaux(lecture, detection, unitesParMetre, nomFichier =
 
   return niveaux.map((n) => {
     const traits = n.traits.map((t) => ({ calque: t.calque, ferme: t.ferme, pts: t.pts.map(([x, y]) => [x / u, y / u]) }))
-    // Étage par étage : ceux d'ArchiCAD se superposent entre eux, pas leurs pièces
+    const textes = n.textes.map((t) => ({ texte: t.texte, calque: t.calque, hauteur: t.hauteur / u, pos: [t.pos[0] / u, t.pos[1] / u] }))
+    // Étage par étage : ceux d'ArchiCAD se superposent entre eux, pas leurs
+    // pièces. Les zones englobantes écartées rendent leurs couloirs.
     const { gardees, ecartees } = retirerSuperpositions(n.pieces)
+    const couloirs = piecesDesRestes(ecartees, gardees, textes)
     return {
       nom: n.nom,
       traits,
-      textes: n.textes.map((t) => ({ texte: t.texte, hauteur: t.hauteur / u, pos: [t.pos[0] / u, t.pos[1] / u] })),
-      pieces: gardees,
+      textes: textes.map(({ texte, hauteur, pos }) => ({ texte, hauteur, pos })),
+      pieces: [...gardees, ...couloirs],
       ecartees: ecartees.length,
+      couloirs: couloirs.length,
       boite: boite(traits.flatMap((t) => t.pts)),
-      aProposer: gardees.length === 0,
+      aProposer: gardees.length + couloirs.length === 0,
     }
   })
 }

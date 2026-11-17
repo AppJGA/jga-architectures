@@ -1,5 +1,5 @@
-import { useMemo, useRef, useState } from 'react'
-import { Trash2, PenLine, Sparkles, X } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Trash2, PenLine, Sparkles, X, Undo2 } from 'lucide-react'
 import { VisionneusePlan } from '../../chantier/comptes-rendus/VisionneusePlan'
 import {
   aire, pointDansPolygone, ecartSurface, SEUIL_ECART, versPixels, versMetres,
@@ -17,7 +17,8 @@ import { versPiecesEdl } from './piecesIaLogique'
 // Une pièce proposée par Claude reste « à vérifier » (bleu) tant qu'on ne l'a
 // pas corrigée ou confirmée ; une surface dessinée qui s'écarte de la surface
 // écrite est signalée. Deux pièces ne se superposent jamais : un geste qui en
-// ferait chevaucher une autre n'est pas enregistré.
+// ferait chevaucher une autre n'est pas enregistré. « Annuler » (⌘Z / Ctrl+Z)
+// défait les derniers gestes : contour modifié, pièce dessinée, pièce supprimée.
 
 const COULEUR = 'var(--affaire-accent, #E8602C)'
 const champ = { height: 34, minHeight: 0, padding: '0 8px', fontSize: 13, border: '0.5px solid rgba(0,0,0,0.18)', borderRadius: 2, background: 'white', width: '100%', boxSizing: 'border-box' }
@@ -30,6 +31,8 @@ const BLEU_CLAUDE = '#2E6FDB'
 const RAYON_TOUCHER = 22
 
 const fmtM2 = (v) => `${v.toLocaleString('fr-FR', { maximumFractionDigits: 1 })} m²`
+const HISTORIQUE_MAX = 50
+
 const designation = (p) => [p.numero, p.nom].filter(Boolean).join(' · ') || 'une autre pièce'
 
 export function EditeurPieces({ niveau, pieces, obtenirLiens, lectureSeule, onModifier, onAjouter, onSupprimer, onAjouterPlusieurs }) {
@@ -45,6 +48,10 @@ export function EditeurPieces({ niveau, pieces, obtenirLiens, lectureSeule, onMo
   const svg = useRef(null)
   const brouillon = useRef({}) // saisie du nom / numéro pas encore enregistrée
   const termine = useRef(false) // garde contre un double appui sur « Terminer »
+  // Gestes à défaire, du plus ancien au plus récent : { type: 'contour', id,
+  // avant } | { type: 'ajout', id } | { type: 'suppression', piece }
+  const [historique, setHistorique] = useState([])
+  const annulation = useRef(false)
   const c = niveau.cadrage
 
   const version = useMemo(() => ({ id: niveau.id, chemin: niveau.chemin, chemin_apercu: niveau.chemin_apercu, largeur: niveau.largeur, hauteur: niveau.hauteur }), [niveau])
@@ -83,11 +90,71 @@ export function EditeurPieces({ niveau, pieces, obtenirLiens, lectureSeule, onMo
     if (autre) setErreur(`Cette pièce chevaucherait « ${designation(autre)} » : rien n’a été enregistré.`)
     return !!autre
   }
+  const noter = (geste) => setHistorique((h) => [...h.slice(-(HISTORIQUE_MAX - 1)), geste])
+
   const modifierContour = (id, contour) => {
     if (chevauchement(contour, id)) return
     setErreur(null)
+    const avant = pieces.find((q) => q.id === id)?.contour
+    if (avant) noter({ type: 'contour', id, avant })
     onModifier(id, { contour, a_verifier: false })
   }
+
+  const supprimer = (p) => {
+    brouillon.current = {}
+    noter({ type: 'suppression', piece: p })
+    onSupprimer(p.id)
+    choisir(null)
+  }
+
+  // Le dernier geste est retiré de l'historique avant d'être défait : un
+  // second appui pendant l'envoi défait le geste d'avant, pas le même
+  const annuler = async () => {
+    if (!historique.length || annulation.current || glisseCourant.current) return
+    const geste = historique[historique.length - 1]
+    const reste = historique.slice(0, -1)
+    setHistorique(reste)
+    setErreur(null)
+    if (geste.type === 'contour') {
+      if (pieces.some((q) => q.id === geste.id)) onModifier(geste.id, { contour: geste.avant })
+      return
+    }
+    if (geste.type === 'ajout') {
+      if (geste.id === choisie) choisir(null)
+      onSupprimer(geste.id)
+      return
+    }
+    annulation.current = true
+    try {
+      const p = geste.piece
+      const ligne = await onAjouter(niveau.id, {
+        nom: p.nom, numero: p.numero, contour: p.contour, surfaceLue: p.surface_lue, hspLue: p.hsp_lue,
+        origine: p.origine, aVerifier: p.a_verifier,
+      })
+      if (!ligne) { setHistorique([...reste, geste]); return }
+      // La pièce revient sous un nouvel identifiant : les gestes plus anciens
+      // qui la visaient le suivent
+      setHistorique((h) => h.map((g) => (g.id === p.id ? { ...g, id: ligne.id } : g)))
+      choisir(ligne.id)
+    } finally {
+      annulation.current = false
+    }
+  }
+
+  useEffect(() => {
+    if (lectureSeule) return undefined
+    const touche = (e) => {
+      if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.key.toLowerCase() !== 'z') return
+      // Dans un champ, ⌘Z reste celui du texte
+      if (e.target.closest?.('input, textarea, [contenteditable="true"]')) return
+      e.preventDefault()
+      // En dessin, ⌘Z retire le dernier angle touché
+      if (trace) setTrace((t) => t.slice(0, -1))
+      else annuler()
+    }
+    window.addEventListener('keydown', touche)
+    return () => window.removeEventListener('keydown', touche)
+  })
 
   // Appui bref sur le plan : un angle de plus en dessin, sinon la plus petite
   // pièce qui contient le point
@@ -143,6 +210,7 @@ export function EditeurPieces({ niveau, pieces, obtenirLiens, lectureSeule, onMo
     }
     // Échec d'enregistrement : le tracé reste, pour réessayer sans tout retoucher
     if (!ligne) return
+    noter({ type: 'ajout', id: ligne.id })
     setTrace(null)
     choisir(ligne.id)
   }
@@ -239,7 +307,9 @@ export function EditeurPieces({ niveau, pieces, obtenirLiens, lectureSeule, onMo
           <div style={{ position: 'absolute', top: 12, left: 12, right: 12, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', background: 'white', padding: '8px 10px', borderTop: `3px solid ${COULEUR}`, boxShadow: '0 8px 24px -12px rgba(31,27,23,0.45)' }}>
             <span style={{ flex: 1, fontSize: 13, color: '#1F1B17' }}>Touchez les angles de la pièce, un à un <span style={{ color: '#9C9591' }}>({trace.length})</span></span>
             <button type="button" style={{ ...petitBouton, border: 'none', background: COULEUR, color: 'white', fontWeight: 600, opacity: trace.length < 3 ? 0.5 : 1 }} disabled={trace.length < 3} onClick={terminerTrace}>Terminer</button>
-            <button type="button" style={petitBouton} onClick={() => { setTrace(null); setErreur(null) }}><X size={14} />Annuler</button>
+            <button type="button" style={{ ...petitBouton, opacity: trace.length ? 1 : 0.5 }} disabled={!trace.length} onClick={() => setTrace((t) => t.slice(0, -1))}
+              title="Retirer le dernier angle (⌘Z / Ctrl+Z)"><Undo2 size={14} />Dernier angle</button>
+            <button type="button" style={petitBouton} onClick={() => { setTrace(null); setErreur(null) }}><X size={14} />Abandonner</button>
           </div>
         )}
       </div>
@@ -248,6 +318,8 @@ export function EditeurPieces({ niveau, pieces, obtenirLiens, lectureSeule, onMo
         {!lectureSeule && (
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button type="button" style={petitBouton} disabled={!!trace} onClick={() => { choisir(null); setTrace([]) }}><PenLine size={14} />Dessiner une pièce</button>
+            <button type="button" style={{ ...petitBouton, opacity: historique.length && !trace ? 1 : 0.5 }} disabled={!historique.length || !!trace} onClick={annuler}
+              title="Annuler le dernier geste (⌘Z / Ctrl+Z)" aria-label="Annuler le dernier geste"><Undo2 size={14} />Annuler{historique.length > 1 ? ` (${historique.length})` : ''}</button>
             {pieces.length === 0 && <button type="button" style={petitBouton} disabled={!!attente} onClick={fairePropose}><Sparkles size={14} />Faire proposer par Claude</button>}
           </div>
         )}
@@ -278,7 +350,7 @@ export function EditeurPieces({ niveau, pieces, obtenirLiens, lectureSeule, onMo
                   type="button" style={petitBouton} disabled={sommet == null || piece.contour.length <= 3}
                   onClick={() => { modifierContour(piece.id, retirerSommet(piece.contour, sommet)); setSommet(null) }}
                 >Retirer le sommet</button>
-                <button type="button" style={{ ...petitBouton, color: '#B8412C' }} onClick={() => { brouillon.current = {}; onSupprimer(piece.id); choisir(null) }}><Trash2 size={14} />Supprimer</button>
+                <button type="button" style={{ ...petitBouton, color: '#B8412C' }} onClick={() => supprimer(piece)}><Trash2 size={14} />Supprimer</button>
               </div>
             )}
           </div>

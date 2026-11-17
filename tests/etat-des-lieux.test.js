@@ -13,6 +13,7 @@ import {
 import { lireDxf, decoderDxf, nettoyerMtext } from '../src/modules/etude/etat-des-lieux/dxfLecture.js'
 import { detecterPieces, lireSurface, lireHsp, lireNumero, estNom } from '../src/modules/etude/etat-des-lieux/piecesDxfLogique.js'
 
+import { piecesDesRestes } from '../src/modules/etude/etat-des-lieux/restesLogique.js'
 import { niveauDeNom, uniteParDefaut, proposerNiveaux } from '../src/modules/etude/etat-des-lieux/niveauxLogique.js'
 import { construireDemandePieces, lirePropositionsPieces, versPiecesEdl, SCHEMA_PIECES, TEXTES_MAX } from '../src/modules/etude/etat-des-lieux/piecesIaLogique.js'
 
@@ -114,6 +115,46 @@ describe('pièces superposées', () => {
     const autres = [{ id: 'a', nom: 'Chambre', contour: rectangle(0, 0, 4, 5) }, { id: 'b', nom: 'Bureau', contour: rectangle(4, 0, 3, 5) }]
     assert.equal(pieceChevauchee(rectangle(3, 0, 3, 5), autres)?.nom, 'Chambre')
     assert.equal(pieceChevauchee(rectangle(7, 0, 2, 5), autres), null)
+  })
+})
+
+describe('couloirs : reste des zones englobantes', () => {
+  const rectangle = (x, y, l, h) => [[x, y], [x + l, y], [x + l, y + h], [x, y + h]]
+  const designation = (texte, x, y) => ({ calque: 'P-DÉSIGNATION_DES_PIECES_R', texte, pos: [x, y] })
+  const numero = (texte, x, y) => ({ calque: 'P-NUMEROTATION_DES_PIECES3', texte, pos: [x, y] })
+  const sdo = { nom: 'SDO', calque: 'S-SURFACES_RDC', bloc: 'VUE_RDC', contour: rectangle(0, 0, 10, 5) }
+  const chambres = [
+    { nom: 'Chambre', calque: 'S-SURFACES_RDC', bloc: 'VUE_RDC', contour: rectangle(0, 0, 4, 5) },
+    { nom: 'Bureau', calque: 'S-SURFACES_RDC', bloc: 'VUE_RDC', contour: rectangle(6, 0, 4, 5) },
+  ]
+  const procheDe = (v, attendu, tolerance) => Math.abs(v - attendu) <= tolerance
+
+  test('le reste nommé d’une zone englobante devient une pièce, avec son numéro', () => {
+    const r = piecesDesRestes([sdo], chambres, [designation('CIRC.', 5, 3), numero('0019', 5, 2)])
+    assert.equal(r.length, 1)
+    assert.equal(r[0].nom, 'CIRC.')
+    assert.equal(r[0].numero, '0019')
+    // 2 × 5 m, moins une marge d'une case (10 cm) le long de chaque chambre
+    assert.ok(procheDe(aire(r[0].contour), 9, 0.3))
+    assert.equal(r[0].bloc, 'VUE_RDC')
+    assert.ok(chambres.every((c) => !seSuperposent(c.contour, r[0].contour)))
+  })
+  test('un reste sans nom écrit (liseré entre deux pièces) est ignoré', () => {
+    assert.deepEqual(piecesDesRestes([sdo], chambres, [designation('Armoire', 2, 2)]), [])
+    assert.deepEqual(piecesDesRestes([sdo], chambres, []), [])
+  })
+  test('deux noms dans un même reste : partagé entre eux, sans rien perdre', () => {
+    const r = piecesDesRestes([sdo], [], [designation('CIRCULATION', 2, 2.5), designation('DEG.', 8, 2.5)])
+    assert.deepEqual(r.map((p) => p.nom).sort(), ['CIRCULATION', 'DEG.'])
+    assert.ok(procheDe(aire(r[0].contour) + aire(r[1].contour), 50, 1))
+    assert.equal(seSuperposent(r[0].contour, r[1].contour), false)
+  })
+  test('zones imbriquées : le couloir d’une petite zone n’est pas repris par la grande', () => {
+    const grande = { nom: 'Tout l’étage', calque: 'S-SURFACES_RDC', bloc: 'VUE_RDC', contour: rectangle(0, 0, 20, 5) }
+    const r = piecesDesRestes([grande, sdo], chambres, [designation('CIRC.', 5, 3), designation('HALL', 15, 2.5)])
+    assert.deepEqual(r.map((p) => p.nom).sort(), ['CIRC.', 'HALL'])
+    const hall = r.find((p) => p.nom === 'HALL')
+    assert.ok(procheDe(aire(hall.contour), 50, 1))
   })
 })
 

@@ -37,6 +37,16 @@ export default function EtatDesLieuxModule({ lectureSeule = false }) {
 
   if (edl.indisponible) return <p style={{ fontSize: 13, color: '#5E5854' }}>L’état des lieux demande la migration 077 dans Supabase.</p>
   if (!edl.charge) return <p style={{ fontSize: 13, color: '#5E5854' }}>Chargement…</p>
+  // Sans lecture, ne pas proposer l'import : il s'ajouterait à des étages
+  // peut-être déjà enregistrés
+  if (edl.echec) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'flex-start' }}>
+        <p style={{ margin: 0, fontSize: 13, color: '#B42318' }}>L’état des lieux n’a pas pu être lu{edl.erreur ? ` : ${edl.erreur}` : '.'}</p>
+        <button type="button" style={onglet(false)} onClick={edl.recharger}>Réessayer</button>
+      </div>
+    )
+  }
 
   if (!edl.niveaux.length || reimport) {
     if (lectureSeule) return <p style={{ fontSize: 13, color: '#5E5854' }}>Aucun plan de l’existant importé pour cette affaire.</p>

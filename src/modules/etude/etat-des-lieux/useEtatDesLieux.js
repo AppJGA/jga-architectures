@@ -2,22 +2,35 @@ import { useCallback, useEffect, useState } from 'react'
 import * as donnees from './edlDonnees'
 import { arrondirContour } from './geometrieEdl'
 
-const VIDE = { charge: false, indisponible: false, etat: null, niveaux: [], pieces: [] }
+const VIDE = { charge: false, indisponible: false, echec: false, etat: null, niveaux: [], pieces: [] }
 
 const etatDepuis = (r) => ({
-  charge: true, indisponible: !!r.indisponible, etat: r.etat ?? null, niveaux: r.niveaux ?? [], pieces: r.pieces ?? [],
+  charge: true, indisponible: !!r.indisponible, echec: false, etat: r.etat ?? null, niveaux: r.niveaux ?? [], pieces: r.pieces ?? [],
 })
+
+// Lecture ratée : rien d'affiché plutôt que des étages qui pourraient être
+// ceux d'une autre affaire (« Remplacer les plans » effacerait leurs fichiers)
+const ECHEC = { ...VIDE, charge: true, echec: true }
 
 export function useEtatDesLieux(affaireId) {
   const [etat, setEtat] = useState(VIDE)
   const [erreur, setErreur] = useState(null)
+  // Changement d'affaire sans démontage : l'état précédent est vidé dès le
+  // rendu (ajustement pendant le rendu, pas dans un effet)
+  const [affaireAffichee, setAffaireAffichee] = useState(affaireId)
+  if (affaireAffichee !== affaireId) {
+    setAffaireAffichee(affaireId)
+    setEtat(VIDE)
+    setErreur(null)
+  }
 
   const recharger = useCallback(async () => {
     try {
       setEtat(etatDepuis(await donnees.chargerEtat(affaireId)))
+      setErreur(null)
     } catch (err) {
       setErreur(err?.message ?? String(err))
-      setEtat((e) => ({ ...e, charge: true }))
+      setEtat(ECHEC)
     }
   }, [affaireId])
 
@@ -30,7 +43,7 @@ export function useEtatDesLieux(affaireId) {
       (err) => {
         if (!actif) return
         setErreur(err?.message ?? String(err))
-        setEtat((e) => ({ ...e, charge: true }))
+        setEtat(ECHEC)
       },
     )
     return () => { actif = false }

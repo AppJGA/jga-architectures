@@ -3,7 +3,7 @@ import { Trash2, PenLine, Sparkles, X } from 'lucide-react'
 import { VisionneusePlan } from '../../chantier/comptes-rendus/VisionneusePlan'
 import {
   aire, pointDansPolygone, ecartSurface, SEUIL_ECART, versPixels, versMetres,
-  deplacerSommet, insererSommet, retirerSommet,
+  deplacerSommet, insererSommet, retirerSommet, ecartEchelle,
 } from './geometrieEdl'
 import { imageIaDepuisUrl } from './renduNiveau'
 import { proposerPiecesIa } from './piecesIa'
@@ -22,6 +22,10 @@ const COULEUR = 'var(--affaire-accent, #E8602C)'
 const champ = { minHeight: 36, padding: '0 10px', borderRadius: 6, border: '0.5px solid rgba(0,0,0,0.2)', fontSize: 14, width: '100%', boxSizing: 'border-box' }
 const petitBouton = { minHeight: 36, padding: '0 12px', borderRadius: 8, border: '0.5px solid rgba(0,0,0,0.2)', background: 'white', cursor: 'pointer', fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 6 }
 
+// Zone sensible des poignées : 44 px de diamètre au doigt (règle tablette),
+// le rond visible restant petit pour ne pas masquer le plan
+const RAYON_TOUCHER = 22
+
 const fmtM2 = (v) => `${v.toLocaleString('fr-FR', { maximumFractionDigits: 1 })} m²`
 
 export function EditeurPieces({ niveau, pieces, obtenirLiens, lectureSeule, onModifier, onAjouter, onSupprimer, onAjouterPlusieurs }) {
@@ -29,6 +33,9 @@ export function EditeurPieces({ niveau, pieces, obtenirLiens, lectureSeule, onMo
   const [sommet, setSommet] = useState(null) // dernier sommet touché de la pièce choisie
   const [trace, setTrace] = useState(null) // contour en cours de dessin (mètres)
   const [glisse, setGlisse] = useState(null) // { id, contour, index } pendant un déplacement
+  // Le dernier déplacement peut arriver juste avant le lâcher, dans le même
+  // rendu : la fin du geste enregistre depuis cette ref, pas depuis `glisse`
+  const glisseCourant = useRef(null)
   const [attente, setAttente] = useState(null)
   const [erreur, setErreur] = useState(null)
   const svg = useRef(null)
@@ -80,20 +87,25 @@ export function EditeurPieces({ niveau, pieces, obtenirLiens, lectureSeule, onMo
     e.currentTarget.setPointerCapture(e.pointerId)
     const contour = insertion ? insererSommet(p.contour, i, depuisEvenement(e)) : p.contour
     const index = insertion ? i + 1 : i
-    setGlisse({ id: p.id, contour, index, insere: !!insertion })
+    glisseCourant.current = { id: p.id, contour, index, insere: !!insertion }
+    setGlisse(glisseCourant.current)
     setSommet(index)
   }
   const pendantGlisse = (e) => {
-    if (!glisse) return
+    const g = glisseCourant.current
+    if (!g) return
     e.stopPropagation()
-    setGlisse((g) => ({ ...g, contour: deplacerSommet(g.contour, g.index, depuisEvenement(e)) }))
+    glisseCourant.current = { ...g, contour: deplacerSommet(g.contour, g.index, depuisEvenement(e)) }
+    setGlisse(glisseCourant.current)
   }
   const finGlisse = (e) => {
-    if (!glisse) return
+    const g = glisseCourant.current
+    if (!g) return
     e.stopPropagation()
-    const g = glisse
+    glisseCourant.current = null
     setGlisse(null)
-    // Un deuxième doigt (pincement) annule le geste : rien d'enregistré
+    // pointercancel (le navigateur reprend le geste, défilement ou
+    // pincement) : rien d'enregistré
     if (e.type === 'pointercancel') return
     // Un simple appui sur une poignée n'écrit rien
     const avant = pieces.find((q) => q.id === g.id)?.contour
@@ -109,8 +121,10 @@ export function EditeurPieces({ niveau, pieces, obtenirLiens, lectureSeule, onMo
     } finally {
       termine.current = false
     }
+    // Échec d'enregistrement : le tracé reste, pour réessayer sans tout retoucher
+    if (!ligne) return
     setTrace(null)
-    if (ligne) choisir(ligne.id)
+    choisir(ligne.id)
   }
 
   const fairePropose = async () => {
@@ -136,7 +150,8 @@ export function EditeurPieces({ niveau, pieces, obtenirLiens, lectureSeule, onMo
   const calque = ({ largeur, hauteur, zoom }) => {
     const enCalque = versCalque(largeur, hauteur)
     const rayon = 9 / zoom
-    const poignee = { touchAction: 'none', pointerEvents: 'auto' }
+    const zone = { touchAction: 'none', pointerEvents: 'auto', fill: 'transparent' }
+    const visible = { pointerEvents: 'none' }
     return (
       <svg ref={svg} width={largeur} height={hauteur} style={{ position: 'absolute', left: 0, top: 0, overflow: 'visible', pointerEvents: 'none' }}>
         {pieces.map((p) => (
@@ -156,20 +171,29 @@ export function EditeurPieces({ niveau, pieces, obtenirLiens, lectureSeule, onMo
             <g>
               {pts.map((q, i) => {
                 const suivant = pts[(i + 1) % pts.length]
+                const cx = (q[0] + suivant[0]) / 2
+                const cy = (q[1] + suivant[1]) / 2
                 return (
-                  <circle
-                    key={`m${i}`} cx={(q[0] + suivant[0]) / 2} cy={(q[1] + suivant[1]) / 2} r={rayon * 0.7}
-                    onPointerDown={debutGlisse({ ...piece, contour }, i, true)} {...gestes}
-                    style={{ ...poignee, fill: 'white', stroke: COULEUR, strokeWidth: 1.5 / zoom, cursor: 'copy' }}
-                  />
+                  <g key={`m${i}`}>
+                    <circle
+                      cx={cx} cy={cy} r={RAYON_TOUCHER / zoom}
+                      onPointerDown={debutGlisse({ ...piece, contour }, i, true)} {...gestes}
+                      style={{ ...zone, cursor: 'copy' }}
+                    />
+                    <circle cx={cx} cy={cy} r={rayon * 0.7} style={{ ...visible, fill: 'white', stroke: COULEUR, strokeWidth: 1.5 / zoom }} />
+                  </g>
                 )
               })}
+              {/* Sommets après les milieux : là où les zones se chevauchent, le sommet l'emporte */}
               {pts.map((q, i) => (
-                <circle
-                  key={`s${i}`} cx={q[0]} cy={q[1]} r={rayon}
-                  onPointerDown={debutGlisse({ ...piece, contour }, i, false)} {...gestes}
-                  style={{ ...poignee, fill: i === sommet ? '#1F1B17' : COULEUR, stroke: 'white', strokeWidth: 2 / zoom, cursor: 'move' }}
-                />
+                <g key={`s${i}`}>
+                  <circle
+                    cx={q[0]} cy={q[1]} r={RAYON_TOUCHER / zoom}
+                    onPointerDown={debutGlisse({ ...piece, contour }, i, false)} {...gestes}
+                    style={{ ...zone, cursor: 'move' }}
+                  />
+                  <circle cx={q[0]} cy={q[1]} r={rayon} style={{ ...visible, fill: i === sommet ? '#1F1B17' : COULEUR, stroke: 'white', strokeWidth: 2 / zoom }} />
+                </g>
               ))}
             </g>
           )
@@ -182,6 +206,7 @@ export function EditeurPieces({ niveau, pieces, obtenirLiens, lectureSeule, onMo
   }
 
   const ecart = piece ? ecartSurface(piece.contour, Number(piece.surface_lue)) : null
+  const echelle = ecartEchelle(pieces)
 
   return (
     <div style={{ display: 'flex', gap: 16, height: '100%', minHeight: 0, flexWrap: 'wrap' }}>
@@ -203,6 +228,11 @@ export function EditeurPieces({ niveau, pieces, obtenirLiens, lectureSeule, onMo
             {pieces.length === 0 && <button type="button" style={petitBouton} disabled={!!attente} onClick={fairePropose}><Sparkles size={14} />Faire proposer par Claude</button>}
           </div>
         )}
+        {echelle != null && (
+          <p style={{ margin: 0, fontSize: 13, color: '#B54708', background: '#FFF6E5', borderRadius: 8, padding: '8px 10px' }}>
+            Échelle à vérifier : les surfaces dessinées valent environ ×{echelle.toLocaleString('fr-FR', { maximumFractionDigits: 2 })} les surfaces écrites.
+          </p>
+        )}
         {attente && <p style={{ margin: 0, fontSize: 13, color: '#5E5854' }}>{attente}</p>}
         {erreur && <p style={{ margin: 0, fontSize: 13, color: '#B42318' }}>{erreur}</p>}
 
@@ -223,7 +253,7 @@ export function EditeurPieces({ niveau, pieces, obtenirLiens, lectureSeule, onMo
                 {piece.a_verifier && <button type="button" style={petitBouton} onClick={() => onModifier(piece.id, { a_verifier: false })}>Contour juste</button>}
                 <button
                   type="button" style={petitBouton} disabled={sommet == null || piece.contour.length <= 3}
-                  onClick={() => { onModifier(piece.id, { contour: retirerSommet(piece.contour, sommet) }); setSommet(null) }}
+                  onClick={() => { onModifier(piece.id, { contour: retirerSommet(piece.contour, sommet), a_verifier: false }); setSommet(null) }}
                 >Retirer le sommet</button>
                 <button type="button" style={{ ...petitBouton, color: '#B42318' }} onClick={() => { brouillon.current = {}; onSupprimer(piece.id); choisir(null) }}><Trash2 size={14} />Supprimer</button>
               </div>

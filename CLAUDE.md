@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 1099 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans, gestion de l'application, état des lieux)
+npm test         # 1172 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans, gestion de l'application, état des lieux)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -191,7 +191,7 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
   Toujours lire par `referencesCadastre` (repli sur les anciennes colonnes) ;
   l'enregistrement (`colonnesCadastre`) tient aussi à jour `cadastre_section`
   / `cadastre_parcelle` (première ligne) et `cadastre_superficie` (total).
-- **Base** : `supabase/migrations/`, numérotées, 78 fichiers, **passées à la
+- **Base** : `supabase/migrations/`, numérotées, 79 fichiers, **passées à la
   main** dans le SQL Editor de Supabase : un code qui dépend d'une nouvelle
   colonne doit tolérer son absence tant que la migration n'est pas faite.
   **Toute table créée depuis le 2026-10-30 doit recevoir ses droits d'API
@@ -514,6 +514,15 @@ création avec reprise de la visite précédente) et `useCompteRendu` (un CR).
     (`BoutonRobot`, `useEnregistrementVisite`), le panneau porte le rappel
     (prévenir les participants, ne pas verrouiller) et « Commencer ».
     Morceaux de **3 minutes** (limite de 4,5 Mo des fonctions Vercel).
+    Le moteur côté écran est commun aux CR et à l'état des lieux
+    (`useEnregistreur` : démarrer, pause, reprendre, arrêter, `couper()` ;
+    état décidé par les seuls signaux du moteur, `etatApresEvenement`) ;
+    les morceaux portent `crId` **ou** `edlVisiteId` (`deLaVisite`,
+    `champsVisite`). Le robot des CR garde son affichage d'avant
+    (`etatPourLeCr` : sourdine et échec y restent « enregistre », la durée
+    avance pendant la sourdine). Les tranches orphelines ne sont jamais
+    recollées pendant que leur enregistrement tourne
+    (`enregistrementsARecuperer`).
     Chaque morceau part à `api/transcrire.js` (session vérifiée,
     `est_agence()`, puis Mistral `voxtral-mini-latest`, langue fr,
     vocabulaire de l'affaire en `context_bias`, retenté sans s'il est
@@ -761,7 +770,9 @@ lot 1 : `docs/superpowers/plans/2026-11-17-etat-des-lieux-lot1-preparer.md`.
   (contour, surface et HP lues, origine dxf / ia / main, `a_verifier`,
   `fiche` pour le lot 3). Stockage privé `edl` (`<affaire>/edl/…`), compté
   par `fichiers_orphelins()` et la gestion de l'application. « Remplacer les
-  plans » supprime tout l'état des lieux. **La règle restrictive de stockage
+  plans » supprime tout l'état des lieux — **tant qu'aucune visite n'a eu
+  lieu** : ensuite (ou tant que la visite n'est pas lue) le bouton
+  disparaît et la base refuse (079, `edl_etats_garde_visites`). **La règle restrictive de stockage
   de la migration 060 est remplacée en bloc** : toute future migration qui
   ajoute un bucket doit répéter la liste complète, `edl` compris (sinon ce
   bucket s'ouvre à tout compte agence).
@@ -782,6 +793,64 @@ lot 1 : `docs/superpowers/plans/2026-11-17-etat-des-lieux-lot1-preparer.md`.
   étage si la médiane surface dessinée / écrite s'écarte de plus de 15 %
   (`ecartEchelle`, au moins trois surfaces écrites). Lecture ratée : ni
   anciens étages, ni import proposé (« Réessayer »).
+- **Visite (lot 2)** (`visite/`, migration 079, plan
+  `docs/superpowers/plans/2026-11-17-etat-des-lieux-lot2-visiter.md`) :
+  « Démarrer la visite » (`?visite=1`, gardé au rechargement) ouvre
+  `VisiteEdl`, écran plein. Le micro s'ouvre **dans le geste** (Safari),
+  puis la visite est créée (`edl_visites`, id décidé sur l'appareil) ; l'écran
+  de départ reste tant que la ligne n'est pas écrite, et si `commencer()`
+  est refusé le micro s'arrête et un message s'affiche. Une visite non
+  terminée se reprend. Enregistrement continu par le moteur
+  des CR (`useEnregistrementEdl`), **coupé à chaque entrée et sortie de
+  pièce** (`couper()`), pas à chaque point (horodatages par segment de
+  Mistral à vérifier au lot 3 ; d'après sa documentation,
+  `timestamp_granularities` est incompatible avec `language`). Au lot 2,
+  l'audio de l'état des lieux attend sur l'appareil (`jga-audio`) : ni
+  transcription ni envoi par le moteur de synchro avant le lot 3. Bandeau
+  rouge « Enregistrement · 12:34 » + jauge ; **dès que rien n'est
+  enregistré** (pause, sourdine, micro coupé, échec) un voile gris recouvre
+  le plan et avale tout geste, pincement compris : seuls « Reprendre
+  l'enregistrement », « Pause » et « Terminer » restent. Toucher une pièce
+  l'agrandit (`cadre` / `zoomMax` de `VisionneusePlan`, `vueSurCadre`, zoom
+  jusqu'à 60) ; tout point posé appartient à la pièce ouverte, même sur une
+  cloison ; hors des pièces, un point se rattache à l'étage. Sur la vue de
+  l'étage, **tous les points se touchent** (ceux d'une pièce sont atténués) :
+  toucher le point d'une pièce ouvre cette pièce (entrée au journal,
+  morceau coupé) et le sélectionne ; **jamais de nouveau point posé sur un
+  point existant**. Points numérotés dans l'ordre de
+  l'état des lieux (`numeroSuivant`, décidé sur l'appareil), type facultatif
+  par la barre des calques (`calquesEdl.js`, seule liste des calques
+  `EDL-` et des types), photo, déplacement (seul le point choisi capture
+  le doigt ; les autres se choisissent par un appui bref, `pointProche`, et
+  un doigt posé dessus fait défiler le plan ; second doigt ou
+  `pointercancel` = rien d'enregistré), suppression, **Annuler / ⌘Z**
+  (`operationInverse`, l'entrée d'annulation n'est empilée **qu'après**
+  l'écriture réussie). Barres au-dessus du plan à hauteur fixe pendant
+  toute la visite et `cleDeCadre` (taille du conteneur dans la clé) : une
+  pièce ouverte est toujours bien cadrée. Pièces grises tant
+  qu'elles ne sont pas visitées (`piecesVisitees`). Pense-bête Sol · Murs ·
+  Plafond · Plinthes · HSP, coché d'après `edl_pieces.fiche` (lot 3).
+  **Journal** `edl_evenements` (debut, fin, entree, sortie, point,
+  point-modifie, point-supprime, photo, pause, reprise, coupure), heure de
+  l'appareil.
+- **Hors ligne de la visite** : base IndexedDB à part `jga-edl`
+  (instantané par affaire, opérations, photos). **Tout geste passe par la
+  file**, même en ligne (`fileEdlLogique.js`, testé) : écran = instantané +
+  file ; après chaque envoi réussi, l'opération est reportée dans
+  l'instantané avant d'être retirée (`synchroEdl.js`, verrou
+  `jga-envoi-edl`). Instantané relu sous le même verrou, en lectures
+  `synchro_id:id` (hors cache du service worker), paginées par identifiant.
+  Envoi aussi par `useMoteurSynchro` (`envoyerToutEdl`). Le témoin du
+  bandeau du haut reste celui des CR ; le module et la visite comptent
+  leurs gestes à envoyer. La visite exige IndexedDB.
+- **Photos des points** : compressées comme les CR, `edl/<affaire>/edl/photos/`,
+  envoyées en `upsert`. Un point supprimé emporte ses lignes de photos
+  mais **pas leurs fichiers** (« Annuler » le rend intact) :
+  `fichiers_orphelins()` (079) les rattrape.
+- **Plus de « Remplacer les plans » après une visite** : bouton retiré (et
+  aussi tant que la visite n'est pas lue), et déclencheur
+  `edl_etats_garde_visites` (la cascade de suppression d'affaire passe,
+  `pg_trigger_depth() > 1`).
 
 ## To-do list (`src/modules/etude/todo/`)
 

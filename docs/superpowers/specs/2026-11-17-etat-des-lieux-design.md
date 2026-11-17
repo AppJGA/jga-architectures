@@ -128,9 +128,10 @@ réglages (même principe que « Préparer pour le chantier »).
 - **Enregistrement** : le moteur des CR (`enregistreur.js`) — morceaux de
   3 minutes, rangés sur l'appareil seconde par seconde — reçoit une fonction
   `couper()` qui clôt le morceau en cours ; elle est appelée à chaque entrée
-  et sortie de pièce. Les modules `audioLocal`, `transcription` et
-  `useEnregistrementVisite` sont rendus indépendants du CR (une « visite »
-  générique : CR ou état des lieux).
+  et sortie de pièce. `audioLocal` et le moteur côté écran
+  (`useEnregistreur`, commun au robot des CR) sont rendus indépendants du
+  CR au lot 2 (une « visite » générique : CR ou état des lieux) ;
+  `transcription` le sera au lot 3.
 - **Journal de la visite** : chaque geste est noté avec son heure sur
   l'appareil — entrée / sortie de pièce, point posé (x, y, type choisi ou
   non), photo, pause / reprise. Les morceaux audio portent leur heure de
@@ -146,14 +147,18 @@ réglages (même principe que « Préparer pour le chantier »).
   Visite des CR (identifiants décidés sur l'appareil, ordre de création =
   ordre d'envoi, doublon `23505` = succès), base IndexedDB à part
   `jga-edl`. Le moteur de synchro de l'app (`useMoteurSynchro`) envoie aussi
-  cette file et les morceaux audio en attente.
+  cette file ; les morceaux audio en attente, au lot 3 (avec la
+  transcription). Au lot 3, ignorer ou purger aussi les morceaux laissés
+  par un démarrage refusé (un `edlVisiteId` inconnu de la base).
 - Écran plein, boutons de 44 px au moins, bande de `safe-area-inset-top`.
 
 ## 6. L'analyse (lot 3)
 
 **Transcription** : chaque morceau part à `api/transcrire.js` ; on demande
-les horodatages par segment (paramètre de Mistral à vérifier au début du
-lot 2). Repli s'ils manquent : couper aussi un morceau à chaque point posé.
+les horodatages par segment (`timestamp_granularities=segment` d'après la
+documentation de Mistral, incompatible avec `language` : à vérifier au
+début du lot 3). Repli s'ils manquent : couper aussi un morceau à chaque
+point posé.
 
 **Analyse d'une pièce** (`api/analyser-edl.js`, fonction serveur, compte
 agence vérifié par `_agence.js`) : à la sortie de la pièce, ou au retour du
@@ -249,9 +254,12 @@ par l'agence restent hors dépôt pour les essais) :
    dans le DXF, sinon proposés par Claude), correction, échelle, consultation
    hors ligne.
 2. **Visiter** : mode visite, enregistrement continu et découpé, journal,
-   points, barre d'icônes, photos, voile gris, file hors ligne.
-3. **Analyser** : transcription horodatée, analyse à la sortie de pièce,
-   couleurs, relecture.
+   points, barre d'icônes, photos, voile gris, file hors ligne (l'audio
+   attend sur l'appareil).
+3. **Analyser** : vérification des horodatages de Mistral, transcription
+   horodatée (rendue indépendante du CR, morceaux envoyés aussi par le
+   moteur de synchro, morceaux d'un démarrage refusé ignorés ou purgés),
+   analyse à la sortie de pièce, couleurs, relecture.
 4. **Exporter** : DXF par calques, rapport PDF.
 
 Chaque lot est livré, poussé et documenté dans `CLAUDE.md` avant le suivant.

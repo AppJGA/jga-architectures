@@ -30,7 +30,13 @@ export async function rendrePage(doc, numero) {
   const cible = dimensionsPlan(base.width * 100, base.height * 100)
   const viewport = page.getViewport({ scale: cible.largeur / base.width })
   const { canvas, ctx } = canevasBlanc(Math.floor(viewport.width), Math.floor(viewport.height))
-  await page.render({ canvasContext: ctx, viewport }).promise
+  try {
+    await page.render({ canvasContext: ctx, viewport }).promise
+  } catch (err) {
+    canvas.width = 0
+    canvas.height = 0
+    throw err
+  }
   const contenu = await page.getTextContent()
   const textes = contenu.items
     .filter((i) => i.str?.trim())

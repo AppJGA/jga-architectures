@@ -4,6 +4,7 @@
 // étages, pièces, échelle) pour que l'utilisateur relise ; `importer` dessine,
 // fait proposer ce qui manque par Claude, puis enregistre. Un échec de Claude
 // n'arrête rien : l'étage est enregistré sans pièces, à dessiner à la main.
+// Toute autre erreur annule l'import entier (`suivi` note ce qui a été écrit).
 
 import { formatPlan, verdictFormat, MESSAGES_FORMAT } from './formatPlanEdl'
 import { versPixels, versMetres } from './geometrieEdl'
@@ -15,7 +16,7 @@ import { versPiecesEdl } from './piecesIaLogique'
 import { proposerPiecesIa } from './piecesIa'
 import { rendreNiveauDxf, imagePourIa } from './renduNiveau'
 import { ouvrirPdfEdl, examinerPages, rendrePage, pointPageEnMetres, decouperNiveau } from './lecturePdfEdl'
-import { assurerEtat, envoyerSource, enregistrerNiveau, enregistrerPieces } from './edlDonnees'
+import { assurerEtat, envoyerSource, enregistrerNiveau, enregistrerPieces, annulerImport } from './edlDonnees'
 
 const TEXTES_GARDES = 3000
 
@@ -49,8 +50,9 @@ export function changerUnite(preparation, unitesParMetre) {
 
 const textesGardes = (textes) => textes.slice(0, TEXTES_GARDES)
 
-async function importerDxf(affaireId, etatId, prep, ordre, surEtape, avertissements) {
+async function importerDxf(affaireId, etatId, prep, ordre, surEtape, avertissements, suivi) {
   const cheminSource = await envoyerSource(affaireId, prep.octets)
+  suivi.chemins.push(cheminSource)
   for (const n of prep.niveaux.filter((x) => x.garde)) {
     surEtape(`Dessin de l’étage « ${n.nom} »…`)
     const { cadrage, rendu, ia } = await rendreNiveauDxf(n)
@@ -58,6 +60,7 @@ async function importerDxf(affaireId, etatId, prep, ordre, surEtape, avertisseme
       nom: n.nom, ordre: ordre.valeur++, format: 'dxf', sourceNom: prep.nom, cheminSource, rendu, cadrage,
       unitesParMetre: prep.unitesParMetre, textes: textesGardes(n.textes.map((t) => ({ texte: t.texte, pos: t.pos }))),
     })
+    noterNiveau(suivi, niveau)
     let pieces = n.pieces.map((p) => ({ ...p, origine: 'dxf', aVerifier: false }))
     if (!pieces.length) {
       surEtape(`Claude repère les pièces de « ${n.nom} »…`)
@@ -77,54 +80,78 @@ async function importerDxf(affaireId, etatId, prep, ordre, surEtape, avertisseme
   }
 }
 
-async function importerPdf(affaireId, etatId, prep, ordre, surEtape, avertissements) {
+async function importerPdf(affaireId, etatId, prep, ordre, surEtape, avertissements, suivi) {
   const cheminSource = await envoyerSource(affaireId, prep.octets)
+  suivi.chemins.push(cheminSource)
   const doc = await ouvrirPdfEdl(prep.octets)
   for (const p of prep.pages.filter((x) => x.garde)) {
     surEtape(`Lecture de la page ${p.numero}…`)
     const page = await rendrePage(doc, p.numero)
-    const mpp = metresParPoint(p.echelle)
-    const ia = imagePourIa(page.canvas)
-    let proposition
     try {
-      surEtape(`Claude repère les étages et les pièces de la page ${p.numero}…`)
-      proposition = await proposerPiecesIa({
-        image: ia.image, largeur: ia.largeur, hauteur: ia.hauteur, niveauUnique: false,
-        textes: page.textes.map((t) => ({ texte: t.texte, x: t.x * ia.echelle, y: t.y * ia.echelle })),
-      })
-    } catch (err) {
-      avertissements.push(`Page ${p.numero} : ${err.message} La page est gardée entière, les pièces pourront être dessinées à la main.`)
-      proposition = { niveaux: [{ nom: `Page ${p.numero}`, cadre: [0, 0, ia.largeur, ia.hauteur] }], pieces: [] }
+      const mpp = metresParPoint(p.echelle)
+      const ia = imagePourIa(page.canvas)
+      let proposition
+      try {
+        surEtape(`Claude repère les étages et les pièces de la page ${p.numero}…`)
+        proposition = await proposerPiecesIa({
+          image: ia.image, largeur: ia.largeur, hauteur: ia.hauteur, niveauUnique: false,
+          textes: page.textes.map((t) => ({ texte: t.texte, x: t.x * ia.echelle, y: t.y * ia.echelle })),
+        })
+      } catch (err) {
+        avertissements.push(`Page ${p.numero} : ${err.message} La page est gardée entière, les pièces pourront être dessinées à la main.`)
+        proposition = { niveaux: [{ nom: `Page ${p.numero}`, cadre: [0, 0, ia.largeur, ia.hauteur] }], pieces: [] }
+      }
+      for (const [k, nv] of proposition.niveaux.entries()) {
+        surEtape(`Enregistrement de « ${nv.nom} »…`)
+        const cadrePx = nv.cadre.map((v) => v / ia.echelle)
+        const { cadrage, rendu } = await decouperNiveau(page, cadrePx, mpp)
+        const textes = page.textes
+          .filter((t) => t.x >= cadrePx[0] && t.x <= cadrePx[2] && t.y >= cadrePx[1] && t.y <= cadrePx[3])
+          .map((t) => ({ texte: t.texte, pos: pointPageEnMetres(page, [t.x, t.y], mpp) }))
+        const niveau = await enregistrerNiveau(affaireId, etatId, {
+          nom: nv.nom, ordre: ordre.valeur++, format: 'pdf', sourceNom: prep.nom, sourcePage: p.numero,
+          cheminSource, rendu, cadrage, echelle: p.echelle, textes: textesGardes(textes),
+        })
+        noterNiveau(suivi, niveau)
+        const pieces = versPiecesEdl(
+          proposition.pieces.filter((q) => q.niveau === k),
+          ([x, y]) => pointPageEnMetres(page, [x / ia.echelle, y / ia.echelle], mpp),
+        )
+        await enregistrerPieces(affaireId, niveau.id, pieces)
+      }
+    } finally {
+      // Libéré même après une erreur : l'iPad garde peu de mémoire de canevas
+      page.canvas.width = 0
+      page.canvas.height = 0
     }
-    for (const [k, nv] of proposition.niveaux.entries()) {
-      surEtape(`Enregistrement de « ${nv.nom} »…`)
-      const cadrePx = nv.cadre.map((v) => v / ia.echelle)
-      const { cadrage, rendu } = await decouperNiveau(page, cadrePx, mpp)
-      const textes = page.textes
-        .filter((t) => t.x >= cadrePx[0] && t.x <= cadrePx[2] && t.y >= cadrePx[1] && t.y <= cadrePx[3])
-        .map((t) => ({ texte: t.texte, pos: pointPageEnMetres(page, [t.x, t.y], mpp) }))
-      const niveau = await enregistrerNiveau(affaireId, etatId, {
-        nom: nv.nom, ordre: ordre.valeur++, format: 'pdf', sourceNom: prep.nom, sourcePage: p.numero,
-        cheminSource, rendu, cadrage, echelle: p.echelle, textes: textesGardes(textes),
-      })
-      const pieces = versPiecesEdl(
-        proposition.pieces.filter((q) => q.niveau === k),
-        ([x, y]) => pointPageEnMetres(page, [x / ia.echelle, y / ia.echelle], mpp),
-      )
-      await enregistrerPieces(affaireId, niveau.id, pieces)
-    }
-    page.canvas.width = 0
-    page.canvas.height = 0
   }
 }
 
+function noterNiveau(suivi, niveau) {
+  suivi.niveauIds.push(niveau.id)
+  suivi.chemins.push(niveau.chemin, niveau.chemin_apercu)
+}
+
 export async function importer(affaireId, preparations, surEtape) {
-  const etat = await assurerEtat(affaireId)
+  const { etat, cree } = await assurerEtat(affaireId)
   const avertissements = []
   const ordre = { valeur: 0 }
-  for (const prep of preparations.filter((p) => !p.refus)) {
-    if (prep.format === 'dxf') await importerDxf(affaireId, etat.id, prep, ordre, surEtape, avertissements)
-    else await importerPdf(affaireId, etat.id, prep, ordre, surEtape, avertissements)
+  const suivi = { niveauIds: [], chemins: [] }
+  try {
+    for (const prep of preparations.filter((p) => !p.refus)) {
+      if (prep.format === 'dxf') await importerDxf(affaireId, etat.id, prep, ordre, surEtape, avertissements, suivi)
+      else await importerPdf(affaireId, etat.id, prep, ordre, surEtape, avertissements, suivi)
+    }
+  } catch (err) {
+    surEtape('Annulation de l’import…')
+    try {
+      await annulerImport({ ...suivi, etatCreeId: cree ? etat.id : null })
+    } catch (errAnnulation) {
+      // L'erreur d'origine compte seule pour l'utilisateur ; des fichiers
+      // restés seuls sont rattrapés par « Nettoyer le stockage »
+      console.warn('État des lieux, annulation de l’import :', errAnnulation)
+    }
+    throw err
   }
   return { avertissements }
 }

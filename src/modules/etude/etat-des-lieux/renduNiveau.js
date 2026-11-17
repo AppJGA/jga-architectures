@@ -20,6 +20,10 @@ export function canevasBlanc(largeur, hauteur) {
   return { canvas, ctx }
 }
 
+// Les canevas de `reduire` sont libérés (largeur et hauteur à 0) dès
+// l'encodage fait : l'iPad plafonne la mémoire de canevas
+const liberer = (canvas) => { canvas.width = 0; canvas.height = 0 }
+
 function reduire(source, max) {
   const echelle = Math.min(1, max / Math.max(source.width, source.height))
   const r = canevasBlanc(source.width * echelle, source.height * echelle)
@@ -30,19 +34,26 @@ function reduire(source, max) {
 
 export async function encoderRendu(canvas) {
   const apercu = reduire(canvas, TAILLE_APERCU_PLAN)
-  const planBlob = await encoderImage(canvas, 0.85)
-  const apercuBlob = await encoderImage(apercu.canvas, 0.78)
-  return {
-    plan: { blob: planBlob, largeur: canvas.width, hauteur: canvas.height },
-    apercu: { blob: apercuBlob, largeur: apercu.canvas.width, hauteur: apercu.canvas.height },
-    extension: planBlob.type === 'image/webp' ? 'webp' : 'jpg',
+  const apercuTaille = { largeur: apercu.canvas.width, hauteur: apercu.canvas.height }
+  try {
+    const planBlob = await encoderImage(canvas, 0.85)
+    const apercuBlob = await encoderImage(apercu.canvas, 0.78)
+    return {
+      plan: { blob: planBlob, largeur: canvas.width, hauteur: canvas.height },
+      apercu: { blob: apercuBlob, ...apercuTaille },
+      extension: planBlob.type === 'image/webp' ? 'webp' : 'jpg',
+    }
+  } finally {
+    liberer(apercu.canvas)
   }
 }
 
 export function imagePourIa(canvas) {
   const r = reduire(canvas, TAILLE_IMAGE_IA)
+  const { width: largeur, height: hauteur } = r.canvas
   const url = r.canvas.toDataURL('image/jpeg', 0.82)
-  return { image: url.slice(url.indexOf(',') + 1), largeur: r.canvas.width, hauteur: r.canvas.height, echelle: r.echelle }
+  liberer(r.canvas)
+  return { image: url.slice(url.indexOf(',') + 1), largeur, hauteur, echelle: r.echelle }
 }
 
 export async function imageIaDepuisUrl(url) {
@@ -53,8 +64,7 @@ export async function imageIaDepuisUrl(url) {
   const { canvas, ctx } = canevasBlanc(img.naturalWidth, img.naturalHeight)
   ctx.drawImage(img, 0, 0)
   const ia = imagePourIa(canvas)
-  canvas.width = 0
-  canvas.height = 0
+  liberer(canvas)
   return ia
 }
 
@@ -89,10 +99,11 @@ function dessiner(niveau, c) {
 export async function rendreNiveauDxf(niveau) {
   const c = calculerCadrage(niveau.boite)
   const canvas = dessiner(niveau, c)
-  const ia = imagePourIa(canvas)
-  const rendu = await encoderRendu(canvas)
-  // Libère la mémoire du grand canevas tout de suite (iPad)
-  canvas.width = 0
-  canvas.height = 0
-  return { cadrage: c, rendu, ia }
+  try {
+    const ia = imagePourIa(canvas)
+    const rendu = await encoderRendu(canvas)
+    return { cadrage: c, rendu, ia }
+  } finally {
+    liberer(canvas)
+  }
 }

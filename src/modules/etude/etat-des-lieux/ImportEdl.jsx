@@ -31,7 +31,14 @@ export function ImportEdl({ affaireId, onTermine, onAnnuler }) {
     setEtape('Lecture des plans…')
     try {
       const lues = []
-      for (const f of fichiers) lues.push(await preparerFichier(f))
+      for (const f of fichiers) {
+        // Un fichier illisible ne fait pas perdre les autres
+        try {
+          lues.push(await preparerFichier(f))
+        } catch (err) {
+          lues.push({ nom: f.name, refus: `Fichier illisible : ${err?.message ?? String(err)}` })
+        }
+      }
       setPreparations(lues)
     } catch (err) {
       setErreur(err?.message ?? String(err))

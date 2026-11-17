@@ -30,13 +30,14 @@ export async function chargerEtat(affaireId) {
   return { etat, niveaux: niveaux.data ?? [], pieces: pieces.data ?? [] }
 }
 
+// `cree` : l'import qui l'a créé le retire s'il échoue (annulerImport)
 export async function assurerEtat(affaireId) {
   const { data, error } = await supabase.from('edl_etats').insert({ affaire_id: affaireId }).select().single()
-  if (!error) return data
+  if (!error) return { etat: data, cree: true }
   if (error.code !== '23505') throw error
   const existant = await supabase.from('edl_etats').select('*').eq('affaire_id', affaireId).single()
   if (existant.error) throw existant.error
-  return existant.data
+  return { etat: existant.data, cree: false }
 }
 
 async function envoyer(chemin, blob, contentType) {
@@ -115,6 +116,27 @@ export async function renommerNiveau(id, nom) {
   const { data, error } = await supabase.from('edl_niveaux').update({ nom }).eq('id', id).select('id')
   if (error) throw error
   if (!data?.length) throw new Error(LECTURE_SEULE)
+}
+
+// Un import interrompu retire ce qu'il a déjà enregistré : sinon « Importer »,
+// relancé, recréait ces étages en double. Les fichiers ne partent qu'une fois
+// les lignes retirées (un refus RLS ne rend pas d'erreur : on compte), pour
+// ne jamais laisser un étage sans son image.
+export async function annulerImport({ niveauIds, chemins, etatCreeId }) {
+  if (niveauIds.length) {
+    const { data, error } = await supabase.from('edl_niveaux').delete().in('id', niveauIds).select('id')
+    if (error) throw error
+    if ((data?.length ?? 0) < niveauIds.length) throw new Error(LECTURE_SEULE)
+  }
+  if (etatCreeId) {
+    const reste = await supabase.from('edl_niveaux').select('id').eq('etat_id', etatCreeId).limit(1)
+    if (reste.error) throw reste.error
+    if (!reste.data?.length) {
+      const { error } = await supabase.from('edl_etats').delete().eq('id', etatCreeId).select('id')
+      if (error) throw error
+    }
+  }
+  await retirer(chemins)
 }
 
 // Remplacer les plans : tout l'état des lieux part (étages et pièces par

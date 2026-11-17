@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 1067 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans, gestion de l'application)
+npm test         # 1099 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans, gestion de l'application, état des lieux)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -191,7 +191,7 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
   Toujours lire par `referencesCadastre` (repli sur les anciennes colonnes) ;
   l'enregistrement (`colonnesCadastre`) tient aussi à jour `cadastre_section`
   / `cadastre_parcelle` (première ligne) et `cadastre_superficie` (total).
-- **Base** : `supabase/migrations/`, numérotées, 76 fichiers, **passées à la
+- **Base** : `supabase/migrations/`, numérotées, 77 fichiers, **passées à la
   main** dans le SQL Editor de Supabase : un code qui dépend d'une nouvelle
   colonne doit tolérer son absence tant que la migration n'est pas faite.
   **Toute table créée depuis le 2026-10-30 doit recevoir ses droits d'API
@@ -671,6 +671,51 @@ du mode Visite, hors ligne). Conception :
   (CCTP commun, chaque lot, Excel) et s'arrête proprement sur « Continue » si
   la réponse est trop longue. Le message à coller commence par le code de
   l'affaire : claude.ai titre la conversation d'après lui.
+
+## État des lieux (`src/modules/etude/etat-des-lieux/`)
+
+Bâtiment existant : plans de l'existant → étages et pièces → (lots 2 à 4)
+visite enregistrée pièce par pièce, analyse par Claude, export DXF par
+calques `EDL-` et rapport PDF. Conception :
+`docs/superpowers/specs/2026-11-17-etat-des-lieux-design.md` ; plan du
+lot 1 : `docs/superpowers/plans/2026-11-17-etat-des-lieux-lot1-preparer.md`.
+
+- **Formats** (`formatPlanEdl.js`, au contenu) : DXF texte et PDF vectorisé.
+  DWG refusé avec le message de l'agence (Enregistrer sous → DXF) ; DXF
+  binaire et PDF scanné refusés aussi.
+- **DXF** (`dxfLecture.js`) : blocs déployés (ArchiCAD range le plan dans
+  des blocs de vues, un par étage), espace papier ignoré sauf si l'espace
+  objet est vide, MTEXT nettoyés (`^J`, `\P`, codes de police). Fichiers
+  R14 décodés en Windows-1252.
+- **Pièces** (`piecesDxfLogique.js`) : **jamais reconstruites depuis les
+  murs**. Le calque des pièces est celui dont les polylignes fermées
+  contiennent une surface écrite égale à la surface dessinée ; le rapport
+  donne l'unité (zones ArchiCAD en cm, géomètre en m). « HP » = hauteur sous
+  plafond ; « Hp » (porte) et « HSP » (poutre) ignorés — la casse compte.
+- **Étages** (`niveauxLogique.js`) : par nom de bloc ou de calque (RDC,
+  SSOL / SOUS-SOL, R+n, Combles — les étages d'ArchiCAD sont superposés),
+  sinon grappes de traits (cellule d'un mètre) et grappe qui porte les
+  pièces ; nom d'après le fichier s'il n'y a qu'un étage.
+- **Claude** (`piecesIaLogique.js`, `api/edl-pieces.js`, SDK Anthropic,
+  `claude-opus-5-5`, sortie JSON imposée, replis `fallbacks: 'default'`) :
+  seulement pour un PDF ou un étage sans contours ; reçoit l'image (2 000 px)
+  et les textes positionnés ; pièces « à vérifier » (bleu). Crédits API du
+  forfait Max (organisation « JGA's Individual Org »).
+- **Repère** : contours en mètres dans le repère du plan d'origine (y vers
+  le haut) ; `edl_niveaux.cadrage` lie mètres et pixels de l'image
+  (`versPixels` / `versMetres`). Un PDF : 1 point = 0,0254 / 72 m × échelle.
+- **Données** (migration 077) : `edl_etats` (un par affaire), `edl_niveaux`
+  (image 6 000 px + aperçu, textes du plan, source compressée), `edl_pieces`
+  (contour, surface et HP lues, origine dxf / ia / main, `a_verifier`,
+  `fiche` pour le lot 3). Stockage privé `edl` (`<affaire>/edl/…`), compté
+  par `fichiers_orphelins()` et la gestion de l'application. « Remplacer les
+  plans » supprime tout l'état des lieux. **La règle restrictive de stockage
+  de la migration 060 est remplacée en bloc** : toute future migration qui
+  ajoute un bucket doit répéter la liste complète, `edl` compris (sinon ce
+  bucket s'ouvre à tout compte agence).
+- **Écran** : `EditeurPieces` sur `VisionneusePlan` (nouvelle prop `calque`,
+  SVG au-dessus de l'image) : sommets déplacés au doigt, rond de milieu =
+  nouveau sommet, `pointercancel` = rien d'enregistré.
 
 ## To-do list (`src/modules/etude/todo/`)
 

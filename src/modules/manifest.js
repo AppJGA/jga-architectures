@@ -47,6 +47,17 @@ export const phases = [
         enabled: true,
         description: 'CCTP découpés en articles, cherchables au bureau et en visite',
       },
+      {
+        // Plans de l'existant, pièces repérées ; visite enregistrée et export
+        // DXF aux lots suivants (docs/superpowers/specs/2026-11-17-etat-des-lieux-design.md)
+        id: 'etat-des-lieux',
+        label: 'État des lieux',
+        icon: 'ScanLine',
+        path: 'etat-des-lieux',
+        component: lazy(() => import('./etude/etat-des-lieux')),
+        enabled: true,
+        description: 'Plans de l’existant, pièces repérées, visite enregistrée',
+      },
       TODO,
     ],
   },

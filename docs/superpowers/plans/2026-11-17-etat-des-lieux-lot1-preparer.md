@@ -1041,7 +1041,7 @@ describe('étages', () => {
     assert.equal(niveauDeNom('Plan R+1').cle, 'R+1')
     assert.equal(niveauDeNom('2EME ETAGE').cle, 'R+2')
     assert.equal(niveauDeNom('Combles').cle, 'COMBLES')
-    assert.equal(niveauDeNom('24073-RDC.dxf').cle, 'RDC')
+    assert.equal(niveauDeNom('PLAN-RDC.dxf').cle, 'RDC')
     assert.equal(niveauDeNom('PARS'), null)
     assert.equal(niveauDeNom('00_MURS'), null)
     assert.equal(niveauDeNom(null), null)
@@ -1070,7 +1070,7 @@ describe('étages', () => {
     const batiment = traitsDe(null, 'MURS', 60, 0)
     const ailleurs = traitsDe(null, 'CADRE', 60, 10_000)
     const piece = { nom: 'Salon', calque: 'PIECES', bloc: null, contour: [[1, 1], [5, 1], [5, 5], [1, 5]] }
-    const n = proposerNiveaux({ traits: [...batiment, ...ailleurs], textes: [] }, { pieces: [piece] }, 1, '24073-RDC.dxf')
+    const n = proposerNiveaux({ traits: [...batiment, ...ailleurs], textes: [] }, { pieces: [piece] }, 1, 'PLAN-RDC.dxf')
     assert.equal(n.length, 1)
     assert.equal(n[0].nom, 'Rez-de-chaussée')
     assert.equal(n[0].traits.length, 60)
@@ -1249,8 +1249,8 @@ node --import ./tests/resolve-src.mjs "$TMPDIR/verif-dxf.mjs" ~/Desktop/PERSO/"E
 ```
 
 Expected (ordres de grandeur constatés à la conception) :
-- `24073-RDC.dxf` : calque `00_PIÈCE`, `u` = 1, environ 18 à 22 pièces (Salon 16 m², Pièce 46,1 m²…), quelques HP lus, **un** niveau « Rez-de-chaussée », pas à proposer.
-- `Batiment 3 sous sol RDC 100°.dxf` : calque `S-SURFACES_RDC`, `u` = 100, environ 200 pièces, **deux** niveaux : « Sous-sol » (0 pièce, `aProposer: true`) puis « Rez-de-chaussée » (≈ 200 pièces).
+- DXF du géomètre : calque `00_PIÈCE`, `u` = 1, environ 18 à 22 pièces (Salon 16 m², Pièce 46,1 m²…), quelques HP lus, **un** niveau « Rez-de-chaussée », pas à proposer.
+- DXF ArchiCAD : calque `S-SURFACES_RDC`, `u` = 100, environ 200 pièces, **deux** niveaux : « Sous-sol » (0 pièce, `aProposer: true`) puis « Rez-de-chaussée » (≈ 200 pièces).
 
 Si un résultat diffère : corriger la logique **et** ajouter au test de la task concernée un cas inventé qui reproduit l'écart (sans données réelles), puis relancer `npm test`.
 
@@ -2745,10 +2745,10 @@ Run: `npx eslint src/modules/etude/etat-des-lieux api/edl-pieces.js` — Expecte
 
 Utiliser la compétence `run` ou `npm run dev`, ouvrir une affaire de test → « État des lieux ».
 1. Importer un faux `.dwg` (copier un DXF et remplacer ses premiers octets par `AC1032`) : message du DWG mot pour mot.
-2. Importer `24073-RDC.dxf` : un étage « Rez-de-chaussée », ≈ 20 pièces lues, contours en orange sur le plan, surfaces dessinées ≈ surfaces écrites.
-3. Remplacer par `Batiment 3 sous sol RDC 100°.dxf` : « Sous-sol » (pièces proposées par Claude, en bleu « à vérifier », si `ANTHROPIC_API_KEY` est présente en local — sinon avertissement et étage vide) et « Rez-de-chaussée » (≈ 200 pièces).
+2. Importer DXF du géomètre : un étage « Rez-de-chaussée », ≈ 20 pièces lues, contours en orange sur le plan, surfaces dessinées ≈ surfaces écrites.
+3. Remplacer par DXF ArchiCAD : « Sous-sol » (pièces proposées par Claude, en bleu « à vérifier », si `ANTHROPIC_API_KEY` est présente en local — sinon avertissement et étage vide) et « Rez-de-chaussée » (≈ 200 pièces).
 4. Déplacer un sommet, ajouter un sommet par un rond de milieu, dessiner une pièce, la renommer, la supprimer ; recharger la page : tout est resté.
-5. Importer `Batiment 3 sous sol RDC 100°.pdf` (échelle 1/100 lue) : deux étages découpés, pièces proposées.
+5. Importer PDF ArchiCAD du même bâtiment (échelle 1/100 lue) : deux étages découpés, pièces proposées.
 6. Couper le réseau (outils du navigateur) après une ouverture : les images des étages s'affichent encore.
 
 Noter dans le compte rendu de fin de lot ce qui a été constaté (nombres de pièces, temps de l'analyse par Claude).

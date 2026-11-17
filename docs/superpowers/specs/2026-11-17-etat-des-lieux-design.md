@@ -98,8 +98,8 @@ contours des pièces y sont déjà dessinés**.
 
 | Exemple | Calque des pièces | Constat |
 |---|---|---|
-| Géomètre (`24073-RDC.dxf`, AutoCAD R14) | `00_PIÈCE` | 22 polylignes fermées ; leur surface calculée = la surface écrite (46,1 m², 39,3 m², 27,7 m²…). Unité : le mètre. |
-| ArchiCAD (`Batiment 3 …dxf`, R14, vues de mise en page en blocs) | `S-SURFACES_RDC` (zones) | 231 contours, 213 avec leur tampon de zone dedans (niveau, numéro, nom, surface) ; surface calculée = surface écrite × 10 000 : unité le cm. Le sous-sol n'a **pas** de zones, seulement noms et numéros. |
+| Géomètre (DXF du géomètre, AutoCAD R14) | `00_PIÈCE` | 22 polylignes fermées ; leur surface calculée = la surface écrite (46,1 m², 39,3 m², 27,7 m²…). Unité : le mètre. |
+| ArchiCAD (DXF ArchiCAD, R14, vues de mise en page en blocs) | `S-SURFACES_RDC` (zones) | 231 contours, 213 avec leur tampon de zone dedans (niveau, numéro, nom, surface) ; surface calculée = surface écrite × 10 000 : unité le cm. Le sous-sol n'a **pas** de zones, seulement noms et numéros. |
 
 D'où, dans l'ordre (`piecesLogique.js` de l'état des lieux, pur) :
 
@@ -231,8 +231,8 @@ Toutes les tables reçoivent les droits d'API (`grant … to authenticated`,
 **Stockage** (offre gratuite plafonnée à 1 Go) : bucket privé `edl`, chemins
 `<affaire_id>/…` comme partout. On garde l'image de chaque étage, les photos
 compressées, et la **source** : le DXF d'origine **compressé** (gzip sur
-l'appareil, nécessaire à l'export) ou, pour un PDF, ses traits et textes
-extraits en JSON compressé (le PDF lui-même n'est pas gardé).
+l'appareil, nécessaire à l'export) ou, pour un PDF, le fichier PDF
+compressé : ses traits seront convertis au moment de l'export (lot 4).
 `fichiers_orphelins()` est étendue au bucket `edl`. Le son n'est jamais
 gardé en ligne : effacé de l'appareil après transcription, comme les CR.
 

@@ -22,6 +22,7 @@ const SORTES = [
   { sorte: 'archives', libelle: 'PDF archivés', buckets: ['cr-archives'] },
   { sorte: 'audio', libelle: 'Audio en attente de transcription', buckets: ['audio-temporaire'] },
   { sorte: 'couvertures', libelle: 'Photos des affaires', buckets: ['affaires-photos'] },
+  { sorte: 'etat-des-lieux', libelle: 'États des lieux', buckets: ['edl'] },
 ]
 
 /**

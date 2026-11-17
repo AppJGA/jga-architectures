@@ -1,6 +1,6 @@
 import { Suspense, useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Pencil, ChevronRight, Eye, ChevronDown, Check, Lock } from 'lucide-react'
+import { Pencil, ChevronRight, Eye, ChevronDown, Check, Lock, ScanLine } from 'lucide-react'
 import { useAffaire } from '../shared/hooks/useAffaires'
 import { useAffaireCollaborateurs } from '../shared/hooks/useAffaireCollaborateurs'
 import { useAuth } from '../core/auth/useAuth'
@@ -33,6 +33,7 @@ import { texteTelephones } from '../shared/telephones'
 
 // Noms du manifeste → icônes de l'agence
 const ICON_MAP = {
+  ScanLine,
   Calendar: IconePlanningEtude,
   BarChart2: IconeFinancierEtude,
   CheckSquare: IconeTodo,

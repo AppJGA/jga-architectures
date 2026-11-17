@@ -14,6 +14,7 @@ import { lireDxf, decoderDxf, nettoyerMtext } from '../src/modules/etude/etat-de
 import { detecterPieces, lireSurface, lireHsp, lireNumero, estNom } from '../src/modules/etude/etat-des-lieux/piecesDxfLogique.js'
 
 import { niveauDeNom, uniteParDefaut, proposerNiveaux } from '../src/modules/etude/etat-des-lieux/niveauxLogique.js'
+import { construireDemandePieces, lirePropositionsPieces, versPiecesEdl, SCHEMA_PIECES, TEXTES_MAX } from '../src/modules/etude/etat-des-lieux/piecesIaLogique.js'
 
 const octets = (s) => new TextEncoder().encode(s)
 
@@ -296,5 +297,36 @@ describe('étages', () => {
     assert.deepEqual(n[0].traits[1].pts, [[0, 0], [59, 0.25]])
     assert.equal(n[0].nom, 'Niveau 1')
     assert.equal(n[0].aProposer, true)
+  })
+})
+
+describe('demande à Claude', () => {
+  test('image puis textes positionnés, schéma imposé', () => {
+    const textes = Array.from({ length: TEXTES_MAX + 5 }, (_, i) => ({ texte: `T${i}  x`, x: i + 0.4, y: 2 }))
+    const d = construireDemandePieces({ image: 'QUJD', largeur: 2000, hauteur: 1400, textes, niveauUnique: true })
+    assert.equal(d.messages[0].content[0].type, 'image')
+    assert.equal(d.messages[0].content[0].source.media_type, 'image/jpeg')
+    const texte = d.messages[0].content[1].text
+    assert.match(texte, /2000 × 1400/)
+    assert.match(texte, /un seul étage/)
+    assert.match(texte, /\n0\t2\tT0 x/)
+    assert.equal(texte.split('\n').filter((l) => /^\d+\t/.test(l)).length, TEXTES_MAX)
+    assert.equal(d.output_config.format.schema, SCHEMA_PIECES)
+  })
+  test('réponse relue : bornée à l’image, contours trop petits écartés, niveau par défaut', () => {
+    const r = lirePropositionsPieces({
+      niveaux: [],
+      pieces: [
+        { niveau: 3, nom: ' Cuisine ', numero: '', surface: 0, contour: [[-5, 0], [100, 0], [100, 80], [0, 80]] },
+        { niveau: 0, nom: 'Miette', numero: '', surface: 0, contour: [[0, 0], [1, 0], [1, 1]] },
+        { niveau: 0, nom: 'Ligne', numero: '', surface: 0, contour: [[0, 0], [5, 5]] },
+      ],
+    }, { largeur: 1000, hauteur: 800 })
+    assert.deepEqual(r.niveaux, [{ nom: 'Niveau 1', cadre: [0, 0, 1000, 800] }])
+    assert.deepEqual(r.pieces, [{ niveau: 0, nom: 'Cuisine', numero: null, surface: null, contour: [[0, 0], [100, 0], [100, 80], [0, 80]] }])
+  })
+  test('pièces converties en mètres, marquées à vérifier', () => {
+    const [p] = versPiecesEdl([{ niveau: 0, nom: 'Salon', numero: '0004', surface: 12.5, contour: [[0, 0], [10, 0], [10, 10]] }], ([x, y]) => [x / 10, y / 10 + 1])
+    assert.deepEqual(p, { nom: 'Salon', numero: '0004', surfaceLue: 12.5, hspLue: null, contour: [[0, 1], [1, 1], [1, 2]], origine: 'ia', aVerifier: true })
   })
 })

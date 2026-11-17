@@ -18,6 +18,9 @@
   "functions": {
     "api/notion.js": {
       "maxDuration": 60
+    },
+    "api/edl-pieces.js": {
+      "maxDuration": 300
     }
   }
 }

@@ -57,7 +57,7 @@ export function VisionneusePlan({ version, obtenirLiens, pastilles = [], idActiv
   const ox = (taille.largeur - bw) / 2
   const oy = (taille.hauteur - bh) / 2
 
-  const vueDuCadre = () => (cadre ? vueSurCadre(cadre, taille, { bw, bh, ox, oy }, { zoomMax }) : { zoom: 1, dx: 0, dy: 0 })
+  const vueDuCadre = () => (cadre ? limiterVue(vueSurCadre(cadre, taille, { bw, bh, ox, oy }, { zoomMax }), bw, bh) : { zoom: 1, dx: 0, dy: 0 })
   // Nouveau cadre (pièce ouverte, refermée), ou conteneur redimensionné alors
   // qu'un cadre est posé : la vue s'y ajuste (cleDeCadre, testé). Le pincement
   // qui suit reste libre.

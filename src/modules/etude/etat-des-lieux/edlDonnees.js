@@ -7,12 +7,10 @@
 import { gzipSync } from 'fflate'
 import { supabase } from '../../../core/supabase/client'
 import { arrondirContour } from './geometrieEdl'
+import { BUCKET_EDL, edlIndisponible } from './edlConstantes'
 
-export const BUCKET_EDL = 'edl'
+export { BUCKET_EDL, edlIndisponible }
 const LECTURE_SEULE = 'Lecture seule : rien n’a été modifié.'
-
-export const edlIndisponible = (error) =>
-  error?.code === '42P01' || error?.code === 'PGRST205' || /edl_\w+.*(does not exist|schema cache)/i.test(error?.message ?? '')
 
 export async function chargerEtat(affaireId) {
   const { data: etat, error } = await supabase.from('edl_etats').select('*').eq('affaire_id', affaireId).maybeSingle()

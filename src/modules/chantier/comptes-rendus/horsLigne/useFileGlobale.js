@@ -40,6 +40,11 @@ export function useMoteurSynchro() {
     const lancer = () => {
       if (navigator.onLine === false) return
       envoyerTout().catch((err) => console.warn('Envoi des modifications :', err))
+      // Visites d'état des lieux : leur propre file (base jga-edl)
+      // Chargé à la demande : la visite d'état des lieux ne pèse pas sur le premier chargement
+      import('../../../etude/etat-des-lieux/visite/synchroEdl')
+        .then((m) => m.envoyerToutEdl())
+        .catch((err) => console.warn('Envoi de l’état des lieux :', err))
     }
     const auPremierPlan = () => { if (document.visibilityState === 'visible') lancer() }
     lancer()

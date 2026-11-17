@@ -43,7 +43,11 @@ export function useEnregistrementEdl({ visiteId, affaireId, surEtat }) {
   // L'identifiant de la visite est connu au moment du geste « Démarrer » :
   // il part avec le premier morceau, avant même le rendu suivant
   const { demarrer: demarrerMoteur } = moteur
-  const demarrer = useCallback((id) => demarrerMoteur({ edlVisiteId: id }), [demarrerMoteur])
+  // Sans identifiant de visite, l'audio ne se rattacherait à rien : refus
+  const demarrer = useCallback(
+    (id) => (id ? demarrerMoteur({ edlVisiteId: id }) : Promise.resolve(false)),
+    [demarrerMoteur],
+  )
 
-  return { ...moteur, demarrer, enAttente }
+  return { ...moteur, demarrer, enAttente: visiteId ? enAttente : 0 }
 }

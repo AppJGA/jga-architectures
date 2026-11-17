@@ -46,11 +46,13 @@ export function useEnregistrementVisite({ crId, affaireId, vocabulaire = [], act
   }, [crId, recompter])
 
   const champs = useMemo(() => ({ crId, affaireId }), [crId, affaireId])
-  const moteur = useEnregistreur({ champs, surMorceau: () => { transcrire() } })
+  // Une seule erreur affichée, la plus récente : celle du moteur (démarrage,
+  // reprise) arrive par `surErreur` et se remplace par celle de la transcription
+  const moteur = useEnregistreur({ champs, surMorceau: () => { transcrire() }, surErreur: setErreur })
   const { demarrer: demarrerMoteur, enregistrementCourant } = moteur
   // Appelé tel quel par un onClick : l'événement ne doit jamais partir comme
   // champs de visite sur les morceaux
-  const demarrer = useCallback(() => demarrerMoteur(), [demarrerMoteur])
+  const demarrer = useCallback(() => { setErreur(null); return demarrerMoteur() }, [demarrerMoteur])
 
   // Ouverture : la table existe-t-elle ? Un enregistrement interrompu par
   // une fermeture de la page se recolle, puis la file repart.
@@ -75,7 +77,7 @@ export function useEnregistrementVisite({ crId, affaireId, vocabulaire = [], act
 
   return {
     disponible, etat: etatPourLeCr(moteur.etat), niveau: moteur.niveau, attente,
-    erreur: moteur.erreur ?? erreur, version, duree_s: moteur.duree_s,
+    erreur, version, duree_s: moteur.duree_s,
     demarrer, arreter: moteur.arreter, reprendre: moteur.reprendre, transcrire,
   }
 }

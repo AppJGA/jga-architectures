@@ -1,13 +1,16 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { useParams } from 'react-router-dom'
-import { Upload, RefreshCw, X } from 'lucide-react'
+import { useParams, useSearchParams } from 'react-router-dom'
+import { Upload, RefreshCw, X, Mic } from 'lucide-react'
 import { useLiensSignes } from '../../chantier/comptes-rendus/useLiensSignes'
 import { garderImages } from '../../chantier/comptes-rendus/horsLigne/images'
 import { useEtatDesLieux } from './useEtatDesLieux'
 import { BUCKET_EDL, enregistrerPieces, supprimerEtat } from './edlDonnees'
 import { ImportEdl } from './ImportEdl'
 import { EditeurPieces } from './EditeurPieces'
+import { useVisiteEdl } from './visite/useVisiteEdl'
+import { VisiteEdl } from './visite/VisiteEdl'
+import { visiteEnCours } from './visite/visiteLogique'
 
 // ─── État des lieux d'un bâtiment existant ───────────────────────────────────
 //
@@ -17,6 +20,10 @@ import { EditeurPieces } from './EditeurPieces'
 // des étages sur l'appareil ; sans réseau, il les relit de là. Présentation
 // commune aux modules de l'affaire (barre d'outils, onglets soulignés,
 // fenêtres à liseré de la couleur de la phase).
+// Lot 2 : « Démarrer la visite » ouvre l'écran plein de la visite (?visite=1,
+// gardé au rechargement) ; l'état des lieux est recopié sur l'appareil à
+// chaque ouverture avec du réseau. Après une visite, les plans ne se
+// remplacent plus (points rattachés aux étages ; refusé aussi par la base).
 
 const texteDiscret = { margin: 0, fontSize: 12, color: '#9C9591' }
 const boutonPrincipal = { display: 'inline-flex', alignItems: 'center', gap: 8, minHeight: 40, padding: '0 16px', border: 'none', borderRadius: 3, background: 'var(--affaire-accent, #E8602C)', color: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer' }
@@ -59,6 +66,19 @@ export default function EtatDesLieuxModule({ lectureSeule = false }) {
   const [niveauId, setNiveauId] = useState(null)
   const [importOuvert, setImportOuvert] = useState(false)
   const [confirmer, setConfirmer] = useState(false)
+  const [params, setParams] = useSearchParams()
+  const visite = useVisiteEdl(affaireId)
+  const visiteOuverte = params.get('visite') === '1' && !lectureSeule
+  const aEuUneVisite = (visite.donnees?.visites?.length ?? 0) > 0
+  // Tant que la visite n'est pas lue, on ne sait pas s'il y en a eu une :
+  // « Remplacer les plans » attend (la base le refuserait de toute façon)
+  const remplacementPossible = !aEuUneVisite && (visite.charge || visite.sansMemoire)
+  const ouvrirVisite = () => setParams((p) => { const n = new URLSearchParams(p); n.set('visite', '1'); return n })
+  const fermerVisite = () => {
+    setParams((p) => { const n = new URLSearchParams(p); n.delete('visite'); return n }, { replace: true })
+    edl.recharger()
+    visite.recharger()
+  }
 
   const niveau = edl.niveaux.find((n) => n.id === niveauId) ?? edl.niveaux[0]
 
@@ -66,6 +86,12 @@ export default function EtatDesLieuxModule({ lectureSeule = false }) {
     if (!edl.charge || !navigator.onLine || !edl.niveaux.length) return
     garderImages(edl.niveaux.flatMap((n) => [n.chemin_apercu, n.chemin]), obtenirLiens).catch(() => {})
   }, [edl.charge, edl.niveaux, obtenirLiens])
+
+  // La visite s'ouvre même si la lecture du lot 1 échoue sans réseau : elle
+  // lit son propre instantané
+  if (visiteOuverte) {
+    return <VisiteEdl affaireId={affaireId} visite={visite} obtenirLiens={obtenirLiens} onFermer={fermerVisite} />
+  }
 
   if (edl.indisponible) {
     return <p style={{ margin: 0, maxWidth: 760, fontSize: 13, color: '#92400E', background: '#FFFBEB', border: '0.5px solid #F59E0B', padding: '10px 14px' }}>L’état des lieux demande la migration 077 dans Supabase.</p>
@@ -86,7 +112,7 @@ export default function EtatDesLieuxModule({ lectureSeule = false }) {
     <ImportEdl
       affaireId={affaireId}
       onFermer={() => setImportOuvert(false)}
-      onTermine={() => { setImportOuvert(false); setNiveauId(null); edl.recharger() }}
+      onTermine={() => { setImportOuvert(false); setNiveauId(null); edl.recharger(); visite.recharger() }}
     />
   )
 
@@ -124,9 +150,24 @@ export default function EtatDesLieuxModule({ lectureSeule = false }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         <p style={{ ...texteDiscret, flex: 1 }}>
           {pluriel(edl.niveaux.length, 'étage')} · {pluriel(edl.pieces.length, 'pièce')}
+          {aEuUneVisite && ` · ${pluriel(visite.donnees.visites.length, 'visite')} · ${pluriel(visite.donnees.points.length, 'point')}`}
+          {visite.resume.enAttente > 0 && ` · ${visite.resume.enAttente} geste${visite.resume.enAttente > 1 ? 's' : ''} de visite à envoyer`}
           {horsLigne ? ' · sans réseau : plans lus sur cet appareil' : ' · plans gardés sur cet appareil pour la visite'}
         </p>
-        {!lectureSeule && (
+        {visite.resume.echecs > 0 && (
+          <span style={{ fontSize: 12, color: '#B8412C' }}>
+            {visite.resume.echecs} geste{visite.resume.echecs > 1 ? 's' : ''} de visite refusé{visite.resume.echecs > 1 ? 's' : ''} par la base
+          </span>
+        )}
+        {!lectureSeule && visite.indisponible && (
+          <span style={{ fontSize: 12, color: '#92400E', background: '#FFFBEB', border: '0.5px solid #F59E0B', padding: '6px 10px' }}>La visite demande la migration 079 dans Supabase.</span>
+        )}
+        {!lectureSeule && visite.disponible && (
+          <button type="button" onClick={ouvrirVisite} style={boutonPrincipal}>
+            <Mic size={15} /> {visiteEnCours(visite.donnees.visites) ? 'Reprendre la visite' : 'Démarrer la visite'}
+          </button>
+        )}
+        {!lectureSeule && remplacementPossible && (
           <button type="button" onClick={() => setConfirmer(true)} style={boutonSecondaire}><RefreshCw size={14} /> Remplacer les plans</button>
         )}
       </div>

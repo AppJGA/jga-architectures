@@ -56,7 +56,7 @@ export function PanneauPoint({ point, photos, obtenirLiens, inactif, onType, onP
               <Camera size={18} /> Photo{photos.length ? ` (${photos.length})` : ''}
             </button>
             <button type="button" style={{ ...bouton, color: '#B8412C' }} disabled={inactif} onClick={onSupprimer}><Trash2 size={16} /> Supprimer</button>
-            <button type="button" style={{ ...bouton, width: 44, padding: 0, justifyContent: 'center' }} aria-label="Laisser ce point" onClick={onFermer}><X size={18} /></button>
+            <button type="button" style={{ ...bouton, width: 44, padding: 0, justifyContent: 'center' }} disabled={inactif} aria-label="Laisser ce point" onClick={onFermer}><X size={18} /></button>
           </>
         )}
         <input

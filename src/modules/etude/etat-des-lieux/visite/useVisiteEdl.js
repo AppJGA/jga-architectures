@@ -88,10 +88,12 @@ export function useVisiteEdl(affaireId) {
   }, [recharger])
 
   useEffect(() => {
+    // Une relecture réussie efface l'erreur d'avant : elle ne vaut plus
     const surFile = () => {
-      relire().catch((err) => {
-        if (affaireCourante.current === affaireId) setStatut((s) => ({ ...s, erreur: err?.message ?? String(err) }))
-      })
+      relire().then(
+        () => { if (affaireCourante.current === affaireId) setStatut((s) => (s.erreur ? { ...s, erreur: null } : s)) },
+        (err) => { if (affaireCourante.current === affaireId) setStatut((s) => ({ ...s, erreur: err?.message ?? String(err) })) },
+      )
     }
     const surReseau = () => { envoyerFileEdl(affaireId).catch(() => {}) }
     window.addEventListener(EVENEMENT_FILE_EDL, surFile)

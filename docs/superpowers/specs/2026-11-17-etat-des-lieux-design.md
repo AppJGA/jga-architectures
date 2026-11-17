@@ -58,6 +58,15 @@ calques d'origine.
 | EDL-Photos | repère numéroté de chaque photo | — |
 | EDL-Fond de plan | traits et textes d'un PDF converti (seulement si le plan venait d'un PDF) | — |
 
+**Symboles usuels** (demande de l'agence) : chaque type d'élément est
+dessiné avec le symbole habituel des plans — en électricité ceux de la
+norme (interrupteur, prise de courant, point lumineux, tableau…), en
+plomberie et chauffage les appareils à leur taille réelle vus de dessus
+(lavabo, WC, douche, baignoire, radiateur). Le même dessin sert à l'écran
+(SVG) et dans le DXF (bloc), défini une fois par type ; jeu de symboles
+relu par l'agence avant le lot 4. Taille : les appareils à l'échelle, les
+symboles électriques à une taille fixe lisible au 1/100 et au 1/50.
+
 La liste des calques et des types vit dans un seul fichier pur
 (`calquesEdl.js`) : barre d'icônes, consignes de Claude, export DXF et
 rapport la lisent. Un type de plus = une ligne.
@@ -82,19 +91,38 @@ longueur connue. **Contrôle** : la surface calculée de chaque pièce est
 comparée à la surface écrite sur le plan ; un écart général signale une
 échelle fausse.
 
-**Pièces** :
+**Pièces** — on ne reconstruit pas les pièces à partir des murs (les plans
+sont plus ou moins précis : trop fragile). Constat sur les deux DXF
+d'exemple de l'agence (même bâtiment que ses PDF, hors dépôt) : **les
+contours des pièces y sont déjà dessinés**.
 
-1. Claude reçoit **la liste des textes avec leur position** (pas l'image :
-   moins cher et plus sûr) et dit lesquels sont des noms de pièces, quelle
-   surface va avec quel nom, et le nom de chaque étage.
-2. Le **contour** se calcule par la géométrie (`contoursPieces.js`, pur) :
-   les murs sont tracés sur une grille, épaissis pour fermer les baies de
-   porte (≈ 90 cm), puis remplis depuis l'étiquette de la pièce ; le contour
-   obtenu est simplifié en polygone. Deux étiquettes dans la même zone
-   (grande ouverture) → zone partagée entre elles et signalée à vérifier.
-3. À l'écran, chaque pièce en couleur sur le plan ; on déplace les coins,
-   on renomme, on ajoute une pièce (toucher une zone sans nom calcule son
-   contour), on en supprime.
+| Exemple | Calque des pièces | Constat |
+|---|---|---|
+| Géomètre (`24073-RDC.dxf`, AutoCAD R14) | `00_PIÈCE` | 22 polylignes fermées ; leur surface calculée = la surface écrite (46,1 m², 39,3 m², 27,7 m²…). Unité : le mètre. |
+| ArchiCAD (`Batiment 3 …dxf`, R14, vues de mise en page en blocs) | `S-SURFACES_RDC` (zones) | 231 contours, 213 avec leur tampon de zone dedans (niveau, numéro, nom, surface) ; surface calculée = surface écrite × 10 000 : unité le cm. Le sous-sol n'a **pas** de zones, seulement noms et numéros. |
+
+D'où, dans l'ordre (`piecesLogique.js` de l'état des lieux, pur) :
+
+1. **DXF avec contours** : le calque des pièces est trouvé **sans IA** —
+   celui dont les polylignes fermées contiennent des noms de pièces et dont
+   la surface calculée correspond à la surface écrite dedans. Ce même
+   rapport donne l'**unité** (m, cm, mm) et vérifie l'échelle. Nom, numéro et
+   surface viennent du texte trouvé dans le contour. Les étages se
+   distinguent par les blocs de vues, les suffixes de calques (`M-RDC`,
+   `M-SOUS-SOL`) ou, à défaut, par regroupement des dessins éloignés.
+2. **Étage sans contours** (le sous-sol de l'exemple ArchiCAD) **ou PDF** :
+   Claude reçoit l'image de l'étage **et** la liste des textes avec leur
+   position exacte, et propose le contour de chaque pièce nommée. Moins
+   précis : c'est l'étape de correction qui le rattrape. Les plans en DXF
+   restent donc à préférer ; l'écran d'import le dit.
+3. **Correction** à l'écran, quelle que soit l'origine : chaque pièce en
+   couleur sur le plan ; on déplace les coins, on renomme, on dessine une
+   pièce oubliée (touchers successifs aux angles), on en supprime. Une
+   pièce dont la surface calculée s'écarte de la surface écrite est
+   signalée.
+
+Les exemples réels restent hors dépôt (public) : dossier de l'agence
+« Exemples dxf » (les DXF et les PDF du même bâtiment).
 
 « Préparer pour la visite » recopie sur la tablette images, pièces et
 réglages (même principe que « Préparer pour le chantier »).
@@ -175,8 +203,9 @@ point ou déplacé sur le plan.
   surface, HSP (EDL-Pièces) et finitions (EDL-Finitions). Les cotes dictées
   sont des textes, pas des lignes de cote.
 - Contrôle de chaque fichier produit en le relisant avec notre propre
-  lecteur (tests), puis essai à l'ouverture dans AutoCAD et ArchiCAD avec
-  l'agence.
+  lecteur (tests), puis **essai d'import dans ArchiCAD avec l'agence**
+  (condition de l'accord : le DXF doit s'y importer facilement, calques
+  `EDL-` reconnus) ; AutoCAD en second.
 
 **Rapport PDF** (pdfmake, comme les CR) : page de garde (affaire, date,
 rédacteur), par étage le plan avec les points numérotés, puis une fiche par
@@ -216,8 +245,8 @@ essais) :
 
 - reconnaissance d'un DWG, d'un PDF sans vecteur ;
 - lecture DXF (entités, unités, étages côte à côte) ;
-- contours de pièces (portes fermées, grande ouverture partagée, pièce en
-  L) et contrôle d'échelle par les surfaces ;
+- calque des pièces trouvé dans un DXF (contours fermés + surface écrite
+  dedans), unité déduite (m, cm, mm), pièce en L, surface qui s'écarte ;
 - frise de l'analyse (gestes et phrases intercalés, réanalyse) ;
 - complétude de la fiche, couleur des pièces ;
 - export DXF relu par le lecteur (calques, blocs, identifiants), et
@@ -225,8 +254,8 @@ essais) :
 
 ## 10. Découpage
 
-1. **Préparer** : import DXF / PDF (DWG refusé), étages, pièces (Claude pour
-   les noms, géométrie pour les contours), correction, échelle, consultation
+1. **Préparer** : import DXF / PDF (DWG refusé), étages, pièces (contours lus
+   dans le DXF, sinon proposés par Claude), correction, échelle, consultation
    hors ligne.
 2. **Visiter** : mode visite, enregistrement continu et découpé, journal,
    points, barre d'icônes, photos, voile gris, file hors ligne.
@@ -243,3 +272,5 @@ Chaque lot est livré, poussé et documenté dans `CLAUDE.md` avant le suivant.
 - Plans scannés (sans vecteur).
 - Redessiner les murs d'après les cotes dictées.
 - Géolocalisation.
+- Reconstruire les pièces à partir du tracé des murs (trop fragile sur des
+  plans plus ou moins précis).

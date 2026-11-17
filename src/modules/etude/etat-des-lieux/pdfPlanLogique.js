@@ -27,3 +27,24 @@ export function compterChemins(fnArray, OPS) {
 }
 
 export const estVectoriel = (fnArray, OPS) => compterChemins(fnArray, OPS) >= MIN_CHEMINS_VECTORIELS
+
+// Mètres lus sur la feuille telle qu'elle est affichée (rotation de la page
+// comprise), y vers le haut. Passer par le repère du PDF non pivoté
+// (`convertToPdfPoint`) transposait contours et textes d'une page en /Rotate
+// 90 : l'image découpée, elle, est la feuille affichée.
+export function pointFeuilleEnMetres([px, py], { scale, hauteurPx, mpp }) {
+  return [(px / scale) * mpp, ((hauteurPx - py) / scale) * mpp]
+}
+
+// Cadrage (geometrieEdl) de l'image découpée dans la feuille au cadre
+// [x0, y0, x1, y1] en pixels de la feuille
+export function cadrageDecoupe([x0, y0, x1, y1], feuille) {
+  const [mx0, my0] = pointFeuilleEnMetres([x0, y1], feuille)
+  const [mx1, my1] = pointFeuilleEnMetres([x1, y0], feuille)
+  const largeur = Math.max(1, Math.round(x1 - x0))
+  return {
+    x0: mx0, y0: my0, x1: mx1, y1: my1,
+    largeur, hauteur: Math.max(1, Math.round(y1 - y0)),
+    pxParMetre: largeur / (mx1 - mx0),
+  }
+}

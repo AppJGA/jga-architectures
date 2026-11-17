@@ -3,7 +3,7 @@
 import * as pdfjs from 'pdfjs-dist'
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.js?url'
 import { dimensionsPlan } from '../../chantier/comptes-rendus/plansLogique'
-import { estVectoriel, lireEchelle } from './pdfPlanLogique'
+import { estVectoriel, lireEchelle, pointFeuilleEnMetres, cadrageDecoupe } from './pdfPlanLogique'
 import { canevasBlanc, encoderRendu } from './renduNiveau'
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl
@@ -41,25 +41,21 @@ export async function rendrePage(doc, numero) {
   return { canvas, viewport, textes }
 }
 
-export function pointPdfEnMetres(viewport, [px, py], mpp) {
-  const [x, y] = viewport.convertToPdfPoint(px, py)
-  return [x * mpp, y * mpp]
-}
+// Les mètres se lisent sur la feuille affichée (rotation comprise), celle
+// que montrent l'image et les textes : voir pointFeuilleEnMetres
+export const feuilleDe = (page, mpp) => ({ scale: page.viewport.scale, hauteurPx: page.viewport.height, mpp })
+export const pointPageEnMetres = (page, point, mpp) => pointFeuilleEnMetres(point, feuilleDe(page, mpp))
 
 export async function decouperNiveau(page, cadrePx, mpp) {
   const [x0, y0, x1, y1] = cadrePx.map((v) => Math.round(v))
   const { canvas, ctx } = canevasBlanc(x1 - x0, y1 - y0)
-  ctx.drawImage(page.canvas, x0, y0, x1 - x0, y1 - y0, 0, 0, x1 - x0, y1 - y0)
-  const basGauche = pointPdfEnMetres(page.viewport, [x0, y1], mpp)
-  const hautDroit = pointPdfEnMetres(page.viewport, [x1, y0], mpp)
-  const cadrage = {
-    x0: Math.min(basGauche[0], hautDroit[0]), y0: Math.min(basGauche[1], hautDroit[1]),
-    x1: Math.max(basGauche[0], hautDroit[0]), y1: Math.max(basGauche[1], hautDroit[1]),
-    largeur: canvas.width, hauteur: canvas.height,
+  try {
+    ctx.drawImage(page.canvas, x0, y0, x1 - x0, y1 - y0, 0, 0, x1 - x0, y1 - y0)
+    const cadrage = cadrageDecoupe([x0, y0, x1, y1], feuilleDe(page, mpp))
+    const rendu = await encoderRendu(canvas)
+    return { cadrage, rendu }
+  } finally {
+    canvas.width = 0
+    canvas.height = 0
   }
-  cadrage.pxParMetre = canvas.width / (cadrage.x1 - cadrage.x0)
-  const rendu = await encoderRendu(canvas)
-  canvas.width = 0
-  canvas.height = 0
-  return { cadrage, rendu }
 }

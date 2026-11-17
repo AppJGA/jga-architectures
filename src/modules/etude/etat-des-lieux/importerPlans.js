@@ -14,7 +14,7 @@ import { metresParPoint } from './pdfPlanLogique'
 import { versPiecesEdl } from './piecesIaLogique'
 import { proposerPiecesIa } from './piecesIa'
 import { rendreNiveauDxf, imagePourIa } from './renduNiveau'
-import { ouvrirPdfEdl, examinerPages, rendrePage, pointPdfEnMetres, decouperNiveau } from './lecturePdfEdl'
+import { ouvrirPdfEdl, examinerPages, rendrePage, pointPageEnMetres, decouperNiveau } from './lecturePdfEdl'
 import { assurerEtat, envoyerSource, enregistrerNiveau, enregistrerPieces } from './edlDonnees'
 
 const TEXTES_GARDES = 3000
@@ -102,14 +102,14 @@ async function importerPdf(affaireId, etatId, prep, ordre, surEtape, avertisseme
       const { cadrage, rendu } = await decouperNiveau(page, cadrePx, mpp)
       const textes = page.textes
         .filter((t) => t.x >= cadrePx[0] && t.x <= cadrePx[2] && t.y >= cadrePx[1] && t.y <= cadrePx[3])
-        .map((t) => ({ texte: t.texte, pos: pointPdfEnMetres(page.viewport, [t.x, t.y], mpp) }))
+        .map((t) => ({ texte: t.texte, pos: pointPageEnMetres(page, [t.x, t.y], mpp) }))
       const niveau = await enregistrerNiveau(affaireId, etatId, {
         nom: nv.nom, ordre: ordre.valeur++, format: 'pdf', sourceNom: prep.nom, sourcePage: p.numero,
         cheminSource, rendu, cadrage, echelle: p.echelle, textes: textesGardes(textes),
       })
       const pieces = versPiecesEdl(
         proposition.pieces.filter((q) => q.niveau === k),
-        ([x, y]) => pointPdfEnMetres(page.viewport, [x / ia.echelle, y / ia.echelle], mpp),
+        ([x, y]) => pointPageEnMetres(page, [x / ia.echelle, y / ia.echelle], mpp),
       )
       await enregistrerPieces(affaireId, niveau.id, pieces)
     }

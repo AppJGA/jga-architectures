@@ -101,6 +101,9 @@ export function proposerNiveaux(lecture, detection, unitesParMetre, nomFichier =
     }
     let retenus = groupes.filter((g) => g.pieces.length > 0)
     if (!retenus.length) retenus = groupes.filter((g) => g.traits.length >= lecture.traits.length * 0.1).slice(0, 6)
+    // Dessin morcelé (aucune grappe dominante) : tout en un étage, sinon
+    // l'écran n'aurait rien à importer
+    if (!retenus.length && lecture.traits.length) retenus = [{ traits: lecture.traits, boite: boite(lecture.traits.flatMap((t) => t.pts)), pieces: [] }]
     retenus.sort((a, b) => b.boite[3] - a.boite[3])
     const nomFichierNiveau = niveauDeNom(nomFichier)?.nom
     niveaux = retenus.map((g, i) => ({

@@ -92,7 +92,7 @@ export function detecterPieces({ traits, textes }) {
     parCalque.get(t.calque).push(t)
   }
 
-  let meilleur = null
+  const retenus = []
   for (const [calque, polys] of parCalque) {
     if (polys.length < MIN_PIECES) continue
     const propres = textesParPolygone(polys, textes)
@@ -102,17 +102,22 @@ export function detecterPieces({ traits, textes }) {
     const med = mediane(rapports)
     const accord = rapports.filter((r) => Math.abs(r / med - 1) <= TOLERANCE_RAPPORT).length
     if (accord < MIN_PIECES || accord < rapports.length / 2) continue
-    if (!meilleur || accord > meilleur.accord) meilleur = { calque, lues, med, accord }
+    retenus.push({ calque, lues, accord, unite: arrondirUnite(Math.sqrt(med)) })
   }
-  if (!meilleur) return { calque: null, unitesParMetre: null, pieces: [] }
+  if (!retenus.length) return { calque: null, calques: [], unitesParMetre: null, pieces: [] }
 
-  const u = arrondirUnite(Math.sqrt(meilleur.med))
-  const pieces = meilleur.lues
+  // ArchiCAD peut ranger les zones de chaque étage sur leur propre calque
+  // (S-SURFACES_RDC, S-SURFACES_R+1…) : tous les calques qui s'accordent sur
+  // l'unité du meilleur donnent leurs pièces
+  const meilleur = retenus.reduce((a, b) => (b.accord > a.accord ? b : a))
+  const u = meilleur.unite
+  const gardes = retenus.filter((r) => r.unite === u)
+  const pieces = gardes.flatMap((r) => r.lues)
     .filter((l) => l.nbTextes > 0 && (l.nom || l.surfaceLue || l.numero))
     .map((l) => ({
       nom: l.nom, numero: l.numero, surfaceLue: l.surfaceLue, hspLue: l.hspLue,
       calque: l.poly.calque, bloc: l.poly.bloc ?? null,
       contour: l.poly.pts.map(([x, y]) => [x / u, y / u]),
     }))
-  return { calque: meilleur.calque, unitesParMetre: u, pieces }
+  return { calque: meilleur.calque, calques: gardes.map((r) => r.calque), unitesParMetre: u, pieces }
 }

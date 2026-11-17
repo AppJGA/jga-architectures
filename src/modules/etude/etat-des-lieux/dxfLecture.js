@@ -121,6 +121,8 @@ export function nettoyerMtext(brut) {
     .replace(/\\\\/g, '\u0000')
     .replace(/\^J/g, '\n')
     .replace(/\\P/g, '\n')
+    // \pxqc; (alignement de paragraphe) : la majuscule, déjà traitée, est un saut de ligne
+    .replace(/\\p[^;]*;/g, '')
     .replace(/\\[Ss]([^;]*?)[#^/]([^;]*);/g, '$1/$2')
     .replace(/\\[ACcFfHhQqTtWw][^;\\]*;/g, '')
     .replace(/\\[LlOoKk]/g, '')

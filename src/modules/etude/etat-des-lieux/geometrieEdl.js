@@ -57,6 +57,22 @@ export function ecartSurface(contour, surfaceLue) {
   return aire(contour) / surfaceLue - 1
 }
 
+// Toutes les pièces d'un étage s'écartent du même facteur : c'est l'échelle
+// (unité du DXF, échelle du PDF) qui est fausse, pas les contours. La médiane
+// ignore une pièce mal dessinée.
+const SEUIL_ECHELLE = 0.15
+const MIN_SURFACES_ECHELLE = 3
+
+export function ecartEchelle(pieces) {
+  const rapports = pieces
+    .map((p) => ({ contour: p.contour, surface: Number(p.surface_lue ?? p.surfaceLue) }))
+    .filter((p) => p.surface > 0 && p.contour?.length >= 3)
+    .map((p) => aire(p.contour) / p.surface)
+  if (rapports.length < MIN_SURFACES_ECHELLE) return null
+  const r = mediane(rapports)
+  return Math.abs(r - 1) > SEUIL_ECHELLE ? r : null
+}
+
 export function cadrage([x0, y0, x1, y1], { marge = 0.03, pxMax = 6000, pixelsMax = 16_000_000 } = {}) {
   const m = Math.max(x1 - x0, y1 - y0) * marge
   const b = [x0 - m, y0 - m, x1 + m, y1 + m]

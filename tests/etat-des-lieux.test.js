@@ -7,9 +7,9 @@ import { test, describe } from 'node:test'
 import { formatPlan, verdictFormat, MESSAGES_FORMAT } from '../src/modules/etude/etat-des-lieux/formatPlanEdl.js'
 import {
   aire, pointDansPolygone, boite, cadrage, versPixels, versMetres, ecartSurface,
-  deplacerSommet, insererSommet, retirerSommet, arrondirContour, mediane,
+  deplacerSommet, insererSommet, retirerSommet, arrondirContour, mediane, ecartEchelle,
 } from '../src/modules/etude/etat-des-lieux/geometrieEdl.js'
-import { lireEchelle, metresParPoint, estVectoriel } from '../src/modules/etude/etat-des-lieux/pdfPlanLogique.js'
+import { lireEchelle, metresParPoint, estVectoriel, pointFeuilleEnMetres, cadrageDecoupe } from '../src/modules/etude/etat-des-lieux/pdfPlanLogique.js'
 import { lireDxf, decoderDxf, nettoyerMtext } from '../src/modules/etude/etat-des-lieux/dxfLecture.js'
 import { detecterPieces, lireSurface, lireHsp, lireNumero, estNom } from '../src/modules/etude/etat-des-lieux/piecesDxfLogique.js'
 
@@ -82,6 +82,23 @@ describe('géométrie', () => {
   })
 })
 
+describe('échelle d’un étage', () => {
+  // Carrés de côté c : aire c², surface écrite donnée
+  const piece = (c, surface) => ({ contour: [[0, 0], [c, 0], [c, c], [0, c]], surface_lue: surface })
+  test('surfaces dessinées quatre fois trop grandes : rapport rendu', () => {
+    assert.equal(ecartEchelle([piece(4, 4), piece(6, 9), piece(2, 1), piece(3, null)]), 4)
+  })
+  test('écart de 15 % au plus, ou moins de trois surfaces écrites : rien', () => {
+    assert.equal(ecartEchelle([piece(4, 14), piece(6, 31.5), piece(2, 3.5)]), null) // ≈ ×1,14
+    assert.equal(ecartEchelle([piece(4, 4), piece(6, 9), piece(2, null)]), null)
+    assert.equal(ecartEchelle([]), null)
+  })
+  test('la médiane l’emporte sur une pièce mal dessinée ; surface lue en texte ou en nombre', () => {
+    assert.equal(ecartEchelle([piece(4, '8'), piece(6, 18), piece(2, 2), piece(10, 1)]), 2)
+    assert.equal(ecartEchelle([{ contour: [[0, 0], [2, 0], [2, 2], [0, 2]], surfaceLue: 1 }, piece(2, 1), piece(2, 1)]), 4)
+  })
+})
+
 describe('PDF', () => {
   test('échelle lue dans le cartouche', () => {
     assert.equal(lireEchelle(['Document créé le 23/01/26', 'Echelle:1/100°']), 100)
@@ -95,6 +112,26 @@ describe('PDF', () => {
     const OPS = { constructPath: 91, paintImageXObject: 85 }
     assert.equal(estVectoriel(Array(30).fill(91), OPS), true)
     assert.equal(estVectoriel([85, 91], OPS), false)
+  })
+  test('point de la feuille affichée en mètres : y vers le haut, indépendant de la rotation', () => {
+    // Feuille affichée de 800 × 600 px rendue à l'échelle 2, 0,5 m par point
+    const feuille = { scale: 2, hauteurPx: 600, mpp: 0.5 }
+    assert.deepEqual(pointFeuilleEnMetres([0, 600], feuille), [0, 0])
+    assert.deepEqual(pointFeuilleEnMetres([200, 100], feuille), [50, 125])
+  })
+  test('découpe d’un étage : cadrage en aller-retour avec les pixels de l’image découpée', () => {
+    const feuille = { scale: 2, hauteurPx: 600, mpp: 0.5 }
+    const c = cadrageDecoupe([100, 50, 500, 350], feuille)
+    assert.equal(c.largeur, 400)
+    assert.equal(c.hauteur, 300)
+    assert.equal(c.pxParMetre, 4)
+    // Un texte au point (300, 200) de la feuille tombe en (200, 150) de l'image découpée
+    const m = pointFeuilleEnMetres([300, 200], feuille)
+    assert.deepEqual(versPixels(c, m), [200, 150])
+    assert.deepEqual(versMetres(c, [200, 150]), m)
+    // Coins du cadre
+    assert.deepEqual(versPixels(c, pointFeuilleEnMetres([100, 350], feuille)), [0, 300])
+    assert.deepEqual(versPixels(c, pointFeuilleEnMetres([500, 50], feuille)), [400, 0])
   })
 })
 
@@ -174,6 +211,10 @@ describe('lecture DXF', () => {
     assert.equal(nettoyerMtext('{\\H2.5x;\\C1;Couloir}'), 'Couloir')
     assert.equal(nettoyerMtext('Hauteur\\~2,50\\U+00B2'), 'Hauteur 2,50²')
   })
+  test('code de paragraphe \\p…; retiré (minuscule ; \\P reste un saut de ligne)', () => {
+    assert.equal(nettoyerMtext('{\\pxqc;Salon\\PS=12 m²}'), 'Salon\nS=12 m²')
+    assert.equal(nettoyerMtext('\\pi-2,l2;Entrée'), 'Entrée')
+  })
   test('décodage : Windows-1252 avant AC1021, UTF-8 ensuite', () => {
     const ancien = new Uint8Array([...new TextEncoder().encode('  9\n$ACADVER\n  1\nAC1014\nS=4 m'), 0xb2])
     assert.ok(decoderDxf(ancien).endsWith('S=4 m²'))
@@ -240,9 +281,36 @@ describe('pièces d’un DXF', () => {
     assert.equal(r.pieces.length, 4)
   })
 
+  test('un calque de zones par étage (ArchiCAD) : les pièces de tous les étages, même unité', () => {
+    const tampon = (calque, x, y, numero, nom, surface) => [numero, nom, surface].map((t, i) => txt(calque, x, y - i * 10, t))
+    const etage = (calque, dx) => ({
+      traits: [rect(calque, dx, 0, 400, 500), rect(calque, dx + 400, 0, 300, 300), rect(calque, dx + 400, 300, 200, 400)],
+      textes: [...tampon(calque, dx + 200, 250, '0001', 'Chambre', '20.00'), ...tampon(calque, dx + 550, 150, '0002', 'Bureau', '9.00'), ...tampon(calque, dx + 500, 500, '0003', 'Douche', '8.00')],
+    })
+    const rdc = etage('Z_RDC', 0)
+    const r1 = etage('Z_R+1', 2000)
+    const r = detecterPieces({ traits: [...rdc.traits, ...r1.traits], textes: [...rdc.textes, ...r1.textes] })
+    assert.equal(r.unitesParMetre, 100)
+    assert.equal(r.pieces.length, 6)
+    assert.deepEqual([...new Set(r.pieces.map((p) => p.calque))].sort(), ['Z_R+1', 'Z_RDC'])
+    assert.deepEqual([...r.calques].sort(), ['Z_R+1', 'Z_RDC'])
+    assert.ok(['Z_RDC', 'Z_R+1'].includes(r.calque))
+  })
+
+  test('un calque d’une autre unité ne s’ajoute pas aux pièces', () => {
+    const metres = [rect('PIECES', 0, 0, 4, 5), rect('PIECES', 4, 0, 3, 3), rect('PIECES', 4, 3, 2, 4), rect('PIECES', 0, 5, 2, 2)]
+    const textesM = [txt('PIECES', 2, 2.5, 'S=20 m²'), txt('PIECES', 5.5, 1.5, 'S=9 m²'), txt('PIECES', 5, 5, 'S=8 m²'), txt('PIECES', 1, 6, 'S=4 m²')]
+    const cm = [rect('CM', 1000, 0, 400, 500), rect('CM', 1400, 0, 300, 300), rect('CM', 1400, 300, 200, 400)]
+    const textesCm = [txt('CM', 1200, 250, 'S=20 m²'), txt('CM', 1550, 150, 'S=9 m²'), txt('CM', 1500, 500, 'S=8 m²')]
+    const r = detecterPieces({ traits: [...metres, ...cm], textes: [...textesM, ...textesCm] })
+    assert.equal(r.calque, 'PIECES')
+    assert.deepEqual(r.calques, ['PIECES'])
+    assert.equal(r.pieces.length, 4)
+  })
+
   test('aucun calque de pièces : rien de proposé', () => {
     const r = detecterPieces({ traits: [rect('MURS', 0, 0, 1, 1)], textes: [] })
-    assert.deepEqual(r, { calque: null, unitesParMetre: null, pieces: [] })
+    assert.deepEqual(r, { calque: null, calques: [], unitesParMetre: null, pieces: [] })
   })
 })
 
@@ -289,6 +357,16 @@ describe('étages', () => {
     assert.equal(n[0].nom, 'Rez-de-chaussée')
     assert.equal(n[0].traits.length, 60)
     assert.deepEqual(n[0].boite, [0, 0, 59, 14.75])
+  })
+
+  test('dessin morcelé sans pièces : tout le dessin en un seul étage plutôt qu’aucun', () => {
+    // 12 grappes éloignées de 10 traits : aucune n'atteint 10 % du dessin
+    const morceaux = Array.from({ length: 12 }, (_, k) => traitsDe(null, 'MURS', 10, k * 1000)).flat()
+    const n = proposerNiveaux({ traits: morceaux, textes: [{ calque: 'T', bloc: null, texte: 'NOTE', pos: [5000, 1], hauteur: 1 }] }, { pieces: [] }, 1, 'plan.dxf')
+    assert.equal(n.length, 1)
+    assert.equal(n[0].traits.length, 120)
+    assert.equal(n[0].textes.length, 1)
+    assert.equal(n[0].aProposer, true)
   })
 
   test('mise en mètres des traits, textes et boîte', () => {

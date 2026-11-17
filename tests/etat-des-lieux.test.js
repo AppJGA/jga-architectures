@@ -37,14 +37,12 @@ describe('format du plan', () => {
     assert.equal(formatPlan(octets('AutoCAD Binary DXF\r\n\x1a\0')), 'dxf-binaire')
     assert.equal(formatPlan(octets('PK\x03\x04')), 'inconnu')
   })
-  test('verdict : seul le DXF est accepté ; DWG et PDF refusés avec ce qu’il faut faire', () => {
+  test('verdict : DXF et DWG acceptés (le DWG est converti) ; PDF refusé avec ce qu’il faut faire', () => {
     assert.deepEqual(verdictFormat('dxf'), { ok: true, message: null })
-    const dwg = verdictFormat('dwg')
-    assert.equal(dwg.ok, false)
-    assert.equal(dwg.message, 'Les fichiers DWG ne sont pas acceptés. Enregistrez le plan en DXF (dans ArchiCAD ou AutoCAD : Fichier → Enregistrer sous → DXF).')
+    assert.deepEqual(verdictFormat('dwg'), { ok: true, message: null })
     const pdf = verdictFormat('pdf')
     assert.equal(pdf.ok, false)
-    assert.equal(pdf.message, 'Les PDF ne sont pas acceptés : importez le plan en DXF (dans ArchiCAD ou AutoCAD : Fichier → Enregistrer sous → DXF).')
+    assert.equal(pdf.message, 'Les PDF ne sont pas acceptés : importez le plan en DWG ou en DXF (dans ArchiCAD ou AutoCAD : Fichier → Enregistrer sous → DXF).')
     assert.equal(verdictFormat('zip').message, MESSAGES_FORMAT.inconnu)
   })
 })

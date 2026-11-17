@@ -5,9 +5,10 @@ import { preparerFichier, changerUnite, importer } from './importerPlans'
 
 // ─── Importer les plans de l'existant ────────────────────────────────────────
 //
-// Même fenêtre que l'import des pièces écrites : déposer les DXF, relire ce
-// qui a été lu (étages, pièces, zones englobantes écartées), puis importer.
-// Un DWG ou un PDF est refusé avec ce qu'il faut faire à la place. La
+// Même fenêtre que l'import des pièces écrites : déposer les DWG ou DXF (un
+// DWG est converti en DXF sur l'appareil), relire ce qui a été lu (étages,
+// pièces, zones englobantes écartées), puis importer. Un PDF est refusé avec
+// ce qu'il faut faire à la place. La
 // fenêtre ne se ferme qu'au ✕, par Annuler ou Échap, jamais pendant l'import.
 
 const UNITES = [{ valeur: 1, libelle: 'mètre' }, { valeur: 100, libelle: 'centimètre' }, { valeur: 1000, libelle: 'millimètre' }]
@@ -49,6 +50,7 @@ function Fichier({ prep, verrouille, onChange, onRetirer }) {
       {prep.niveaux && (
         <>
           <p style={{ margin: '4px 0 8px', fontSize: 12, color: '#5E5854' }}>
+            {prep.converti && 'DWG converti en DXF sur cet appareil · '}
             {pluriel(prep.niveaux.length, 'étage')} lu{prep.niveaux.length > 1 ? 's' : ''} dans le plan
           </p>
           {!prep.uniteLue && (
@@ -85,7 +87,7 @@ export function ImportEdl({ affaireId, onTermine, onFermer }) {
   const champFichiers = useRef(null)
   const identifiant = useRef(0)
   const [preparations, setPreparations] = useState([])
-  const [lecture, setLecture] = useState(false)
+  const [lecture, setLecture] = useState(null) // texte affiché pendant la lecture
   const [etape, setEtape] = useState(null) // texte affiché pendant l'import
   const [erreur, setErreur] = useState(null)
   const [avertissements, setAvertissements] = useState(null)
@@ -101,19 +103,20 @@ export function ImportEdl({ affaireId, onTermine, onFermer }) {
     const liste = [...fichiers]
     if (!liste.length) return
     setErreur(null)
-    setLecture(true)
+    setLecture('Lecture du plan…')
     for (const f of liste) {
       const id = ++identifiant.current
       // Un fichier illisible ne fait pas perdre les autres
       let prep
       try {
-        prep = await preparerFichier(f)
+        prep = await preparerFichier(f, { surConversion: (nom) => setLecture(`Conversion de « ${nom} » en DXF…`) })
       } catch (err) {
         prep = { nom: f.name, refus: `Fichier illisible : ${err?.message ?? String(err)}` }
       }
       setPreparations((ps) => [...ps, { ...prep, id }])
+      setLecture('Lecture du plan…')
     }
-    setLecture(false)
+    setLecture(null)
   }
 
   const modifier = (id, prep) => setPreparations((ps) => ps.map((p) => (p.id === id ? prep : p)))
@@ -166,15 +169,15 @@ export function ImportEdl({ affaireId, onTermine, onFermer }) {
                 style={{ border: '1px dashed rgba(0,0,0,0.25)', background: 'white', padding: '18px 16px', textAlign: 'center' }}
               >
                 <p style={{ margin: '0 0 10px', fontSize: 13, color: '#5E5854' }}>
-                  Déposez ici les plans en DXF — un fichier par étage, ou un seul pour tout le bâtiment — ou
+                  Déposez ici les plans en DWG ou en DXF — un fichier par étage, ou un seul pour tout le bâtiment — ou
                 </p>
                 <button type="button" onClick={() => champFichiers.current?.click()} disabled={occupe} style={boutonSecondaire}>
                   <Upload size={15} /> Choisir des fichiers
                 </button>
-                <input ref={champFichiers} type="file" multiple accept=".dxf" style={{ display: 'none' }}
+                <input ref={champFichiers} type="file" multiple accept=".dwg,.dxf" style={{ display: 'none' }}
                   onChange={(e) => { const f = e.target.files; ajouter(f); e.target.value = '' }} />
                 <p style={{ margin: '10px 0 0', fontSize: 11, color: '#9C9591' }}>
-                  Le plan est lu sur cet appareil. DWG et PDF ne sont pas acceptés : dans ArchiCAD ou AutoCAD, Fichier → Enregistrer sous → DXF.
+                  Le plan est lu sur cet appareil, rien n’est envoyé pour la conversion d’un DWG. Les PDF ne sont pas acceptés.
                 </p>
               </div>
 
@@ -187,7 +190,7 @@ export function ImportEdl({ affaireId, onTermine, onFermer }) {
                   ))}
                 </ul>
               )}
-              {lecture && <p style={{ margin: 0, fontSize: 12, color: '#9C9591' }}>Lecture du plan…</p>}
+              {lecture && <p style={{ margin: 0, fontSize: 12, color: '#9C9591' }}>{lecture}</p>}
               {etape && <p style={{ margin: 0, fontSize: 12, color: '#5E5854' }}>{etape}</p>}
               {erreur && <p role="alert" style={{ margin: 0, fontSize: 12, color: '#B8412C' }}>{erreur}</p>}
             </div>

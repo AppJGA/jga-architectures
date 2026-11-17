@@ -6,7 +6,7 @@
 // n'arrête rien : l'étage est enregistré sans pièces, à dessiner à la main.
 // Toute autre erreur annule l'import entier (`suivi` note ce qui a été écrit).
 
-import { formatPlan, verdictFormat } from './formatPlanEdl'
+import { formatPlan, verdictFormat, MESSAGES_FORMAT } from './formatPlanEdl'
 import { versPixels, versMetres, retirerSuperpositions } from './geometrieEdl'
 import { decoderDxf, lireDxf } from './dxfLecture'
 import { detecterPieces } from './piecesDxfLogique'
@@ -19,18 +19,31 @@ import { relireNiveau } from './relectureIa'
 
 const TEXTES_GARDES = 3000
 
-export async function preparerFichier(fichier) {
-  const octets = new Uint8Array(await fichier.arrayBuffer())
-  const format = formatPlan(octets.slice(0, 512))
+export async function preparerFichier(fichier, { surConversion } = {}) {
+  const lus = new Uint8Array(await fichier.arrayBuffer())
+  const format = formatPlan(lus.slice(0, 512))
   const verdict = verdictFormat(format)
   if (!verdict.ok) return { nom: fichier.name, refus: verdict.message }
+
+  // Un DWG est converti en DXF sur l'appareil ; c'est ce DXF qui est lu, et
+  // gardé comme source (l'export du lot 4 part de lui)
+  let octets = lus
+  if (format === 'dwg') {
+    surConversion?.(fichier.name)
+    try {
+      const { convertirDwgEnDxf } = await import('./convertisseurDwg')
+      octets = await convertirDwgEnDxf(lus)
+    } catch (err) {
+      return { nom: fichier.name, refus: `${MESSAGES_FORMAT['dwg-illisible']} (Motif : ${err?.message ?? err}.)` }
+    }
+  }
 
   const lecture = lireDxf(decoderDxf(octets))
   const detection = detecterPieces(lecture)
   const unitesParMetre = detection.unitesParMetre ?? uniteParDefaut(lecture)
   const niveaux = proposerNiveaux(lecture, detection, unitesParMetre, fichier.name)
     .map((n) => ({ ...n, garde: true }))
-  return { nom: fichier.name, format, octets, lecture, detection, niveaux, unitesParMetre, uniteLue: !!detection.unitesParMetre }
+  return { nom: fichier.name, format, converti: format === 'dwg', octets, lecture, detection, niveaux, unitesParMetre, uniteLue: !!detection.unitesParMetre }
 }
 
 // Changer d'unité (DXF sans contours de pièces) : étages recalculés

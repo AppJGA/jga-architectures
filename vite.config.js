@@ -53,9 +53,11 @@ export default defineConfig({
         // jamais l'app à leur place, même installée
         navigateFallbackDenylist: [/^\/api\//, /^\/pdf\//],
         globPatterns: ['**/*.{js,css,html,ico,png,svg,jpg}'],
-        // Le décodeur HEIC du convertisseur (3 Mo) ne sert qu'au bureau : le
-        // précharger alourdirait chaque installation de l'app, iPad compris.
-        globIgnores: ['**/heic-to-*.js'],
+        // Le décodeur HEIC du convertisseur (3 Mo) et le convertisseur DWG de
+        // l'état des lieux (LibreDWG, ≈ 8 Mo avec son .wasm, jamais préchargé)
+        // ne servent qu'au bureau : les précharger alourdirait chaque
+        // installation de l'app, iPad compris.
+        globIgnores: ['**/heic-to-*.js', '**/libredwg-web-*.js'],
         // Hors ligne (chantier) : chaque page consultée avec du réseau reste
         // lisible sans. Le réseau d'abord ; s'il manque, ou ne répond pas en
         // 6 s (une barre de réseau), la dernière réponse gardée. 45 jours et

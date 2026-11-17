@@ -680,11 +680,20 @@ calques `EDL-` et rapport PDF. Conception :
 `docs/superpowers/specs/2026-11-17-etat-des-lieux-design.md` ; plan du
 lot 1 : `docs/superpowers/plans/2026-11-17-etat-des-lieux-lot1-preparer.md`.
 
-- **DXF seulement** (`formatPlanEdl.js`, reconnu au contenu ; décision de
-  l'agence du 2026-11-17) : DWG, PDF et DXF binaire refusés avec ce qu'il
-  faut faire (Enregistrer sous → DXF). Le PDF a été retiré : Claude n'y
-  retrouvait qu'une partie des pièces (≈ 35 sur 200 sur une feuille
-  d'étages réduite à 2 000 px) et certains plans n'ont pas de noms de pièces.
+- **DWG ou DXF** (`formatPlanEdl.js`, reconnu au contenu ; décisions de
+  l'agence du 2026-11-17) : PDF et DXF binaire refusés avec ce qu'il faut
+  faire. Le PDF a été retiré : Claude n'y retrouvait qu'une partie des
+  pièces (≈ 35 sur 200 sur une feuille d'étages réduite à 2 000 px) et
+  certains plans n'ont pas de noms de pièces.
+- **DWG converti sur l'appareil** (`convertisseurDwg.js`) : LibreDWG en
+  WebAssembly (`@mlightcad/libredwg-web`, version épinglée, **GPL-3.0**,
+  accord de l'agence), `dwg_write_dxf`, puis lecture comme un DXF ; c'est le
+  DXF converti qui est gardé comme source. Chargé au premier DWG seulement
+  (`import()` + `.wasm` désigné par `new URL(…node_modules…, import.meta.url)`
+  car le paquet n'exporte pas son `.wasm`), exclu du préchargement de la PWA
+  (`globIgnores`). DWG d'exemple (2010, 2018) : pièces identiques à un DXF
+  converti en ligne, 0,2–0,3 s dans Chrome. Conversion ratée : refus du
+  fichier avec le motif et « Enregistrer sous → DXF ».
 - **DXF** (`dxfLecture.js`) : blocs déployés (ArchiCAD range le plan dans
   des blocs de vues, un par étage), espace papier ignoré sauf si l'espace
   objet est vide, MTEXT nettoyés (`^J`, `\P`, `\p…;`, codes de police). Fichiers

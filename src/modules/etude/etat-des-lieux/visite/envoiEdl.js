@@ -29,23 +29,41 @@ async function inserer(table, ligne) {
   verifier((await supabase.from(table).insert(ligne)).error)
 }
 
+// Lectures de décision : alias `synchro_id` (exclu du cache du service worker,
+// vite.config.js), sinon une réponse périmée déciderait d'un envoi.
+async function existe(table, id) {
+  const { data, error } = await supabase.from(table).select('synchro_id:id, id').eq('id', id).maybeSingle()
+  if (error) throw error
+  return Boolean(data?.id)
+}
+
+async function fichierEnStockage(chemin) {
+  const i = chemin.lastIndexOf('/')
+  const { data, error } = await supabase.storage.from(BUCKET_EDL).list(chemin.slice(0, i), { search: chemin.slice(i + 1), limit: 5 })
+  if (error) throw error
+  return (data ?? []).some((f) => f.name === chemin.slice(i + 1))
+}
+
 // Fichiers d'abord (upsert : un envoi rejoué les réécrit), ligne ensuite,
 // copie de l'appareil effacée en dernier. Plus de copie sur l'appareil : soit
 // l'envoi précédent est allé jusqu'au bout (la ligne existe, succès), soit
 // la photo est perdue — refus, comme les CR (horsLigne/envoi.js), jamais une
 // ligne sans fichier. Un point qui n'existe plus (supprimé depuis) : refus
 // avant tout envoi, sans fichier orphelin ni ligne orpheline.
-async function envoyerPhoto(photo) {
+// `restauration` : le point vient d'être rendu par « Annuler », sa ligne photo
+// est partie en cascade ; sans copie sur l'appareil, le fichier déjà en
+// stockage suffit pour la reposer.
+async function envoyerPhoto(photo, { restauration = false } = {}) {
   const fichier = await lire(MAGASINS_EDL.fichiers, photo.id)
   if (!fichier) {
-    const { data, error } = await supabase.from('edl_photos').select('id').eq('id', photo.id).maybeSingle()
-    if (error) throw error
-    if (data) return
+    if (await existe('edl_photos', photo.id)) return
+    if (restauration && await fichierEnStockage(photo.chemin) && await fichierEnStockage(photo.chemin_miniature)) {
+      await inserer('edl_photos', photo)
+      return
+    }
     throw new Error('La photo n’est plus dans la mémoire de l’appareil.')
   }
-  const { data: point, error: erreurPoint } = await supabase.from('edl_points').select('id').eq('id', photo.point_id).maybeSingle()
-  if (erreurPoint) throw erreurPoint
-  if (!point) throw new Error('Le point de cette photo n’existe plus : photo non envoyée.')
+  if (!(await existe('edl_points', photo.point_id))) throw new Error('Le point de cette photo n’existe plus : photo non envoyée.')
   const stockage = supabase.storage.from(BUCKET_EDL)
   for (const [chemin, blob] of [[photo.chemin, fichier.photo], [photo.chemin_miniature, fichier.miniature]]) {
     const { error } = await stockage.upload(chemin, blob, { contentType: blob.type, cacheControl: '31536000', upsert: true })
@@ -70,7 +88,7 @@ export async function envoyerOperationEdl(op) {
     case TYPES_EDL.pointPoser:
       // Le point d'abord (un « Annuler » de suppression le rend), puis ses photos
       await inserer('edl_points', c.point)
-      for (const photo of c.photos ?? []) await inserer('edl_photos', photo)
+      for (const photo of c.photos ?? []) await envoyerPhoto(photo, { restauration: true })
       return
     case TYPES_EDL.pointModifier:
       await modifier('edl_points', c.id, c.champs)
@@ -78,8 +96,11 @@ export async function envoyerOperationEdl(op) {
     case TYPES_EDL.pointSupprimer: {
       // Les fichiers des photos restent : « Annuler » rend le point intact ;
       // « Nettoyer le stockage » les reprend s'il n'est pas rendu (079)
-      const { error } = await supabase.from('edl_points').delete().eq('id', c.id)
+      // Un refus RLS ne rend pas d'erreur : on compte les lignes ; rien de
+      // touché et la ligne existe encore = refus, absente = déjà supprimé
+      const { data, error } = await supabase.from('edl_points').delete().eq('id', c.id).select('id')
       if (error) throw error
+      if (!data?.length && await existe('edl_points', c.id)) throw new Error('La base n’a pas supprimé le point (droits insuffisants).')
       return
     }
     case TYPES_EDL.photoAjouter:

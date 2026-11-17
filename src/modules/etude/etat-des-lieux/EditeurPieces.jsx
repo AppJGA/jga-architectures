@@ -32,6 +32,8 @@ export function EditeurPieces({ niveau, pieces, obtenirLiens, lectureSeule, onMo
   const [attente, setAttente] = useState(null)
   const [erreur, setErreur] = useState(null)
   const svg = useRef(null)
+  const brouillon = useRef({}) // saisie du nom / numéro pas encore enregistrée
+  const termine = useRef(false) // garde contre un double appui sur « Terminer »
   const c = niveau.cadrage
 
   const version = useMemo(() => ({ id: niveau.id, chemin: niveau.chemin, chemin_apercu: niveau.chemin_apercu, largeur: niveau.largeur, hauteur: niveau.hauteur }), [niveau])
@@ -48,7 +50,20 @@ export function EditeurPieces({ niveau, pieces, obtenirLiens, lectureSeule, onMo
     return versMetres(c, [((e.clientX - r.left) / r.width) * niveau.largeur, ((e.clientY - r.top) / r.height) * niveau.hauteur])
   }
 
-  const choisir = (id) => { setChoisie(id); setSommet(null) }
+  // Une saisie en cours ne doit pas se perdre si on touche une autre pièce :
+  // le blur n'arrive pas toujours avant le démontage du champ sur tablette.
+  const enregistrerBrouillon = () => {
+    const saisie = brouillon.current
+    brouillon.current = {}
+    if (!piece || lectureSeule) return
+    const champs = {}
+    for (const [nomChamp, brut] of Object.entries(saisie)) {
+      const valeur = brut.trim()
+      if (valeur !== (piece[nomChamp] ?? '')) champs[nomChamp] = valeur || (nomChamp === 'nom' ? '' : null)
+    }
+    if (Object.keys(champs).length) onModifier(piece.id, { ...champs, a_verifier: false })
+  }
+  const choisir = (id) => { enregistrerBrouillon(); setChoisie(id); setSommet(null) }
 
   // Appui bref sur le plan : un angle de plus en dessin, sinon la plus petite
   // pièce qui contient le point
@@ -65,7 +80,7 @@ export function EditeurPieces({ niveau, pieces, obtenirLiens, lectureSeule, onMo
     e.currentTarget.setPointerCapture(e.pointerId)
     const contour = insertion ? insererSommet(p.contour, i, depuisEvenement(e)) : p.contour
     const index = insertion ? i + 1 : i
-    setGlisse({ id: p.id, contour, index })
+    setGlisse({ id: p.id, contour, index, insere: !!insertion })
     setSommet(index)
   }
   const pendantGlisse = (e) => {
@@ -80,12 +95,20 @@ export function EditeurPieces({ niveau, pieces, obtenirLiens, lectureSeule, onMo
     setGlisse(null)
     // Un deuxième doigt (pincement) annule le geste : rien d'enregistré
     if (e.type === 'pointercancel') return
-    onModifier(g.id, { contour: g.contour, a_verifier: false })
+    // Un simple appui sur une poignée n'écrit rien
+    const avant = pieces.find((q) => q.id === g.id)?.contour
+    if (g.insere || JSON.stringify(avant) !== JSON.stringify(g.contour)) onModifier(g.id, { contour: g.contour, a_verifier: false })
   }
 
   const terminerTrace = async () => {
-    if (trace.length < 3) return
-    const ligne = await onAjouter(niveau.id, { nom: 'Nouvelle pièce', numero: null, contour: trace, surfaceLue: null, hspLue: null, origine: 'main', aVerifier: false })
+    if (trace.length < 3 || termine.current) return
+    termine.current = true
+    let ligne
+    try {
+      ligne = await onAjouter(niveau.id, { nom: 'Nouvelle pièce', numero: null, contour: trace, surfaceLue: null, hspLue: null, origine: 'main', aVerifier: false })
+    } finally {
+      termine.current = false
+    }
     setTrace(null)
     if (ligne) choisir(ligne.id)
   }
@@ -159,10 +182,6 @@ export function EditeurPieces({ niveau, pieces, obtenirLiens, lectureSeule, onMo
   }
 
   const ecart = piece ? ecartSurface(piece.contour, Number(piece.surface_lue)) : null
-  const enregistrerChamp = (champNom) => (e) => {
-    const valeur = e.target.value.trim()
-    if (valeur !== (piece[champNom] ?? '')) onModifier(piece.id, { [champNom]: valeur || (champNom === 'nom' ? '' : null), a_verifier: false })
-  }
 
   return (
     <div style={{ display: 'flex', gap: 16, height: '100%', minHeight: 0, flexWrap: 'wrap' }}>
@@ -189,8 +208,8 @@ export function EditeurPieces({ niveau, pieces, obtenirLiens, lectureSeule, onMo
 
         {piece && (
           <div style={{ background: 'white', borderRadius: 10, border: '0.5px solid rgba(0,0,0,0.1)', padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <input key={`${piece.id}-nom`} style={champ} disabled={lectureSeule} defaultValue={piece.nom} placeholder="Nom de la pièce" onBlur={enregistrerChamp('nom')} />
-            <input key={`${piece.id}-numero`} style={champ} disabled={lectureSeule} defaultValue={piece.numero ?? ''} placeholder="Numéro" onBlur={enregistrerChamp('numero')} />
+            <input key={`${piece.id}-nom`} style={champ} disabled={lectureSeule} defaultValue={piece.nom} placeholder="Nom de la pièce" onChange={(e) => { brouillon.current.nom = e.target.value }} onBlur={enregistrerBrouillon} />
+            <input key={`${piece.id}-numero`} style={champ} disabled={lectureSeule} defaultValue={piece.numero ?? ''} placeholder="Numéro" onChange={(e) => { brouillon.current.numero = e.target.value }} onBlur={enregistrerBrouillon} />
             <p style={{ margin: 0, fontSize: 13, color: '#5E5854' }}>
               Dessinée : {fmtM2(aire(piece.contour))}{piece.surface_lue ? ` · écrite : ${fmtM2(Number(piece.surface_lue))}` : ''}
               {piece.hsp_lue ? ` · HSP ${Number(piece.hsp_lue).toLocaleString('fr-FR')} m` : ''}
@@ -206,7 +225,7 @@ export function EditeurPieces({ niveau, pieces, obtenirLiens, lectureSeule, onMo
                   type="button" style={petitBouton} disabled={sommet == null || piece.contour.length <= 3}
                   onClick={() => { onModifier(piece.id, { contour: retirerSommet(piece.contour, sommet) }); setSommet(null) }}
                 >Retirer le sommet</button>
-                <button type="button" style={{ ...petitBouton, color: '#B42318' }} onClick={() => { onSupprimer(piece.id); choisir(null) }}><Trash2 size={14} />Supprimer</button>
+                <button type="button" style={{ ...petitBouton, color: '#B42318' }} onClick={() => { brouillon.current = {}; onSupprimer(piece.id); choisir(null) }}><Trash2 size={14} />Supprimer</button>
               </div>
             )}
           </div>

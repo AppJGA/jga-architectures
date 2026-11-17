@@ -71,6 +71,8 @@ function textesParPolygone(polys, textes) {
   return propres
 }
 
+const CALQUE_DESIGNATION = /D[EÉ]SIGNATION|NOM|PIECE|PIÈCE|LOCA/i
+
 function lirePiece(poly, propres) {
   const memeCalque = propres.filter((t) => t.calque === poly.calque)
   const sources = memeCalque.length ? memeCalque : propres
@@ -80,6 +82,13 @@ function lirePiece(poly, propres) {
     hspLue ??= lireHsp(t.texte)
     numero ??= lireNumero(t.texte)
     if (!nom && estNom(t.texte)) nom = premiereLigne(t.texte)
+  }
+  // Un tampon de zone ArchiCAD peut ne pas porter de nom alors que le plan
+  // l'écrit sur le calque des désignations : on le prend là, jamais sur le
+  // mobilier (« Armoire », « Frigo »)
+  if (!nom && memeCalque.length) {
+    const designation = propres.find((t) => t.calque !== poly.calque && CALQUE_DESIGNATION.test(t.calque) && estNom(t.texte))
+    if (designation) nom = premiereLigne(designation.texte)
   }
   return { nom, numero, surfaceLue, hspLue }
 }

@@ -273,6 +273,21 @@ describe('pièces d’un DXF', () => {
     assert.deepEqual(r.pieces[0], { nom: 'Chambre', numero: '0001', surfaceLue: 20, hspLue: null, calque: 'S-SURFACES_RDC', bloc: null, contour: [[0, 0], [4, 0], [4, 5], [0, 5]] })
   })
 
+  test('tampon de zone sans nom : le nom est pris sur le calque des désignations, jamais sur le mobilier', () => {
+    const traits = [rect('S-SURFACES_RDC', 0, 0, 400, 500), rect('S-SURFACES_RDC', 400, 0, 300, 300), rect('S-SURFACES_RDC', 400, 300, 200, 400)]
+    const tampon = (x, y, numero, nom, surface) => ['02_RDC', 'SU', numero, nom, surface].filter(Boolean).map((t, i) => txt('S-SURFACES_RDC', x, y - i * 10, t))
+    const textes = [
+      ...tampon(200, 250, '0001', null, '20.00'),
+      txt('A-MOBILIER_RDC', 100, 100, 'Armoire'),
+      txt('P-DÉSIGNATION_DES_PIECES_R', 200, 400, 'L. SALE'),
+      ...tampon(550, 150, '0002', null, '9.00'),
+      txt('A-MOBILIER_RDC', 550, 100, 'Armoire'),
+      ...tampon(500, 500, '0003', 'Douche', '8.00'),
+    ]
+    const r = detecterPieces({ traits, textes })
+    assert.deepEqual(r.pieces.map((p) => p.nom), ['L. SALE', '', 'Douche'])
+  })
+
   test('une pièce dont la surface s’écarte reste, les autres fixent l’unité', () => {
     const traits = [rect('P', 0, 0, 4, 5), rect('P', 4, 0, 3, 3), rect('P', 4, 3, 2, 4), rect('P', 10, 0, 2, 2)]
     const textes = [txt('T', 2, 2, 'A\nS=20 m²'), txt('T', 5, 1, 'B\nS=9 m²'), txt('T', 5, 5, 'C\nS=8 m²'), txt('T', 11, 1, 'D\nS=6 m²')]

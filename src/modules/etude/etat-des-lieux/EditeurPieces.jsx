@@ -208,9 +208,12 @@ export function EditeurPieces({ niveau, pieces, obtenirLiens, lectureSeule, onMo
   const ecart = piece ? ecartSurface(piece.contour, Number(piece.surface_lue)) : null
   const echelle = ecartEchelle(pieces)
 
+  // Pas de retour à la ligne (flex-wrap) : une rangée qui passe à la ligne
+  // prend la hauteur de son plus grand élément, et la liste de 200 pièces
+  // étirait le plan sur 9 000 px — l'image, centrée, sortait de l'écran.
   return (
-    <div style={{ display: 'flex', gap: 16, height: '100%', minHeight: 0, flexWrap: 'wrap' }}>
-      <div style={{ flex: '1 1 520px', minHeight: 420, borderRadius: 10, overflow: 'hidden', position: 'relative' }}>
+    <div style={{ display: 'flex', gap: 16, height: '100%', minHeight: 0 }}>
+      <div style={{ flex: '1 1 520px', minWidth: 0, minHeight: 420, borderRadius: 10, overflow: 'hidden', position: 'relative' }}>
         <VisionneusePlan version={version} obtenirLiens={obtenirLiens} onToucher={toucher} calque={calque} />
         {trace && (
           <div style={{ position: 'absolute', top: 12, left: 12, display: 'flex', gap: 8, background: 'white', padding: 8, borderRadius: 8, boxShadow: '0 4px 12px -6px rgba(0,0,0,0.35)' }}>
@@ -221,7 +224,7 @@ export function EditeurPieces({ niveau, pieces, obtenirLiens, lectureSeule, onMo
         )}
       </div>
 
-      <div style={{ flex: '0 1 300px', display: 'flex', flexDirection: 'column', gap: 10, minHeight: 0, overflow: 'auto' }}>
+      <div style={{ flex: '0 1 300px', display: 'flex', flexDirection: 'column', gap: 10, minHeight: 0, maxHeight: '100%', overflow: 'auto' }}>
         {!lectureSeule && (
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button type="button" style={petitBouton} disabled={!!trace} onClick={() => { choisir(null); setTrace([]) }}><PenLine size={14} />Dessiner une pièce</button>

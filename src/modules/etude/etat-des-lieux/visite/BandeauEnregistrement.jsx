@@ -21,10 +21,10 @@ export function BandeauEnregistrement({ etat, duree_s, niveau, enAttente, onPaus
   )
   if (enregistrementActif(etat)) {
     return (
-      <div role="status" style={{ background: '#B8412C', color: 'white', padding: '0 16px', minHeight: 52, display: 'flex', alignItems: 'center', gap: 12 }}>
+      <div style={{ background: '#B8412C', color: 'white', padding: '0 16px', minHeight: 52, display: 'flex', alignItems: 'center', gap: 12 }}>
         <span className="jga-enregistre" style={{ width: 12, height: 12, borderRadius: '50%', background: 'white', flexShrink: 0 }} />
         <span style={{ fontSize: 15, fontWeight: 700, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>Enregistrement · {dureeLisible(duree_s)}</span>
-        <span aria-label="Niveau du micro" style={{ width: 90, height: 8, background: 'rgba(255,255,255,0.25)', borderRadius: 2, overflow: 'hidden', flexShrink: 0 }}>
+        <span role="meter" aria-label="Niveau du micro" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(niveau * 100)} style={{ width: 90, height: 8, background: 'rgba(255,255,255,0.25)', borderRadius: 2, overflow: 'hidden', flexShrink: 0 }}>
           <span style={{ display: 'block', height: '100%', width: `${Math.round(niveau * 100)}%`, background: 'white', transition: 'width 0.1s linear' }} />
         </span>
         <span style={{ flex: 1 }} />

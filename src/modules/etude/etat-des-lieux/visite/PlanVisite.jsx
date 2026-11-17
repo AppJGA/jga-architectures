@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { VisionneusePlan } from '../../../chantier/comptes-rendus/VisionneusePlan'
 import { versPixels, versMetres } from '../geometrieEdl'
 import { cadrePiece, COULEURS_PIECE, etatPiece, pointProche, ZOOM_MAX_VISITE } from './visiteLogique'
@@ -29,7 +29,13 @@ export function PlanVisite({ niveau, pieces, points, nbPhotos, visitees, piece, 
     id: niveau.id, chemin: niveau.chemin, chemin_apercu: niveau.chemin_apercu, largeur: niveau.largeur, hauteur: niveau.hauteur,
   }), [niveau])
   const cadre = useMemo(() => (piece ? cadrePiece(piece, niveau) : null), [piece, niveau])
-  const touchable = (p) => (piece ? p.piece_id === piece.id : !p.piece_id)
+  // Pièce ouverte : ses points. Plan de l'étage : tous (ceux d'une pièce
+  // sont pâlis, mais un appui dessus les choisit au lieu d'en poser un autre
+  // par-dessus ; la pièce s'ouvre depuis l'écran, pas d'ici).
+  const touchable = (p) => (!piece || p.piece_id === piece.id)
+
+  // Un point différent, ou plus de glisser : on repart d'un compte de doigts sain
+  useEffect(() => { pointeurs.current.clear(); glisseCourant.current = null; setGlisse(null) }, [pointId])
 
   const depuisEvenement = (e) => {
     const r = svg.current.getBoundingClientRect()
@@ -45,6 +51,9 @@ export function PlanVisite({ niveau, pieces, points, nbPhotos, visitees, piece, 
   }
 
   const toucher = ({ x, y }) => {
+    // Un doigt supplémentaire posé pendant un glisser, ou un glisser annulé
+    // pas encore relâché : ce n'est pas un appui qui pose un point
+    if (glisseCourant.current || pointeurs.current.size > 0) return
     const m = versMetres(c, [x * niveau.largeur, y * niveau.hauteur])
     const proche = pointProche(points.filter(touchable), m, toleranceMetres())
     if (proche) onChoisirPoint(proche.id)
@@ -59,6 +68,8 @@ export function PlanVisite({ niveau, pieces, points, nbPhotos, visitees, piece, 
 
   // Phase de capture : voit chaque doigt, même celui que le point a capturé
   const doigtPose = (e) => {
+    // Premier doigt : un relâché perdu ne doit pas fausser le compte
+    if (e.isPrimary) pointeurs.current.clear()
     pointeurs.current.add(e.pointerId)
     if (pointeurs.current.size > 1) annulerGlisse()
   }
@@ -67,14 +78,19 @@ export function PlanVisite({ niveau, pieces, points, nbPhotos, visitees, piece, 
   const debut = (e) => {
     e.stopPropagation()
     try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* pointeur déjà relâché */ }
-    glisseCourant.current = { id: pointId, pointerId: e.pointerId, x0: e.clientX, y0: e.clientY, bouge: false, pos: null, annule: pointeurs.current.size > 1 }
+    // Écart doigt / centre du point, gardé : le point ne saute pas sous le doigt
+    const courant = points.find((p) => p.id === pointId)
+    const m = depuisEvenement(e)
+    const decalage = courant ? [Number(courant.x) - m[0], Number(courant.y) - m[1]] : [0, 0]
+    glisseCourant.current = { id: pointId, pointerId: e.pointerId, x0: e.clientX, y0: e.clientY, bouge: false, pos: null, decalage, annule: pointeurs.current.size > 1 }
   }
   const pendant = (e) => {
     const g = glisseCourant.current
     if (!g || g.annule || e.pointerId !== g.pointerId) return
     e.stopPropagation()
     if (!g.bouge && Math.hypot(e.clientX - g.x0, e.clientY - g.y0) < SEUIL_GLISSE) return
-    const pos = depuisEvenement(e)
+    const m = depuisEvenement(e)
+    const pos = [m[0] + g.decalage[0], m[1] + g.decalage[1]]
     glisseCourant.current = { ...g, bouge: true, pos }
     setGlisse({ id: g.id, pos })
   }
@@ -115,7 +131,7 @@ export function PlanVisite({ niveau, pieces, points, nbPhotos, visitees, piece, 
           const choisi = p.id === pointId
           const r = (choisi ? 13 : 11) / zoom
           return (
-            <g key={p.id} style={{ pointerEvents: 'none', opacity: touchable(p) || !piece ? 1 : 0.35 }}>
+            <g key={p.id} style={{ pointerEvents: 'none', opacity: piece ? (touchable(p) ? 1 : 0.35) : (p.piece_id ? 0.55 : 1) }}>
               {choisi && (
                 // Seule poignée qui capture le doigt
                 <circle

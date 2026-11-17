@@ -28,7 +28,8 @@ const puce = (actif) => ({
 export function BarreCalques({ typeChoisi, inactif, onChoisir }) {
   const choisi = typeEdl(typeChoisi)
   const [ouvert, setOuvert] = useState(null)
-  const codeOuvert = ouvert ?? choisi?.calque ?? null
+  // 'ferme' : replié à la main, même avec un type choisi
+  const codeOuvert = ouvert === 'ferme' ? null : (ouvert ?? choisi?.calque ?? null)
   const calque = CALQUES_DE_POINT.find((c) => c.code === codeOuvert) ?? null
 
   return (
@@ -40,7 +41,7 @@ export function BarreCalques({ typeChoisi, inactif, onChoisir }) {
           return (
             <button
               key={c.code} type="button" disabled={inactif} title={c.libelle} aria-pressed={actif}
-              onClick={() => setOuvert(actif ? null : c.code)}
+              onClick={() => setOuvert(actif ? 'ferme' : c.code)}
               style={{
                 minWidth: 72, minHeight: 52, padding: '4px 6px', borderRadius: 3, flexShrink: 0,
                 border: `0.5px solid ${actif ? ACCENT : 'rgba(0,0,0,0.15)'}`, background: actif ? ACCENT_CLAIR : 'white',

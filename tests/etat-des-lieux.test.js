@@ -11,6 +11,7 @@ import {
 } from '../src/modules/etude/etat-des-lieux/geometrieEdl.js'
 import { lireEchelle, metresParPoint, estVectoriel } from '../src/modules/etude/etat-des-lieux/pdfPlanLogique.js'
 import { lireDxf, decoderDxf, nettoyerMtext } from '../src/modules/etude/etat-des-lieux/dxfLecture.js'
+import { detecterPieces, lireSurface, lireHsp, lireNumero, estNom } from '../src/modules/etude/etat-des-lieux/piecesDxfLogique.js'
 
 const octets = (s) => new TextEncoder().encode(s)
 
@@ -175,5 +176,69 @@ describe('lecture DXF', () => {
     assert.ok(decoderDxf(ancien).endsWith('S=4 m²'))
     const recent = new TextEncoder().encode('  9\n$ACADVER\n  1\nAC1032\nS=4 m²')
     assert.ok(decoderDxf(recent).endsWith('S=4 m²'))
+  })
+})
+
+// Pièces inventées : rectangles fermés, textes posés dans leur contour
+const rect = (calque, x, y, l, h) => ({ calque, bloc: null, ferme: true, pts: [[x, y], [x + l, y], [x + l, y + h], [x, y + h]] })
+const txt = (calque, x, y, texte) => ({ calque, bloc: null, texte, pos: [x, y], hauteur: 0.2 })
+
+describe('pièces d’un DXF', () => {
+  test('textes : surface, hauteur sous plafond (HP, pas Hp ni HSP), numéro, nom', () => {
+    assert.equal(lireSurface('Pièce\nS=22.9 m²\nHP:2.47 m'), 22.9)
+    assert.equal(lireSurface('Salon\nS=16.0 m carrés'), 16)
+    assert.equal(lireSurface('4.40'), 4.4)
+    assert.equal(lireSurface('4.40', { seulAccepte: false }), null)
+    assert.equal(lireSurface('2.54 m'), null)
+    assert.equal(lireHsp('Pièce\nS=22.9 m²\nHP:2.47 m'), 2.47)
+    assert.equal(lireHsp('Hp:2.10'), null)
+    assert.equal(lireHsp('HSP:2.49m'), null)
+    assert.equal(lireNumero('0001'), '0001')
+    assert.equal(lireNumero('ET008'), 'ET008')
+    assert.equal(lireNumero('Chambre'), null)
+    assert.equal(estNom('Ch. 1 lit'), true)
+    assert.equal(estNom('SU'), false)
+    assert.equal(estNom('02_RDC'), false)
+    assert.equal(estNom('S=4.0 m²'), false)
+  })
+
+  test('plan de géomètre (mètres) : calque des pièces trouvé, contour englobant écarté, cote ignorée', () => {
+    const traits = [
+      rect('PIECES', 0, 0, 4, 5), rect('PIECES', 4, 0, 3, 3), rect('PIECES', 4, 3, 2, 4),
+      rect('PIECES', -1, -1, 9, 9), // contour du bâtiment : aucun texte à lui
+      rect('MOBILIER', 0.5, 0.5, 1, 1),
+    ]
+    const textes = [
+      txt('TEXTE', 2, 2.5, 'Salon\nS=20.0 m²\nHP:2.50 m'),
+      txt('COTES', 1, 1, '4.00'),
+      txt('TEXTE', 5.5, 1.5, 'Cuisine\nS=9.0 m²\nHP:2.40 m'),
+      txt('TEXTE', 5, 5, 'Bains\nS=8.0 m²'),
+    ]
+    const r = detecterPieces({ traits, textes })
+    assert.equal(r.calque, 'PIECES')
+    assert.equal(r.unitesParMetre, 1)
+    assert.deepEqual(r.pieces.map((p) => [p.nom, p.surfaceLue, p.hspLue]), [['Salon', 20, 2.5], ['Cuisine', 9, 2.4], ['Bains', 8, null]])
+  })
+
+  test('zones d’ArchiCAD (centimètres) : tampon de zone, unité déduite, contour converti en mètres', () => {
+    const traits = [rect('S-SURFACES_RDC', 0, 0, 400, 500), rect('S-SURFACES_RDC', 400, 0, 300, 300), rect('S-SURFACES_RDC', 400, 300, 200, 400)]
+    const tampon = (x, y, numero, nom, surface) => ['02_RDC', 'SU', numero, nom, surface].map((t, i) => txt('S-SURFACES_RDC', x, y - i * 10, t))
+    const textes = [...tampon(200, 250, '0001', 'Chambre', '20.00'), ...tampon(550, 150, '0002', 'Bureau', '9.00'), ...tampon(500, 500, '0003', 'Douche', '8.00')]
+    const r = detecterPieces({ traits, textes })
+    assert.equal(r.unitesParMetre, 100)
+    assert.deepEqual(r.pieces[0], { nom: 'Chambre', numero: '0001', surfaceLue: 20, hspLue: null, calque: 'S-SURFACES_RDC', bloc: null, contour: [[0, 0], [4, 0], [4, 5], [0, 5]] })
+  })
+
+  test('une pièce dont la surface s’écarte reste, les autres fixent l’unité', () => {
+    const traits = [rect('P', 0, 0, 4, 5), rect('P', 4, 0, 3, 3), rect('P', 4, 3, 2, 4), rect('P', 10, 0, 2, 2)]
+    const textes = [txt('T', 2, 2, 'A\nS=20 m²'), txt('T', 5, 1, 'B\nS=9 m²'), txt('T', 5, 5, 'C\nS=8 m²'), txt('T', 11, 1, 'D\nS=6 m²')]
+    const r = detecterPieces({ traits, textes })
+    assert.equal(r.unitesParMetre, 1)
+    assert.equal(r.pieces.length, 4)
+  })
+
+  test('aucun calque de pièces : rien de proposé', () => {
+    const r = detecterPieces({ traits: [rect('MURS', 0, 0, 1, 1)], textes: [] })
+    assert.deepEqual(r, { calque: null, unitesParMetre: null, pieces: [] })
   })
 })

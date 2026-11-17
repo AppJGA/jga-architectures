@@ -11,6 +11,10 @@ import {
   piecesVisitees, etatPiece, visiteEnCours, evenementPourEtat, messageArret, cheminsPhotoEdl,
   arrondirMetre, designationPiece,
 } from '../src/modules/etude/etat-des-lieux/visite/visiteLogique.js'
+import {
+  TYPES_EDL, ESSAIS_MAX, operationEdl, horodatageSuivant, appliquerOperationEdl, etatAvecFileEdl,
+  resumeFileEdl, evenementEdl, operationInverse,
+} from '../src/modules/etude/etat-des-lieux/visite/fileEdlLogique.js'
 
 const proche = (a, b, ecart = 1e-9) => assert.ok(Math.abs(a - b) < ecart, `${a} ≠ ${b}`)
 
@@ -140,5 +144,118 @@ describe('visite : pense-bête, journal du micro, messages', () => {
     assert.deepEqual(cheminsPhotoEdl('aff', 'id1', 'webp'), {
       chemin: 'aff/edl/photos/id1.webp', chemin_miniature: 'aff/edl/photos/id1-mini.webp',
     })
+  })
+})
+
+describe('file de la visite', () => {
+  const AFF = 'aff-1'
+  const op = (type, charge, creeLe) => operationEdl(type, charge, { affaireId: AFF, creeLe })
+  const vide = () => ({ etat: { id: 'e1' }, niveaux: [], pieces: [], visites: [], points: [], photos: [], entrees: [] })
+  const pt = (id, numero, extra = {}) => ({
+    id, numero, visite_id: 'v1', affaire_id: AFF, niveau_id: 'n1', piece_id: 'p1', x: 1, y: 2,
+    type: null, calque: null, pose_le: '2026-11-17T10:00:00.000Z', ...extra,
+  })
+  const ph = (id, pointId) => ({ id, point_id: pointId, visite_id: 'v1', affaire_id: AFF, chemin: `${AFF}/edl/photos/${id}.webp`, chemin_miniature: `${AFF}/edl/photos/${id}-mini.webp` })
+
+  test('une opération porte son affaire, son heure, aucun échec', () => {
+    const o = op(TYPES_EDL.pointSupprimer, { id: 'x' }, 42)
+    assert.equal(o.affaireId, AFF)
+    assert.equal(o.creeLe, 42)
+    assert.equal(o.essais, 0)
+    assert.match(o.id, /^[0-9a-f-]{36}$/)
+  })
+  test('deux gestes dans la même milliseconde gardent leur ordre', () => {
+    assert.equal(horodatageSuivant(100, 100), 101)
+    assert.equal(horodatageSuivant(100, 250), 250)
+    assert.equal(horodatageSuivant(0, 5), 5)
+  })
+  test('poser deux fois le même point (envoi rejoué) n’en fait qu’un', () => {
+    const o = op(TYPES_EDL.pointPoser, { point: pt('a', 1), photos: [] }, 1)
+    const e = appliquerOperationEdl(appliquerOperationEdl(vide(), o), o)
+    assert.equal(e.points.length, 1)
+  })
+  test('l’ordre de création est rétabli, même si la file est lue dans le désordre', () => {
+    const poser = op(TYPES_EDL.pointPoser, { point: pt('a', 1), photos: [] }, 1)
+    const supprimer = op(TYPES_EDL.pointSupprimer, { id: 'a' }, 2)
+    assert.equal(etatAvecFileEdl(vide(), [supprimer, poser]).points.length, 0)
+  })
+  test('modifier un point : type et calque, ou position', () => {
+    const e = etatAvecFileEdl(vide(), [
+      op(TYPES_EDL.pointPoser, { point: pt('a', 1), photos: [] }, 1),
+      op(TYPES_EDL.pointModifier, { id: 'a', champs: { type: 'radiateur', calque: 'chauffage' } }, 2),
+      op(TYPES_EDL.pointModifier, { id: 'a', champs: { x: 3.5 } }, 3),
+    ])
+    assert.equal(e.points[0].type, 'radiateur')
+    assert.equal(e.points[0].calque, 'chauffage')
+    assert.equal(e.points[0].x, 3.5)
+    assert.equal(e.points[0].y, 2)
+  })
+  test('supprimer un point emporte ses photos ; le reposer les rend', () => {
+    const avec = etatAvecFileEdl(vide(), [
+      op(TYPES_EDL.pointPoser, { point: pt('a', 1), photos: [] }, 1),
+      op(TYPES_EDL.photoAjouter, { photo: ph('f1', 'a') }, 2),
+      op(TYPES_EDL.photoAjouter, { photo: ph('f2', 'b') }, 3),
+    ])
+    const sans = appliquerOperationEdl(avec, op(TYPES_EDL.pointSupprimer, { id: 'a' }, 4))
+    assert.deepEqual(sans.photos.map((p) => p.id), ['f2'])
+    const rendu = appliquerOperationEdl(sans, op(TYPES_EDL.pointPoser, { point: pt('a', 1), photos: [ph('f1', 'a')] }, 5))
+    assert.deepEqual(rendu.photos.map((p) => p.id).sort(), ['f1', 'f2'])
+  })
+  test('le journal : seules les entrées dans une pièce sont gardées sur l’appareil', () => {
+    const entree = evenementEdl('entree', { visiteId: 'v1', affaireId: AFF, niveauId: 'n1', pieceId: 'p1' }, '2026-11-17T10:00:00Z')
+    const point = evenementEdl('point', { visiteId: 'v1', affaireId: AFF, pointId: 'a' })
+    const e = etatAvecFileEdl(vide(), [op(TYPES_EDL.evenement, { evenement: entree }, 1), op(TYPES_EDL.evenement, { evenement: point }, 2)])
+    assert.deepEqual(e.entrees.map((x) => x.piece_id), ['p1'])
+  })
+  test('une ligne de journal : heure ISO, détail vide par défaut', () => {
+    const ev = evenementEdl('sortie', { visiteId: 'v1', affaireId: AFF, niveauId: 'n1', pieceId: 'p1' }, '2026-11-17T10:00:00Z')
+    assert.equal(ev.le, '2026-11-17T10:00:00.000Z')
+    assert.deepEqual(ev.detail, {})
+    assert.equal(ev.point_id, null)
+    assert.equal(ev.visite_id, 'v1')
+  })
+  test('visite commencée puis terminée', () => {
+    const e = etatAvecFileEdl(vide(), [
+      op(TYPES_EDL.visiteCreer, { visite: { id: 'v1', etat_id: 'e1', affaire_id: AFF, debut: '2026-11-17T09:00:00.000Z', fin: null } }, 1),
+      op(TYPES_EDL.visiteTerminer, { id: 'v1', fin: '2026-11-17T11:00:00.000Z' }, 2),
+    ])
+    assert.equal(e.visites[0].fin, '2026-11-17T11:00:00.000Z')
+  })
+  test('résumé : en attente et refusées', () => {
+    const ok = op(TYPES_EDL.pointSupprimer, { id: 'a' }, 1)
+    const refusee = { ...op(TYPES_EDL.pointSupprimer, { id: 'b' }, 2), essais: ESSAIS_MAX, erreur: 'refus' }
+    const r = resumeFileEdl([ok, refusee])
+    assert.equal(r.total, 2)
+    assert.equal(r.enAttente, 1)
+    assert.equal(r.echecs, 1)
+    assert.equal(r.premierEchec.id, refusee.id)
+    assert.equal(resumeFileEdl([]).premierEchec, null)
+  })
+})
+
+describe('annuler un geste de la visite', () => {
+  const p7 = { id: 'a', numero: 7, piece_id: 'p1', x: 1, y: 2, type: null, calque: null }
+  test('un point posé est retiré', () => {
+    assert.deepEqual(operationInverse({ type: 'pose', point: p7 }, [p7]), {
+      type: TYPES_EDL.pointSupprimer, charge: { id: 'a' }, evenement: 'point-supprime',
+    })
+  })
+  test('un point supprimé revient avec ses photos et son numéro, s’il est libre', () => {
+    const photos = [{ id: 'f1', point_id: 'a' }]
+    const inv = operationInverse({ type: 'suppression', point: p7, photos }, [{ id: 'c', numero: 9 }])
+    assert.equal(inv.type, TYPES_EDL.pointPoser)
+    assert.equal(inv.charge.point.numero, 7)
+    assert.deepEqual(inv.charge.photos, photos)
+    assert.equal(inv.evenement, 'point')
+    const pris = operationInverse({ type: 'suppression', point: p7, photos: [] }, [{ id: 'b', numero: 7 }])
+    assert.equal(pris.charge.point.numero, 8)
+  })
+  test('une modification revient aux valeurs d’avant', () => {
+    assert.deepEqual(operationInverse({ type: 'modification', id: 'a', avant: { type: null, calque: null } }, [p7]), {
+      type: TYPES_EDL.pointModifier, charge: { id: 'a', champs: { type: null, calque: null } }, evenement: 'point-modifie',
+    })
+  })
+  test('geste inconnu : rien', () => {
+    assert.equal(operationInverse({ type: 'autre' }, []), null)
   })
 })

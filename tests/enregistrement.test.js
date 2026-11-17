@@ -5,6 +5,8 @@ import { test, describe } from 'node:test'
 
 import {
   choisirFormat, extensionDe, dureeLisible, bilanEssai, regrouperTranches, dureeSourdine,
+  cleVisite, deLaVisite, champsVisite, etatApresEvenement, enregistrementActif, etatPourLeCr, messageDemarrage,
+  minuterieActive, enregistrementsARecuperer,
 } from '../src/modules/chantier/comptes-rendus/enregistrement/enregistrementLogique.js'
 
 describe('format', () => {
@@ -107,5 +109,79 @@ describe('sourdine (écran verrouillé brièvement)', () => {
     assert.equal(dureeSourdine([{ t: s(10), type: 'piste-muette' }, { t: s(14), type: 'piste-terminee' }]), 4)
     assert.equal(dureeSourdine([{ t: s(10), type: 'piste-muette' }], s(15)), 5)
     assert.equal(dureeSourdine([]), 0)
+  })
+})
+
+describe('visite d’un morceau (compte rendu ou état des lieux)', () => {
+  test('une chaîne est l’identifiant d’un compte rendu', () => {
+    assert.deepEqual(cleVisite('cr-1'), { crId: 'cr-1' })
+    assert.deepEqual(cleVisite({ edlVisiteId: 'v-1' }), { edlVisiteId: 'v-1' })
+  })
+  test('un morceau appartient à sa visite seulement', () => {
+    const duCr = { crId: 'cr-1', affaireId: 'a' }
+    const deLEdl = { edlVisiteId: 'v-1', affaireId: 'a' }
+    assert.equal(deLaVisite(duCr, 'cr-1'), true)
+    assert.equal(deLaVisite(duCr, { edlVisiteId: 'v-1' }), false)
+    assert.equal(deLaVisite(deLEdl, { edlVisiteId: 'v-1' }), true)
+    assert.equal(deLaVisite(deLEdl, 'cr-1'), false)
+  })
+  test('une visite sans identifiant ne désigne rien', () => {
+    assert.equal(deLaVisite({ crId: 'cr-1' }, {}), false)
+    assert.equal(deLaVisite({ crId: 'cr-1' }, { crId: null }), false)
+  })
+  test('un morceau recollé reprend les champs de visite de sa première tranche', () => {
+    assert.deepEqual(
+      champsVisite({ rang: 2, index: 0, blob: 'x', edlVisiteId: 'v-1', affaireId: 'a', debutEnregistrement: '2026-11-17T09:00:00.000Z' }),
+      { edlVisiteId: 'v-1', affaireId: 'a', debutEnregistrement: '2026-11-17T09:00:00.000Z' },
+    )
+    assert.deepEqual(champsVisite({ rang: 1, index: 0 }), {})
+  })
+})
+
+describe('état du moteur d’après ses signaux', () => {
+  test('sourdine puis retour du micro', () => {
+    assert.equal(etatApresEvenement('enregistre', 'piste-muette'), 'muet')
+    assert.equal(etatApresEvenement('muet', 'piste-reprise'), 'enregistre')
+  })
+  test('micro coupé par le système, encodeur en échec', () => {
+    assert.equal(etatApresEvenement('enregistre', 'piste-terminee'), 'coupe')
+    assert.equal(etatApresEvenement('muet', 'piste-terminee'), 'coupe')
+    assert.equal(etatApresEvenement('enregistre', 'enregistreur-en-echec'), 'echec')
+  })
+  test('un moteur arrêté volontairement (pause, fin) ne change plus rien', () => {
+    assert.equal(etatApresEvenement('pause', 'piste-terminee'), 'pause')
+    assert.equal(etatApresEvenement('pret', 'enregistreur-en-echec'), 'pret')
+  })
+  test('les autres signaux laissent l’état tel quel', () => {
+    assert.equal(etatApresEvenement('enregistre', 'morceau'), 'enregistre')
+    assert.equal(etatApresEvenement('coupe', 'arret'), 'coupe')
+  })
+  test('seul « enregistre » compte comme actif', () => {
+    assert.equal(enregistrementActif('enregistre'), true)
+    for (const e of ['pret', 'muet', 'coupe', 'echec', 'pause']) assert.equal(enregistrementActif(e), false)
+  })
+  test('le robot des CR garde son affichage d’avant', () => {
+    // Avant le moteur commun, sourdine et échec de l'encodeur laissaient le
+    // robot sur « enregistre » : rien ne doit changer à l'écran des CR
+    assert.equal(etatPourLeCr('muet'), 'enregistre')
+    assert.equal(etatPourLeCr('echec'), 'enregistre')
+    assert.equal(etatPourLeCr('pause'), 'pret')
+    assert.equal(etatPourLeCr('coupe'), 'coupe')
+    assert.equal(etatPourLeCr('pret'), 'pret')
+    assert.equal(etatPourLeCr('enregistre'), 'enregistre')
+  })
+  test('la durée avance pendant l’enregistrement et la sourdine, pas à l’arrêt', () => {
+    assert.equal(minuterieActive('enregistre'), true)
+    assert.equal(minuterieActive('muet'), true)
+    for (const e of ['pret', 'pause', 'coupe', 'echec']) assert.equal(minuterieActive(e), false)
+  })
+  test('la récupération des tranches orphelines ne touche jamais l’enregistrement en cours', () => {
+    assert.deepEqual(enregistrementsARecuperer(['e1', 'e2', 'e3'], 'e2'), ['e1', 'e3'])
+    assert.deepEqual(enregistrementsARecuperer(['e1'], null), ['e1'])
+    assert.deepEqual(enregistrementsARecuperer(undefined, 'e1'), [])
+  })
+  test('micro refusé : ce qu’il faut faire', () => {
+    assert.match(messageDemarrage({ name: 'NotAllowedError' }), /Micro refusé/)
+    assert.match(messageDemarrage(new Error('occupé')), /n’a pas pu démarrer : occupé/)
   })
 })

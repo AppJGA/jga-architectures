@@ -110,3 +110,71 @@ export function regrouperTranches(tranches = []) {
     .filter((g) => g.tranches[0].index === 0)
     .sort((a, b) => a.rang - b.rang)
 }
+
+// ─── Une visite enregistrée : compte rendu ou état des lieux ─────────────────
+//
+// Chaque tranche et chaque morceau rangés sur l'appareil portent les champs
+// de leur visite : `crId` (compte rendu) ou `edlVisiteId` (état des lieux),
+// l'affaire et le début de l'enregistrement. C'est ce qui permet de recoller
+// et d'envoyer l'audio de la bonne visite.
+export const CHAMPS_VISITE = ['crId', 'edlVisiteId', 'affaireId', 'debutEnregistrement']
+
+/** Une chaîne désigne un compte rendu (appels d'avant l'état des lieux). */
+export function cleVisite(visite) {
+  return typeof visite === 'string' ? { crId: visite } : { ...(visite ?? {}) }
+}
+
+export function deLaVisite(ligne, visite) {
+  const champs = Object.entries(cleVisite(visite))
+  return champs.length > 0 && champs.every(([cle, valeur]) => valeur != null && ligne?.[cle] === valeur)
+}
+
+export function champsVisite(tranche) {
+  return Object.fromEntries(CHAMPS_VISITE.filter((cle) => tranche?.[cle] != null).map((cle) => [cle, tranche[cle]]))
+}
+
+// ─── État du moteur ──────────────────────────────────────────────────────────
+//
+// pret (rien), enregistre, muet (le système a mis le micro en sourdine :
+// silence enregistré), coupe (micro rendu par le système : écran verrouillé,
+// autre app), echec (l'encodeur n'y arrive plus), pause (voulue). Seuls les
+// signaux du moteur font passer de enregistre à muet / coupe / echec : l'écran
+// ne devine rien. Une pause ou un arrêt voulus ignorent les derniers signaux
+// du moteur qu'ils viennent de fermer.
+const ARRETS_VOULUS = new Set(['pret', 'pause'])
+
+export function etatApresEvenement(etat, type) {
+  if (ARRETS_VOULUS.has(etat)) return etat
+  switch (type) {
+    case 'piste-muette': return etat === 'enregistre' ? 'muet' : etat
+    case 'piste-reprise': return etat === 'muet' ? 'enregistre' : etat
+    case 'piste-terminee': return 'coupe'
+    case 'enregistreur-en-echec': return 'echec'
+    default: return etat
+  }
+}
+
+export const enregistrementActif = (etat) => etat === 'enregistre'
+
+// Le robot des CR ne connaît que trois états et garde son affichage d'avant
+// le moteur commun : sourdine et échec de l'encodeur n'y changeaient rien
+const POUR_LE_CR = { muet: 'enregistre', echec: 'enregistre', pause: 'pret' }
+export const etatPourLeCr = (etat) => POUR_LE_CR[etat] ?? etat
+
+// La durée affichée avance tant que le moteur tourne, sourdine comprise
+// (comme le robot des CR l'a toujours fait)
+export const minuterieActive = (etat) => etat === 'enregistre' || etat === 'muet'
+
+/**
+ * Enregistrements à recoller : jamais celui en cours — ses tranches sont
+ * encore en train d'arriver, les recoller les effacerait.
+ */
+export function enregistrementsARecuperer(interrompus, courant) {
+  return (interrompus ?? []).filter((id) => id !== courant)
+}
+
+export function messageDemarrage(err) {
+  return err?.name === 'NotAllowedError'
+    ? 'Micro refusé : autorisez-le pour ce site dans les réglages de l’iPad ou du navigateur.'
+    : `L’enregistrement n’a pas pu démarrer : ${err?.message ?? err}`
+}

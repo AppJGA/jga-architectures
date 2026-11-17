@@ -8,7 +8,7 @@
 // « récupéré » (`recupererMorceaux`). Base à part (`jga-audio`) : celle de la
 // visite hors ligne (`baseLocale.js`) n'a pas à changer de version pour cela.
 
-import { regrouperTranches } from './enregistrementLogique'
+import { regrouperTranches, deLaVisite, champsVisite } from './enregistrementLogique'
 
 const NOM = 'jga-audio'
 const MORCEAUX = 'morceaux'
@@ -76,13 +76,13 @@ export async function recupererMorceaux(enregistrementId) {
   const recuperes = []
   for (const g of regrouperTranches(tranches).filter((x) => !complets.has(x.rang))) {
     const blob = new Blob(g.tranches.map((t) => t.blob), { type: g.type })
-    // Une visite range aussi le CR, l'affaire et le début de l'enregistrement
-    // sur chaque tranche : le morceau recollé doit partir à la transcription
-    const { crId, affaireId, debutEnregistrement } = g.tranches[0]
+    // Une visite (CR ou état des lieux) range aussi son identifiant, l'affaire
+    // et le début de l'enregistrement sur chaque tranche : le morceau recollé
+    // doit retrouver sa visite
     const morceau = {
       id: crypto.randomUUID(), enregistrementId, rang: g.rang, debut: g.debut,
       duree_s: g.duree_s, type: g.type, taille: blob.size, blob, recupere: true,
-      ...(crId ? { crId, affaireId, debutEnregistrement } : {}),
+      ...champsVisite(g.tranches[0]),
     }
     await rangerMorceau(morceau)
     recuperes.push(morceau)
@@ -110,20 +110,22 @@ export async function effacerEnregistrement(enregistrementId) {
   }
 }
 
-// ─── Visite : morceaux d'un compte rendu ─────────────────────────────────────
+// ─── Visite : morceaux d'un compte rendu ou d'un état des lieux ──────────────
+//
+// `visite` : l'identifiant d'un CR (comme avant), ou { edlVisiteId }.
 
-/** Morceaux de ce CR encore à transcrire, dans l'ordre d'enregistrement. */
-export async function morceauxEnAttente(crId) {
+/** Morceaux de cette visite encore à transcrire, dans l'ordre d'enregistrement. */
+export async function morceauxEnAttente(visite) {
   const tous = await transaction(MORCEAUX, 'readonly', (m) => m.getAll())
   return (tous ?? [])
-    .filter((x) => x.crId === crId)
+    .filter((x) => deLaVisite(x, visite))
     .sort((a, b) => (a.debutEnregistrement ?? '').localeCompare(b.debutEnregistrement ?? '') || a.rang - b.rang)
 }
 
-/** Enregistrements de ce CR qui ont des tranches orphelines (page fermée en plein enregistrement). */
-export async function enregistrementsInterrompus(crId) {
+/** Enregistrements de cette visite qui ont des tranches orphelines (page fermée en plein enregistrement). */
+export async function enregistrementsInterrompus(visite) {
   const tranches = await transaction(TRANCHES, 'readonly', (m) => m.getAll())
-  return [...new Set((tranches ?? []).filter((t) => t.crId === crId).map((t) => t.enregistrementId))]
+  return [...new Set((tranches ?? []).filter((t) => deLaVisite(t, visite)).map((t) => t.enregistrementId))]
 }
 
 export function effacerMorceau(id) {

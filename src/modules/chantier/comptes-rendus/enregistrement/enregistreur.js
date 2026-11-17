@@ -167,9 +167,18 @@ export async function demarrerEnregistreur({ dureeMorceauMs, rangDepart = 1, onM
   })
   const arreter = () => fermer('arret')
 
+  // Clôt le morceau en cours et en ouvre aussitôt un autre (entrée et sortie
+  // d'une pièce de l'état des lieux) : un morceau ne parle plus que d'un lieu.
+  // Rend false s'il n'y avait rien à couper (moteur fermé, arrêt en cours).
+  const couper = () => new Promise((resoudre) => {
+    if (!actif || finMorceau || enregistreur?.state !== 'recording') { resoudre(false); return }
+    finMorceau = () => { relancer(); resoudre(true) }
+    enregistreur.stop()
+  })
+
   // Démarré une fois tout défini : un échec immédiat peut déjà vouloir fermer
   signaler('demarrage', `${format.type || 'format du navigateur'}, morceaux de ${Math.round(dureeMorceauMs / 1000)} s`)
   lancerMorceau()
 
-  return { arreter, get format() { return format.type }, get verrouEcran() { return verrouEcran } }
+  return { arreter, couper, get format() { return format.type }, get verrouEcran() { return verrouEcran } }
 }

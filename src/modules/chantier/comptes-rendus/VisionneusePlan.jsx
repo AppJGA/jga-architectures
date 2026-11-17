@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useLayoutEffect } from 'react'
 import { Plus, Minus, Maximize } from 'lucide-react'
-import { zoomAutour, limiterVue, pointSurPlan } from './plansLogique'
+import { zoomAutour, limiterVue, pointSurPlan, vueSurCadre, cleDeCadre } from './plansLogique'
 
 // ─── Visionneuse de plan ─────────────────────────────────────────────────────
 //
@@ -8,14 +8,18 @@ import { zoomAutour, limiterVue, pointSurPlan } from './plansLogique'
 // + / − / ajuster. Un appui bref sans glisser « touche » le plan (placement
 // d'une pastille) ; un appui sur une pastille la sélectionne. L'aperçu léger
 // s'affiche d'abord, la pleine définition le remplace une fois chargée.
+// `cadre` (fractions de l'image) : la vue s'y ajuste à chaque changement —
+// une pièce de l'état des lieux remplit l'écran ; le pincement reste libre
+// jusqu'à `zoomMax`.
 
 const SEUIL_APPUI = 6 // px de déplacement au-delà desquels ce n'est plus un appui
 
-export function VisionneusePlan({ version, obtenirLiens, pastilles = [], idActive, onToucher, onPastille, calque }) {
+export function VisionneusePlan({ version, obtenirLiens, pastilles = [], idActive, onToucher, onPastille, calque, cadre = null, zoomMax = 12 }) {
   const conteneur = useRef(null)
   const image = useRef(null)
   const [taille, setTaille] = useState({ largeur: 0, hauteur: 0 })
   const [vue, setVue] = useState({ zoom: 1, dx: 0, dy: 0 })
+  const [cadreVu, setCadreVu] = useState(null)
   const [urlApercu, setUrlApercu] = useState(null)
   const [urlPleine, setUrlPleine] = useState(null)
   const pointeurs = useRef(new Map())
@@ -53,9 +57,19 @@ export function VisionneusePlan({ version, obtenirLiens, pastilles = [], idActiv
   const ox = (taille.largeur - bw) / 2
   const oy = (taille.hauteur - bh) / 2
 
+  const vueDuCadre = () => (cadre ? vueSurCadre(cadre, taille, { bw, bh, ox, oy }, { zoomMax }) : { zoom: 1, dx: 0, dy: 0 })
+  // Nouveau cadre (pièce ouverte, refermée), ou conteneur redimensionné alors
+  // qu'un cadre est posé : la vue s'y ajuste (cleDeCadre, testé). Le pincement
+  // qui suit reste libre.
+  const cleCadre = echelle > 0 ? cleDeCadre(cadre, taille) : null
+  if (cleCadre !== cadreVu) {
+    setCadreVu(cleCadre)
+    if (cleCadre !== null) setVue(vueDuCadre())
+  }
+
   const appliquer = (v) => setVue(limiterVue(v, bw, bh))
   const zoomer = (facteur, px = taille.largeur / 2, py = taille.hauteur / 2) => {
-    setVue(v => limiterVue(zoomAutour(v, facteur, px - ox, py - oy), bw, bh))
+    setVue(v => limiterVue(zoomAutour(v, facteur, px - ox, py - oy, 1, zoomMax), bw, bh))
   }
 
   useEffect(() => {
@@ -97,7 +111,7 @@ export function VisionneusePlan({ version, obtenirLiens, pastilles = [], idActiv
       geste.current.pincement = { distance, milieu }
       if (!precedent) return
       setVue(v => {
-        const zoomee = zoomAutour(v, distance / precedent.distance, milieu.x - ox, milieu.y - oy)
+        const zoomee = zoomAutour(v, distance / precedent.distance, milieu.x - ox, milieu.y - oy, 1, zoomMax)
         return limiterVue({ ...zoomee, dx: zoomee.dx + milieu.x - precedent.milieu.x, dy: zoomee.dy + milieu.y - precedent.milieu.y }, bw, bh)
       })
       return
@@ -174,7 +188,7 @@ export function VisionneusePlan({ version, obtenirLiens, pastilles = [], idActiv
       <div onPointerDown={e => e.stopPropagation()} style={{ position: 'absolute', right: 12, bottom: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
         <button type="button" aria-label="Zoomer" onClick={() => zoomer(1.5)} style={bouton}><Plus size={18} /></button>
         <button type="button" aria-label="Dézoomer" onClick={() => zoomer(1 / 1.5)} style={bouton}><Minus size={18} /></button>
-        <button type="button" aria-label="Ajuster à l’écran" onClick={() => setVue({ zoom: 1, dx: 0, dy: 0 })} style={bouton}><Maximize size={16} /></button>
+        <button type="button" aria-label="Ajuster à l’écran" onClick={() => setVue(vueDuCadre())} style={bouton}><Maximize size={16} /></button>
       </div>
     </div>
   )

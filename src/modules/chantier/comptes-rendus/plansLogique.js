@@ -121,3 +121,35 @@ export function limiterVue(vue, largeur, hauteur) {
     dy: borner(vue.dy, hauteur * 0.25 - hauteur * vue.zoom, hauteur * 0.75),
   }
 }
+
+/**
+ * Vue qui montre `cadre` (fractions de l'image, 0 à 1) à tout l'écran,
+ * centré, avec une marge : une pièce de l'état des lieux agrandie au toucher.
+ * @param ecran { largeur, hauteur } du conteneur
+ * @param plan  { bw, bh } taille du plan au zoom 1, { ox, oy } son décalage dans le conteneur
+ * @returns transformation { zoom, dx, dy } (même repère que zoomAutour)
+ */
+export function vueSurCadre(cadre, ecran, plan, { marge = 0.08, zoomMax = 12 } = {}) {
+  const largeurCadre = Math.max(1e-6, (cadre.x1 - cadre.x0) * plan.bw)
+  const hauteurCadre = Math.max(1e-6, (cadre.y1 - cadre.y0) * plan.bh)
+  const zoom = borner(Math.min(
+    (ecran.largeur * (1 - 2 * marge)) / largeurCadre,
+    (ecran.hauteur * (1 - 2 * marge)) / hauteurCadre,
+  ), 1, zoomMax)
+  const cx = ((cadre.x0 + cadre.x1) / 2) * plan.bw
+  const cy = ((cadre.y0 + cadre.y1) / 2) * plan.bh
+  return { zoom, dx: ecran.largeur / 2 - plan.ox - cx * zoom, dy: ecran.hauteur / 2 - plan.oy - cy * zoom }
+}
+
+/**
+ * Ce qui déclenche l'ajustement de la vue sur `cadre`. Avec un cadre, la
+ * taille du conteneur en fait partie : des barres qui apparaissent au-dessus
+ * du plan dans le même rendu que le cadre le rétrécissent juste après, et la
+ * vue doit être recalculée sur la bonne taille. Sans cadre, la taille n'y est
+ * pas : les autres visionneuses ne sont jamais recadrées par un redimensionnement.
+ */
+export function cleDeCadre(cadre, taille) {
+  if (!(taille?.largeur > 0 && taille?.hauteur > 0)) return null
+  if (!cadre) return 'plan'
+  return `${cadre.x0},${cadre.y0},${cadre.x1},${cadre.y1}|${taille.largeur}x${taille.hauteur}`
+}

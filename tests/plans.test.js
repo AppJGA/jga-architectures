@@ -5,7 +5,7 @@ import { test, describe } from 'node:test'
 
 import {
   dimensionsPlan, indiceSuivant, versionCourante, versionsInutilisees,
-  cadrageExtrait, pointSurPlan, zoomAutour, limiterVue,
+  cadrageExtrait, pointSurPlan, zoomAutour, limiterVue, vueSurCadre, cleDeCadre,
 } from '../src/modules/chantier/comptes-rendus/plansLogique.js'
 import { preparerReprise } from '../src/modules/chantier/comptes-rendus/crLogique.js'
 
@@ -114,4 +114,44 @@ test('reprise : la pastille suit sa remarque, sur la version en vigueur', () => 
 test('limiterVue : le plan ne sort pas entièrement de l’écran', () => {
   assert.deepEqual(limiterVue({ zoom: 1, dx: 5000, dy: -5000 }, 400, 300), { zoom: 1, dx: 300, dy: -225 })
   assert.deepEqual(limiterVue({ zoom: 2, dx: -100, dy: 50 }, 400, 300), { zoom: 2, dx: -100, dy: 50 })
+})
+
+describe('vueSurCadre (pièce agrandie de l’état des lieux)', () => {
+  const ecran = { largeur: 1000, hauteur: 600 }
+  const plan = { bw: 1000, bh: 500, ox: 0, oy: 50 }
+  const surEcran = (vue, fx, fy) => [plan.ox + vue.dx + fx * plan.bw * vue.zoom, plan.oy + vue.dy + fy * plan.bh * vue.zoom]
+
+  test('le cadre est centré et remplit l’écran, marge comprise', () => {
+    const vue = vueSurCadre({ x0: 0.4, y0: 0.4, x1: 0.5, y1: 0.6 }, ecran, plan, { marge: 0.08, zoomMax: 60 })
+    assert.ok(Math.abs(vue.zoom - 5.04) < 1e-9)
+    const [x, y] = surEcran(vue, 0.45, 0.5)
+    assert.ok(Math.abs(x - 500) < 1e-6)
+    assert.ok(Math.abs(y - 300) < 1e-6)
+  })
+  test('un tout petit cadre s’arrête au zoom maximal', () => {
+    const vue = vueSurCadre({ x0: 0.5, y0: 0.5, x1: 0.501, y1: 0.501 }, ecran, plan, { zoomMax: 60 })
+    assert.equal(vue.zoom, 60)
+  })
+  test('le plan entier ne descend pas sous le zoom 1', () => {
+    assert.equal(vueSurCadre({ x0: 0, y0: 0, x1: 1, y1: 1 }, ecran, plan).zoom, 1)
+  })
+})
+
+describe('cleDeCadre (quand réajuster la vue)', () => {
+  const cadre = { x0: 0.1, y0: 0.2, x1: 0.3, y1: 0.4 }
+  test('rien tant que le conteneur n’est pas mesuré', () => {
+    assert.equal(cleDeCadre(cadre, { largeur: 0, hauteur: 0 }), null)
+    assert.equal(cleDeCadre(null, { largeur: 0, hauteur: 600 }), null)
+  })
+  test('sans cadre : la même clé quelle que soit la taille (pas de recadrage au redimensionnement)', () => {
+    assert.equal(cleDeCadre(null, { largeur: 800, hauteur: 600 }), 'plan')
+    assert.equal(cleDeCadre(null, { largeur: 1000, hauteur: 500 }), 'plan')
+  })
+  test('avec un cadre : la clé change quand le conteneur change de taille', () => {
+    const avant = cleDeCadre(cadre, { largeur: 1000, hauteur: 700 })
+    const apres = cleDeCadre(cadre, { largeur: 1000, hauteur: 520 })
+    assert.notEqual(avant, apres)
+    assert.equal(cleDeCadre(cadre, { largeur: 1000, hauteur: 700 }), avant)
+    assert.notEqual(cleDeCadre({ ...cadre, x1: 0.35 }, { largeur: 1000, hauteur: 700 }), avant)
+  })
 })

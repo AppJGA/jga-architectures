@@ -9,6 +9,7 @@ import {
   aire, pointDansPolygone, boite, cadrage, versPixels, versMetres, ecartSurface,
   deplacerSommet, insererSommet, retirerSommet, arrondirContour, mediane,
 } from '../src/modules/etude/etat-des-lieux/geometrieEdl.js'
+import { lireEchelle, metresParPoint, estVectoriel } from '../src/modules/etude/etat-des-lieux/pdfPlanLogique.js'
 
 const octets = (s) => new TextEncoder().encode(s)
 
@@ -73,5 +74,21 @@ describe('géométrie', () => {
     assert.equal(retirerSommet(carre, 0).length, 3)
     assert.equal(retirerSommet(retirerSommet(carre, 0), 0).length, 3) // jamais moins de trois sommets
     assert.deepEqual(arrondirContour([[1.23456, 2.0004]]), [[1.235, 2]])
+  })
+})
+
+describe('PDF', () => {
+  test('échelle lue dans le cartouche', () => {
+    assert.equal(lireEchelle(['Document créé le 23/01/26', 'Echelle:1/100°']), 100)
+    assert.equal(lireEchelle(['ÉCHELLE : 1 / 50']), 50)
+    assert.equal(lireEchelle(['PLAN DU RDC']), null)
+  })
+  test('un point du papier au 1/100 vaut 3,53 cm', () => {
+    assert.ok(Math.abs(metresParPoint(100) - 0.035278) < 1e-5)
+  })
+  test('vectoriel : au moins 30 chemins dessinés', () => {
+    const OPS = { constructPath: 91, paintImageXObject: 85 }
+    assert.equal(estVectoriel(Array(30).fill(91), OPS), true)
+    assert.equal(estVectoriel([85, 91], OPS), false)
   })
 })

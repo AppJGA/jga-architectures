@@ -680,9 +680,11 @@ calques `EDL-` et rapport PDF. Conception :
 `docs/superpowers/specs/2026-11-17-etat-des-lieux-design.md` ; plan du
 lot 1 : `docs/superpowers/plans/2026-11-17-etat-des-lieux-lot1-preparer.md`.
 
-- **Formats** (`formatPlanEdl.js`, au contenu) : DXF texte et PDF vectorisé.
-  DWG refusé avec le message de l'agence (Enregistrer sous → DXF) ; DXF
-  binaire et PDF scanné refusés aussi.
+- **DXF seulement** (`formatPlanEdl.js`, reconnu au contenu ; décision de
+  l'agence du 2026-11-17) : DWG, PDF et DXF binaire refusés avec ce qu'il
+  faut faire (Enregistrer sous → DXF). Le PDF a été retiré : Claude n'y
+  retrouvait qu'une partie des pièces (≈ 35 sur 200 sur une feuille
+  d'étages réduite à 2 000 px) et certains plans n'ont pas de noms de pièces.
 - **DXF** (`dxfLecture.js`) : blocs déployés (ArchiCAD range le plan dans
   des blocs de vues, un par étage), espace papier ignoré sauf si l'espace
   objet est vide, MTEXT nettoyés (`^J`, `\P`, `\p…;`, codes de police). Fichiers
@@ -694,6 +696,16 @@ lot 1 : `docs/superpowers/plans/2026-11-17-etat-des-lieux-lot1-preparer.md`.
   retenus** s'ils passent ce test avec la même unité que le meilleur (zones
   rangées par étage : `S-SURFACES_RDC`, `S-SURFACES_R+1`…). « HP » = hauteur sous
   plafond ; « Hp » (porte) et « HSP » (poutre) ignorés — la casse compte.
+  Un tampon de zone sans nom prend celui du calque des désignations
+  (`CALQUE_DESIGNATION`), jamais du mobilier.
+- **Jamais deux pièces superposées** (règle de l'agence,
+  `retirerSuperpositions` / `pieceChevauchee` de `geometrieEdl.js`, part
+  recouverte mesurée par échantillonnage, seuil 5 %) : à l'import, **étage
+  par étage** (ceux d'ArchiCAD se superposent entre eux), les plus petites
+  pièces sont gardées et les zones qui les recouvrent écartées (surfaces
+  « SDO », tout l'étage : 24 sur le DXF ArchiCAD d'essai, 199 pièces
+  gardées) ; même règle pour les pièces de Claude ; à l'écran, un geste qui
+  ferait chevaucher une autre pièce n'est pas enregistré (message).
 - **Étages** (`niveauxLogique.js`) : par nom de bloc ou de calque (RDC,
   SSOL / SOUS-SOL, R+n, Combles — les étages d'ArchiCAD sont superposés),
   sinon grappes de traits (cellule d'un mètre) et grappe qui porte les
@@ -701,17 +713,14 @@ lot 1 : `docs/superpowers/plans/2026-11-17-etat-des-lieux-lot1-preparer.md`.
   sans pièces : tout en un étage.
 - **Claude** (`piecesIaLogique.js`, `api/edl-pieces.js`, SDK Anthropic,
   `claude-opus-5-5`, sortie JSON imposée, replis `fallbacks: 'default'`) :
-  seulement pour un PDF ou un étage sans contours ; reçoit l'image (2 000 px)
+  seulement pour un étage dont le DXF n'a pas de contours ; reçoit l'image (2 000 px)
   et les textes positionnés ; pièces « à vérifier » (bleu). Crédits API du
   forfait Max (organisation « JGA's Individual Org »). **Aucune entrée dans
   `vercel.json`** pour cette fonction : au-delà de 60 s sans Fluid compute,
   Vercel refuse tout le déploiement ; durée par défaut du projet.
 - **Repère** : contours en mètres dans le repère du plan d'origine (y vers
   le haut) ; `edl_niveaux.cadrage` lie mètres et pixels de l'image
-  (`versPixels` / `versMetres`). Un PDF : 1 point = 0,0254 / 72 m × échelle,
-  mesuré sur la **feuille affichée** (`pointFeuilleEnMetres`,
-  `cadrageDecoupe`), jamais par `convertToPdfPoint` : une page en /Rotate
-  90 transposait tout.
+  (`versPixels` / `versMetres`).
 - **Import** (`importerPlans.js`) : un import interrompu retire ce qu'il a
   écrit (`annulerImport` : étages, état des lieux qu'il a créé, fichiers) —
   relancer ne double rien. Un fichier illisible n'est refusé que seul.
@@ -724,6 +733,12 @@ lot 1 : `docs/superpowers/plans/2026-11-17-etat-des-lieux-lot1-preparer.md`.
   de la migration 060 est remplacée en bloc** : toute future migration qui
   ajoute un bucket doit répéter la liste complète, `edl` compris (sinon ce
   bucket s'ouvre à tout compte agence).
+- **Charte** : l'import est une fenêtre (portail, fond papier, liseré
+  `--affaire-accent`, zone de dépôt en pointillés) comme celui des pièces
+  écrites ; onglets soulignés des étages comme la to-do list ; angles
+  presque droits (2–3 px), bordures 0,5 px, alertes rouge `#B8412C`, ambre
+  `#FFFBEB` / `#92400E`. Pas de `flex-wrap` autour du plan : la liste de
+  200 pièces étirait la rangée et le plan sortait de l'écran.
 - **Écran** : `EditeurPieces` sur `VisionneusePlan` (nouvelle prop `calque`,
   SVG au-dessus de l'image) : sommets déplacés au doigt, rond de milieu =
   nouveau sommet (zone sensible de 44 px sous chaque rond),

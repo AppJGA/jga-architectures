@@ -21,7 +21,8 @@ On peut même décrire une pièce sans y être.
 | Sujet | Décision |
 |---|---|
 | Place | Module de la **phase Étude** du manifeste (`etat-des-lieux`), agence seule (jamais proposé à un extérieur). |
-| Plans acceptés | **DXF** et **PDF vectorisé**. Un **DWG est refusé** avec un message clair (reconnu au contenu : en-tête `AC10xx`, pas seulement l'extension) : « Les fichiers DWG ne sont pas acceptés. Enregistrez le plan en DXF dans AutoCAD ou ArchiCAD (Fichier → Enregistrer sous → DXF), ou importez-le en PDF vectorisé. » La zone d'import annonce d'emblée les deux formats. Un PDF sans aucun trait vectoriel (scan) est refusé de même. |
+| Plans acceptés | **DXF seulement** (révision du 2026-11-17, après essai : sur un PDF, Claude ne retrouvait qu'une partie des pièces et certains plans n'ont pas de noms). Reconnu au contenu (en-tête `AC10xx` d'un DWG, `%PDF-`), pas à l'extension. DWG et PDF refusés : « Les fichiers DWG ne sont pas acceptés. Enregistrez le plan en DXF (dans ArchiCAD ou AutoCAD : Fichier → Enregistrer sous → DXF). » / « Les PDF ne sont pas acceptés : importez le plan en DXF (…). » |
+| Pièces superposées | **Jamais** (règle de l'agence). À l'import, étage par étage, les plus petites pièces sont gardées et les zones qui les recouvrent (> 5 %) écartées — surfaces « SDO » et zones d'étage d'ArchiCAD ; même règle pour les pièces proposées par Claude ; à l'écran, un geste qui ferait chevaucher une autre pièce n'est pas enregistré. |
 | Un état des lieux | **Un par affaire**, complété en une ou plusieurs visites. |
 | Pièces | Repérées à l'import (§ 4), contour corrigeable au bureau avant la visite. |
 | Geste en visite | **Pièce d'abord** : toucher une pièce l'agrandit à tout l'écran (pincement possible pour plus de précision). Tout point posé appartient à la pièce ouverte, même sur une cloison. « Sortir de la pièce » ramène au plan de l'étage. Ce qui est dit hors pièce se rattache à l'étage. |
@@ -56,7 +57,6 @@ calques d'origine.
 | EDL-Sécurité | | détecteur de fumée, éclairage de secours, extincteur |
 | EDL-Désordres | | fissure, humidité, dégradation, matériau suspect (amiante, plomb) |
 | EDL-Photos | repère numéroté de chaque photo | — |
-| EDL-Fond de plan | traits et textes d'un PDF converti (seulement si le plan venait d'un PDF) | — |
 
 **Symboles usuels** (demande de l'agence) : chaque type d'élément est
 dessiné avec le symbole habituel des plans — en électricité ceux de la
@@ -79,15 +79,10 @@ rapport la lisent. Un type de plus = une ligne.
   l'analyseur réglementaire), blocs insérés ; unités d'après `$INSUNITS`.
   Un fichier peut contenir plusieurs étages côte à côte : on les sépare par
   regroupement des dessins éloignés, chaque groupe proposé comme un étage.
-- **PDF vectorisé** : traits par la liste d'opérations de pdf.js (méthode
-  déjà employée par le dossier pour Claude et l'aplatisseur), textes avec
-  leur position. Une page = un étage proposé.
 - Rendu de chaque étage en image (comme `conversionPlan.js`, 6 000 px au
   plus) pour l'affichage et la visite hors ligne.
 
-**Échelle** : connue pour un DXF. Pour un PDF : l'échelle lue dans le
-cartouche (« 1/100 ») est proposée ; sinon on la saisit, ou on trace une
-longueur connue. **Contrôle** : la surface calculée de chaque pièce est
+**Échelle** : connue par le DXF (unité déduite des surfaces). **Contrôle** : la surface calculée de chaque pièce est
 comparée à la surface écrite sur le plan ; un écart général signale une
 échelle fausse.
 
@@ -110,11 +105,10 @@ D'où, dans l'ordre (`piecesLogique.js` de l'état des lieux, pur) :
    surface viennent du texte trouvé dans le contour. Les étages se
    distinguent par les blocs de vues, les suffixes de calques (`M-RDC`,
    `M-SOUS-SOL`) ou, à défaut, par regroupement des dessins éloignés.
-2. **Étage sans contours** (le sous-sol de l'exemple ArchiCAD) **ou PDF** :
+2. **Étage sans contours** (le sous-sol de l'exemple ArchiCAD) :
    Claude reçoit l'image de l'étage **et** la liste des textes avec leur
    position exacte, et propose le contour de chaque pièce nommée. Moins
-   précis : c'est l'étape de correction qui le rattrape. Les plans en DXF
-   restent donc à préférer ; l'écran d'import le dit.
+   précis : c'est l'étape de correction qui le rattrape.
 3. **Correction** à l'écran, quelle que soit l'origine : chaque pièce en
    couleur sur le plan ; on déplace les coins, on renomme, on dessine une
    pièce oubliée (touchers successifs aux angles), on en supprime. Une
@@ -122,7 +116,7 @@ D'où, dans l'ordre (`piecesLogique.js` de l'état des lieux, pur) :
    signalée.
 
 Les exemples réels restent hors dépôt (public) : dossier de l'agence
-« Exemples dxf » (les DXF et les PDF du même bâtiment).
+« Exemples dxf ».
 
 « Préparer pour la visite » recopie sur la tablette images, pièces et
 réglages (même principe que « Préparer pour le chantier »).
@@ -196,8 +190,6 @@ point ou déplacé sur le plan.
   respectant ses identifiants (`$HANDSEED`). Si un fichier d'origine
   résiste à l'ajout, repli : un DXF des seuls calques `EDL-` aux mêmes
   coordonnées, à insérer au point 0,0 du plan d'origine (signalé à l'écran).
-- Plan d'origine **PDF** : traits et textes du PDF convertis à l'échelle sur
-  `EDL-Fond de plan`, puis les mêmes calques.
 - Chaque élément : un petit symbole (bloc par type, dessiné par le code) à
   son emplacement, avec « numéro · libellé ». Dans chaque pièce, nom,
   surface, HSP (EDL-Pièces) et finitions (EDL-Finitions). Les cotes dictées
@@ -231,19 +223,18 @@ Toutes les tables reçoivent les droits d'API (`grant … to authenticated`,
 **Stockage** (offre gratuite plafonnée à 1 Go) : bucket privé `edl`, chemins
 `<affaire_id>/…` comme partout. On garde l'image de chaque étage, les photos
 compressées, et la **source** : le DXF d'origine **compressé** (gzip sur
-l'appareil, nécessaire à l'export) ou, pour un PDF, le fichier PDF
-compressé : ses traits seront convertis au moment de l'export (lot 4).
+l'appareil, nécessaire à l'export).
 `fichiers_orphelins()` est étendue au bucket `edl`. Le son n'est jamais
 gardé en ligne : effacé de l'appareil après transcription, comme les CR.
 
 ## 9. Ce qui se teste sans navigateur
 
 Fichiers `*Logique.js` purs, `tests/etat-des-lieux.test.js`, sur plans
-**inventés** (aucun plan réel dans le dépôt, public ; un DXF ArchiCAD et un
-PDF de géomètre réels, fournis par l'agence, restent hors dépôt pour les
-essais) :
+**inventés** (aucun plan réel dans le dépôt, public ; les DXF réels fournis
+par l'agence restent hors dépôt pour les essais) :
 
-- reconnaissance d'un DWG, d'un PDF sans vecteur ;
+- reconnaissance d'un DWG, d'un PDF (refusés) ;
+- pièces superposées écartées (zones englobantes, pièce en L) ;
 - lecture DXF (entités, unités, étages côte à côte) ;
 - calque des pièces trouvé dans un DXF (contours fermés + surface écrite
   dedans), unité déduite (m, cm, mm), pièce en L, surface qui s'écarte ;
@@ -254,7 +245,7 @@ essais) :
 
 ## 10. Découpage
 
-1. **Préparer** : import DXF / PDF (DWG refusé), étages, pièces (contours lus
+1. **Préparer** : import DXF (DWG et PDF refusés), étages, pièces (contours lus
    dans le DXF, sinon proposés par Claude), correction, échelle, consultation
    hors ligne.
 2. **Visiter** : mode visite, enregistrement continu et découpé, journal,

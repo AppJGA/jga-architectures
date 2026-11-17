@@ -1,15 +1,19 @@
 // ─── Format d'un plan importé dans l'état des lieux ──────────────────────────
 //
 // Reconnu au contenu (premiers octets), pas à l'extension : un DWG renommé en
-// « .dxf » doit recevoir le message qui dit quoi faire.
+// « .dxf » doit recevoir le message qui dit quoi faire. Seul le DXF est
+// accepté (choix de l'agence, 2026-11-17) : un PDF ne dit ni où sont les
+// pièces ni, parfois, leur nom ; Claude n'en retrouvait qu'une partie.
 
-export const FORMATS_ACCEPTES = 'DXF ou PDF vectorisé'
+export const FORMATS_ACCEPTES = 'DXF'
+
+const ENREGISTRER_EN_DXF = 'dans ArchiCAD ou AutoCAD : Fichier → Enregistrer sous → DXF'
 
 export const MESSAGES_FORMAT = {
-  dwg: 'Les fichiers DWG ne sont pas acceptés. Enregistrez le plan en DXF dans AutoCAD ou ArchiCAD (Fichier → Enregistrer sous → DXF), ou importez-le en PDF vectorisé.',
-  'dxf-binaire': 'Ce DXF est enregistré en binaire. Enregistrez-le en DXF texte (ASCII) dans AutoCAD ou ArchiCAD, ou importez le plan en PDF vectorisé.',
-  inconnu: 'Format non reconnu. L’état des lieux accepte les plans en DXF ou en PDF vectorisé.',
-  'pdf-scan': 'Ce PDF ne contient pas de dessin vectoriel (plan scanné ?). Importez le plan en DXF, ou en PDF exporté directement du logiciel de dessin.',
+  dwg: `Les fichiers DWG ne sont pas acceptés. Enregistrez le plan en DXF (${ENREGISTRER_EN_DXF}).`,
+  pdf: `Les PDF ne sont pas acceptés : importez le plan en DXF (${ENREGISTRER_EN_DXF}).`,
+  'dxf-binaire': 'Ce DXF est enregistré en binaire. Enregistrez-le en DXF texte (ASCII) dans ArchiCAD ou AutoCAD.',
+  inconnu: `Format non reconnu. L’état des lieux accepte les plans en DXF (${ENREGISTRER_EN_DXF}).`,
 }
 
 export function formatPlan(octets) {
@@ -23,6 +27,6 @@ export function formatPlan(octets) {
 }
 
 export function verdictFormat(format) {
-  if (format === 'dxf' || format === 'pdf') return { ok: true, message: null }
+  if (format === 'dxf') return { ok: true, message: null }
   return { ok: false, message: MESSAGES_FORMAT[format] ?? MESSAGES_FORMAT.inconnu }
 }

@@ -7,7 +7,7 @@
 // on regroupe les traits proches, et l'étage est la grappe qui porte les
 // pièces. L'utilisateur relit, renomme ou écarte avant l'import.
 
-import { boite, dansBoite, centre } from './geometrieEdl'
+import { boite, dansBoite, centre, retirerSuperpositions } from './geometrieEdl'
 
 const MIN_TRAITS_NIVEAU = 50
 const CELLULES_MAX_PAR_TRAIT = 4000
@@ -116,13 +116,16 @@ export function proposerNiveaux(lecture, detection, unitesParMetre, nomFichier =
 
   return niveaux.map((n) => {
     const traits = n.traits.map((t) => ({ calque: t.calque, ferme: t.ferme, pts: t.pts.map(([x, y]) => [x / u, y / u]) }))
+    // Étage par étage : ceux d'ArchiCAD se superposent entre eux, pas leurs pièces
+    const { gardees, ecartees } = retirerSuperpositions(n.pieces)
     return {
       nom: n.nom,
       traits,
       textes: n.textes.map((t) => ({ texte: t.texte, hauteur: t.hauteur / u, pos: [t.pos[0] / u, t.pos[1] / u] })),
-      pieces: n.pieces,
+      pieces: gardees,
+      ecartees: ecartees.length,
       boite: boite(traits.flatMap((t) => t.pts)),
-      aProposer: n.pieces.length === 0,
+      aProposer: gardees.length === 0,
     }
   })
 }

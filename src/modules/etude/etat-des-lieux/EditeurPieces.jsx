@@ -3,7 +3,7 @@ import { Trash2, PenLine, Sparkles, X } from 'lucide-react'
 import { VisionneusePlan } from '../../chantier/comptes-rendus/VisionneusePlan'
 import {
   aire, pointDansPolygone, ecartSurface, SEUIL_ECART, versPixels, versMetres,
-  deplacerSommet, insererSommet, retirerSommet, ecartEchelle,
+  deplacerSommet, insererSommet, retirerSommet, ecartEchelle, pieceChevauchee, retirerSuperpositions,
 } from './geometrieEdl'
 import { imageIaDepuisUrl } from './renduNiveau'
 import { proposerPiecesIa } from './piecesIa'
@@ -16,17 +16,21 @@ import { versPiecesEdl } from './piecesIaLogique'
 // « Dessiner une pièce » : toucher les angles un à un, puis « Terminer ».
 // Une pièce proposée par Claude reste « à vérifier » (bleu) tant qu'on ne l'a
 // pas corrigée ou confirmée ; une surface dessinée qui s'écarte de la surface
-// écrite est signalée.
+// écrite est signalée. Deux pièces ne se superposent jamais : un geste qui en
+// ferait chevaucher une autre n'est pas enregistré.
 
 const COULEUR = 'var(--affaire-accent, #E8602C)'
-const champ = { minHeight: 36, padding: '0 10px', borderRadius: 6, border: '0.5px solid rgba(0,0,0,0.2)', fontSize: 14, width: '100%', boxSizing: 'border-box' }
-const petitBouton = { minHeight: 36, padding: '0 12px', borderRadius: 8, border: '0.5px solid rgba(0,0,0,0.2)', background: 'white', cursor: 'pointer', fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 6 }
+const champ = { height: 34, minHeight: 0, padding: '0 8px', fontSize: 13, border: '0.5px solid rgba(0,0,0,0.18)', borderRadius: 2, background: 'white', width: '100%', boxSizing: 'border-box' }
+const petitBouton = { minHeight: 40, padding: '0 14px', borderRadius: 3, border: '0.5px solid rgba(0,0,0,0.15)', background: 'white', color: '#1F1B17', cursor: 'pointer', fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 6 }
+const encadreAmbre = { margin: 0, fontSize: 12, color: '#92400E', background: '#FFFBEB', border: '0.5px solid #F59E0B', padding: '8px 10px' }
+const BLEU_CLAUDE = '#2E6FDB'
 
 // Zone sensible des poignées : 44 px de diamètre au doigt (règle tablette),
 // le rond visible restant petit pour ne pas masquer le plan
 const RAYON_TOUCHER = 22
 
 const fmtM2 = (v) => `${v.toLocaleString('fr-FR', { maximumFractionDigits: 1 })} m²`
+const designation = (p) => [p.numero, p.nom].filter(Boolean).join(' · ') || 'une autre pièce'
 
 export function EditeurPieces({ niveau, pieces, obtenirLiens, lectureSeule, onModifier, onAjouter, onSupprimer, onAjouterPlusieurs }) {
   const [choisie, setChoisie] = useState(null)
@@ -72,6 +76,19 @@ export function EditeurPieces({ niveau, pieces, obtenirLiens, lectureSeule, onMo
   }
   const choisir = (id) => { enregistrerBrouillon(); setChoisie(id); setSommet(null) }
 
+  // Règle de l'agence : jamais deux pièces superposées. Le geste refusé
+  // n'écrit rien ; l'écran revient au contour enregistré.
+  const chevauchement = (contour, idExclu) => {
+    const autre = pieceChevauchee(contour, pieces.filter((q) => q.id !== idExclu))
+    if (autre) setErreur(`Cette pièce chevaucherait « ${designation(autre)} » : rien n’a été enregistré.`)
+    return !!autre
+  }
+  const modifierContour = (id, contour) => {
+    if (chevauchement(contour, id)) return
+    setErreur(null)
+    onModifier(id, { contour, a_verifier: false })
+  }
+
   // Appui bref sur le plan : un angle de plus en dessin, sinon la plus petite
   // pièce qui contient le point
   const toucher = ({ x, y }) => {
@@ -109,11 +126,14 @@ export function EditeurPieces({ niveau, pieces, obtenirLiens, lectureSeule, onMo
     if (e.type === 'pointercancel') return
     // Un simple appui sur une poignée n'écrit rien
     const avant = pieces.find((q) => q.id === g.id)?.contour
-    if (g.insere || JSON.stringify(avant) !== JSON.stringify(g.contour)) onModifier(g.id, { contour: g.contour, a_verifier: false })
+    if (g.insere || JSON.stringify(avant) !== JSON.stringify(g.contour)) modifierContour(g.id, g.contour)
   }
 
   const terminerTrace = async () => {
     if (trace.length < 3 || termine.current) return
+    // Le tracé reste en place : on le reprend ou on l'annule
+    if (chevauchement(trace, null)) return
+    setErreur(null)
     termine.current = true
     let ligne
     try {
@@ -138,7 +158,7 @@ export function EditeurPieces({ niveau, pieces, obtenirLiens, lectureSeule, onMo
         return { texte: t.texte, x: (x / niveau.largeur) * ia.largeur, y: (y / niveau.hauteur) * ia.hauteur }
       })
       const proposition = await proposerPiecesIa({ image: ia.image, largeur: ia.largeur, hauteur: ia.hauteur, textes, niveauUnique: true })
-      const nouvelles = versPiecesEdl(proposition.pieces, ([x, y]) => versMetres(c, [(x / ia.largeur) * niveau.largeur, (y / ia.hauteur) * niveau.hauteur]))
+      const nouvelles = retirerSuperpositions(versPiecesEdl(proposition.pieces, ([x, y]) => versMetres(c, [(x / ia.largeur) * niveau.largeur, (y / ia.hauteur) * niveau.hauteur]))).gardees
       await onAjouterPlusieurs(niveau.id, nouvelles)
     } catch (err) {
       setErreur(err?.message ?? String(err))
@@ -158,8 +178,8 @@ export function EditeurPieces({ niveau, pieces, obtenirLiens, lectureSeule, onMo
           <polygon
             key={p.id} points={contourDe(p).map(enCalque).map((q) => q.join(',')).join(' ')}
             style={{
-              fill: p.a_verifier ? 'rgba(46,111,219,0.16)' : 'rgba(232,96,44,0.12)',
-              stroke: p.a_verifier ? '#2E6FDB' : COULEUR, strokeWidth: (p.id === choisie ? 3 : 1.5) / zoom,
+              fill: p.a_verifier ? 'rgba(46,111,219,0.16)' : 'var(--affaire-accent-clair, rgba(232,96,44,0.10))',
+              stroke: p.a_verifier ? BLEU_CLAUDE : COULEUR, strokeWidth: (p.id === choisie ? 3 : 1.5) / zoom,
             }}
           />
         ))}
@@ -213,13 +233,13 @@ export function EditeurPieces({ niveau, pieces, obtenirLiens, lectureSeule, onMo
   // étirait le plan sur 9 000 px — l'image, centrée, sortait de l'écran.
   return (
     <div style={{ display: 'flex', gap: 16, height: '100%', minHeight: 0 }}>
-      <div style={{ flex: '1 1 520px', minWidth: 0, minHeight: 420, borderRadius: 10, overflow: 'hidden', position: 'relative' }}>
+      <div style={{ flex: '1 1 520px', minWidth: 0, minHeight: 420, border: '0.5px solid rgba(0,0,0,0.1)', overflow: 'hidden', position: 'relative' }}>
         <VisionneusePlan version={version} obtenirLiens={obtenirLiens} onToucher={toucher} calque={calque} />
         {trace && (
-          <div style={{ position: 'absolute', top: 12, left: 12, display: 'flex', gap: 8, background: 'white', padding: 8, borderRadius: 8, boxShadow: '0 4px 12px -6px rgba(0,0,0,0.35)' }}>
-            <span style={{ fontSize: 13, alignSelf: 'center' }}>Touchez les angles de la pièce ({trace.length})</span>
-            <button type="button" style={petitBouton} disabled={trace.length < 3} onClick={terminerTrace}>Terminer</button>
-            <button type="button" style={petitBouton} onClick={() => setTrace(null)}><X size={14} />Annuler</button>
+          <div style={{ position: 'absolute', top: 12, left: 12, right: 12, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', background: 'white', padding: '8px 10px', borderTop: `3px solid ${COULEUR}`, boxShadow: '0 8px 24px -12px rgba(31,27,23,0.45)' }}>
+            <span style={{ flex: 1, fontSize: 13, color: '#1F1B17' }}>Touchez les angles de la pièce, un à un <span style={{ color: '#9C9591' }}>({trace.length})</span></span>
+            <button type="button" style={{ ...petitBouton, border: 'none', background: COULEUR, color: 'white', fontWeight: 600, opacity: trace.length < 3 ? 0.5 : 1 }} disabled={trace.length < 3} onClick={terminerTrace}>Terminer</button>
+            <button type="button" style={petitBouton} onClick={() => { setTrace(null); setErreur(null) }}><X size={14} />Annuler</button>
           </div>
         )}
       </div>
@@ -232,49 +252,57 @@ export function EditeurPieces({ niveau, pieces, obtenirLiens, lectureSeule, onMo
           </div>
         )}
         {echelle != null && (
-          <p style={{ margin: 0, fontSize: 13, color: '#B54708', background: '#FFF6E5', borderRadius: 8, padding: '8px 10px' }}>
+          <p role="status" style={encadreAmbre}>
             Échelle à vérifier : les surfaces dessinées valent environ ×{echelle.toLocaleString('fr-FR', { maximumFractionDigits: 2 })} les surfaces écrites.
           </p>
         )}
-        {attente && <p style={{ margin: 0, fontSize: 13, color: '#5E5854' }}>{attente}</p>}
-        {erreur && <p style={{ margin: 0, fontSize: 13, color: '#B42318' }}>{erreur}</p>}
+        {attente && <p style={{ margin: 0, fontSize: 12, color: '#5E5854' }}>{attente}</p>}
+        {erreur && <p role="alert" style={{ margin: 0, fontSize: 12, color: '#B8412C', background: '#FDF2F0', border: '0.5px solid rgba(184,65,44,0.4)', padding: '8px 10px' }}>{erreur}</p>}
 
         {piece && (
-          <div style={{ background: 'white', borderRadius: 10, border: '0.5px solid rgba(0,0,0,0.1)', padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ background: 'white', border: '0.5px solid rgba(0,0,0,0.1)', borderTop: `3px solid ${piece.a_verifier ? BLEU_CLAUDE : COULEUR}`, padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
             <input key={`${piece.id}-nom`} style={champ} disabled={lectureSeule} defaultValue={piece.nom} placeholder="Nom de la pièce" onChange={(e) => { brouillon.current.nom = e.target.value }} onBlur={enregistrerBrouillon} />
             <input key={`${piece.id}-numero`} style={champ} disabled={lectureSeule} defaultValue={piece.numero ?? ''} placeholder="Numéro" onChange={(e) => { brouillon.current.numero = e.target.value }} onBlur={enregistrerBrouillon} />
-            <p style={{ margin: 0, fontSize: 13, color: '#5E5854' }}>
+            <p style={{ margin: 0, fontSize: 12, color: '#5E5854' }}>
               Dessinée : {fmtM2(aire(piece.contour))}{piece.surface_lue ? ` · écrite : ${fmtM2(Number(piece.surface_lue))}` : ''}
               {piece.hsp_lue ? ` · HSP ${Number(piece.hsp_lue).toLocaleString('fr-FR')} m` : ''}
             </p>
             {ecart != null && Math.abs(ecart) > SEUIL_ECART && (
-              <p style={{ margin: 0, fontSize: 13, color: '#B54708' }}>La surface dessinée s’écarte de {Math.round(Math.abs(ecart) * 100)} % de la surface écrite : contour à vérifier.</p>
+              <p style={encadreAmbre}>La surface dessinée s’écarte de {Math.round(Math.abs(ecart) * 100)} % de la surface écrite : contour à vérifier.</p>
             )}
-            {piece.a_verifier && <p style={{ margin: 0, fontSize: 13, color: '#2E6FDB' }}>Proposée par Claude : à vérifier.</p>}
+            {piece.a_verifier && <p style={{ margin: 0, fontSize: 12, color: BLEU_CLAUDE }}>Proposée par Claude : à vérifier.</p>}
             {!lectureSeule && (
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 {piece.a_verifier && <button type="button" style={petitBouton} onClick={() => onModifier(piece.id, { a_verifier: false })}>Contour juste</button>}
                 <button
                   type="button" style={petitBouton} disabled={sommet == null || piece.contour.length <= 3}
-                  onClick={() => { onModifier(piece.id, { contour: retirerSommet(piece.contour, sommet), a_verifier: false }); setSommet(null) }}
+                  onClick={() => { modifierContour(piece.id, retirerSommet(piece.contour, sommet)); setSommet(null) }}
                 >Retirer le sommet</button>
-                <button type="button" style={{ ...petitBouton, color: '#B42318' }} onClick={() => { brouillon.current = {}; onSupprimer(piece.id); choisir(null) }}><Trash2 size={14} />Supprimer</button>
+                <button type="button" style={{ ...petitBouton, color: '#B8412C' }} onClick={() => { brouillon.current = {}; onSupprimer(piece.id); choisir(null) }}><Trash2 size={14} />Supprimer</button>
               </div>
             )}
           </div>
         )}
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, fontSize: 11, color: '#9C9591', paddingTop: 2 }}>
+          <span style={{ flex: 1, fontSize: 12, fontWeight: 600, color: '#5E5854' }}>{pieces.length} pièce{pieces.length > 1 ? 's' : ''}</span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><span style={{ width: 10, height: 10, background: 'var(--affaire-accent-clair, rgba(232,96,44,0.10))', border: `1.5px solid ${COULEUR}` }} />lue dans le plan</span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><span style={{ width: 10, height: 10, background: 'rgba(46,111,219,0.16)', border: `1.5px solid ${BLEU_CLAUDE}` }} />Claude</span>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', background: 'white', border: '0.5px solid rgba(0,0,0,0.1)' }}>
           {tries.map((p) => {
             const e = ecartSurface(p.contour, Number(p.surface_lue))
             const alerte = p.a_verifier || (e != null && Math.abs(e) > SEUIL_ECART)
             return (
               <button
                 key={p.id} type="button" onClick={() => choisir(p.id)}
-                style={{ textAlign: 'left', minHeight: 40, padding: '6px 10px', borderRadius: 6, border: 'none', cursor: 'pointer', background: p.id === choisie ? 'var(--affaire-accent-light, #FCEEE7)' : 'transparent', fontSize: 13, display: 'flex', justifyContent: 'space-between', gap: 8 }}
+                style={{ textAlign: 'left', minHeight: 40, padding: '6px 10px', border: 'none', borderBottom: '0.5px solid rgba(0,0,0,0.06)', borderLeft: `3px solid ${p.id === choisie ? COULEUR : 'transparent'}`, cursor: 'pointer', background: p.id === choisie ? 'var(--affaire-accent-clair, rgba(232,96,44,0.10))' : 'transparent', fontSize: 13, color: '#1F1B17', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}
               >
-                <span>{p.numero ? `${p.numero} · ` : ''}{p.nom || 'Sans nom'}</span>
-                <span style={{ color: alerte ? '#B54708' : '#9C9591' }}>{alerte ? 'à vérifier' : fmtM2(aire(p.contour))}</span>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {p.numero && <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: '#9C9591', marginRight: 6 }}>{p.numero}</span>}
+                  {p.nom || <span style={{ color: '#9C9591' }}>Sans nom</span>}
+                </span>
+                <span style={{ flexShrink: 0, fontSize: 12, color: alerte ? '#92400E' : '#9C9591' }}>{alerte ? 'à vérifier' : fmtM2(aire(p.contour))}</span>
               </button>
             )
           })}

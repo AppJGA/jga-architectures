@@ -50,6 +50,7 @@ Règles :
 - Une pièce = un espace fermé par des murs ou des cloisons. Son nom est écrit dedans (« CHAMBRE 14 », « Cuisine ») ; un numéro et une surface l'accompagnent parfois.
 - « contour » : les sommets du contour intérieur de la pièce, dans l'ordre, en pixels de l'image. Quatre sommets pour une pièce rectangulaire, davantage pour une pièce en L ou biaise. Le contour suit la face intérieure des murs, sans déborder sur la pièce voisine.
 - Sers-toi de la position des textes : le nom d'une pièce est à l'intérieur de son contour.
+- Deux pièces ne se superposent jamais : ne propose pas de zone qui en regroupe plusieurs (un appartement, tout l'étage).
 - Ne crée pas de pièce sans nom, sauf un espace fermé évident (nom vide alors).
 - « niveau » : indice (0, 1…) de l'étage dans « niveaux ». « numero » : le numéro écrit, sinon "". « surface » : la surface écrite en m², sinon 0.
 - Réponds uniquement par le JSON demandé.`

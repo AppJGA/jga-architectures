@@ -1,4 +1,4 @@
-// État des lieux : logique pure (format, DXF, pièces, étages, géométrie, PDF,
+// État des lieux : logique pure (format, DXF, pièces, étages, géométrie,
 // demande à Claude). Plans inventés : aucun plan réel dans le dépôt (public).
 
 import assert from 'node:assert/strict'
@@ -8,8 +8,8 @@ import { formatPlan, verdictFormat, MESSAGES_FORMAT } from '../src/modules/etude
 import {
   aire, pointDansPolygone, boite, cadrage, versPixels, versMetres, ecartSurface,
   deplacerSommet, insererSommet, retirerSommet, arrondirContour, mediane, ecartEchelle,
+  partRecouverte, seSuperposent, retirerSuperpositions, pieceChevauchee,
 } from '../src/modules/etude/etat-des-lieux/geometrieEdl.js'
-import { lireEchelle, metresParPoint, estVectoriel, pointFeuilleEnMetres, cadrageDecoupe } from '../src/modules/etude/etat-des-lieux/pdfPlanLogique.js'
 import { lireDxf, decoderDxf, nettoyerMtext } from '../src/modules/etude/etat-des-lieux/dxfLecture.js'
 import { detecterPieces, lireSurface, lireHsp, lireNumero, estNom } from '../src/modules/etude/etat-des-lieux/piecesDxfLogique.js'
 
@@ -34,12 +34,14 @@ describe('format du plan', () => {
     assert.equal(formatPlan(octets('AutoCAD Binary DXF\r\n\x1a\0')), 'dxf-binaire')
     assert.equal(formatPlan(octets('PK\x03\x04')), 'inconnu')
   })
-  test('verdict : DXF et PDF acceptés, DWG refusé avec le message de l’agence', () => {
+  test('verdict : seul le DXF est accepté ; DWG et PDF refusés avec ce qu’il faut faire', () => {
     assert.deepEqual(verdictFormat('dxf'), { ok: true, message: null })
-    assert.deepEqual(verdictFormat('pdf'), { ok: true, message: null })
     const dwg = verdictFormat('dwg')
     assert.equal(dwg.ok, false)
-    assert.equal(dwg.message, 'Les fichiers DWG ne sont pas acceptés. Enregistrez le plan en DXF dans AutoCAD ou ArchiCAD (Fichier → Enregistrer sous → DXF), ou importez-le en PDF vectorisé.')
+    assert.equal(dwg.message, 'Les fichiers DWG ne sont pas acceptés. Enregistrez le plan en DXF (dans ArchiCAD ou AutoCAD : Fichier → Enregistrer sous → DXF).')
+    const pdf = verdictFormat('pdf')
+    assert.equal(pdf.ok, false)
+    assert.equal(pdf.message, 'Les PDF ne sont pas acceptés : importez le plan en DXF (dans ArchiCAD ou AutoCAD : Fichier → Enregistrer sous → DXF).')
     assert.equal(verdictFormat('zip').message, MESSAGES_FORMAT.inconnu)
   })
 })
@@ -82,6 +84,39 @@ describe('géométrie', () => {
   })
 })
 
+describe('pièces superposées', () => {
+  const rectangle = (x, y, l, h) => [[x, y], [x + l, y], [x + l, y + h], [x, y + h]]
+  test('deux pièces qui se touchent par un mur ne se superposent pas', () => {
+    assert.equal(seSuperposent(rectangle(0, 0, 4, 5), rectangle(4, 0, 3, 5)), false)
+    assert.equal(partRecouverte(rectangle(0, 0, 4, 5), rectangle(4, 0, 3, 5)), 0)
+  })
+  test('pièce en L : un rectangle logé dans l’angle rentrant ne la recouvre pas', () => {
+    const enL = [[0, 0], [4, 0], [4, 2], [2, 2], [2, 4], [0, 4]]
+    assert.equal(seSuperposent(enL, rectangle(2.2, 2.2, 1.6, 1.6)), false)
+  })
+  test('part recouverte : moitié d’une pièce sous une autre', () => {
+    const part = partRecouverte(rectangle(0, 0, 4, 4), rectangle(2, -1, 5, 6))
+    assert.ok(Math.abs(part - 0.5) < 0.03)
+  })
+  test('zones englobantes écartées, pièces réelles gardées dans leur ordre', () => {
+    const pieces = [
+      { nom: 'Toute la surface', contour: rectangle(0, 0, 10, 10) },
+      { nom: 'Chambre', contour: rectangle(0, 0, 4, 5) },
+      { nom: 'Regroupement', contour: rectangle(0, 0, 7, 5) },
+      { nom: 'Bureau', contour: rectangle(4, 0, 3, 5) },
+      { nom: 'Débord', contour: rectangle(6, 0, 3, 5) },
+    ]
+    const r = retirerSuperpositions(pieces)
+    assert.deepEqual(r.gardees.map((p) => p.nom), ['Chambre', 'Bureau'])
+    assert.deepEqual(r.ecartees.map((p) => p.nom).sort(), ['Débord', 'Regroupement', 'Toute la surface'])
+  })
+  test('pièce chevauchée par un contour modifié, ou aucune', () => {
+    const autres = [{ id: 'a', nom: 'Chambre', contour: rectangle(0, 0, 4, 5) }, { id: 'b', nom: 'Bureau', contour: rectangle(4, 0, 3, 5) }]
+    assert.equal(pieceChevauchee(rectangle(3, 0, 3, 5), autres)?.nom, 'Chambre')
+    assert.equal(pieceChevauchee(rectangle(7, 0, 2, 5), autres), null)
+  })
+})
+
 describe('échelle d’un étage', () => {
   // Carrés de côté c : aire c², surface écrite donnée
   const piece = (c, surface) => ({ contour: [[0, 0], [c, 0], [c, c], [0, c]], surface_lue: surface })
@@ -96,42 +131,6 @@ describe('échelle d’un étage', () => {
   test('la médiane l’emporte sur une pièce mal dessinée ; surface lue en texte ou en nombre', () => {
     assert.equal(ecartEchelle([piece(4, '8'), piece(6, 18), piece(2, 2), piece(10, 1)]), 2)
     assert.equal(ecartEchelle([{ contour: [[0, 0], [2, 0], [2, 2], [0, 2]], surfaceLue: 1 }, piece(2, 1), piece(2, 1)]), 4)
-  })
-})
-
-describe('PDF', () => {
-  test('échelle lue dans le cartouche', () => {
-    assert.equal(lireEchelle(['Document créé le 23/01/26', 'Echelle:1/100°']), 100)
-    assert.equal(lireEchelle(['ÉCHELLE : 1 / 50']), 50)
-    assert.equal(lireEchelle(['PLAN DU RDC']), null)
-  })
-  test('un point du papier au 1/100 vaut 3,53 cm', () => {
-    assert.ok(Math.abs(metresParPoint(100) - 0.035278) < 1e-5)
-  })
-  test('vectoriel : au moins 30 chemins dessinés', () => {
-    const OPS = { constructPath: 91, paintImageXObject: 85 }
-    assert.equal(estVectoriel(Array(30).fill(91), OPS), true)
-    assert.equal(estVectoriel([85, 91], OPS), false)
-  })
-  test('point de la feuille affichée en mètres : y vers le haut, indépendant de la rotation', () => {
-    // Feuille affichée de 800 × 600 px rendue à l'échelle 2, 0,5 m par point
-    const feuille = { scale: 2, hauteurPx: 600, mpp: 0.5 }
-    assert.deepEqual(pointFeuilleEnMetres([0, 600], feuille), [0, 0])
-    assert.deepEqual(pointFeuilleEnMetres([200, 100], feuille), [50, 125])
-  })
-  test('découpe d’un étage : cadrage en aller-retour avec les pixels de l’image découpée', () => {
-    const feuille = { scale: 2, hauteurPx: 600, mpp: 0.5 }
-    const c = cadrageDecoupe([100, 50, 500, 350], feuille)
-    assert.equal(c.largeur, 400)
-    assert.equal(c.hauteur, 300)
-    assert.equal(c.pxParMetre, 4)
-    // Un texte au point (300, 200) de la feuille tombe en (200, 150) de l'image découpée
-    const m = pointFeuilleEnMetres([300, 200], feuille)
-    assert.deepEqual(versPixels(c, m), [200, 150])
-    assert.deepEqual(versMetres(c, [200, 150]), m)
-    // Coins du cadre
-    assert.deepEqual(versPixels(c, pointFeuilleEnMetres([100, 350], feuille)), [0, 300])
-    assert.deepEqual(versPixels(c, pointFeuilleEnMetres([500, 50], feuille)), [400, 0])
   })
 })
 
@@ -361,6 +360,18 @@ describe('étages', () => {
     const n = proposerNiveaux(lecture, { pieces: [piece] }, 1, 'plan.dxf')
     assert.deepEqual(n.map((x) => [x.nom, x.traits.length, x.pieces.length, x.aProposer]), [['Sous-sol', 60, 0, true], ['Rez-de-chaussée', 60, 1, false]])
     assert.equal(n[0].textes[0].texte, 'LOCAL')
+  })
+
+  test('pièces superposées retirées étage par étage (les étages ArchiCAD se superposent entre eux)', () => {
+    const rectangle = (x, y, l, h) => [[x, y], [x + l, y], [x + l, y + h], [x, y + h]]
+    const lecture = { traits: [...traitsDe('VUE_RDC', 'M-RDC', 60), ...traitsDe('VUE_SSOL', 'M-SOUS-SOL', 60)], textes: [] }
+    const pieces = [
+      { nom: 'Chambre', calque: 'Z', bloc: 'VUE_RDC', contour: rectangle(0, 0, 4, 5) },
+      { nom: 'SDO', calque: 'Z', bloc: 'VUE_RDC', contour: rectangle(0, 0, 8, 5) },
+      { nom: 'Cave', calque: 'Z', bloc: 'VUE_SSOL', contour: rectangle(0, 0, 4, 5) },
+    ]
+    const n = proposerNiveaux(lecture, { pieces }, 1, 'plan.dxf')
+    assert.deepEqual(n.map((x) => [x.nom, x.pieces.map((p) => p.nom), x.ecartees]), [['Sous-sol', ['Cave'], 0], ['Rez-de-chaussée', ['Chambre'], 1]])
   })
 
   test('un seul étage parmi d’autres dessins (géomètre) : la grappe qui porte les pièces, nommée d’après le fichier', () => {

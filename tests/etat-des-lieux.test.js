@@ -13,6 +13,8 @@ import { lireEchelle, metresParPoint, estVectoriel } from '../src/modules/etude/
 import { lireDxf, decoderDxf, nettoyerMtext } from '../src/modules/etude/etat-des-lieux/dxfLecture.js'
 import { detecterPieces, lireSurface, lireHsp, lireNumero, estNom } from '../src/modules/etude/etat-des-lieux/piecesDxfLogique.js'
 
+import { niveauDeNom, uniteParDefaut, proposerNiveaux } from '../src/modules/etude/etat-des-lieux/niveauxLogique.js'
+
 const octets = (s) => new TextEncoder().encode(s)
 
 describe('format du plan', () => {
@@ -240,5 +242,59 @@ describe('pièces d’un DXF', () => {
   test('aucun calque de pièces : rien de proposé', () => {
     const r = detecterPieces({ traits: [rect('MURS', 0, 0, 1, 1)], textes: [] })
     assert.deepEqual(r, { calque: null, unitesParMetre: null, pieces: [] })
+  })
+})
+
+describe('étages', () => {
+  test('niveau reconnu au nom d’un calque ou d’un bloc', () => {
+    assert.equal(niveauDeNom('S-SURFACES_RDC').cle, 'RDC')
+    assert.equal(niveauDeNom('----_RDC_PRO_----__2D_').cle, 'RDC')
+    assert.equal(niveauDeNom('----_SSOL_EDL_----__3D_').cle, 'SS')
+    assert.equal(niveauDeNom('M-SOUS-SOL').nom, 'Sous-sol')
+    assert.equal(niveauDeNom('Plan R+1').cle, 'R+1')
+    assert.equal(niveauDeNom('2EME ETAGE').cle, 'R+2')
+    assert.equal(niveauDeNom('Combles').cle, 'COMBLES')
+    assert.equal(niveauDeNom('24073-RDC.dxf').cle, 'RDC')
+    assert.equal(niveauDeNom('PARS'), null)
+    assert.equal(niveauDeNom('00_MURS'), null)
+    assert.equal(niveauDeNom(null), null)
+  })
+
+  test('unité par défaut : $INSUNITS, sinon d’après la taille du dessin', () => {
+    assert.equal(uniteParDefaut({ unites: 4, traits: [] }), 1000)
+    assert.equal(uniteParDefaut({ unites: 5, traits: [] }), 100)
+    const dessin = (pas) => ({ unites: null, traits: [{ pts: Array.from({ length: 21 }, (_, i) => [i * pas, i * pas]) }] })
+    assert.equal(uniteParDefaut(dessin(150)), 100) // 30 m dessinés en centimètres
+    assert.equal(uniteParDefaut(dessin(1.5)), 1)
+  })
+
+  // Traits qui partent tous du même coin : une seule grappe par dessin
+  const traitsDe = (bloc, calque, n, dx = 0) => Array.from({ length: n }, (_, i) => ({ calque, bloc, ferme: false, pts: [[dx, 0], [dx + 59, i * 0.25]] }))
+
+  test('étages superposés (ArchiCAD) : séparés par le nom des blocs, sous-sol d’abord', () => {
+    const lecture = { traits: [...traitsDe('VUE_RDC', 'M-RDC', 60), ...traitsDe('VUE_SSOL', 'M-SOUS-SOL', 60), ...traitsDe('GROUPE-1', 'GENERAL', 3)], textes: [{ calque: 'P', bloc: 'VUE_SSOL', texte: 'LOCAL', pos: [1, 1], hauteur: 1 }] }
+    const piece = { nom: 'Chambre', calque: 'S-SURFACES_RDC', bloc: 'VUE_RDC', contour: [[0, 0], [1, 0], [1, 1]] }
+    const n = proposerNiveaux(lecture, { pieces: [piece] }, 1, 'plan.dxf')
+    assert.deepEqual(n.map((x) => [x.nom, x.traits.length, x.pieces.length, x.aProposer]), [['Sous-sol', 60, 0, true], ['Rez-de-chaussée', 60, 1, false]])
+    assert.equal(n[0].textes[0].texte, 'LOCAL')
+  })
+
+  test('un seul étage parmi d’autres dessins (géomètre) : la grappe qui porte les pièces, nommée d’après le fichier', () => {
+    const batiment = traitsDe(null, 'MURS', 60, 0)
+    const ailleurs = traitsDe(null, 'CADRE', 60, 10_000)
+    const piece = { nom: 'Salon', calque: 'PIECES', bloc: null, contour: [[1, 1], [5, 1], [5, 5], [1, 5]] }
+    const n = proposerNiveaux({ traits: [...batiment, ...ailleurs], textes: [] }, { pieces: [piece] }, 1, '24073-RDC.dxf')
+    assert.equal(n.length, 1)
+    assert.equal(n[0].nom, 'Rez-de-chaussée')
+    assert.equal(n[0].traits.length, 60)
+    assert.deepEqual(n[0].boite, [0, 0, 59, 14.75])
+  })
+
+  test('mise en mètres des traits, textes et boîte', () => {
+    const lecture = { traits: traitsDe(null, 'MURS', 60).map((t) => ({ ...t, pts: t.pts.map(([x, y]) => [x * 100, y * 100]) })), textes: [] }
+    const n = proposerNiveaux(lecture, { pieces: [] }, 100, 'x.dxf')
+    assert.deepEqual(n[0].traits[1].pts, [[0, 0], [59, 0.25]])
+    assert.equal(n[0].nom, 'Niveau 1')
+    assert.equal(n[0].aProposer, true)
   })
 })

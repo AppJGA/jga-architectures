@@ -192,6 +192,13 @@ ouverte montre le plan agrandi avec ses points, la fiche modifiable et les
 Valider / Modifier / Écarter). Un élément peut être rattaché à un autre
 point ou déplacé sur le plan.
 
+**Fait au lot 3 (2026-11-18)** : horodatage Mistral sans `language`
+(vérifié) ; analyse déclenchée d'après les données (fin d'un passage
+postérieure à `analyse_le`), jamais avant que le son de l'intervalle soit
+transcrit ; relances payantes plafonnées (3 essais automatiques) ; fiche
+écrite sous condition, la fiche actuelle part avec la demande ; couleurs
+grise / sablier / verte / ambre / rouge pâle (échec).
+
 ## 7. L'export (lot 4)
 
 **DXF, un par étage, dans un ZIP** (`exportDxfEdl.js`, pur) :

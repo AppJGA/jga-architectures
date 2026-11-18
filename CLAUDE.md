@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 1262 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans, gestion de l'application, état des lieux)
+npm test         # 1450 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans, gestion de l'application, état des lieux)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -191,7 +191,7 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
   Toujours lire par `referencesCadastre` (repli sur les anciennes colonnes) ;
   l'enregistrement (`colonnesCadastre`) tient aussi à jour `cadastre_section`
   / `cadastre_parcelle` (première ligne) et `cadastre_superficie` (total).
-- **Base** : `supabase/migrations/`, numérotées, 81 fichiers, **passées à la
+- **Base** : `supabase/migrations/`, numérotées, 82 fichiers, **passées à la
   main** dans le SQL Editor de Supabase : un code qui dépend d'une nouvelle
   colonne doit tolérer son absence tant que la migration n'est pas faite.
   **Toute table créée depuis le 2026-10-30 doit recevoir ses droits d'API
@@ -902,6 +902,59 @@ lot 1 : `docs/superpowers/plans/2026-11-17-etat-des-lieux-lot1-preparer.md`.
   (`oublierEdlLocal`, sous le verrou de l'envoi : instantané, file et
   photos locales). Sans la 080, la base refuse (P0001) et l'écran dit de
   passer la migration.
+- **Analyse (lot 3)** (`analyse/`, migration 082, plan
+  `docs/superpowers/plans/2026-11-18-etat-des-lieux-lot3-analyser.md`) :
+  - **Transcription horodatée** (`transcriptionEdl.js`, décisions pures dans
+    `transcriptionEdlPasse.js`) : chaque morceau de `jga-audio` marqué
+    `edlVisiteId` part à `api/transcrire.js` avec `X-Horodatage: segment` —
+    Mistral `timestamp_granularities=segment`, **sans `language`** (les deux
+    sont incompatibles, documentation vérifiée le 2026-11-18) ; refus → texte
+    seul en `language=fr`. Le chemin des CR (sans l'en-tête) est inchangé.
+    Ligne `edl_enregistrements` (id du morceau, `debut` = début du morceau sur
+    l'appareil, segments en secondes) ; un morceau est continu (une pause en
+    ouvre un nouveau) : heure d'une phrase = `debut + debut_s`. Le son n'est
+    effacé qu'après l'écriture réussie ; une visite pas encore en base fait
+    attendre (23503 = « pas encore »). **Purge des morceaux orphelins
+    seulement sur preuve** : session valide, lecture de l'affaire qui rend au
+    moins une ligne, plus de 10 min, jamais hors ligne (une lecture vide sans
+    erreur — session expirée — effaçait du son).
+  - **Frise** (`analyseEdlLogique.js`, pur, partagé avec `api/analyser-edl.js`)
+    : passages dans la pièce (`intervallesPiece` : à heure égale la sortie
+    passe avant l'entrée, la sortie d'une autre pièce ne ferme rien), gestes et
+    phrases intercalés « [hh:mm:ss] », points `P<n>`, ligne « — visite du
+    JJ/MM/AAAA — », éléments déjà validés à part, **fiche actuelle** envoyée
+    (une réanalyse garde ce que l'agence a corrigé). Claude rend fiche +
+    éléments (schéma imposé, types de `calquesEdl.js`), écrits en
+    **propositions** (`a_valider`) ; les éléments validés ne sont jamais
+    touchés.
+  - **Quand analyser** (déduit des données, pas de file) : `aAnalyser` (fin
+    d'un passage postérieure à `analyse_le`, `maintenant` obligatoire : un
+    passage jamais fermé — bouton Retour — compte après 2 h) ; pas tant que du
+    son de l'intervalle attend sur l'appareil, ni, sur un appareil qui n'a pas
+    ce son, avant que les transcriptions couvrent l'intervalle (ou 2 h). Une
+    analyse à la fois (Web Lock `jga-analyse-edl`, pièce relue sous le
+    verrou), écriture « à blanc » avant de payer, `analyse_le = max(lecture,
+    fin des passages)`, résultat écrit **en une transaction** par la fonction SQL
+    `edl_ecrire_analyse` (082 : pièce verrouillée, conflit si `updated_at` a
+    bougé, propositions et fiche ensemble ; repli prise → éléments → pièce
+    sans elle ; une correction de l'agence pendant l'appel est gardée). Une
+    pause ou une coupure d'iOS reprise dans la pièce ne fait pas de trou dans
+    la couverture (`arrets` des passages). **Relances payantes
+    plafonnées** : 10 min puis 1 h, 3 essais automatiques au plus, `refus` et
+    frise trop longue définitifs ; ensuite seulement « Réessayer » /
+    « Relancer l'analyse » ou une nouvelle visite. Déclencheurs : sortie de
+    pièce, ouverture du module ou de la visite en ligne, moteur de synchro
+    après une sortie / fin ou une transcription. Limite connue : deux
+    appareils qui réservent la même pièce dans la même seconde paient chacun.
+  - **Écran** : pièces grises (non visitées), sablier (en attente), vertes
+    (fiche complète), ambre (rubrique manquante, `completudeFiche`), rouge
+    pâle (échec) ; pense-bête coché d'après la fiche. **Relecture**
+    (`RelectureEdl.jsx`, onglet à côté de « Pièces », `?vue=relecture&piece=`)
+    : pièces à valider d'abord ; plan de la pièce (`PlanVisite` en
+    `consultation`), fiche modifiable (bleue tant que `fiche_a_valider`,
+    modifier vaut validation), éléments par calque en bleu avec l'extrait
+    entendu : Valider / Modifier / Écarter (confirmation), « Ajouter un
+    élément », « Relancer l'analyse » (confirmée : elle se paie).
 
 ## To-do list (`src/modules/etude/todo/`)
 

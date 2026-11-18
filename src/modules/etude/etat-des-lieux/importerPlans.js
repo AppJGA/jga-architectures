@@ -75,8 +75,8 @@ export function changerUnite(preparation, unitesParMetre) {
  */
 export async function proposerTraitements(preparation) {
   try {
-    // Les extraits se dessinent d'un bloc avant l'envoi : on laisse d'abord
-    // la fenêtre afficher le fichier qui vient d'être lu
+    // On laisse d'abord la fenêtre afficher le fichier qui vient d'être lu ;
+    // les extraits se dessinent ensuite calque par calque (`proposerTraitementsIa`)
     await new Promise((r) => setTimeout(r, 0))
     const traits = parCalque(preparation.niveaux.flatMap((n) => n.traits))
     const textes = parCalque(preparation.niveaux.flatMap((n) => n.textes))
@@ -109,11 +109,13 @@ async function importerDxf(affaireId, etatId, prep, ordre, surEtape, avertisseme
       cheminVecteurs = await envoyerVecteurs(affaireId, encoderVecteurs(vecteurs))
       suivi.chemins.push(cheminVecteurs)
     }
+    // Une fois l'absence de la 081 constatée, les étages suivants n'envoient
+    // plus les deux colonnes : sans cela, chacun essuyait un refus de plus
     const niveau = await enregistrerNiveau(affaireId, etatId, {
       nom: n.nom, ordre: ordre.valeur++, format: 'dxf', sourceNom: prep.nom, cheminSource, rendu, cadrage,
       unitesParMetre: prep.unitesParMetre, textes: textesGardes(n.textes.map((t) => ({ texte: t.texte, calque: t.calque, pos: t.pos }))),
       cheminVecteurs, calques,
-    })
+    }, { sansVecteurs: !!suivi.sansVecteurs })
     if (cheminVecteurs && !Object.hasOwn(niveau, 'chemin_vecteurs')) suivi.sansVecteurs = true
     noterNiveau(suivi, niveau)
     let pieces = n.pieces.map((p) => ({ ...p, origine: 'dxf', aVerifier: false }))

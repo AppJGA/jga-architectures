@@ -84,10 +84,26 @@ export function erreurDemandeCalques(corps) {
   const imageValide = (v) => v == null || (typeof v === 'string' && v.length > 0)
   if (!imageValide(corps.apercu)) return 'apercu'
   for (const c of calques) {
-    if (!c || typeof c !== 'object' || typeof c.nom !== 'string' || !c.nom) return 'calques'
+    // Un nom vide est un vrai calque de DXF (code 8 vide) : le refuser privait
+    // tout le fichier de Claude. Le navigateur ne les envoie plus, mais une
+    // demande qui en porte un reste recevable.
+    if (!c || typeof c !== 'object' || typeof c.nom !== 'string') return 'calques'
     if (!imageValide(c.extrait)) return 'extrait'
   }
   return null
+}
+
+/** Le nom tel que Claude le lit dans la demande (espaces réduites, coupé). */
+export const nomEnvoye = (nom) => texteCourt(nom, NOM_MAX)
+
+/**
+ * Calques à soumettre à Claude : les plus fournis d'abord, sans les calques
+ * sans nom — Claude ne pourrait pas les désigner dans sa réponse ; ils
+ * gardent la décision par défaut.
+ * @param analyse sortie d'`analyserCalques`
+ */
+export function calquesAEnvoyer(analyse) {
+  return (analyse ?? []).filter((c) => typeof c?.nom === 'string' && nomEnvoye(c.nom)).slice(0, CALQUES_MAX)
 }
 
 /**
@@ -108,7 +124,7 @@ export function construireDemandeCalques({ calques = [], apercu = null }) {
       .filter(Boolean)
       .slice(0, TEXTES_PAR_CALQUE)
     const lignes = [
-      `Calque ${i + 1} — nom : « ${texteCourt(c.nom, NOM_MAX)} »`,
+      `Calque ${i + 1} — nom : « ${nomEnvoye(c.nom)} »`,
       `${entier(c.traits)} traits, ${pourcent(c.partCourts)} % de traits courts (< ${cm} cm), ${entier(c.fermes)} contours fermés, ${entier(c.nbTextes ?? textes.length)} textes.`,
       textes.length ? `Textes : ${textes.join(' ; ')}` : 'Aucun texte.',
       c.extrait ? 'Extrait du calque seul :' : 'Pas d’extrait (aucun trait).',
@@ -127,17 +143,24 @@ export function construireDemandeCalques({ calques = [], apercu = null }) {
 /**
  * Ne garde que les calques envoyés et les traitements connus : un calque
  * oublié par Claude reste absent, l'appelant lui donne la décision par
- * défaut (`fusionnerDecisions`).
- * @param noms noms des calques envoyés
- * @returns { decisions: { nom: traitement }, raisons: { nom: texte } }
+ * défaut (`fusionnerDecisions`). Claude recopie le nom qu'il a lu, réduit par
+ * `nomEnvoye` (espaces doubles, nom de plus de 200 caractères) : sa réponse
+ * est ramenée au nom d'origine par la même réduction. Deux calques que la
+ * réduction confond restent aux défauts : on ne saurait pas lequel il désigne.
+ * @param noms noms des calques envoyés, tels que dans le DXF
+ * @returns { decisions: { nom: traitement }, raisons: { nom: texte } } — clés = noms d'origine
  */
 export function lireDecisionsCalques(resultat, noms) {
-  const connus = new Set(noms)
+  const parNomCourt = new Map()
+  for (const nom of noms) {
+    const court = nomEnvoye(nom)
+    parNomCourt.set(court, parNomCourt.has(court) && parNomCourt.get(court) !== nom ? null : nom)
+  }
   const decisions = {}
   const raisons = {}
   for (const c of Array.isArray(resultat?.calques) ? resultat.calques : []) {
-    const nom = typeof c?.nom === 'string' ? c.nom : null
-    if (nom == null || !connus.has(nom) || nom in decisions) continue
+    const nom = typeof c?.nom === 'string' ? (parNomCourt.get(nomEnvoye(c.nom)) ?? null) : null
+    if (nom == null || Object.hasOwn(decisions, nom)) continue
     if (!TRAITEMENTS.includes(c.traitement)) continue
     decisions[nom] = c.traitement
     const raison = texteCourt(c.raison, RAISON_MAX)

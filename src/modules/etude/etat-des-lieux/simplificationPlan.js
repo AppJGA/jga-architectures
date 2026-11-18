@@ -553,7 +553,11 @@ export function encoderVecteurs({ traits = [], masses = [], textes = [], boite: 
 }
 
 export function decoderVecteurs(octets) {
-  const d = JSON.parse(strFromU8(gunzipSync(octets)))
+  // Le fichier est envoyé compressé, mais un intermédiaire qui l'a servi en
+  // `Content-Encoding: gzip` peut l'avoir déjà décompressé : on ne dégonfle
+  // que ce qui porte la signature gzip (1f 8b), le reste est lu tel quel
+  const gzip = octets.length >= 2 && octets[0] === 0x1f && octets[1] === 0x8b
+  const d = JSON.parse(strFromU8(gzip ? gunzipSync(octets) : octets))
   if (d?.v !== 1) throw new Error('Fichier vectoriel d’une version inconnue')
   const calques = d.calques
   return {

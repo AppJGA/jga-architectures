@@ -27,6 +27,9 @@ const pluriel = (n, mot) => `${n.toLocaleString('fr-FR')} ${mot}${n > 1 ? 's' : 
 // d'un gros étage prennent un moment, ils ne doivent pas suivre chaque choix
 const DELAI_APERCU = 400
 const LARGEUR_APERCU = 900
+// Au-delà, le redessin à chaque geste devient lent sur l'iPad : l'agence est
+// prévenue avant d'importer, pendant qu'elle peut encore alléger
+const TRAITS_LOURDS = 50000
 
 function resumeNiveau(n) {
   if (!n.pieces.length) {
@@ -98,6 +101,12 @@ function ApercuCalques({ niveau, decisions }) {
         <p style={{ margin: 0, fontSize: 11, color: '#5E5854' }}>
           « {niveau.nom} » : {compte.gardes.toLocaleString('fr-FR')} traits sur {compte.total.toLocaleString('fr-FR')}
           {compte.masses > 0 && ` · ${pluriel(compte.masses, 'masse')} de murs`}
+        </p>
+      )}
+      {aJour && compte.gardes > TRAITS_LOURDS && (
+        <p role="status" style={{ margin: 0, padding: '6px 10px', fontSize: 12, color: '#92400E', background: '#FFFBEB', border: '0.5px solid #F59E0B', borderRadius: 2, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <AlertTriangle size={14} style={{ flex: '0 0 auto' }} />
+          Plan encore lourd ({compte.gardes.toLocaleString('fr-FR')} traits) : l’affichage sur la tablette risque d’être lent. Masquez les motifs ou pochez les murs.
         </p>
       )}
     </div>

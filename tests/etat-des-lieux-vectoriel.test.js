@@ -243,4 +243,13 @@ describe('fichier vectoriel', () => {
     assert.deepEqual(v.boite, [-1, 2, 3, 4])
     assert.throws(() => decoderVecteurs(new Uint8Array([1, 2, 3])))
   })
+
+  test('fichier déjà décompressé en route (Content-Encoding: gzip) : lu tel quel', async () => {
+    const { gunzipSync } = await import('fflate')
+    const octets = encoderVecteurs({ traits: [trait('A', [[0, 0], [1, 2]])], masses: [], textes: [] })
+    assert.deepEqual([octets[0], octets[1]], [0x1f, 0x8b])
+    const clair = gunzipSync(octets)
+    assert.deepEqual(decoderVecteurs(clair), decoderVecteurs(octets))
+    assert.throws(() => decoderVecteurs(new TextEncoder().encode('{"v":2}')), /version inconnue/)
+  })
 })

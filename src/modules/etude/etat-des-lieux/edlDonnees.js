@@ -75,7 +75,8 @@ function sansColonnesVecteurs(ligne) {
 // `calques` et le fichier vectoriel déjà envoyé est retiré : l'étage
 // s'affiche par son image, comme avant. La ligne rendue n'a alors pas de
 // clé `chemin_vecteurs`, ce que l'import lit pour ne plus en envoyer.
-export async function enregistrerNiveau(affaireId, etatId, n) {
+// `sansVecteurs` : absence déjà constatée, la ligne part d'emblée sans elles.
+export async function enregistrerNiveau(affaireId, etatId, n, { sansVecteurs: dejaSans = false } = {}) {
   const id = crypto.randomUUID()
   const chemin = `${affaireId}/edl/${id}.${n.rendu.extension}`
   const cheminApercu = `${affaireId}/edl/${id}-apercu.${n.rendu.extension}`
@@ -86,14 +87,15 @@ export async function enregistrerNiveau(affaireId, etatId, n) {
     await retirer([chemin])
     throw err
   }
-  const ligne = {
+  const complete = {
     id, etat_id: etatId, affaire_id: affaireId, nom: n.nom, ordre: n.ordre, format: n.format,
     source_nom: n.sourceNom ?? null, source_page: n.sourcePage ?? null, chemin_source: n.cheminSource ?? null,
     chemin, chemin_apercu: cheminApercu, largeur: n.rendu.plan.largeur, hauteur: n.rendu.plan.hauteur,
     cadrage: n.cadrage, unites_par_metre: n.unitesParMetre ?? null, echelle: n.echelle ?? null, textes: n.textes ?? [],
     chemin_vecteurs: n.cheminVecteurs ?? null, calques: n.calques ?? null,
   }
-  let sansVecteurs = false
+  const ligne = dejaSans ? sansColonnesVecteurs(complete) : complete
+  let sansVecteurs = dejaSans
   const { data, error } = await ecrireAvecReplis(
     (l) => supabase.from('edl_niveaux').insert(l).select().single(),
     ligne,

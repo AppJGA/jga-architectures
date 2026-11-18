@@ -8,6 +8,7 @@ import { test, describe } from 'node:test'
 import {
   rectangleVisible, elementsVisibles, boiteTexte, dessinerVecteurs,
   EPAISSEUR_TRAIT, EPAISSEUR_CONTOUR_MASSE, HAUTEUR_TEXTE_MIN,
+  POINTS_GARDES_MAX, pointsVecteurs, cheminsAEcarter,
 } from '../src/modules/etude/etat-des-lieux/vecteursEdlLogique.js'
 import { encoderVecteurs, decoderVecteurs } from '../src/modules/etude/etat-des-lieux/simplificationPlan.js'
 import { versPixels } from '../src/modules/etude/etat-des-lieux/geometrieEdl.js'
@@ -219,5 +220,36 @@ describe('tailleCanevas', () => {
 
   test('conteneur pas encore mesuré : un pixel', () => {
     assert.deepEqual(tailleCanevas(0, 0, 2), { ratio: 1, largeur: 1, hauteur: 1 })
+  })
+})
+
+describe('mémoire des étages décodés', () => {
+  test('poids en points : traits, anneaux des masses, textes', () => {
+    const v = {
+      traits: [{ pts: [[0, 0], [1, 1]] }, { pts: [[0, 0], [1, 0], [1, 1]] }],
+      masses: [{ anneaux: [[[0, 0], [1, 0], [1, 1], [0, 1]], [[0.2, 0.2], [0.4, 0.2], [0.4, 0.4]]] }],
+      textes: [{ texte: 'Séjour' }],
+    }
+    assert.equal(pointsVecteurs(v), 2 + 3 + 4 + 3 + 1)
+    assert.equal(pointsVecteurs(null), 0)
+  })
+
+  test('budget d’environ 1,5 million de points', () => {
+    assert.equal(POINTS_GARDES_MAX, 1_500_000)
+  })
+
+  test('les plus anciens partent jusqu’à tenir dans le budget', () => {
+    const poids = new Map([['a', 400], ['b', 300], ['c', 500], ['d', 200]])
+    assert.deepEqual(cheminsAEcarter(poids, 'd', 900), ['a', 'b'])
+    assert.deepEqual(cheminsAEcarter(poids, 'd', 1000), ['a'])
+    assert.deepEqual(cheminsAEcarter(poids, 'd', 1400), [])
+  })
+
+  test('l’étage affiché reste, même seul au-dessus du budget', () => {
+    assert.deepEqual(cheminsAEcarter(new Map([['lourd', 2_000_000]]), 'lourd'), [])
+    const poids = new Map([['lourd', 2_000_000], ['a', 10], ['b', 10]])
+    assert.deepEqual(cheminsAEcarter(poids, 'lourd'), ['a', 'b'])
+    // L'étage affiché en tête de liste est sauté, les suivants partent
+    assert.deepEqual(cheminsAEcarter(new Map([['vu', 900], ['x', 900]]), 'vu', 1000), ['x'])
   })
 })

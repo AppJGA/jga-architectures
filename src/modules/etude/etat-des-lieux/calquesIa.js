@@ -8,7 +8,7 @@
 
 import { canevasBlanc } from './renduNiveau'
 import { appelerClaude } from './piecesIa'
-import { CALQUES_MAX, TEXTES_PAR_CALQUE, cadreDense, lireDecisionsCalques } from './calquesIaLogique'
+import { TEXTES_PAR_CALQUE, cadreDense, lireDecisionsCalques, calquesAEnvoyer } from './calquesIaLogique'
 
 const TAILLE_EXTRAIT = 384
 // Repli si la demande dépasse ce poids : la limite des fonctions Vercel est
@@ -20,6 +20,11 @@ const QUALITE = 0.8
 // Un chemin de canevas de centaines de milliers de segments fige le
 // navigateur au moment du tracé : on trace par paquets.
 const SEGMENTS_PAR_TRACE = 5000
+
+// Rend la main au navigateur entre deux calques : sur un étage de centaines
+// de milliers de traits, soixante extraits et l'aperçu dessinés d'un bloc
+// figeaient la fenêtre juste après la lecture du fichier
+const souffler = () => new Promise((r) => setTimeout(r, 0))
 
 function enJpeg(canvas) {
   const url = canvas.toDataURL('image/jpeg', QUALITE)
@@ -70,7 +75,7 @@ function extrait(traits, taille) {
   return enJpeg(canvas)
 }
 
-function apercuEtage(analyse, traitsParCalque) {
+async function apercuEtage(analyse, traitsParCalque) {
   const b = [Infinity, Infinity, -Infinity, -Infinity]
   for (const c of analyse) {
     if (!c.boite?.every(Number.isFinite)) continue
@@ -88,7 +93,10 @@ function apercuEtage(analyse, traitsParCalque) {
   const { canvas, ctx } = canevasBlanc(largeur, hauteur)
   ctx.strokeStyle = '#8A8A8A'
   ctx.lineWidth = 1
-  for (const traits of traitsParCalque.values()) tracer(ctx, traits, b, k, hauteur, false)
+  for (const traits of traitsParCalque.values()) {
+    tracer(ctx, traits, b, k, hauteur, false)
+    await souffler()
+  }
   return enJpeg(canvas)
 }
 
@@ -110,22 +118,24 @@ const textesDe = (liste) => {
  *   l'appelant complète par `fusionnerDecisions` avec les décisions par défaut
  */
 export async function proposerTraitementsIa(analyse, traitsParCalque, textesParCalque = new Map()) {
-  const envoyes = analyse.slice(0, CALQUES_MAX)
+  const envoyes = calquesAEnvoyer(analyse)
   if (!envoyes.length) return { decisions: {}, raisons: {} }
-  const apercu = apercuEtage(analyse, traitsParCalque)
-  const demande = (taille) => ({
-    apercu,
-    calques: envoyes.map((c) => {
+  const apercu = await apercuEtage(analyse, traitsParCalque)
+  const demande = async (taille) => {
+    const calques = []
+    for (const c of envoyes) {
       const traits = traitsParCalque.get(c.nom) ?? []
-      return {
+      calques.push({
         nom: c.nom, traits: c.traits, partCourts: c.partCourts, fermes: c.fermes, nbTextes: c.textes,
         textes: textesDe(textesParCalque.get(c.nom)),
         extrait: traits.length ? extrait(traits, taille) : null,
-      }
-    }),
-  })
-  let corps = demande(TAILLE_EXTRAIT)
-  if (JSON.stringify(corps).length > POIDS_MAX) corps = demande(TAILLE_EXTRAIT_REDUITE)
+      })
+      await souffler()
+    }
+    return { apercu, calques }
+  }
+  let corps = await demande(TAILLE_EXTRAIT)
+  if (JSON.stringify(corps).length > POIDS_MAX) corps = await demande(TAILLE_EXTRAIT_REDUITE)
   const resultat = await appelerClaude('/api/edl-calques', corps)
   return lireDecisionsCalques(resultat, envoyes.map((c) => c.nom))
 }

@@ -178,3 +178,38 @@ export function dessinerVecteurs(ctx, vecteurs, cadrage, t) {
     for (let n = 0; n < lignes.length; n++) ctx.fillText(lignes[n], sx, sy + n * h * INTERLIGNE)
   }
 }
+
+// ─── Mémoire des étages décodés ──────────────────────────────────────────────
+//
+// Un étage gardé avec « Garder » partout peut porter des centaines de milliers
+// de traits : décodé, il dépasse la centaine de Mo. Compter les étages ne
+// protégeait donc rien ; la mémoire se compte en points décodés (un point =
+// un tableau de deux nombres, de l'ordre de 50 à 70 octets en JavaScript).
+export const POINTS_GARDES_MAX = 1_500_000
+
+/** Poids d'un étage décodé, en points (traits, anneaux des masses, textes). */
+export function pointsVecteurs(vecteurs) {
+  let n = 0
+  for (const t of vecteurs?.traits ?? []) n += t.pts?.length ?? 0
+  for (const m of vecteurs?.masses ?? []) for (const a of m.anneaux ?? []) n += a.length
+  return n + (vecteurs?.textes?.length ?? 0)
+}
+
+/**
+ * Étages à retirer de la mémoire, les plus anciens d'abord, jusqu'à tenir
+ * dans le budget. L'étage `garde` (celui qu'on affiche) n'est jamais retiré,
+ * même seul au-dessus du budget.
+ * @param poids Map chemin → points, dans l'ordre d'usage (le plus ancien en tête)
+ */
+export function cheminsAEcarter(poids, garde, budget = POINTS_GARDES_MAX) {
+  let total = 0
+  for (const p of poids.values()) total += p
+  const ecartes = []
+  for (const [chemin, p] of poids) {
+    if (total <= budget) break
+    if (chemin === garde) continue
+    ecartes.push(chemin)
+    total -= p
+  }
+  return ecartes
+}

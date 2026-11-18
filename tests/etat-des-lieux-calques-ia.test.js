@@ -7,6 +7,7 @@ import { test, describe } from 'node:test'
 import {
   MODELE_CALQUES, CALQUES_MAX, TEXTES_PAR_CALQUE, SCHEMA_CALQUES, CONSIGNES_CALQUES,
   construireDemandeCalques, lireDecisionsCalques, fusionnerDecisions, erreurDemandeCalques, cadreDense,
+  calquesAEnvoyer, nomEnvoye,
 } from '../src/modules/etude/etat-des-lieux/calquesIaLogique.js'
 import { TRAITEMENTS } from '../src/modules/etude/etat-des-lieux/simplificationPlan.js'
 
@@ -100,6 +101,50 @@ describe('lireDecisionsCalques', () => {
   })
 })
 
+describe('noms des calques', () => {
+  test('calques sans nom écartés de la demande, plafond appliqué aux autres', () => {
+    const analyse = [calque(''), calque('MURS'), calque('   '), calque('PORTES')]
+    assert.deepEqual(calquesAEnvoyer(analyse).map((c) => c.nom), ['MURS', 'PORTES'])
+    const beaucoup = [calque(''), ...Array.from({ length: CALQUES_MAX + 5 }, (_, i) => calque(`C${i}`))]
+    const envoyes = calquesAEnvoyer(beaucoup)
+    assert.equal(envoyes.length, CALQUES_MAX)
+    assert.equal(envoyes[0].nom, 'C0')
+    assert.deepEqual(calquesAEnvoyer(undefined), [])
+  })
+
+  test('nom à espaces doubles ou trop long : la réponse revient au nom d’origine', () => {
+    const espaces = 'A-MUR  PORTEUR '
+    const long = `Z-${'x'.repeat(240)}`
+    const demande = construireDemandeCalques({ calques: [calque(espaces), calque(long)] })
+    const textes = demande.messages[0].content.filter((b) => b.type === 'text').map((b) => b.text).join('\n')
+    assert.ok(textes.includes(`« ${nomEnvoye(espaces)} »`))
+    assert.ok(textes.includes(`« ${nomEnvoye(long)} »`))
+    assert.equal(nomEnvoye(long).length, 200)
+    const { decisions, raisons } = lireDecisionsCalques({
+      calques: [
+        { nom: 'A-MUR PORTEUR', traitement: 'masse', raison: 'Pochage des murs.' },
+        { nom: nomEnvoye(long), traitement: 'masquer-motif', raison: 'Gravier.' },
+      ],
+    }, [espaces, long])
+    assert.deepEqual(decisions, { [espaces]: 'masse', [long]: 'masquer-motif' })
+    assert.equal(raisons[espaces], 'Pochage des murs.')
+  })
+
+  test('deux calques confondus par la réduction : aucun des deux n’est décidé', () => {
+    const { decisions } = lireDecisionsCalques({
+      calques: [{ nom: 'A B', traitement: 'masquer', raison: '' }, { nom: 'C', traitement: 'garder', raison: '' }],
+    }, ['A B', 'A  B', 'C'])
+    assert.deepEqual(decisions, { C: 'garder' })
+  })
+
+  test('nom hérité d’Object (« constructor ») : pas pris pour une décision déjà lue', () => {
+    const { decisions } = lireDecisionsCalques({
+      calques: [{ nom: 'constructor', traitement: 'masquer', raison: '' }, { nom: 'toString', traitement: 'garder', raison: '' }],
+    }, ['constructor', 'toString'])
+    assert.deepEqual(decisions, { constructor: 'masquer', toString: 'garder' })
+  })
+})
+
 describe('fusionnerDecisions', () => {
   test('les propositions valides remplacent les défauts', () => {
     const defauts = { 'MURS-A': 'masquer-motif', TOITURE: 'garder', PORTES: 'garder' }
@@ -119,6 +164,11 @@ describe('erreurDemandeCalques', () => {
   test('demande recevable', () => {
     assert.equal(erreurDemandeCalques({ apercu: 'QUJD', calques: [calque('A')] }), null)
     assert.equal(erreurDemandeCalques({ calques: [calque('A', { extrait: null })] }), null)
+  })
+
+  test('un calque au nom vide ne fait plus refuser toute la demande', () => {
+    assert.equal(erreurDemandeCalques({ calques: [calque(''), calque('MURS')] }), null)
+    assert.equal(erreurDemandeCalques({ calques: [calque('A', { nom: 3 })] }), 'calques')
   })
 
   test('refus : sans calques, trop de calques, images mal typées', () => {

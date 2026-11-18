@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 1586 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans, gestion de l'application, état des lieux)
+npm test         # 1598 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans, gestion de l'application, état des lieux)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -985,7 +985,16 @@ lot 1 : `docs/superpowers/plans/2026-11-17-etat-des-lieux-lot1-preparer.md`.
     (`orientationPiece`) ; libellés « P7 · … » empilés quand plusieurs
     éléments partagent un point ; cotes sur `EDL-Cotes` ; nom, surface, HSP
     (`EDL-Pièces`), finitions (`EDL-Finitions`) ; « Ph n » (`EDL-Photos`) ;
-    `%%` échappé. **Par défaut, seuls les éléments validés** (et les fiches
+    `%%` échappé. **Aucun texte sur un autre** (demande de l'agence,
+    `placementEtiquettes.js`, pur, testé) : nom, surface, HSP et finitions
+    (32 caractères par ligne) dans un **cadre** fermé sur `EDL-Pièces`,
+    tourné comme la pièce, posé entier dans la pièce sans couvrir de symbole
+    au plus près de `pointInterieur`, réduit jusqu'à 0,6 × sinon ; chaque
+    libellé d'élément ou de photo prend la première de 8 places autour de
+    son symbole (3 anneaux, trait de rappel au-delà du premier) qui ne
+    touche ni cadre ni libellé ni symbole — les textes du plan existant ne
+    comptent pas. Le plan du PDF pose la désignation par la même règle
+    (`placesDesignations`). **Par défaut, seuls les éléments validés** (et les fiches
     validées) ; option « Inclure les propositions » → calque `EDL-À valider`.
     Noms de calques accentués : relus par LibreDWG, **à confirmer au premier
     essai de fusion dans ArchiCAD** (sinon les translittérer en un seul

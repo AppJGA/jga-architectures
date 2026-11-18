@@ -6,10 +6,11 @@
 // Sans navigateur : `ctx` est n'importe quel contexte 2D, c'est
 // `genererRapportEdl.js` qui fournit le canevas et en fait un JPEG.
 
-import { boite, cadrage, centre, versPixels } from '../geometrieEdl.js'
+import { boite, cadrage, versPixels } from '../geometrieEdl.js'
 import { dessinerVecteurs, elementsVisibles } from '../vecteursEdlLogique.js'
 import { RAYON_SANS_SYMBOLE, SYMBOLES, boitePrimitives, decalagesSymboles, orientationPiece, primitivesPlacees } from './symbolesEdl.js'
 import { CADRE_PLAN_ETAGE, COULEUR_PROPOSITION, couleurCalque, texteLatin } from './rapportEdlLogique.js'
+import { placerCadre } from './placementEtiquettes.js'
 
 // Plus grand côté de l'image : ~2 400 px pour une page A4 paysage (≈ 230 dpi
 // sur 27 cm), ~1 000 px pour l'extrait d'une pièce en tête de sa fiche (un
@@ -163,6 +164,30 @@ export function marquesElements(elementsExport, pieces, pxParMetre, pxMin = PX_S
   return marques
 }
 
+/**
+ * Place de la désignation de chaque pièce (mètres) : même règle que le cadre
+ * du DXF (`placerCadre`), pour le nom seul, droit (le canevas l'écrit à
+ * l'horizontale) et sans réduction — au plus près du centre de la pièce, sur
+ * aucun symbole, aucune bulle, aucun point.
+ *
+ * @param hauteur hauteur du texte en mètres (police imprimée / px par mètre)
+ * @param obstacles boîtes { xmin, ymin, xmax, ymax } en mètres
+ * @returns [{ piece, texte, pos }]
+ */
+export function placesDesignations(pieces, { hauteur, obstacles = [], pieceMiseEnAvant = null } = {}) {
+  const polys = obstacles.map((b) => [[b.xmin, b.ymin], [b.xmax, b.ymin], [b.xmax, b.ymax], [b.xmin, b.ymax]])
+  const places = []
+  for (const p of pieces ?? []) {
+    if (!Array.isArray(p.contour) || p.contour.length < 3) continue
+    if (pieceMiseEnAvant && pieceMiseEnAvant.id !== p.id) continue
+    const texte = texteLatin([p.numero, p.nom].filter(Boolean).join(' · '))
+    if (!texte) continue
+    const cadre = placerCadre({ contour: p.contour, lignes: [{ texte, hauteur }], obstacles: polys, marge: hauteur * 0.25, reductionMin: 1 })
+    places.push({ piece: p, texte, pos: cadre.lignes[0].pos })
+  }
+  return places
+}
+
 // ─── Dessin (contexte 2D quelconque) ─────────────────────────────────────────
 
 function chemin(ctx, c, pts, ferme) {
@@ -284,20 +309,34 @@ export function dessinerPlanRapport(ctx, {
   }
   ctx.setLineDash?.([])
 
-  // Désignation un peu sous le centre de la pièce (le point lumineux est
-  // souvent au centre), petite : le plan d'origine porte souvent déjà le
-  // nom, elle sert à retrouver la fiche
+  // Symboles et bulles d'abord calculés : la désignation les évite
+  const r = Math.max(6, Math.round(PT.bulle * pt))
+  const montres = pieceMiseEnAvant ? elementsExport.filter((e) => e.pieceId === pieceMiseEnAvant.id) : elementsExport
+  const marques = marquesElements(montres, pieces, c.pxParMetre, PT.symboleMin * pt)
+  const enMetres = (px) => px / c.pxParMetre
+  const obstacles = []
+  for (const m of marques) {
+    obstacles.push(m.boite)
+    if (!m.numero) continue
+    const decal = enMetres(m.sansSymbole ? r * 0.9 : r * 0.55)
+    const [ax, ay] = m.ancre ?? [m.x, m.y]
+    obstacles.push({ xmin: ax + decal - enMetres(r), ymin: ay + decal - enMetres(r), xmax: ax + decal + enMetres(r), ymax: ay + decal + enMetres(r) })
+  }
+  for (const point of pointsSeuls) {
+    if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) continue
+    // Le rond et son « P4 », à droite
+    obstacles.push({ xmin: point.x - enMetres(r * 0.35), ymin: point.y - enMetres(r * 0.6), xmax: point.x + enMetres(r * (0.6 + 0.6 * (String(point.numero).length + 1))), ymax: point.y + enMetres(r * 0.6) })
+  }
+
+  // Désignation petite (le plan d'origine porte souvent déjà le nom, elle
+  // sert à retrouver la fiche), posée comme le cadre du DXF : là où elle ne
+  // couvre ni symbole ni bulle, au plus près du centre
   const police = Math.max(8, Math.round(PT.piece * pt))
   ctx.font = `bold ${police}px Arial, sans-serif`
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
-  for (const p of pieces) {
-    if (!Array.isArray(p.contour) || p.contour.length < 3) continue
-    if (pieceMiseEnAvant && pieceMiseEnAvant.id !== p.id) continue
-    const texte = texteLatin([p.numero, p.nom].filter(Boolean).join(' · '))
-    if (!texte) continue
-    const [x, y0] = versPixels(c, centre(p.contour))
-    const y = y0 + police * 1.6
+  for (const { piece: p, texte, pos } of placesDesignations(pieces, { hauteur: enMetres(police), obstacles, pieceMiseEnAvant })) {
+    const [x, y] = versPixels(c, pos)
     ctx.fillStyle = 'rgba(255,255,255,0.75)'
     const l = ctx.measureText?.(texte)?.width ?? texte.length * police * 0.6
     ctx.fillRect(x - l / 2 - 3, y - police * 0.65, l + 6, police * 1.3)
@@ -305,7 +344,6 @@ export function dessinerPlanRapport(ctx, {
     ctx.fillText(texte, x, y)
   }
 
-  const r = Math.max(6, Math.round(PT.bulle * pt))
   // Points posés sans type ni élément : un rond gris, « P4 »
   for (const point of pointsSeuls) {
     if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) continue
@@ -321,10 +359,8 @@ export function dessinerPlanRapport(ctx, {
     ctx.fillText(`P${point.numero}`, x + r * 0.6, y)
   }
 
-  // Extrait d'une pièce : ses seuls éléments, les numéros des voisines
-  // se lisent sur le plan de l'étage
-  const montres = pieceMiseEnAvant ? elementsExport.filter((e) => e.pieceId === pieceMiseEnAvant.id) : elementsExport
-  const marques = marquesElements(montres, pieces, c.pxParMetre, PT.symboleMin * pt)
+  // Extrait d'une pièce : ses seuls éléments (`montres`), les numéros des
+  // voisines se lisent sur le plan de l'étage
   const epaisseur = Math.max(1, PT.symbole * pt)
   for (const m of marques) {
     if (m.primitives.length) tracerPrimitives(ctx, c, m.primitives, m.couleur, epaisseur)

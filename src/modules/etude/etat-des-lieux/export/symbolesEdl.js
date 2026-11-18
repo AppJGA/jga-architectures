@@ -260,6 +260,10 @@ export const SYMBOLES = {
 // large, pour qu'un texte ne déborde jamais de la boîte annoncée
 export const LARGEUR_CARACTERE = 0.8
 
+// Largeur estimée d'une ligne de texte (mètres) : la seule estimation, pour
+// les boîtes des symboles comme pour les cadres et libellés de l'export
+export const largeurTexte = (texte, hauteur) => String(texte).length * LARGEUR_CARACTERE * hauteur
+
 const AXES = [0, 90, 180, 270]
 
 // L'angle `a` est-il parcouru par un arc trigonométrique de `debut` à `fin` ?
@@ -283,7 +287,7 @@ function pointsPrimitive(p) {
   }
   if (p.texte != null) {
     const [x, y] = p.pos
-    const dx = (String(p.texte).length * LARGEUR_CARACTERE * p.hauteur) / 2
+    const dx = largeurTexte(p.texte, p.hauteur) / 2
     const dy = p.hauteur / 2
     const a = rad(p.rotation ?? 0)
     const c = Math.cos(a)

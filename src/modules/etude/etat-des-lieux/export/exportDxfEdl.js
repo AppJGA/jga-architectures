@@ -14,20 +14,24 @@
 // Pur, sans navigateur ; chaque fichier produit est relu par notre propre
 // lecteur dans les tests (tests/etat-des-lieux-export-dxf.test.js).
 //
-// Placement des textes, dans le repère de la pièce (tourné comme elle, donc
-// jamais à l'envers : `orientationPiece` reste dans ]-45°, 45°]) :
-//   - au cœur de la pièce, centrés : nom (numéro), surface, HSP (EDL-Pièces),
-//     puis « Sol : … », « Murs : … »… (EDL-Finitions), puis les éléments sans
-//     point, chacun sur son calque ;
-//   - un élément : son symbole au point, « P7 · libellé » à droite du symbole
-//     (calé à gauche, centré sur la hauteur du symbole), ses cotes dessous
-//     (EDL-Cotes) ;
+// Placement des textes (`placementEtiquettes.js`, demande de l'agence du
+// 2026-11-18 : plus aucun texte sur un autre), dans le repère de la pièce
+// (tourné comme elle, donc jamais à l'envers : `orientationPiece` reste dans
+// ]-45°, 45°]) :
+//   - nom (numéro), surface, HSP (EDL-Pièces), puis « Sol : … », « Murs : … »…
+//     (EDL-Finitions), puis les éléments sans point, chacun sur son calque,
+//     dans un CADRE (polyligne fermée sur EDL-Pièces) posé dans la pièce sans
+//     couvrir de symbole, réduit si la pièce est petite ;
+//   - un élément : son symbole au point, « P7 · libellé » et ses cotes
+//     (EDL-Cotes) en bloc à côté, à la première place libre autour du
+//     symbole (trait de rappel s'il a fallu s'écarter) ;
 //   - une photo : petit cercle en haut à gauche du symbole (ou sur le point
-//     s'il n'a pas d'élément), « Ph n » à sa gauche — à l'opposé du libellé.
+//     s'il n'a pas d'élément), « Ph n » posé par la même règle.
 
 import { CALQUES, calqueEdl, typeEdl } from '../calquesEdl.js'
 import { aire, pointDansPolygone } from '../geometrieEdl.js'
 import { RAYON_SANS_SYMBOLE, SYMBOLES, decalagesSymboles, orientationPiece } from './symbolesEdl.js'
+import { placerEtiquettes, pointInterieur, repere } from './placementEtiquettes.js'
 import { dansCp1252, encoderCp1252 } from './encodageDxf.js'
 import { ficheExportee, hspExport } from './ficheExportEdl.js'
 
@@ -46,12 +50,15 @@ const COULEUR_PLAN = 8
 // Hauteurs de texte en mètres (converties dans l'unité du plan)
 export const HAUTEUR_NOM = 0.2
 export const HAUTEUR_TEXTE = 0.12
-const INTERLIGNE = 1.5
-const ECART_LIBELLE = 0.08
 const RAYON_PHOTO = 0.06
-// Au-delà, une finition ou un libellé passe à la ligne : un « Murs : … » de
-// 500 caractères traversait sinon tout l'étage
+// Au-delà, un texte passe à la ligne : un « Murs : … » de 500 caractères
+// traversait sinon tout l'étage
 const CARACTERES_PAR_LIGNE = 60
+// Dans le cadre d'une pièce et les libellés, plus court : un cadre compact
+// trouve sa place dans une petite pièce, un libellé étroit entre deux symboles
+export const CARACTERES_CADRE = 32
+// Le nom, plus haut, garde la même largeur que les lignes de 0,12 m
+const CARACTERES_NOM = Math.round((CARACTERES_CADRE * HAUTEUR_TEXTE) / HAUTEUR_NOM)
 // Un TEXT R12 ne dépasse pas 255 caractères
 const LONGUEUR_TEXTE_MAX = 250
 
@@ -302,45 +309,150 @@ function ecrirePrimitives(w, calque, primitives, u) {
   }
 }
 
-// ─── Géométrie des pièces ───────────────────────────────────────────────────
+// Gardé ici pour les appelants d'avant : le placement des textes en a besoin aussi
+export { pointInterieur }
+
+// ─── Textes d'un étage et leur place ────────────────────────────────────────
+
+const aUnPoint = (e) => e.x !== null && e.x !== undefined && e.y !== null && e.y !== undefined
+
+/** Calque d'un texte d'élément : le sien, ou « À valider » pour une proposition. */
+const calqueElement = (code, aValider) => (aValider ? CALQUE_A_VALIDER : calqueEdl(code).nom)
+
+const libelleElement = (e) => texteDxf(e.libelle) || typeEdl(e.type)?.libelle || calqueEdl(e.calque).libelle
 
 /**
- * Point où écrire dans une pièce : le centre de gravité de la surface, ou,
- * s'il tombe dehors (pièce en L, en U), le milieu de la plus large traversée
- * horizontale à sa hauteur.
+ * Ce qui s'écrit sur un étage, et où (`placerEtiquettes`) : le cadre de
+ * chaque pièce et ses lignes, puis, point par point (pièce, puis numéro),
+ * symboles, libellé et repère photo. Positions en mètres du plan. Exporté
+ * pour les tests (aucun texte sur un autre).
+ *
+ * @returns {
+ *   cadres: [{ piece, coins, lignes [{ texte, calque, hauteur, pos }], echelle, dedans, angle }],
+ *   reperes: [{ cle, origine, angle, groupe, emplacements, symbole, calqueRappel,
+ *     libelle: { lignes, coins, rappel } | null,
+ *     photo: { centre, lignes, coins, rappel } | null }],
+ * }
  */
-export function pointInterieur(contour) {
-  let a = 0, cx = 0, cy = 0
-  for (let i = 0; i < contour.length; i++) {
-    const [x1, y1] = contour[i]
-    const [x2, y2] = contour[(i + 1) % contour.length]
-    const k = x1 * y2 - x2 * y1
-    a += k; cx += (x1 + x2) * k; cy += (y1 + y2) * k
+export function etiquettesEtage({ pieces = [], elementsExport = [], photos = [], points = [], inclurePropositions = false } = {}) {
+  const NOM_PIECES = calqueEdl('pieces').nom
+  const NOM_FINITIONS = calqueEdl('finitions').nom
+  const NOM_COTES = calqueEdl('cotes').nom
+  const NOM_PHOTOS = calqueEdl('photos').nom
+  const parId = new Map(pieces.map((p) => [p.id, p]))
+  const angleDe = (pieceId) => {
+    const piece = pieceId ? parId.get(pieceId) : null
+    return piece && Array.isArray(piece.contour) ? orientationPiece(piece.contour) : 0
   }
-  const moyenne = [contour.reduce((s, p) => s + p[0], 0) / contour.length, contour.reduce((s, p) => s + p[1], 0) / contour.length]
-  if (Math.abs(a) < 1e-12) return moyenne
-  const c = [cx / (3 * a), cy / (3 * a)]
-  if (pointDansPolygone(c, contour)) return c
-  const y = c[1]
-  const xs = []
-  for (let i = 0, j = contour.length - 1; i < contour.length; j = i++) {
-    const [xi, yi] = contour[i]
-    const [xj, yj] = contour[j]
-    if ((yi > y) !== (yj > y)) xs.push(xi + ((y - yi) * (xj - xi)) / (yj - yi))
-  }
-  xs.sort((p, q) => p - q)
-  let meilleur = null
-  for (let i = 0; i + 1 < xs.length; i += 2) {
-    if (!meilleur || xs[i + 1] - xs[i] > meilleur[1] - meilleur[0]) meilleur = [xs[i], xs[i + 1]]
-  }
-  return meilleur ? [(meilleur[0] + meilleur[1]) / 2, y] : moyenne
-}
 
-// Repère tourné d'une pièce : (u, v) local en mètres → mètres du plan
-const repere = ([ox, oy], angle) => {
-  const r = (angle * Math.PI) / 180
-  const c = Math.cos(r), s = Math.sin(r)
-  return ([u, v]) => [ox + u * c - v * s, oy + u * s + v * c]
+  // ── Cadres : ce que dit chaque pièce ──
+  const sansPoint = new Map()
+  for (const e of elementsExport) {
+    if (aUnPoint(e) || !e.pieceId || !parId.has(e.pieceId)) continue
+    if (!sansPoint.has(e.pieceId)) sansPoint.set(e.pieceId, [])
+    sansPoint.get(e.pieceId).push(e)
+  }
+  const avecContour = pieces.filter(contourValide)
+  const cadres = avecContour.map((piece) => {
+    const fiche = ficheExportee(piece, { inclurePropositions })
+    const calqueFiche = piece.fiche_a_valider ? CALQUE_A_VALIDER : NOM_FINITIONS
+    const lignes = []
+    const ajouter = (texte, calque, hauteur = HAUTEUR_TEXTE, max = CARACTERES_CADRE) => {
+      for (const l of couperLignes(texte, max)) lignes.push({ texte: l, calque, hauteur })
+    }
+    const nom = texteDxf(piece.nom)
+    const numero = texteDxf(piece.numero)
+    ajouter(numero ? `${nom || 'Pièce'} (${numero})` : nom || 'Pièce', NOM_PIECES, HAUTEUR_NOM, CARACTERES_NOM)
+    const surface = texteSurface(piece)
+    if (surface) ajouter(surface, NOM_PIECES)
+    const hsp = texteHsp(piece, { inclurePropositions })
+    // Dite dans une fiche proposée : sur « À valider », comme ses finitions
+    const hspDeLaFiche = !!hsp && !hspExport(piece, { inclurePropositions })?.lue && !!piece.fiche_a_valider
+    if (hsp) ajouter(hsp, hspDeLaFiche ? CALQUE_A_VALIDER : NOM_PIECES)
+    if (fiche) {
+      for (const [cle, libelle] of RUBRIQUES) {
+        const valeur = texteDxf(fiche[cle])
+        if (valeur) ajouter(`${libelle} : ${valeur}`, calqueFiche)
+      }
+    }
+    for (const e of sansPoint.get(piece.id) ?? []) {
+      ajouter(libelleElement(e), calqueElement(e.calque, e.aValider))
+      if (texteDxf(e.cotes)) ajouter(e.cotes, e.aValider ? CALQUE_A_VALIDER : NOM_COTES)
+    }
+    return { id: piece.id, piece, contour: piece.contour, angle: orientationPiece(piece.contour), lignes }
+  })
+
+  // ── Repères : un par point (symboles et libellés), photos comprises ──
+  // Plusieurs éléments sur un même point (« un élément par chose dite » :
+  // une fenêtre et son volet sur P3) : un symbole par type, côte à côte le
+  // long de la pièce (`decalagesSymboles`, même règle que le plan du
+  // rapport), et leurs libellés empilés en un seul bloc.
+  const reperes = new Map()
+  for (const e of elementsExport) {
+    if (!aUnPoint(e)) continue
+    const cle = e.pointId ?? `${Number(e.x)} ${Number(e.y)}`
+    if (!reperes.has(cle)) reperes.set(cle, { cle, pieceId: e.pieceId, numero: e.numero, origine: [Number(e.x), Number(e.y)], groupe: [] })
+    reperes.get(cle).groupe.push(e)
+  }
+  for (const r of reperes.values()) {
+    r.angle = angleDe(r.pieceId)
+    const { emplacements, boite } = decalagesSymboles(r.groupe.map((e) => e.type))
+    r.emplacements = emplacements
+    r.symbole = boite
+    r.lignes = []
+    for (const e of r.groupe) {
+      const calque = calqueElement(e.calque, e.aValider)
+      const titre = e.numero !== null && e.numero !== undefined ? `P${e.numero} · ${libelleElement(e)}` : libelleElement(e)
+      for (const t of couperLignes(titre, CARACTERES_CADRE)) r.lignes.push({ texte: t, calque, hauteur: HAUTEUR_TEXTE })
+      for (const t of couperLignes(e.cotes, CARACTERES_CADRE)) r.lignes.push({ texte: t, calque: e.aValider ? CALQUE_A_VALIDER : NOM_COTES, hauteur: HAUTEUR_TEXTE })
+    }
+    r.calqueRappel = calqueElement(r.groupe[0].calque, r.groupe[0].aValider)
+  }
+
+  // Photos : un repère par point, « Ph 3, 4 »
+  const pointsParId = new Map(points.map((p) => [p.id, p]))
+  const photosParPoint = new Map()
+  photos.forEach((ph, i) => {
+    if (!ph?.point_id) return
+    if (!photosParPoint.has(ph.point_id)) photosParPoint.set(ph.point_id, [])
+    photosParPoint.get(ph.point_id).push(ph.numero ?? i + 1)
+  })
+  for (const [pointId, numeros] of photosParPoint) {
+    let r = reperes.get(pointId)
+    if (!r) {
+      const point = pointsParId.get(pointId)
+      const origine = point ? [Number(point.x), Number(point.y)] : null
+      if (!origine || !origine.every(Number.isFinite)) continue
+      const pieceId = pieceDuPoint(point, pieces)
+      r = { cle: pointId, pieceId, numero: point.numero ?? null, origine, angle: angleDe(pieceId), groupe: [], emplacements: [], symbole: null, lignes: [] }
+      reperes.set(pointId, r)
+    }
+    const centre = r.symbole ? [r.symbole.xmin - RAYON_PHOTO, r.symbole.ymax + RAYON_PHOTO] : [0, 0]
+    r.photo = {
+      centre,
+      ancre: { xmin: centre[0] - RAYON_PHOTO, ymin: centre[1] - RAYON_PHOTO, xmax: centre[0] + RAYON_PHOTO, ymax: centre[1] + RAYON_PHOTO },
+      lignes: couperLignes(`Ph ${numeros.join(', ')}`, CARACTERES_CADRE).map((t) => ({ texte: t, calque: NOM_PHOTOS, hauteur: HAUTEUR_TEXTE })),
+    }
+  }
+
+  // Ordre stable (pièce, puis numéro du point) : il décide des places
+  const rang = new Map(avecContour.map((p, i) => [p.id, i]))
+  const ordre = [...reperes.values()].sort((a, b) => (rang.get(a.pieceId) ?? Infinity) - (rang.get(b.pieceId) ?? Infinity)
+    || (a.numero ?? Infinity) - (b.numero ?? Infinity)
+    || (a.cle < b.cle ? -1 : a.cle > b.cle ? 1 : 0))
+
+  const places = placerEtiquettes({ cadres, reperes: ordre })
+  return {
+    cadres: cadres.map((c, i) => ({ ...places.cadres[i], piece: c.piece })),
+    reperes: ordre.map((r, i) => {
+      const p = places.reperes[i]
+      return {
+        ...r,
+        libelle: p.libelle,
+        photo: r.photo ? { ...r.photo, ...(p.photo ?? { lignes: [], coins: null, rappel: null }) } : null,
+      }
+    }),
+  }
 }
 
 // ─── Fichier ────────────────────────────────────────────────────────────────
@@ -380,11 +492,7 @@ export function genererDxfEdl({
     return p
   }
   const utiliser = (nom) => { calquesUtilises.add(nom); return nom }
-  const nomCalque = (code, aValider) => utiliser(aValider ? CALQUE_A_VALIDER : calqueEdl(code).nom)
-  const NOM_PIECES = calqueEdl('pieces').nom
-  const NOM_FINITIONS = calqueEdl('finitions').nom
-  const NOM_COTES = calqueEdl('cotes').nom
-  const NOM_PHOTOS = calqueEdl('photos').nom
+  const nomCalque = (code, aValider) => utiliser(calqueElement(code, aValider))
 
   // ── Plan existant, en dessous de tout ──
   // Limite connue : le fichier vectoriel allégé ne garde des textes que leur
@@ -424,84 +532,24 @@ export function genererDxfEdl({
     }
   }
 
-  // ── Pièces : contour et textes au centre ──
-  const parId = new Map(pieces.map((p) => [p.id, p]))
-  const angleDe = (pieceId) => {
-    const piece = pieceId ? parId.get(pieceId) : null
-    return piece && Array.isArray(piece.contour) ? orientationPiece(piece.contour) : 0
-  }
-  const sansPoint = new Map()
-  for (const e of elementsExport) {
-    if (e.x !== null && e.x !== undefined && e.y !== null && e.y !== undefined) continue
-    if (!e.pieceId || !parId.has(e.pieceId)) continue
-    if (!sansPoint.has(e.pieceId)) sansPoint.set(e.pieceId, [])
-    sansPoint.get(e.pieceId).push(e)
-  }
-
-  for (const piece of pieces) {
-    if (!Array.isArray(piece.contour) || piece.contour.length < 3) continue
-    w.polyligne(utiliser(NOM_PIECES), piece.contour.map(enUnites), true)
-
-    const fiche = ficheExportee(piece, { inclurePropositions })
-    const calqueFiche = piece.fiche_a_valider ? CALQUE_A_VALIDER : NOM_FINITIONS
-    const lignes = []
-    const ajouter = (texte, calque, hauteur = HAUTEUR_TEXTE) => {
-      for (const l of couperLignes(texte)) lignes.push({ texte: l, calque, hauteur })
-    }
-    const nom = texteDxf(piece.nom)
-    const numero = texteDxf(piece.numero)
-    ajouter(numero ? `${nom || 'Pièce'} (${numero})` : nom || 'Pièce', NOM_PIECES, HAUTEUR_NOM)
-    const surface = texteSurface(piece)
-    if (surface) ajouter(surface, NOM_PIECES)
-    const hsp = texteHsp(piece, { inclurePropositions })
-    // Dite dans une fiche proposée : sur « À valider », comme ses finitions
-    const hspDeLaFiche = !!hsp && !hspExport(piece, { inclurePropositions })?.lue && !!piece.fiche_a_valider
-    if (hsp) ajouter(hsp, hspDeLaFiche ? CALQUE_A_VALIDER : NOM_PIECES)
-    if (fiche) {
-      for (const [cle, libelle] of RUBRIQUES) {
-        const valeur = texteDxf(fiche[cle])
-        if (valeur) ajouter(`${libelle} : ${valeur}`, calqueFiche)
-      }
-    }
-    for (const e of sansPoint.get(piece.id) ?? []) {
-      const libelle = texteDxf(e.libelle) || typeEdl(e.type)?.libelle || calqueEdl(e.calque).libelle
-      ajouter(libelle, nomCalque(e.calque, e.aValider))
-      if (texteDxf(e.cotes)) ajouter(e.cotes, e.aValider ? CALQUE_A_VALIDER : NOM_COTES)
-    }
-
-    const angle = orientationPiece(piece.contour)
-    const place = repere(pointInterieur(piece.contour), angle)
-    let v = lignes.reduce((s, l) => s + l.hauteur * INTERLIGNE, 0) / 2
-    for (const l of lignes) {
-      v -= (l.hauteur * INTERLIGNE) / 2
-      w.texte(utiliser(l.calque), enUnites(place([0, v])), l.hauteur * u, l.texte, { rotation: angle, h: 1, v: 2 })
-      v -= (l.hauteur * INTERLIGNE) / 2
-    }
+  // ── Pièces : contour, cadre et ses textes ──
+  const mise = etiquettesEtage({ pieces, elementsExport, photos, points, inclurePropositions })
+  const NOM_PIECES = calqueEdl('pieces').nom
+  const NOM_PHOTOS = calqueEdl('photos').nom
+  for (const c of mise.cadres) {
+    w.polyligne(utiliser(NOM_PIECES), c.piece.contour.map(enUnites), true)
+    w.polyligne(NOM_PIECES, c.coins.map(enUnites), true)
+    for (const l of c.lignes) w.texte(utiliser(l.calque), enUnites(l.pos), l.hauteur * u, l.texte, { rotation: c.angle, h: 1, v: 2 })
   }
 
   // ── Éléments placés : symboles, libellés, cotes ──
-  // Plusieurs éléments sur un même point (« un élément par chose dite » :
-  // une fenêtre et son volet sur P3) : un symbole par type, côte à côte
-  // le long de la pièce, et leurs libellés empilés à droite du dernier.
-  const groupes = new Map()
-  for (const e of elementsExport) {
-    if (e.x === null || e.x === undefined || e.y === null || e.y === undefined) continue
-    const cle = e.pointId ?? `${Number(e.x)} ${Number(e.y)}`
-    if (!groupes.has(cle)) groupes.set(cle, [])
-    groupes.get(cle).push(e)
-  }
-  const boites = new Map()
-  for (const [cle, groupe] of groupes) {
-    const premier = groupe[0]
-    const angle = angleDe(premier.pieceId)
-    const place = repere([Number(premier.x), Number(premier.y)], angle)
-
-    // Un emplacement par type (`decalagesSymboles`, même règle que le plan
-    // du rapport) ; le symbole va sur le calque de l'élément validé s'il y en
-    // a un, sur « À valider » si tous sont des propositions
-    const { emplacements, boite } = decalagesSymboles(groupe.map((e) => e.type))
-    for (const em of emplacements) {
-      const duType = groupe.filter((e) => (e.type && SYMBOLES[e.type] ? e.type : null) === em.type)
+  for (const r of mise.reperes) {
+    if (!r.groupe.length) continue
+    const place = repere(r.origine, r.angle).versPlan
+    // Un emplacement par type ; le symbole va sur le calque de l'élément
+    // validé s'il y en a un, sur « À valider » si tous sont des propositions
+    for (const em of r.emplacements) {
+      const duType = r.groupe.filter((e) => (e.type && SYMBOLES[e.type] ? e.type : null) === em.type)
       const element = duType.find((e) => !e.aValider) ?? duType[0]
       const { dx, boite: b } = em
       const calque = nomCalque(element.calque, element.aValider)
@@ -509,50 +557,24 @@ export function genererDxfEdl({
         typesUtilises.add(em.type)
         // L'étendue suit la boîte tournée du symbole, pas seulement son point
         for (const coin of [[b.xmin, b.ymin], [b.xmax, b.ymax], [b.xmin, b.ymax], [b.xmax, b.ymin]]) enUnites(place([dx + coin[0], coin[1]]))
-        w.insert(calque, nomBloc(em.type), enUnites(place([dx, 0])), angle)
+        w.insert(calque, nomBloc(em.type), enUnites(place([dx, 0])), r.angle)
       } else {
         // Sans type (désordre non classé…) : un petit rond suffit à le situer
         w.cercle(calque, enUnites(place([dx, 0])), RAYON_SANS_SYMBOLE * u)
       }
     }
-    boites.set(cle, { boite, angle })
-
-    const x = boite.xmax + ECART_LIBELLE
-    let y = (boite.ymin + boite.ymax) / 2
-    for (const e of groupe) {
-      const calque = nomCalque(e.calque, e.aValider)
-      const libelle = texteDxf(e.libelle) || typeEdl(e.type)?.libelle || calqueEdl(e.calque).libelle
-      const lignes = [
-        ...couperLignes(e.numero !== null && e.numero !== undefined ? `P${e.numero} · ${libelle}` : libelle).map((t) => ({ t, calque })),
-        ...couperLignes(e.cotes).map((t) => ({ t, calque: utiliser(e.aValider ? CALQUE_A_VALIDER : NOM_COTES) })),
-      ]
-      for (const l of lignes) {
-        w.texte(l.calque, enUnites(place([x, y])), HAUTEUR_TEXTE * u, l.t, { rotation: angle, v: 2 })
-        y -= HAUTEUR_TEXTE * INTERLIGNE
-      }
-    }
+    if (!r.libelle) continue
+    for (const l of r.libelle.lignes) w.texte(utiliser(l.calque), enUnites(l.pos), l.hauteur * u, l.texte, { rotation: r.angle, v: 2 })
+    if (r.libelle.rappel) w.ligne(utiliser(r.calqueRappel), enUnites(r.libelle.rappel[0]), enUnites(r.libelle.rappel[1]))
   }
 
   // ── Photos : un repère par point, « Ph 3, 4 » ──
-  const pointsParId = new Map(points.map((p) => [p.id, p]))
-  const elementParPoint = new Map(elementsExport.filter((e) => e.pointId && e.x !== null && e.x !== undefined).map((e) => [e.pointId, e]))
-  const photosParPoint = new Map()
-  photos.forEach((ph, i) => {
-    if (!ph?.point_id) return
-    if (!photosParPoint.has(ph.point_id)) photosParPoint.set(ph.point_id, [])
-    photosParPoint.get(ph.point_id).push(ph.numero ?? i + 1)
-  })
-  for (const [pointId, numeros] of photosParPoint) {
-    const point = pointsParId.get(pointId)
-    const element = elementParPoint.get(pointId)
-    const position = element ? [Number(element.x), Number(element.y)] : point ? [Number(point.x), Number(point.y)] : null
-    if (!position || !position.every(Number.isFinite)) continue
-    const repereElement = boites.get(pointId)
-    const angle = repereElement?.angle ?? angleDe(point?.piece_id ?? element?.pieceId)
-    const place = repere(position, angle)
-    const centre = repereElement ? [repereElement.boite.xmin - RAYON_PHOTO, repereElement.boite.ymax + RAYON_PHOTO] : [0, 0]
-    w.cercle(utiliser(NOM_PHOTOS), enUnites(place(centre)), RAYON_PHOTO * u)
-    w.texte(NOM_PHOTOS, enUnites(place([centre[0] - RAYON_PHOTO - 0.03, centre[1]])), HAUTEUR_TEXTE * u, texteDxf(`Ph ${numeros.join(', ')}`), { rotation: angle, h: 2, v: 2 })
+  for (const r of mise.reperes) {
+    if (!r.photo) continue
+    const place = repere(r.origine, r.angle).versPlan
+    w.cercle(utiliser(NOM_PHOTOS), enUnites(place(r.photo.centre)), RAYON_PHOTO * u)
+    for (const l of r.photo.lignes) w.texte(NOM_PHOTOS, enUnites(l.pos), l.hauteur * u, l.texte, { rotation: r.angle, v: 2 })
+    if (r.photo.rappel) w.ligne(NOM_PHOTOS, enUnites(r.photo.rappel[0]), enUnites(r.photo.rappel[1]))
   }
 
   // ── Assemblage : en-tête, tables, blocs, entités ──

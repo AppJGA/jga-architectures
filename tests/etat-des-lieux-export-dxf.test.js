@@ -259,7 +259,8 @@ describe('fichier DXF', () => {
     const fissure = l.textes.find((t) => t.texte === 'Fissure en plafond')
     assert.ok(pointDansPolygone(fissure.pos, sejour.contour))
     assert.equal(l.traits.some((t) => t.bloc === 'EDL_FISSURE'), false)
-    assert.deepEqual(textesDe(l, 'EDL-Chauffage'), ['P1 · Radiateur fonte sous la fenêtre'])
+    // Libellé coupé à 32 caractères : un bloc étroit trouve sa place entre les symboles
+    assert.deepEqual(textesDe(l, 'EDL-Chauffage'), ['P1 · Radiateur fonte sous la', 'fenêtre'])
   })
 
   test('finitions sous le nom, rubriques vides omises', () => {
@@ -343,7 +344,9 @@ describe('fichier DXF', () => {
     const l = relire(texte)
     assert.deepEqual(l.blocs, [])
     assert.deepEqual(l.calques.map((c) => c.nom), ['0', 'EDL-Pièces', 'EDL-Finitions'])
-    assert.equal(l.traits.length, 1)
+    // Le contour de la pièce et le cadre de ses textes
+    assert.equal(l.traits.length, 2)
+    assert.ok(l.traits.every((t) => t.calque === 'EDL-Pièces' && t.ferme))
     assert.match(l.brut, /\$EXTMIN\r\n 10\r\n0\.0\r\n 20\r\n0\.0\r\n/)
     assert.match(l.brut, /\$EXTMAX\r\n 10\r\n5\.\d+\r\n 20\r\n4\.\d+\r\n/)
     // Étage vide : encore un DXF lisible
@@ -424,7 +427,7 @@ describe('fichier DXF', () => {
     const attendu = primitivesPlacees('radiateur', { x: 1, y: 1, angle: 0 }).find((p) => p.polyligne)
     radiateur.pts.forEach((p, i) => prochePoint(p, [attendu.polyligne[i][0] * 1000, attendu.polyligne[i][1] * 1000], 1e-3))
     proche(l.textes.find((t) => t.texte === 'Séjour (1.04)').hauteur, 200)
-    proche(l.textes.find((t) => t.texte === 'P1 · Radiateur fonte sous la fenêtre').hauteur, 120)
+    proche(l.textes.find((t) => t.texte === 'P1 · Radiateur fonte sous la').hauteur, 120)
   })
 
   test('coordonnées Lambert 93 (grands nombres) : position et forme gardées, en m comme en mm', () => {

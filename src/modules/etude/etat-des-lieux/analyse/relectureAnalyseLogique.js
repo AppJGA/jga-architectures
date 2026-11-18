@@ -200,9 +200,9 @@ const MESSAGES_LANCEMENT = {
   'deja-fait': 'Cette pièce vient d’être analysée : rien de nouveau à analyser.',
   'non-visitee': 'Cette pièce n’a pas été visitée : rien à analyser.',
   'attente-echec': 'L’analyse a échoué il y a peu : elle repartira d’elle-même dans un moment.',
-  'fiche-modifiee': 'La fiche a changé pendant la préparation de l’analyse : relancez-la pour qu’elle en tienne compte.',
-  conflit: 'La pièce a changé pendant l’analyse (au bureau ou sur un autre appareil) : rien n’a été enregistré. Relancez l’analyse.',
-  'conflit-elements': 'La pièce a changé pendant l’analyse : les éléments proposés sont enregistrés, mais pas la fiche. Relancez l’analyse pour la compléter.',
+  'fiche-modifiee': 'La pièce a changé pendant la préparation de l’analyse : relancez-la pour qu’elle en tienne compte.',
+  conflit: 'La pièce a changé pendant l’analyse (au bureau ou sur un autre appareil) : rien n’a été enregistré. L’analyse repartira d’elle-même dans quelques minutes.',
+  'conflit-elements': 'La pièce a changé pendant l’analyse : les éléments proposés sont enregistrés, pas encore la fiche. L’analyse repartira d’elle-même dans quelques minutes.',
 }
 
 /**

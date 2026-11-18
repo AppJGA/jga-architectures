@@ -18,15 +18,18 @@
 //   · une même pièce n'est tentée qu'une fois par passage, quoi qu'il arrive.
 // Une écriture « à blanc » sur la pièce (`reserver`) vérifie aussi, avant de
 // payer, que la base acceptera le résultat (compte en lecture seule) et que
-// la fiche est encore celle de la frise ; elle rend l'`updated_at` sur lequel
-// la « prise » d'`ecrire` se conditionne : une version de la pièce n'est
-// prise qu'une fois, avant tout élément écrit, et une fiche corrigée ou
-// validée au bureau pendant l'appel n'est pas écrasée.
+// la pièce n'a pas bougé depuis la frise ; elle rend l'`updated_at` sur
+// lequel `ecrire` se conditionne. Avec la fonction edl_ecrire_analyse (082),
+// éléments et pièce s'écrivent en une transaction, ou rien si la pièce a
+// bougé : une fiche corrigée ou validée au bureau pendant l'appel n'est pas
+// écrasée, et la fiche d'une analyse ne côtoie jamais les éléments d'une
+// autre. Le repli sans la fonction (prise, éléments, pièce) réduit ce risque
+// sans l'écarter.
 //
 // Limite connue : sans colonne de bail dans la base, un appareil peut
-// réserver la pièce pendant tout l'appel d'un autre, et payer le sien. Un
-// seul des deux résultats s'écrit, fiche et éléments ensemble ; l'autre
-// trouve la pièce analysée ('deja-fait') et n'écrit rien.
+// réserver la pièce pendant tout l'appel d'un autre, et payer le sien. Avec
+// la fonction, un seul des deux résultats s'écrit ; l'autre trouve la pièce
+// analysée ('deja-fait') et n'écrit rien.
 
 import {
   decisionAnalyse, suiviTentative, suiviApresEchec, analyseLeApres, prochaineRelance, intervallesPiece,
@@ -51,17 +54,19 @@ export const RELANCE_APRES_ARRET_MS = 10 * 60 * 1000
  *   reserver(piece) → { etat: 'ok' | 'deja' | 'relire' | 'refus' | 'indisponible', updatedAt } ;
  *   relirePiece(pieceId) → { id, fiche, fiche_a_valider, analyse_le, updated_at } | null ;
  *   appeler(corps) → résultat brut de Claude ;
- *   ecrire({ affaireId, piece, fiche, elements, analyseLe, siMisAJour, garderFiche, elementsEcrits })
- *     → { indisponible, conflit, elementsEcrits, attendu } : prise, éléments, puis pièce
- *     (`conflit` : une condition sur updated_at n'a touché aucune ligne) ;
+ *   ecrire({ affaireId, piece, fiche, elements, analyseLe, siMisAJour, garderFiche })
+ *     → { indisponible, conflit, elementsEcrits, attendu } : une transaction
+ *     (edl_ecrire_analyse), à défaut prise, éléments, puis pièce (`conflit` :
+ *     la pièce a bougé ; `elementsEcrits` : des éléments restent écrits) ;
  *   noterErreur(pieceId, message, { analyseLe }) ; lireSuivis() → { pieceId: suivi } ;
  *   ecrireSuivi(pieceId, suivi | null) ; noterRelance(affaireId, ms | null) ; signaler(detail) ;
  *   maintenant() ; estCoupure(err) ; surfaceDessinee(piece) → m² ; echecsMax.
  * @returns { analysees, echecs, raison } — pour une pièce seule qui n'est pas
  *   partie, `raison` dit pourquoi : 'son', 'passage', 'gestes',
  *   'echec-definitif', 'deja-fait', 'non-visitee', 'attente-echec'… ;
- *   après un conflit d'écriture : 'conflit' (rien d'écrit) ou
- *   'conflit-elements' (éléments écrits, fiche et analyse_le non).
+ *   après un double conflit d'écriture : 'conflit' (rien d'écrit) ou
+ *   'conflit-elements' (éléments écrits, fiche et analyse_le non) — la pièce
+ *   repart d'elle-même après l'attente, les autres pièces continuent.
  */
 export async function passeAnalyseEdl(affaireId, options = {}, d) {
   const { seulement = null, forcer = false, relancer = false } = options
@@ -241,9 +246,11 @@ export async function passeAnalyseEdl(affaireId, options = {}, d) {
     }
   }
 
-  // La pièce a bougé pendant l'appel : une seule nouvelle écriture, sur la
-  // version relue, jamais une boucle. `conflit.elementsEcrits` : la prise
-  // avait réussi, les éléments sont déjà en place (seule la pièce manque).
+  // La pièce a bougé pendant l'appel : relue, puis une seule nouvelle
+  // écriture complète sur la version relue (fiche de l'agence gardée si
+  // elle a été corrigée ou validée), jamais une boucle.
+  // `conflit.elementsEcrits` : le repli sans transaction a laissé des
+  // éléments écrits.
   async function apresConflit(piece, ecriture, conflit) {
     const dejaEcrits = conflit.elementsEcrits === true
     const relue = await d.relirePiece(piece.id)
@@ -253,15 +260,19 @@ export async function passeAnalyseEdl(affaireId, options = {}, d) {
       if (piece.id === seulement) raisonSeule = 'deja-fait'
       return 'passee'
     }
-    // Rien n'a bougé et la condition échoue : la base refuse (essai compté,
+    // Rien n'a bougé et l'écriture échoue : la base refuse (essai compté,
     // payé). Sans élément écrit, c'est bien « Lecture seule »
-    if (suite === 'lecture-seule') return dejaEcrits ? 'conflit-elements' : 'refus'
-    const ecrit = await d.ecrire({
-      ...ecriture, siMisAJour: relue.updated_at, elementsEcrits: dejaEcrits, garderFiche: suite === 'fiche-agence',
-    })
-    // Second conflit : on s'arrête, en disant ce qui est resté écrit
-    if (ecrit?.conflit) return dejaEcrits || ecrit.elementsEcrits ? 'conflit-elements' : 'conflit'
-    return ecrit
+    if (suite === 'lecture-seule' && !dejaEcrits) return 'refus'
+    let ecrit = null
+    if (suite !== 'lecture-seule') {
+      ecrit = await d.ecrire({ ...ecriture, siMisAJour: relue.updated_at, garderFiche: suite === 'fiche-agence' })
+      if (!ecrit?.conflit) return ecrit
+    }
+    // Encore un conflit : la pièce passe son tour (l'essai compté la fera
+    // repartir après l'attente), les autres pièces continuent. On dit ce
+    // qui est resté écrit.
+    if (piece.id === seulement) raisonSeule = dejaEcrits || ecrit?.elementsEcrits ? 'conflit-elements' : 'conflit'
+    return 'passee'
   }
 
   async function echouer(piece, err, suiviEssai) {

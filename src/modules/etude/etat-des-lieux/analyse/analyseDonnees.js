@@ -143,19 +143,24 @@ export async function lireFriseAnalyse(affaireId, pieceId, { delaiMs = DELAI_LEC
  * bougé depuis la lecture. Aucune ligne touchée : soit la pièce vient d'être
  * analysée ailleurs ('deja'), soit la base refuse d'y écrire ('refus' — un
  * refus RLS ne rend pas d'erreur), et le résultat ne pourrait pas s'écrire.
- * La fiche relue avec l'écriture doit être celle de la frise : modifiée
- * entre-temps au bureau, la demande serait déjà fausse ('relire', rien n'est
- * payé).
+ * Conditionnée aussi sur l'`updated_at` lu avec la frise : la pièce modifiée
+ * entre-temps (fiche corrigée au bureau, motif d'un autre appareil), la
+ * demande serait déjà fausse ('relire', rien n'est payé), et le motif réécrit
+ * effacerait celui d'un autre appareil. La fiche relue est vérifiée en plus.
  *
  * Ce n'est pas un bail : pendant tout l'appel d'un appareil, un autre peut
- * encore réserver la même pièce et payer le sien. Un seul des deux résultats
- * s'écrit (la « prise » d'ecrireResultatAnalyse). Empêcher le second
- * paiement demanderait une colonne de bail dans la base.
+ * encore réserver la même pièce et payer le sien. Avec la fonction
+ * edl_ecrire_analyse, un seul des deux résultats s'écrit, en entier ; avec
+ * le repli sans transaction, presque toujours. Empêcher le second paiement
+ * demanderait une colonne de bail dans la base.
  * @returns { etat: 'ok' | 'deja' | 'relire' | 'refus' | 'indisponible', updatedAt }
  */
 export async function reserverAnalyse(piece) {
   let requete = supabase.from('edl_pieces').update({ analyse_erreur: piece.analyse_erreur ?? null }).eq('id', piece.id)
   requete = piece.analyse_le ? requete.eq('analyse_le', piece.analyse_le) : requete.is('analyse_le', null)
+  // Version lue avec la frise : le motif réécrit est celui de cette version,
+  // jamais un motif plus récent (suffixe définitif d'un autre appareil)
+  if (piece.updated_at) requete = requete.eq('updated_at', piece.updated_at)
   // `updated_at` après l'écriture (le déclencheur edl_pieces_touche l'a
   // avancé) : la prise d'ecrireResultatAnalyse se conditionne dessus
   const { data, error } = await requete.select('id, updated_at, fiche')
@@ -168,11 +173,14 @@ export async function reserverAnalyse(piece) {
     return { etat: 'ok', updatedAt: data[0].updated_at ?? null }
   }
   const { data: relue, error: erreurRelue } = await bornerDelai((signal) => supabase
-    .from('edl_pieces').select('synchro_id:id, analyse_le').eq('id', piece.id).abortSignal(signal).maybeSingle())
+    .from('edl_pieces').select('synchro_id:id, analyse_le, updated_at').eq('id', piece.id).abortSignal(signal).maybeSingle())
   if (erreurRelue) throw erreurRelue
   if (!relue) return { etat: 'deja' }
   const heure = (v) => (v ? Date.parse(v) : null)
-  return { etat: heure(relue.analyse_le) === heure(piece.analyse_le) ? 'refus' : 'deja' }
+  if (heure(relue.analyse_le) !== heure(piece.analyse_le)) return { etat: 'deja' }
+  // Autre écriture depuis la frise (fiche, motif) : relire avant de payer
+  if (piece.updated_at && heure(relue.updated_at) !== heure(piece.updated_at)) return { etat: 'relire' }
+  return { etat: 'refus' }
 }
 
 /** Upsert par identifiant du morceau : une transcription rejouée réécrit la même ligne. */
@@ -190,33 +198,37 @@ export async function enregistrerTranscription(ligne) {
 /**
  * Résultat d'une analyse pour une pièce. Rejouable avec le même résultat :
  * seules les propositions de Claude encore à valider sont remplacées, les
- * éléments validés (ou ajoutés à la main) ne sont jamais touchés. Pas de
- * transaction : un arrêt en route laisse `analyse_le` inchangé, la pièce
- * reste à analyser et la passe suivante refait tout.
+ * éléments validés (ou ajoutés à la main) ne sont jamais touchés.
  *
- * Avec `siMisAJour` (updated_at rendu par la réservation), l'ordre est :
- * 1. la **prise** — écriture à blanc conditionnée sur `siMisAJour`, qui rend
- *    le nouvel updated_at : si la pièce a bougé (autre appareil, bureau),
- *    rien n'est écrit, pas même un élément (`conflit`, `elementsEcrits:
- *    false`). Deux appareils ne peuvent pas prendre la même version : les
- *    éléments de l'un ne côtoient jamais la fiche de l'autre ;
- * 2. les éléments ;
- * 3. la pièce, conditionnée sur l'updated_at de la prise (`conflit`,
- *    `elementsEcrits: true` si elle a bougé entre-temps).
+ * Avec `siMisAJour` (updated_at rendu par la réservation) :
+ * - **par la fonction `edl_ecrire_analyse`** (migration 082) : pièce
+ *   verrouillée, propositions remplacées et pièce écrite dans une seule
+ *   transaction, ou rien si la pièce a bougé (`conflit`, `elementsEcrits:
+ *   false`). La fiche d'une analyse ne côtoie jamais les éléments d'une
+ *   autre ;
+ * - **à défaut** (base où la fonction manque) : prise conditionnée sur
+ *   `siMisAJour` (rien d'écrit si la pièce a bougé), éléments, puis pièce
+ *   conditionnée sur la version prise (`conflit`, `elementsEcrits: true`).
+ *   Sans transaction, ce repli réduit le risque sans l'écarter : un autre
+ *   appareil peut écrire ses éléments entre la prise et la pièce. Toute
+ *   nouvelle tentative refait les trois étapes.
  * `attendu` : l'updated_at sur lequel portait la condition ratée.
- * `elementsEcrits` en entrée : seconde écriture après un conflit, les
- * éléments sont déjà en place.
+ * Sans `siMisAJour` : écriture directe (pas de transaction, un arrêt en
+ * route laisse `analyse_le` inchangé et la passe suivante refait tout).
  */
 export async function ecrireResultatAnalyse({
-  affaireId, piece, fiche, elements, analyseLe = new Date(), siMisAJour = undefined, garderFiche = false, elementsEcrits = false,
+  affaireId, piece, fiche, elements, analyseLe = new Date(), siMisAJour = undefined, garderFiche = false,
 }) {
+  if (siMisAJour !== undefined) {
+    const r = await ecrireParFonction({ affaireId, piece, fiche, elements, analyseLe, siMisAJour, garderFiche })
+    if (r) return r
+  }
   const champs = champsPieceAnalysee(fiche, analyseLe)
   // Fiche modifiée ou validée au bureau pendant l'appel : elle reste, et sa marque aussi
   if (garderFiche) {
     delete champs.fiche
     delete champs.fiche_a_valider
   }
-  if (elementsEcrits) return ecrirePieceAnalysee(piece.id, champs, siMisAJour, { remplaces: 0, ajoutes: 0, elementsEcrits: true })
 
   let version = siMisAJour
   if (siMisAJour !== undefined) {
@@ -254,6 +266,36 @@ export async function ecrireResultatAnalyse({
   }
 
   return ecrirePieceAnalysee(piece.id, champs, version, { remplaces: supprime.data?.length ?? 0, ajoutes: lignes.length, elementsEcrits: true })
+}
+
+// Fonction absente du cache de PostgREST (PGRST202) ou de la base (42883) :
+// base où la 082 a été passée avant que la fonction y soit ajoutée
+const fonctionAbsente = (error) => error?.code === 'PGRST202' || error?.code === '42883'
+
+// Écriture transactionnelle ; null si la fonction manque (repli)
+async function ecrireParFonction({ affaireId, piece, fiche, elements, analyseLe, siMisAJour, garderFiche }) {
+  const lignes = lignesElementsIa({ affaireId, piece, elements })
+  const { data, error } = await supabase.rpc('edl_ecrire_analyse', {
+    p_piece: piece.id,
+    p_version: siMisAJour,
+    p_fiche: fiche ?? {},
+    p_elements: lignes,
+    p_analyse_le: new Date(analyseLe).toISOString(),
+    p_garder_fiche: garderFiche === true,
+  })
+  if (error) {
+    if (fonctionAbsente(error)) return null
+    if (analyseIndisponible(error)) return INDISPONIBLE
+    throw error
+  }
+  const statut = data?.statut
+  if (statut === 'ok') return { indisponible: false, remplaces: data.remplaces ?? 0, ajoutes: data.ajoutes ?? 0, transaction: true }
+  // 'conflit' ou 'introuvable' (supprimée, ou refusée par les règles) :
+  // rien d'écrit, l'appelant relit la pièce pour savoir laquelle
+  if (statut === 'conflit' || statut === 'introuvable') {
+    return { indisponible: false, conflit: true, elementsEcrits: false, attendu: siMisAJour, transaction: true }
+  }
+  throw new Error(`Écriture de l’analyse : réponse inattendue (${JSON.stringify(data)}).`)
 }
 
 // La prise : motif réécrit tel quel, si la pièce est encore à la version

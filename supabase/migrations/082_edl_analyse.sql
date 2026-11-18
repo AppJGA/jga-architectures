@@ -17,7 +17,8 @@
 --                         et la fiche proposée par Claude pas encore relue.
 --
 -- Aucun fichier : fichiers_orphelins() ne change pas. Agence seule ;
--- écriture réservée aux collaborateurs (règle 060). Rejouable.
+-- écriture réservée aux collaborateurs (règle 060). Rejouable. Une fonction,
+-- edl_ecrire_analyse, écrit le résultat d'une analyse en une transaction.
 
 create table if not exists edl_enregistrements (
   id          text primary key,
@@ -100,5 +101,83 @@ begin
     execute format('create policy "Collaborateurs : suppression" on %I as restrictive for delete to authenticated using (not public.est_agence() or public.peut_modifier_affaire(affaire_id))', t);
   end loop;
 end $$;
+
+-- Écriture du résultat d'une analyse, en une seule transaction : la pièce
+-- est verrouillée, puis ses propositions de Claude remplacées et sa fiche
+-- écrite ensemble — ou rien, si la pièce a bougé depuis la version réservée
+-- par l'appareil (`p_version` = updated_at rendu par la réservation). Deux
+-- analyses d'une même pièce ne mélangent ainsi jamais la fiche de l'une et
+-- les éléments de l'autre. `security invoker` : les règles RLS de
+-- l'appelant s'appliquent (« Agence » et les restrictives des
+-- collaborateurs) ; un refus fait tout annuler.
+--
+-- Rend { statut: 'ok', updated_at, remplaces, ajoutes }, { statut:
+-- 'conflit', updated_at } (rien d'écrit), ou { statut: 'introuvable' } (pièce
+-- supprimée, ou que les règles ne laissent pas modifier).
+-- `p_garder_fiche` : la fiche a été corrigée ou validée au bureau pendant
+-- l'appel ; elle reste, sa marque « à valider » aussi.
+create or replace function public.edl_ecrire_analyse(
+  p_piece uuid,
+  p_version timestamptz,
+  p_fiche jsonb,
+  p_elements jsonb,
+  p_analyse_le timestamptz,
+  p_garder_fiche boolean default false
+) returns jsonb
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  v_piece edl_pieces%rowtype;
+  v_version timestamptz;
+  v_remplaces integer;
+  v_ajoutes integer;
+begin
+  -- `for update` applique aussi les règles de modification : une pièce
+  -- qu'on ne peut pas modifier n'est pas trouvée
+  select * into v_piece from edl_pieces where id = p_piece for update;
+  if not found then
+    return jsonb_build_object('statut', 'introuvable');
+  end if;
+  if v_piece.updated_at is distinct from p_version then
+    return jsonb_build_object('statut', 'conflit', 'updated_at', v_piece.updated_at);
+  end if;
+
+  delete from edl_elements
+   where piece_id = p_piece and origine = 'ia' and a_valider;
+  get diagnostics v_remplaces = row_count;
+
+  -- Un identifiant déjà en base (élément validé entre deux essais) reste tel quel
+  insert into edl_elements (
+    id, affaire_id, niveau_id, piece_id, point_id, calque, "type", libelle, cotes, extrait,
+    a_valider, a_verifier, origine, valide_le
+  )
+  select e.id, v_piece.affaire_id, v_piece.niveau_id, p_piece, e.point_id, e.calque, e."type",
+         coalesce(e.libelle, ''), e.cotes, e.extrait, true, coalesce(e.a_verifier, false), 'ia', null
+    from jsonb_to_recordset(coalesce(p_elements, '[]'::jsonb)) as e(
+      id uuid, point_id uuid, calque text, "type" text, libelle text, cotes text, extrait text, a_verifier boolean
+    )
+  on conflict (id) do nothing;
+  get diagnostics v_ajoutes = row_count;
+
+  update edl_pieces set
+    fiche = case when p_garder_fiche then fiche else coalesce(p_fiche, '{}'::jsonb) end,
+    fiche_a_valider = case when p_garder_fiche then fiche_a_valider else true end,
+    analyse_le = p_analyse_le,
+    analyse_erreur = null
+   where id = p_piece
+  returning updated_at into v_version;
+  if not found then
+    -- Refus des règles sur la pièce : les éléments ne doivent pas rester seuls
+    raise exception 'edl_ecrire_analyse : écriture de la pièce refusée' using errcode = '42501';
+  end if;
+
+  return jsonb_build_object('statut', 'ok', 'updated_at', v_version, 'remplaces', v_remplaces, 'ajoutes', v_ajoutes);
+end $$;
+
+grant execute on function public.edl_ecrire_analyse(uuid, timestamptz, jsonb, jsonb, timestamptz, boolean) to authenticated;
+grant execute on function public.edl_ecrire_analyse(uuid, timestamptz, jsonb, jsonb, timestamptz, boolean) to service_role;
+revoke execute on function public.edl_ecrire_analyse(uuid, timestamptz, jsonb, jsonb, timestamptz, boolean) from public, anon;
 
 notify pgrst, 'reload schema';

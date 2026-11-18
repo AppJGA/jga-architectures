@@ -55,9 +55,11 @@ const priorite = (e) => (e.type === 'sortie' ? 0 : 1)
  * `clos` : l'intervalle ne peut plus s'allonger. `motif` : 'sortie' |
  * 'fin' | 'ailleurs' (clos), 'pause' | 'ouvert' (pas clos : la visite peut
  * reprendre dans la pièce). `dernier` : heure du dernier événement de la
- * visite, pour le délai d'abandon.
+ * visite, pour le délai d'abandon. `arrets` : [[début, reprise], …] — pauses
+ * et coupures reprises dans la pièce, pendant lesquelles rien n'a été
+ * enregistré (le son du passage a là un trou normal).
  *
- * @returns [{ debut, fin, clos, motif, visiteId, dernier }] (ms), triés par début
+ * @returns [{ debut, fin, clos, motif, visiteId, dernier, arrets }] (ms), triés par début
  */
 export function intervallesPiece(evenements, pieceId) {
   const parVisite = new Map()
@@ -82,6 +84,7 @@ export function intervallesPiece(evenements, pieceId) {
       let fin = null
       let motif = 'ouvert'
       let arret = null
+      const arrets = []
       for (let j = i + 1; j < liste.length && fin == null; j++) {
         const s = liste[j]
         const ev = s.e
@@ -92,7 +95,11 @@ export function intervallesPiece(evenements, pieceId) {
         else if (ev.type === 'fin') motif = 'fin'
         else if (ev.type === 'entree' || ev.piece_id !== pieceId) motif = 'ailleurs'
         else if (ARRETS.includes(ev.type)) { arret ??= s.t; continue }
-        else if (ev.type === 'reprise') { arret = null; continue }
+        else if (ev.type === 'reprise') {
+          if (arret != null) arrets.push([arret, s.t])
+          arret = null
+          continue
+        }
         else continue
         // Rien n'a été enregistré pendant une pause : la pièce s'arrête à elle
         fin = arret ?? s.t
@@ -101,7 +108,7 @@ export function intervallesPiece(evenements, pieceId) {
         fin = arret ?? dernier
         if (arret != null) motif = 'pause'
       }
-      intervalles.push({ debut: t, fin, clos: motif !== 'ouvert' && motif !== 'pause', motif, visiteId, dernier })
+      intervalles.push({ debut: t, fin, clos: motif !== 'ouvert' && motif !== 'pause', motif, visiteId, dernier, arrets })
     }
   }
   return intervalles.sort((a, b) => a.debut - b.debut)
@@ -547,37 +554,44 @@ const memeHeure = (a, b) => temps(a) === temps(b)
 // le morceau est coupé à la sortie, à quelques centaines de ms près
 export const MARGE_SON_MS = 30 * 1000
 
-/**
- * Le son d'un passage est-il dans la base ? Oui si les transcriptions de sa
- * visite vont jusqu'à sa fin (dernier `debut + duree_s`, à 30 s près). Une
- * pause ferme le passage et coupe le morceau : elle est couverte aussi.
- * Seuls comptent les morceaux commencés avant la fin du passage : un
- * morceau est coupé à chaque entrée et sortie, et celui de la pièce suivante
- * (transcrit) ne dit rien de celui de cette pièce (peut-être encore refusé
- * sur la tablette). Limite : un morceau du milieu d'un long passage
- * (morceaux de 3 min) qui manquerait ne se voit pas d'ici.
- */
 // Trou toléré entre deux morceaux transcrits d'un même passage : une
 // coupure d'iOS (micro rendu puis repris) laisse quelques secondes sans son
 export const TROU_SON_MS = 30_000
 
+/**
+ * Le son d'un passage est-il dans la base ? Oui si les transcriptions de sa
+ * visite le couvrent **sans trou**, du début à la fin (à MARGE_SON_MS près
+ * à la fin) :
+ * - seuls comptent les morceaux commencés avant la fin du passage : un
+ *   morceau est coupé à chaque entrée et sortie, celui de la pièce suivante
+ *   (transcrit) ne dit rien de celui-ci (peut-être encore refusé sur la
+ *   tablette) ;
+ * - deux morceaux qui se suivent peuvent laisser TROU_SON_MS sans son ;
+ * - un arrêt repris dans la pièce (pause, coupure d'iOS : `arrets` de
+ *   `intervallesPiece`) n'a rien enregistré : la couverture saute jusqu'à
+ *   la reprise s'il commence au plus TROU_SON_MS après ce qui est couvert.
+ * Un morceau de 3 minutes encore sur la tablette au milieu d'un long passage
+ * laisse donc un trou, et la pièce attend.
+ */
 export function sonTranscritJusquA(intervalle, enregistrements = []) {
-  // Les morceaux sont coupés à chaque entrée et sortie : seuls comptent ceux
-  // commencés avant la fin du passage (celui de la pièce suivante ne couvre
-  // rien ici). Ils doivent se suivre sans trou : un morceau de 3 minutes
-  // encore sur la tablette au milieu d'un long passage laisserait sinon
-  // analyser la pièce sans lui.
   const plages = (enregistrements ?? [])
     .filter((e) => e?.visite_id === intervalle?.visiteId && temps(e.debut) != null && temps(e.debut) < intervalle.fin)
     .map((e) => [temps(e.debut), temps(e.debut) + (Number(e.duree_s) || 0) * 1000])
     .filter(([d, f]) => Number.isFinite(d) && Number.isFinite(f) && !(f <= intervalle.debut - TROU_SON_MS))
     .sort((a, b) => a[0] - b[0])
   if (!plages.length) return false
+  const arrets = [...(intervalle.arrets ?? [])].sort((a, b) => a[0] - b[0])
   let atteint = Number.isFinite(intervalle.debut) ? intervalle.debut : plages[0][0]
+  // Triés : un saut peut en permettre un autre, un seul parcours suffit
+  const sauterLesArrets = () => {
+    for (const [a, r] of arrets) if (a <= atteint + TROU_SON_MS && r > atteint) atteint = r
+  }
   for (const [d, f] of plages) {
+    sauterLesArrets()
     if (d > atteint + TROU_SON_MS) return false
     atteint = Math.max(atteint, f)
   }
+  sauterLesArrets()
   return atteint >= intervalle.fin - MARGE_SON_MS
 }
 
@@ -659,9 +673,11 @@ const non = (raison, suivi) => (suivi ? { tenter: false, raison, suivi } : { ten
  * l'échec, ou après l'attente (10 min, puis 1 h) tant qu'elle n'a pas échoué
  * ESSAIS_AUTO_MAX fois ou d'un échec définitif (frise trop longue, refus de
  * Claude). Une pièce en échec dans la base sans suivi sur cet appareil (essai
- * fait ailleurs, mémoire effacée) repart si une visite s'est terminée après
- * l'échec (`updated_at`, touché par l'écriture du motif), sinon commence par
- * une attente : `suivi` est alors le suivi à garder.
+ * fait ailleurs, mémoire effacée) repart si une visite s'est terminée plus
+ * de MARGE_HORLOGE_MS (5 min) après max(`updated_at`, `analyse_le`) — heure
+ * de l'échec vue du serveur, la marge couvrant l'horloge de la tablette ;
+ * sinon, motif suffixé (SUFFIXE_DEFINITIF) : échec définitif ; sinon une
+ * attente, et `suivi` est alors le suivi à garder.
  *
  * Raisons d'un refus : 'non-visitee', 'deja-fait', 'passage' (pas fini),
  * 'gestes', 'son', 'echec-definitif', 'attente-echec'.

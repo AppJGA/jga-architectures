@@ -735,10 +735,16 @@ lot 1 : `docs/superpowers/plans/2026-11-17-etat-des-lieux-lot1-preparer.md`.
   voisines (pas de la façade) garde la règle « jamais superposées ». DXF
   ArchiCAD d'essai : 24 couloirs retrouvés, 0 superposition.
 - **Étages** (`niveauxLogique.js`) : par nom de bloc ou de calque (RDC,
-  SSOL / SOUS-SOL, R+n, Combles — les étages d'ArchiCAD sont superposés),
-  sinon grappes de traits (cellule d'un mètre) et grappe qui porte les
-  pièces ; nom d'après le fichier s'il n'y a qu'un étage ; dessin morcelé
-  sans pièces : tout en un étage.
+  RDJ / Rez-de-jardin, SSOL / SOUS-SOL, R+n, Combles — les étages
+  d'ArchiCAD sont superposés), sinon grappes de traits (cellule d'un mètre)
+  et grappe qui porte les pièces — la plus petite qui les contient parmi
+  les **vrais dessins** (au moins 1 % des traits) : une limite de terrain
+  trop longue pour la grille fait une grappe d'un seul trait qui entoure
+  les pièces, et l'étage s'affichait sans ses murs ; nom d'après le fichier
+  s'il n'y a qu'un étage ; dessin morcelé sans pièces : tout en un étage.
+- **Marques de zone** : certains exports écrivent l'alignement MTEXT
+  `\A1{…}` sans point-virgule et l'exposant en `\S2^ ;` (`nettoyerMtext`) ;
+  mal nettoyée, la surface ne se lisait plus et l'import passait à Claude.
 - **Claude** (`piecesIaLogique.js`, `api/edl-pieces.js`, SDK Anthropic,
   `claude-opus-5-5`, sortie JSON imposée, replis `fallbacks: 'default'`) :
   seulement pour un étage dont le DXF n'a pas de contours ; reçoit l'image (2 000 px)

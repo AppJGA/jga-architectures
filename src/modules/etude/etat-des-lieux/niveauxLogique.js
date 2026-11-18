@@ -19,6 +19,7 @@ export function niveauDeNom(nom) {
   const n = normaliser(nom)
   if (!n) return null
   if (/SOUS[-_ ]?SOL|(^|[^A-Z])S[-_]SOL|(^|[^A-Z])SSOL([^A-Z]|$)/.test(n)) return { cle: 'SS', nom: 'Sous-sol', ordre: -1 }
+  if (/(^|[^A-Z])RDJ([^A-Z]|$)|REZ[-_ ]?DE[-_ ]?JARDIN/.test(n)) return { cle: 'RDJ', nom: 'Rez-de-jardin', ordre: -0.5 }
   if (/(^|[^A-Z])RDC([^A-Z]|$)|REZ[-_ ]?DE[-_ ]?CHAUSSEE/.test(n)) return { cle: 'RDC', nom: 'Rez-de-chaussée', ordre: 0 }
   const etage = n.match(/R\s*\+\s*(\d)/) ?? n.match(/ETAGE[-_ ]?(\d)/) ?? n.match(/(\d)\s*(?:ER|EME|E)[-_ ]?ETAGE/)
   if (etage) return { cle: `R+${etage[1]}`, nom: `R+${etage[1]}`, ordre: Number(etage[1]) }
@@ -94,10 +95,15 @@ export function proposerNiveaux(lecture, detection, unitesParMetre, nomFichier =
     }))
   } else {
     const groupes = grappes(lecture.traits, u).map((traits) => ({ traits, boite: boite(traits.flatMap((t) => t.pts)), pieces: [] }))
-    // Une pièce va à la plus petite grappe qui la contient
+    // Une pièce va à la plus petite grappe qui la contient, parmi les vrais
+    // dessins : une limite de terrain trop longue pour la grille fait une
+    // grappe d'un seul trait dont la boîte entoure souvent les pièces — elle
+    // les emportait, et l'étage s'affichait sans ses murs
+    const consistantes = groupes.filter((g) => g.traits.length >= seuil)
     for (const p of detection.pieces) {
       const c = centre(p.contour).map((v) => v * u)
-      const candidats = groupes.filter((g) => dansBoite(c, g.boite))
+      const dedans = (g) => dansBoite(c, g.boite)
+      const candidats = consistantes.some(dedans) ? consistantes.filter(dedans) : groupes.filter(dedans)
       if (candidats.length) candidats.reduce((a, b) => (surfaceBoite(b.boite) < surfaceBoite(a.boite) ? b : a)).pieces.push(p)
     }
     let retenus = groupes.filter((g) => g.pieces.length > 0)

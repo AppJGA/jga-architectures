@@ -444,6 +444,8 @@ describe('étages', () => {
     assert.equal(niveauDeNom('2EME ETAGE').cle, 'R+2')
     assert.equal(niveauDeNom('Combles').cle, 'COMBLES')
     assert.equal(niveauDeNom('PLAN-RDC.dxf').cle, 'RDC')
+    assert.equal(niveauDeNom('-1. Rez-de-Jardin.dxf').nom, 'Rez-de-jardin')
+    assert.equal(niveauDeNom('PLAN_RDJ').cle, 'RDJ')
     assert.equal(niveauDeNom('PARS'), null)
     assert.equal(niveauDeNom('00_MURS'), null)
     assert.equal(niveauDeNom(null), null)
@@ -489,6 +491,21 @@ describe('étages', () => {
     assert.equal(n[0].nom, 'Rez-de-chaussée')
     assert.equal(n[0].traits.length, 60)
     assert.deepEqual(n[0].boite, [0, 0, 59, 14.75])
+  })
+
+  test('un long trait isolé (limite de terrain) qui entoure les pièces ne leur sert pas d’étage', () => {
+    // Bâtiment étendu (traits en éventail) et une limite de terrain : trop
+    // grande pour la grille, elle forme une grappe d'un seul trait dont la
+    // boîte, plus petite que celle du bâtiment, contient pourtant les pièces
+    const batiment = []
+    for (let x = 0; x < 120; x += 10) for (let y = 0; y <= 60; y += 10) batiment.push({ calque: 'MURS', bloc: null, ferme: false, pts: [[x, y], [x + 10, y]] })
+    for (let y = 0; y < 60; y += 10) batiment.push({ calque: 'MURS', bloc: null, ferme: false, pts: [[0, y], [0, y + 10]] })
+    const terrain = { calque: 'TERRAIN', bloc: null, ferme: false, pts: [[-5, -5], [90, -5], [90, 60]] }
+    const piece = { nom: 'Salon', calque: 'ZONES', bloc: null, contour: [[1, 1], [5, 1], [5, 5], [1, 5]] }
+    const n = proposerNiveaux({ traits: [...batiment, terrain], textes: [] }, { pieces: [piece] }, 1, 'plan.dxf')
+    assert.equal(n.length, 1)
+    assert.equal(n[0].traits.length, batiment.length)
+    assert.equal(n[0].pieces.length, 1)
   })
 
   test('dessin morcelé sans pièces : tout le dessin en un seul étage plutôt qu’aucun', () => {

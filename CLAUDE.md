@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 1464 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans, gestion de l'application, état des lieux)
+npm test         # 1565 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans, gestion de l'application, état des lieux)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -966,6 +966,42 @@ lot 1 : `docs/superpowers/plans/2026-11-17-etat-des-lieux-lot1-preparer.md`.
     analyse, `suiteFicheRecue`), éléments par calque en bleu avec l'extrait
     entendu : Valider / Modifier / Écarter (confirmation), « Ajouter un
     élément », « Relancer l'analyse » (confirmée : elle se paie).
+- **Export (lot 4)** (`export/`, plan
+  `docs/superpowers/plans/2026-11-18-etat-des-lieux-lot4-exporter.md`, aucune
+  migration, aucun appel payant) : bouton « Exporter » du module → **fenêtre
+  d'export** comme celle des plannings (réglages à gauche, aperçu refait
+  450 ms après le dernier réglage, « Agrandir ») : onglet « Rapport PDF »
+  (vraies pages, pdf.js) et un onglet « DXF — <étage> » par étage (le DXF
+  **produit**, relu par `lireDxf` et dessiné, une case par calque). Le ZIP
+  reprend les mêmes fichiers : ce qui se voit est ce qui part.
+  - **DXF R12** (`exportDxfEdl.js`, pur, relu par `lireDxf` dans les
+    tests ; `encodageDxf.js` Windows-1252) : coordonnées et `$INSUNITS` dans
+    **l'unité du plan d'origine** (`unites_par_metre`). **Le DXF d'origine
+    n'est jamais modifié** (150 Mo, R14 à 2018 : insérer en tenant
+    `$HANDSEED` serait fragile) : par étage `…-EDL.dxf` (seuls les calques
+    `EDL-`, à **fusionner** dans ArchiCAD) et `…-EDL-avec-plan.dxf` (+ plan
+    allégé du fichier vectoriel ; ses textes perdent rotation et alignement).
+    Un bloc `EDL_<CODE>` par type, inséré tourné comme la pièce
+    (`orientationPiece`) ; libellés « P7 · … » empilés quand plusieurs
+    éléments partagent un point ; cotes sur `EDL-Cotes` ; nom, surface, HSP
+    (`EDL-Pièces`), finitions (`EDL-Finitions`) ; « Ph n » (`EDL-Photos`) ;
+    `%%` échappé. **Par défaut, seuls les éléments validés** (et les fiches
+    validées) ; option « Inclure les propositions » → calque `EDL-À valider`.
+    Noms de calques accentués : relus par LibreDWG, **à confirmer au premier
+    essai de fusion dans ArchiCAD** (sinon les translittérer en un seul
+    endroit, `nomCalqueValide`).
+  - **Symboles usuels** (`symbolesEdl.js`, seul catalogue : DXF, PDF, écran
+    ; validés par l'agence le 2026-11-18, « à faire évoluer ») : appareils
+    de plomberie et chauffage à leur taille réelle, autres symboles à taille
+    fixe (~0,30 m) ; primitives R12 seulement (ligne, polyligne, cercle, arc,
+    texte centré). Changer un symbole = modifier son entrée. Planche dans la
+    fenêtre d'export (`PlancheSymboles.jsx`).
+  - **Rapport PDF** (`rapportEdlLogique.js` pur, `planRapportEdl.js` dessin
+    sans DOM, `genererRapportEdl.js`) : garde, un plan paysage par étage
+    cadré sur les pièces (symboles et numéros), une fiche par pièce visitée
+    (finitions, éléments par calque, photos « Ph n » numérotées comme le DXF
+    par `numeroterPhotos`, points sans élément). Extraits de pièce limités
+    aux vecteurs de la pièce (iPad).
 
 ## To-do list (`src/modules/etude/todo/`)
 

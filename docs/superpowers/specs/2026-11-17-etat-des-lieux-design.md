@@ -217,6 +217,11 @@ grise / sablier / verte / ambre / rouge pâle (échec).
   (condition de l'accord : le DXF doit s'y importer facilement, calques
   `EDL-` reconnus) ; AutoCAD en second.
 
+**Fait au lot 4 (2026-11-18)** : le DXF d'origine n'est pas modifié (fichiers
+de 150 Mo, insertion fragile) — par étage un DXF R12 des seuls calques `EDL-`
+à fusionner dans ArchiCAD, et un second avec le plan allégé ; fenêtre
+d'export avec aperçu (demande de l'agence) ; symboles validés par l'agence.
+
 **Rapport PDF** (pdfmake, comme les CR) : page de garde (affaire, date,
 rédacteur), par étage le plan avec les points numérotés, puis une fiche par
 pièce : finitions, HSP, éléments numérotés par calque, photos.

@@ -30,7 +30,8 @@ const points = [
   { id: 's1', numero: 1, x: 0.6, y: 0.2, type: 'radiateur', piece_id: 'sej' },
   { id: 's2', numero: 2, x: 2.5, y: 2, type: 'luminaire', piece_id: 'sej' },
   { id: 's3', numero: 3, x: 4.8, y: 3.7, type: 'prise', piece_id: 'sej' },
-  // Quatre éléments dans la salle de bain, contre les murs
+  // Quatre éléments dans la salle de bain, contre les murs, aux libellés
+  // longs : de quoi obliger certains à s'écarter (traits de rappel)
   { id: 'b5', numero: 5, x: 5.55, y: 1.9, type: 'lavabo', piece_id: 'sdb' },
   { id: 'b7', numero: 7, x: 5.3, y: 0.25, type: 'interrupteur', piece_id: 'sdb' },
   { id: 'b8', numero: 8, x: 6.9, y: 0.2, type: 'prise', piece_id: 'sdb' },
@@ -41,11 +42,16 @@ const elements = [
   { id: 'e2', point_id: 's2', type: 'luminaire', libelle: 'Plafonnier' },
   { id: 'e3', point_id: 's3', type: 'prise', libelle: 'Prise double' },
   { id: 'e5', point_id: 'b5', type: 'lavabo', libelle: 'Lavabo sur colonne, mitigeur', cotes: 'h 0,85' },
-  { id: 'e7', point_id: 'b7', type: 'interrupteur', libelle: 'Interrupteur' },
-  { id: 'e8', point_id: 'b8', type: 'prise', libelle: 'Prise rasoir' },
+  { id: 'e7', point_id: 'b7', type: 'interrupteur', libelle: 'Interrupteur double va-et-vient, plaque blanche' },
+  { id: 'e8', point_id: 'b8', type: 'prise', libelle: 'Prise rasoir avec transformateur intégré', cotes: 'h 1,20' },
   { id: 'e9', point_id: 'b9', type: 'luminaire', libelle: 'Réglette au-dessus du miroir' },
 ].map((e) => ({ piece_id: points.find((p) => p.id === e.point_id).piece_id, calque: null, cotes: null, a_valider: false, ...e }))
 const photos = [{ point_id: 'b5', numero: 1 }, { point_id: 's2', numero: 2 }, { point_id: 's2', numero: 3 }]
+
+// Grappe serrée dans le séjour : neuf prises à 10 cm les unes des autres,
+// leurs libellés ne tiennent pas tous au premier anneau (traits de rappel)
+const grappe = Array.from({ length: 9 }, (_, i) => ({ id: `g${i}`, numero: 20 + i, x: 1.2 + (i % 3) * 0.1, y: 2.6 + Math.floor(i / 3) * 0.1, type: 'prise', piece_id: 'sej' }))
+const elementsGrappe = grappe.map((g) => ({ id: `eg${g.numero}`, point_id: g.id, piece_id: 'sej', type: 'prise', calque: null, libelle: 'Prise double encastrée', cotes: null, a_valider: false }))
 
 function etage({ pieces = [sejour, sdb], pts = points, els = elements, ph = photos } = {}) {
   const elementsExport = elementsAExporter({ pieces, points: pts, elements: els })
@@ -107,6 +113,17 @@ describe('placement des textes', () => {
     assert.ok(!pointDansPolygone([2.5, 2], cadre.coins))
   })
 
+  test('grappe serrée : des libellés s’écartent avec un trait de rappel qui part du symbole', () => {
+    const mise = etiquettesEtage(etage({ pts: [...points, ...grappe], els: [...elements, ...elementsGrappe] }))
+    const libelles = libellesDe(mise).filter((l) => l.cle.startsWith('g'))
+    assert.ok(libelles.some((l) => l.rappel), 'aucun trait de rappel')
+    for (const l of libelles.filter((x) => x.rappel)) {
+      const [, b] = l.rappel
+      const bord = enveloppe(l.coins)
+      assert.ok(b[0] >= bord.xmin - 1e-6 && b[0] <= bord.xmax + 1e-6 && b[1] >= bord.ymin - 1e-6 && b[1] <= bord.ymax + 1e-6)
+    }
+  })
+
   test('salle de bain de 2 × 2,2 m et quatre éléments : cadre réduit, traits de rappel', () => {
     const mise = etiquettesEtage(etage())
     const cadre = mise.cadres.find((c) => c.piece.id === 'sdb')
@@ -115,7 +132,6 @@ describe('placement des textes', () => {
     assert.ok(dedans(cadre.coins, sdb.contour))
     for (const s of symbolesDe(mise)) assert.ok(aireIntersection(cadre.coins, s.poly) < 1e-6, `cadre sur ${s.cle}`)
     const libelles = libellesDe(mise).filter((l) => l.cle.startsWith('b'))
-    assert.ok(libelles.some((l) => l.rappel), 'aucun trait de rappel')
     // Un trait de rappel part du bord du symbole et touche le libellé
     for (const l of libelles.filter((x) => x.rappel)) {
       const [, b] = l.rappel
@@ -183,7 +199,7 @@ describe('placement des textes', () => {
   })
 
   test('relu par lireDxf : un cadre fermé sur EDL-Pièces dans chaque pièce, traits de rappel sur le calque de l’élément', () => {
-    const { pieces, elementsExport, points: pts, photos: ph } = etage()
+    const { pieces, elementsExport, points: pts, photos: ph } = etage({ pts: [...points, ...grappe], els: [...elements, ...elementsGrappe] })
     const texte = genererDxfEdl({ pieces, elementsExport, points: pts, photos: ph, unitesParMetre: 100 })
     const l = lireDxf(decoderDxf(encoderDxf(texte)))
     const fermes = l.traits.filter((t) => t.calque === 'EDL-Pièces' && t.ferme && !t.bloc)

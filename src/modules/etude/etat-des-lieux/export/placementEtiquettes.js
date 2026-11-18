@@ -34,7 +34,7 @@ const CANDIDATS_MAX = 2500
 // Un anneau plus loin s'écarte au moins d'autant (un symbole minuscule ne
 // donnerait sinon que des anneaux collés au premier)
 const PAS_ANNEAU_MIN = 0.15
-const ANNEAUX = 3
+const ANNEAUX = 5
 // Droite, gauche, dessus, dessous, puis les diagonales : le libellé à droite
 // reste la lecture habituelle
 const DIRECTIONS = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]]

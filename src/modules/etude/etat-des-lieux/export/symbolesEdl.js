@@ -258,7 +258,7 @@ export const SYMBOLES = {
 
 // Largeur estimée d'un caractère, en part de la hauteur du texte : un peu
 // large, pour qu'un texte ne déborde jamais de la boîte annoncée
-export const LARGEUR_CARACTERE = 0.8
+export const LARGEUR_CARACTERE = 0.65
 
 // Largeur estimée d'une ligne de texte (mètres) : la seule estimation, pour
 // les boîtes des symboles comme pour les cadres et libellés de l'export

@@ -75,6 +75,24 @@ export function analyserCalques(traits, textes = []) {
   return liste.sort((a, b) => b.traits - a.traits)
 }
 
+// Les calques s'analysent sur tout le fichier, étages réunis : un même calque
+// reçoit ainsi le même traitement à tous les étages qu'il traverse. Tous les
+// étages proposés comptent, cochés ou non : décocher un étage ne fait pas
+// changer la liste des calques sous les yeux de l'utilisateur.
+export function analyserNiveaux(niveaux) {
+  return analyserCalques(niveaux.flatMap((n) => n.traits), niveaux.flatMap((n) => n.textes ?? []))
+}
+
+/** Map nom du calque → éléments (traits ou textes) de ce calque. */
+export function parCalque(elements) {
+  const m = new Map()
+  for (const e of elements) {
+    if (!m.has(e.calque)) m.set(e.calque, [])
+    m.get(e.calque).push(e)
+  }
+  return m
+}
+
 const sansAccents = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase()
 
 // Repli quand Claude ne répond pas : un calque presque entièrement fait de

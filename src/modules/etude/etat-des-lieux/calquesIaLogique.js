@@ -183,3 +183,44 @@ export function cadreDense(traits, { cellule = CELLULE_DENSE, cote = COTE_EXTRAI
   const cy = (meilleure[1] + 0.5) * cellule
   return [cx - cote / 2, cy - cote / 2, cx + cote / 2, cy + cote / 2]
 }
+
+// ─── Choix des calques dans la fenêtre d'import ──────────────────────────────
+//
+// Un fichier préparé porte `decisions` (le traitement courant de chaque
+// calque) et `calques` : { etat: 'attente' | 'claude' | 'defaut', raisons,
+// touches, avertissement }. `touches` liste les calques changés à la main :
+// une réponse de Claude arrivée après coup ne les écrase pas.
+
+export const CALQUES_EN_ATTENTE = { etat: 'attente', raisons: {}, touches: [] }
+
+/** Réponse de `proposerTraitements` appliquée au fichier tel qu'il est devenu entre-temps. */
+export function appliquerProposition(prep, proposition) {
+  const touches = prep.calques?.touches ?? []
+  if (proposition.avertissement) {
+    return { ...prep, calques: { ...prep.calques, touches, etat: 'defaut', raisons: {}, avertissement: proposition.avertissement } }
+  }
+  const proposees = { ...(proposition.proposees ?? {}) }
+  for (const nom of touches) delete proposees[nom]
+  return {
+    ...prep,
+    decisions: fusionnerDecisions(prep.decisions, proposees),
+    calques: { ...prep.calques, touches, etat: 'claude', raisons: proposition.raisons ?? {}, avertissement: null },
+  }
+}
+
+export function choisirTraitement(prep, nom, traitement) {
+  if (!TRAITEMENTS.includes(traitement)) return prep
+  const touches = prep.calques?.touches ?? []
+  return {
+    ...prep,
+    decisions: { ...prep.decisions, [nom]: traitement },
+    calques: { ...prep.calques, touches: touches.includes(nom) ? touches : [...touches, nom] },
+  }
+}
+
+/** Valeur de la colonne `edl_niveaux.calques` (migration 081). */
+export function valeurCalques(prep) {
+  const c = prep.calques ?? {}
+  const source = c.touches?.length ? 'main' : c.etat === 'claude' ? 'claude' : 'defaut'
+  return { decisions: { ...prep.decisions }, raisons: { ...(c.raisons ?? {}) }, source }
+}

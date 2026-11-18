@@ -7,7 +7,8 @@
 import { gzipSync } from 'fflate'
 import { supabase } from '../../../core/supabase/client'
 import { arrondirContour } from './geometrieEdl'
-import { BUCKET_EDL, edlIndisponible } from './edlConstantes'
+import { ecrireAvecReplis } from '../../../shared/repliColonnes'
+import { BUCKET_EDL, edlIndisponible, colonnesVecteursManquantes } from './edlConstantes'
 
 export { BUCKET_EDL, edlIndisponible }
 const LECTURE_SEULE = 'Lecture seule : rien n’a été modifié.'
@@ -55,6 +56,25 @@ export async function envoyerSource(affaireId, octets) {
   return chemin
 }
 
+// L'étage allégé (`encoderVecteurs`, déjà compressé) : c'est lui que l'écran
+// redessine à chaque vue, net à tous les zooms (migration 081)
+export async function envoyerVecteurs(affaireId, octets) {
+  const chemin = `${affaireId}/edl/vecteurs/${crypto.randomUUID()}.json.gz`
+  await envoyer(chemin, new Blob([octets], { type: 'application/gzip' }), 'application/gzip')
+  return chemin
+}
+
+function sansColonnesVecteurs(ligne) {
+  const reste = { ...ligne }
+  delete reste.chemin_vecteurs
+  delete reste.calques
+  return reste
+}
+
+// Sans la migration 081, la ligne est réécrite sans `chemin_vecteurs` ni
+// `calques` et le fichier vectoriel déjà envoyé est retiré : l'étage
+// s'affiche par son image, comme avant. La ligne rendue n'a alors pas de
+// clé `chemin_vecteurs`, ce que l'import lit pour ne plus en envoyer.
 export async function enregistrerNiveau(affaireId, etatId, n) {
   const id = crypto.randomUUID()
   const chemin = `${affaireId}/edl/${id}.${n.rendu.extension}`
@@ -66,16 +86,24 @@ export async function enregistrerNiveau(affaireId, etatId, n) {
     await retirer([chemin])
     throw err
   }
-  const { data, error } = await supabase.from('edl_niveaux').insert({
+  const ligne = {
     id, etat_id: etatId, affaire_id: affaireId, nom: n.nom, ordre: n.ordre, format: n.format,
     source_nom: n.sourceNom ?? null, source_page: n.sourcePage ?? null, chemin_source: n.cheminSource ?? null,
     chemin, chemin_apercu: cheminApercu, largeur: n.rendu.plan.largeur, hauteur: n.rendu.plan.hauteur,
     cadrage: n.cadrage, unites_par_metre: n.unitesParMetre ?? null, echelle: n.echelle ?? null, textes: n.textes ?? [],
-  }).select().single()
+    chemin_vecteurs: n.cheminVecteurs ?? null, calques: n.calques ?? null,
+  }
+  let sansVecteurs = false
+  const { data, error } = await ecrireAvecReplis(
+    (l) => supabase.from('edl_niveaux').insert(l).select().single(),
+    ligne,
+    [[colonnesVecteursManquantes, (l) => { sansVecteurs = true; return sansColonnesVecteurs(l) }]],
+  )
   if (error) {
     await retirer([chemin, cheminApercu])
     throw error
   }
+  if (sansVecteurs && n.cheminVecteurs) await retirer([n.cheminVecteurs])
   return data
 }
 
@@ -167,7 +195,7 @@ export async function supprimerEtat(affaireId, niveaux) {
   }
   if (!data?.length) throw new Error(LECTURE_SEULE)
   await retirer([...new Set([
-    ...niveaux.flatMap((n) => [n.chemin, n.chemin_apercu, n.chemin_source]),
+    ...niveaux.flatMap((n) => [n.chemin, n.chemin_apercu, n.chemin_source, n.chemin_vecteurs]),
     ...(photos ?? []).flatMap((p) => [p.chemin, p.chemin_miniature]),
   ])])
 }

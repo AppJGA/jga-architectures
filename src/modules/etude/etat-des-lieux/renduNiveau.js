@@ -68,11 +68,43 @@ export async function imageIaDepuisUrl(url) {
   return ia
 }
 
-function dessiner(niveau, c) {
-  const { canvas, ctx } = canevasBlanc(c.largeur, c.hauteur)
+// Contour des masses (murs pochés) : nettement plus épais que les traits,
+// comme un mur coupé sur un plan imprimé
+const EPAISSEUR_MASSE = 2.5
+
+function tracerAnneaux(ctx, masse, c) {
+  for (const anneau of masse.anneaux) {
+    anneau.forEach((p, i) => {
+      const [x, y] = versPixels(c, p)
+      if (i === 0) ctx.moveTo(x, y)
+      else ctx.lineTo(x, y)
+    })
+    ctx.closePath()
+  }
+}
+
+// Masses d'abord (les traits longs gardés des murs passent par-dessus), puis
+// traits, puis textes
+function peindre(ctx, niveau, c) {
+  const epaisseur = Math.max(1, c.largeur / 4000)
   ctx.strokeStyle = '#1F1B17'
-  ctx.lineWidth = Math.max(1, c.largeur / 4000)
   ctx.lineJoin = 'round'
+  const masses = niveau.masses ?? []
+  if (masses.length) {
+    ctx.fillStyle = '#FFFFFF'
+    // Une masse par remplissage : en evenodd sur un seul chemin, deux masses
+    // de calques différents qui se chevauchent se creuseraient l'une l'autre
+    for (const m of masses) {
+      ctx.beginPath()
+      tracerAnneaux(ctx, m, c)
+      ctx.fill('evenodd')
+    }
+    ctx.lineWidth = epaisseur * EPAISSEUR_MASSE
+    ctx.beginPath()
+    for (const m of masses) tracerAnneaux(ctx, m, c)
+    ctx.stroke()
+  }
+  ctx.lineWidth = epaisseur
   // Un seul chemin pour tout l'étage : des dizaines de milliers de traits se
   // dessinent en une fois
   ctx.beginPath()
@@ -93,9 +125,36 @@ function dessiner(niveau, c) {
     const [x, y] = versPixels(c, t.pos)
     t.texte.split('\n').forEach((ligne, k) => ctx.fillText(ligne, x, y + k * h * 1.2))
   }
+}
+
+function dessiner(niveau, c) {
+  const { canvas, ctx } = canevasBlanc(c.largeur, c.hauteur)
+  peindre(ctx, niveau, c)
   return canvas
 }
 
+// Aperçu de la fenêtre d'import : dessiné dans le canevas affiché, sans
+// canevas intermédiaire. `niveau` : traits, masses et textes déjà allégés ;
+// `boite` : celle de l'étage entier, pour que l'aperçu garde le cadrage de
+// l'image enregistrée même quand un calque est masqué.
+export function dessinerApercu(cible, niveau, boite, largeurMax = 900) {
+  if (!boite?.every(Number.isFinite)) return false
+  const c = calculerCadrage(boite, { pxMax: largeurMax })
+  cible.width = Math.max(1, c.largeur)
+  cible.height = Math.max(1, c.hauteur)
+  const ctx = cible.getContext('2d')
+  ctx.fillStyle = '#FFFFFF'
+  ctx.fillRect(0, 0, cible.width, cible.height)
+  peindre(ctx, niveau, c)
+  return true
+}
+
+// Les canevas affichés aussi se libèrent au démontage (plafond de l'iPad)
+export { liberer as libererCanevas }
+
+// `niveau` : { traits, masses?, textes, boite } — l'étage allégé par
+// `simplifierNiveau`, avec la boîte de l'étage entier (même cadrage que les
+// pièces et points, en mètres)
 export async function rendreNiveauDxf(niveau) {
   const c = calculerCadrage(niveau.boite)
   const canvas = dessiner(niveau, c)

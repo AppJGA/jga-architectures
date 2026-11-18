@@ -1,8 +1,10 @@
 // ─── Importer les plans de l'existant ────────────────────────────────────────
 //
 // Deux temps : `preparerFichier` lit chaque DXF sur l'appareil (format,
-// étages, pièces) pour que l'utilisateur relise ; `importer` dessine,
-// fait proposer ce qui manque par Claude, puis enregistre. Un échec de Claude
+// étages, pièces, calques) pour que l'utilisateur relise, pendant que Claude
+// propose le traitement de chaque calque (`proposerTraitements`) ; `importer`
+// allège chaque étage d'après ces choix, le dessine, fait proposer ce qui
+// manque par Claude, puis enregistre. Un échec de Claude
 // n'arrête rien : l'étage est enregistré sans pièces, à dessiner à la main.
 // Toute autre erreur annule l'import entier (`suivi` note ce qui a été écrit).
 
@@ -14,7 +16,10 @@ import { proposerNiveaux, uniteParDefaut } from './niveauxLogique'
 import { versPiecesEdl } from './piecesIaLogique'
 import { proposerPiecesIa } from './piecesIa'
 import { rendreNiveauDxf } from './renduNiveau'
-import { assurerEtat, envoyerSource, enregistrerNiveau, enregistrerPieces, enregistrerRelecture, annulerImport } from './edlDonnees'
+import { assurerEtat, envoyerSource, envoyerVecteurs, enregistrerNiveau, enregistrerPieces, enregistrerRelecture, annulerImport } from './edlDonnees'
+import { analyserNiveaux, decisionsParDefaut, parCalque, simplifierNiveau, encoderVecteurs } from './simplificationPlan'
+import { CALQUES_EN_ATTENTE, fusionnerDecisions, valeurCalques } from './calquesIaLogique'
+import { proposerTraitementsIa } from './calquesIa'
 import { relireNiveau } from './relectureIa'
 
 const TEXTES_GARDES = 3000
@@ -43,14 +48,43 @@ export async function preparerFichier(fichier, { surConversion } = {}) {
   const unitesParMetre = detection.unitesParMetre ?? uniteParDefaut(lecture)
   const niveaux = proposerNiveaux(lecture, detection, unitesParMetre, fichier.name)
     .map((n) => ({ ...n, garde: true }))
-  return { nom: fichier.name, format, converti: format === 'dwg', octets, lecture, detection, niveaux, unitesParMetre, uniteLue: !!detection.unitesParMetre }
+  const analyse = analyserNiveaux(niveaux)
+  return {
+    nom: fichier.name, format, converti: format === 'dwg', octets, lecture, detection, niveaux, unitesParMetre, uniteLue: !!detection.unitesParMetre,
+    analyse, decisions: decisionsParDefaut(analyse), calques: CALQUES_EN_ATTENTE,
+  }
 }
 
-// Changer d'unité (DXF sans contours de pièces) : étages recalculés
+// Changer d'unité (DXF sans contours de pièces) : étages recalculés, et
+// calques réanalysés (la longueur d'un trait court change avec l'unité) ;
+// un calque déjà réglé, par Claude ou à la main, garde son traitement.
 export function changerUnite(preparation, unitesParMetre) {
   const niveaux = proposerNiveaux(preparation.lecture, preparation.detection, unitesParMetre, preparation.nom)
     .map((n, i) => ({ ...n, nom: preparation.niveaux[i]?.nom ?? n.nom, garde: preparation.niveaux[i]?.garde ?? true }))
-  return { ...preparation, unitesParMetre, niveaux }
+  const analyse = analyserNiveaux(niveaux)
+  return { ...preparation, unitesParMetre, niveaux, analyse, decisions: fusionnerDecisions(decisionsParDefaut(analyse), preparation.decisions) }
+}
+
+/**
+ * Claude choisit le traitement de chaque calque du fichier. Ne lève jamais :
+ * sans Claude (réseau, clé, refus), les décisions par défaut s'appliquent et
+ * `avertissement` dit pourquoi.
+ * @returns { decisions, raisons, proposees, avertissement? } — `decisions`
+ *   complétées par les défauts, `proposees` seulement celles de Claude
+ */
+export async function proposerTraitements(preparation) {
+  const defauts = decisionsParDefaut(preparation.analyse)
+  try {
+    // Les extraits se dessinent d'un bloc avant l'envoi : on laisse d'abord
+    // la fenêtre afficher le fichier qui vient d'être lu
+    await new Promise((r) => setTimeout(r, 0))
+    const traits = parCalque(preparation.niveaux.flatMap((n) => n.traits))
+    const textes = parCalque(preparation.niveaux.flatMap((n) => n.textes))
+    const { decisions, raisons } = await proposerTraitementsIa(preparation.analyse, traits, textes)
+    return { decisions: fusionnerDecisions(defauts, decisions), raisons, proposees: decisions }
+  } catch (err) {
+    return { decisions: defauts, raisons: {}, proposees: {}, avertissement: err?.message ?? String(err) }
+  }
 }
 
 const textesGardes = (textes) => textes.slice(0, TEXTES_GARDES)
@@ -58,13 +92,29 @@ const textesGardes = (textes) => textes.slice(0, TEXTES_GARDES)
 async function importerDxf(affaireId, etatId, prep, ordre, surEtape, avertissements, suivi) {
   const cheminSource = await envoyerSource(affaireId, prep.octets)
   suivi.chemins.push(cheminSource)
+  // Les décisions du moment : un import lancé pendant que Claude réfléchit
+  // part avec les réglages affichés
+  const calques = valeurCalques(prep)
   for (const n of prep.niveaux.filter((x) => x.garde)) {
+    surEtape(`Allègement de l’étage « ${n.nom} »…`)
+    const allege = simplifierNiveau(n, calques.decisions)
+    // La boîte de l'étage entier : l'image garde le cadrage des pièces même
+    // quand un calque est masqué
+    const vecteurs = { traits: allege.traits, masses: allege.masses, textes: allege.textes, boite: n.boite }
     surEtape(`Dessin de l’étage « ${n.nom} »…`)
-    const { cadrage, rendu, ia } = await rendreNiveauDxf(n)
+    const { cadrage, rendu, ia } = await rendreNiveauDxf(vecteurs)
+    // Base sans la migration 081 (vue au premier étage) : plus aucun envoi
+    let cheminVecteurs = null
+    if (!suivi.sansVecteurs) {
+      cheminVecteurs = await envoyerVecteurs(affaireId, encoderVecteurs(vecteurs))
+      suivi.chemins.push(cheminVecteurs)
+    }
     const niveau = await enregistrerNiveau(affaireId, etatId, {
       nom: n.nom, ordre: ordre.valeur++, format: 'dxf', sourceNom: prep.nom, cheminSource, rendu, cadrage,
       unitesParMetre: prep.unitesParMetre, textes: textesGardes(n.textes.map((t) => ({ texte: t.texte, calque: t.calque, pos: t.pos }))),
+      cheminVecteurs, calques,
     })
+    if (cheminVecteurs && !Object.hasOwn(niveau, 'chemin_vecteurs')) suivi.sansVecteurs = true
     noterNiveau(suivi, niveau)
     let pieces = n.pieces.map((p) => ({ ...p, origine: 'dxf', aVerifier: false }))
     if (!pieces.length) {

@@ -1,14 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { X, Upload, AlertTriangle, Check, Sparkles } from 'lucide-react'
-import { preparerFichier, changerUnite, importer } from './importerPlans'
+import { X, Upload, AlertTriangle, Check, Sparkles, ChevronDown, ChevronRight } from 'lucide-react'
+import { preparerFichier, changerUnite, importer, proposerTraitements } from './importerPlans'
+import { TRAITEMENTS, LIBELLES_TRAITEMENT, simplifierNiveau } from './simplificationPlan'
+import { appliquerProposition, choisirTraitement } from './calquesIaLogique'
+import { dessinerApercu, libererCanevas } from './renduNiveau'
 
 // ─── Importer les plans de l'existant ────────────────────────────────────────
 //
 // Même fenêtre que l'import des pièces écrites : déposer les DWG ou DXF (un
 // DWG est converti en DXF sur l'appareil), relire ce qui a été lu (étages,
-// pièces, zones englobantes écartées), puis importer. Un PDF est refusé avec
-// ce qu'il faut faire à la place. La
+// pièces, zones englobantes écartées, traitement de chaque calque proposé
+// par Claude, avec un aperçu de l'étage allégé), puis importer. Un PDF est
+// refusé avec ce qu'il faut faire à la place. La
 // fenêtre ne se ferme qu'au ✕, par Annuler ou Échap, jamais pendant l'import.
 
 const UNITES = [{ valeur: 1, libelle: 'mètre' }, { valeur: 100, libelle: 'centimètre' }, { valeur: 1000, libelle: 'millimètre' }]
@@ -18,7 +22,11 @@ const boutonSecondaire = { display: 'inline-flex', alignItems: 'center', gap: 6,
 const boutonPrincipal = { minHeight: 40, padding: '0 18px', borderRadius: 3, border: 'none', background: 'var(--affaire-accent, #E8602C)', color: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer' }
 const boutonIcone = { background: 'none', border: 'none', cursor: 'pointer', color: '#9C9591', padding: 4, display: 'inline-flex' }
 
-const pluriel = (n, mot) => `${n} ${mot}${n > 1 ? 's' : ''}`
+const pluriel = (n, mot) => `${n.toLocaleString('fr-FR')} ${mot}${n > 1 ? 's' : ''}`
+// Recalcul de l'aperçu après le dernier changement : allègement et dessin
+// d'un gros étage prennent un moment, ils ne doivent pas suivre chaque choix
+const DELAI_APERCU = 400
+const LARGEUR_APERCU = 900
 
 function resumeNiveau(n) {
   if (!n.pieces.length) {
@@ -32,8 +40,110 @@ function resumeNiveau(n) {
   )
 }
 
-function Fichier({ prep, verrouille, onChange, onRetirer }) {
-  const majNiveau = (k, changement) => onChange({ ...prep, niveaux: prep.niveaux.map((m, j) => (j === k ? { ...m, ...changement } : m)) })
+function mentionCalques(calques) {
+  if (calques.etat === 'attente') {
+    return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Sparkles size={12} /> Claude choisit le traitement des calques…</span>
+  }
+  if (calques.etat === 'claude') return `Proposé par Claude${calques.touches.length ? ' · modifié à la main' : ''}`
+  return (
+    <span title={calques.avertissement ?? undefined} style={{ color: '#92400E' }}>
+      Claude indisponible : réglages par défaut{calques.touches.length ? ' · modifiés à la main' : ''}
+    </span>
+  )
+}
+
+// L'étage allégé avec les choix du moment : le premier étage coché du
+// fichier, redessiné un instant après le dernier changement. Ne dépend que
+// des traits et des décisions : renommer un étage ne relance rien.
+function ApercuCalques({ niveau, decisions }) {
+  const canevas = useRef(null)
+  const [compte, setCompte] = useState(null)
+  const traits = niveau?.traits
+  const textes = niveau?.textes
+  const boite = niveau?.boite
+
+  useEffect(() => {
+    if (!traits) return undefined
+    const minuteur = setTimeout(() => {
+      const allege = simplifierNiveau({ traits, textes }, decisions)
+      if (canevas.current && dessinerApercu(canevas.current, allege, boite, LARGEUR_APERCU)) {
+        setCompte({ gardes: allege.traits.length, total: traits.length, masses: allege.masses.length })
+      }
+    }, DELAI_APERCU)
+    return () => clearTimeout(minuteur)
+  }, [traits, textes, boite, decisions])
+
+  // Le canevas affiché se libère à la fermeture (plafond de mémoire de l'iPad)
+  useEffect(() => {
+    const c = canevas.current
+    return () => { if (c) libererCanevas(c) }
+  }, [])
+
+  if (!niveau) return <p style={{ margin: 0, fontSize: 12, color: '#9C9591' }}>Aucun étage coché : pas d’aperçu.</p>
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <div style={{ background: 'white', border: '0.5px solid rgba(0,0,0,0.12)', borderRadius: 2, padding: 4, minHeight: 60 }}>
+        <canvas ref={canevas} aria-label={`Aperçu de l’étage ${niveau.nom} allégé`}
+          style={{ display: compte ? 'block' : 'none', margin: '0 auto', maxWidth: '100%', maxHeight: 480, width: 'auto', height: 'auto' }} />
+        {!compte && <p style={{ margin: 0, padding: 16, fontSize: 12, color: '#9C9591', textAlign: 'center' }}>Aperçu en préparation…</p>}
+      </div>
+      {compte && (
+        <p style={{ margin: 0, fontSize: 11, color: '#5E5854' }}>
+          « {niveau.nom} » : {compte.gardes.toLocaleString('fr-FR')} traits sur {compte.total.toLocaleString('fr-FR')}
+          {compte.masses > 0 && ` · ${pluriel(compte.masses, 'masse')} de murs`}
+        </p>
+      )}
+    </div>
+  )
+}
+
+function BlocCalques({ prep, verrouille, onModifier }) {
+  const [ouvert, setOuvert] = useState(true)
+  const raisons = prep.calques.raisons ?? {}
+  return (
+    <div style={{ marginTop: 10, borderTop: '0.5px solid rgba(0,0,0,0.08)', paddingTop: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <button type="button" onClick={() => setOuvert((o) => !o)} aria-expanded={ouvert}
+          style={{ ...boutonIcone, color: '#1F1B17', fontSize: 13, fontWeight: 600, gap: 4, padding: '4px 0', minHeight: 32 }}>
+          {ouvert ? <ChevronDown size={15} /> : <ChevronRight size={15} />} Calques ({prep.analyse.length})
+        </button>
+        <span style={{ fontSize: 12, color: '#5E5854' }}>{mentionCalques(prep.calques)}</span>
+      </div>
+      {ouvert && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 6 }}>
+          <fieldset disabled={verrouille} aria-label="Traitement des calques" style={{ border: 'none', margin: 0, padding: 0, minWidth: 0 }}>
+            <div style={{ border: '0.5px solid rgba(0,0,0,0.1)', borderRadius: 2, maxHeight: 300, overflowY: 'auto', background: 'white' }}>
+              {prep.analyse.map((c, i) => (
+                <div key={c.nom} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px', borderTop: i ? '0.5px solid rgba(0,0,0,0.06)' : 'none' }}>
+                  <div style={{ flex: 1, minWidth: 0 }} title={raisons[c.nom] ?? undefined}>
+                    <p style={{ margin: 0, fontSize: 12, color: '#1F1B17', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {c.nom || '(sans nom)'} <span style={{ color: '#9C9591' }}>· {pluriel(c.traits, 'trait')}{c.textes > 0 ? ` · ${pluriel(c.textes, 'texte')}` : ''}</span>
+                    </p>
+                    {raisons[c.nom] && (
+                      <p style={{ margin: '1px 0 0', fontSize: 11, color: '#9C9591', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{raisons[c.nom]}</p>
+                    )}
+                  </div>
+                  <select value={prep.decisions[c.nom] ?? 'garder'} aria-label={`Traitement du calque ${c.nom}`}
+                    onChange={(e) => { const t = e.target.value; onModifier((p) => choisirTraitement(p, c.nom, t)) }}
+                    style={{ ...champ, flex: '0 0 auto', width: 150 }}>
+                    {TRAITEMENTS.map((t) => <option key={t} value={t}>{LIBELLES_TRAITEMENT[t]}</option>)}
+                  </select>
+                </div>
+              ))}
+            </div>
+          </fieldset>
+          <ApercuCalques niveau={prep.niveaux.find((n) => n.garde) ?? null} decisions={prep.decisions} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+// `onModifier` reçoit une fonction (fichier → fichier) : appliquée au fichier
+// tel qu'il est dans l'état, elle ne défait pas une réponse de Claude arrivée
+// entre-temps
+function Fichier({ prep, verrouille, onModifier, onRetirer }) {
+  const majNiveau = (k, changement) => onModifier((p) => ({ ...p, niveaux: p.niveaux.map((m, j) => (j === k ? { ...m, ...changement } : m)) }))
   return (
     <li style={{ background: 'white', border: '0.5px solid rgba(0,0,0,0.1)', padding: '12px 14px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -60,7 +170,7 @@ function Fichier({ prep, verrouille, onChange, onRetirer }) {
               </span>
               <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
                 Unité
-                <select value={prep.unitesParMetre} disabled={verrouille} onChange={(e) => onChange(changerUnite(prep, Number(e.target.value)))} style={champ}>
+                <select value={prep.unitesParMetre} disabled={verrouille} onChange={(e) => { const u = Number(e.target.value); onModifier((p) => changerUnite(p, u)) }} style={champ}>
                   {UNITES.map((u) => <option key={u.valeur} value={u.valeur}>{u.libelle}</option>)}
                 </select>
               </label>
@@ -77,6 +187,7 @@ function Fichier({ prep, verrouille, onChange, onRetirer }) {
               </div>
             ))}
           </fieldset>
+          {prep.analyse?.length > 0 && <BlocCalques prep={prep} verrouille={verrouille} onModifier={onModifier} />}
         </>
       )}
     </li>
@@ -92,6 +203,13 @@ export function ImportEdl({ affaireId, onTermine, onFermer }) {
   const [erreur, setErreur] = useState(null)
   const [avertissements, setAvertissements] = useState(null)
   const occupe = lecture || !!etape
+  // Une réponse de Claude arrivée après la fermeture de la fenêtre est ignorée
+  const monte = useRef(true)
+
+  useEffect(() => {
+    monte.current = true
+    return () => { monte.current = false }
+  }, [])
 
   useEffect(() => {
     const touche = (e) => { if (e.key === 'Escape' && !occupe) onFermer() }
@@ -114,12 +232,23 @@ export function ImportEdl({ affaireId, onTermine, onFermer }) {
         prep = { nom: f.name, refus: `Fichier illisible : ${err?.message ?? String(err)}` }
       }
       setPreparations((ps) => [...ps, { ...prep, id }])
+      if (prep.analyse?.length) proposer(id, prep)
       setLecture('Lecture du plan…')
     }
     setLecture(null)
   }
 
-  const modifier = (id, prep) => setPreparations((ps) => ps.map((p) => (p.id === id ? prep : p)))
+  // Claude répond sans bloquer la fenêtre : on peut relire, régler les
+  // calques et même importer pendant ce temps (les choix affichés partent).
+  // Un fichier retiré entre-temps n'est plus dans la liste : rien à appliquer.
+  const proposer = (id, prep) => {
+    proposerTraitements(prep).then((proposition) => {
+      if (!monte.current) return
+      setPreparations((ps) => ps.map((p) => (p.id === id ? appliquerProposition(p, proposition) : p)))
+    })
+  }
+
+  const modifier = (id, changer) => setPreparations((ps) => ps.map((p) => (p.id === id ? changer(p) : p)))
   const aImporter = preparations.filter((p) => !p.refus && p.niveaux.some((n) => n.garde))
   const nbEtages = aImporter.reduce((s, p) => s + p.niveaux.filter((n) => n.garde).length, 0)
 
@@ -185,7 +314,7 @@ export function ImportEdl({ affaireId, onTermine, onFermer }) {
                 <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {preparations.map((p) => (
                     <Fichier key={p.id} prep={p} verrouille={occupe}
-                      onChange={(prep) => modifier(p.id, prep)}
+                      onModifier={(changer) => modifier(p.id, changer)}
                       onRetirer={() => setPreparations((ps) => ps.filter((x) => x.id !== p.id))} />
                   ))}
                 </ul>

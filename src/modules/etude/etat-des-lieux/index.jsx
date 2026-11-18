@@ -13,6 +13,9 @@ import { VisiteEdl } from './visite/VisiteEdl'
 import { visiteEnCours, perteRemplacement } from './visite/visiteLogique'
 import { oublierEdlLocal } from './visite/synchroEdl'
 import { useAnalyseEdl } from './analyse/useAnalyseEdl'
+import { RelectureEdl } from './analyse/RelectureEdl'
+import { resumePieceRelecture } from './analyse/relectureAnalyseLogique'
+import { COULEUR_IA } from '../../chantier/comptes-rendus/enregistrement/styleProposition'
 
 // ─── État des lieux d'un bâtiment existant ───────────────────────────────────
 //
@@ -27,6 +30,10 @@ import { useAnalyseEdl } from './analyse/useAnalyseEdl'
 // chaque ouverture avec du réseau. « Remplacer les plans » reste proposé
 // après une visite (demande de l'agence, 2026-11-18) : la fenêtre dit tout ce
 // qui sera supprimé, visites, points et photos compris (migration 080).
+// Lot 3 : « Relecture », à côté de « Pièces » dès qu'une visite existe, pour
+// relire au bureau ce que Claude a tiré de chaque pièce. La vue et la pièce
+// ouverte sont dans l'adresse (?vue=relecture&piece=…) : un rechargement y
+// ramène.
 
 const texteDiscret = { margin: 0, fontSize: 12, color: '#9C9591' }
 const boutonPrincipal = { display: 'inline-flex', alignItems: 'center', gap: 8, minHeight: 40, padding: '0 16px', border: 'none', borderRadius: 3, background: 'var(--affaire-accent, #E8602C)', color: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer' }
@@ -90,7 +97,31 @@ export default function EtatDesLieuxModule({ lectureSeule = false }) {
     visite.recharger()
   }
 
-  const niveau = edl.niveaux.find((n) => n.id === niveauId) ?? edl.niveaux[0]
+  // Relecture : possible dès qu'une visite existe (ou que l'analyse a déjà
+  // laissé quelque chose, visite lue sur un autre appareil)
+  const relecturePossible = aEuUneVisite || analyse.elements.length > 0
+    || [...analyse.pieces.values()].some((p) => p.analyse_le)
+  // Tant que la visite n'est pas lue, l'adresse fait foi : pas de saut vers
+  // « Pièces » au rechargement
+  const vueRelecture = params.get('vue') === 'relecture' && (relecturePossible || !visite.charge)
+  const pieceRelue = vueRelecture ? params.get('piece') : null
+  const changerAdresse = (modifier) => setParams((p) => { const n = new URLSearchParams(p); modifier(n); return n })
+  const choisirVue = (relecture) => changerAdresse((n) => {
+    if (relecture) n.set('vue', 'relecture')
+    else n.delete('vue')
+    n.delete('piece')
+  })
+  const ouvrirPiece = (id) => changerAdresse((n) => { if (id) n.set('piece', id); else n.delete('piece') })
+  const choisirNiveau = (id) => {
+    setNiveauId(id)
+    if (pieceRelue) ouvrirPiece(null)
+  }
+
+  // Une pièce ouverte depuis l'adresse impose son étage (rechargement)
+  const niveauDeLaPiece = pieceRelue ? edl.pieces.find((p) => p.id === pieceRelue)?.niveau_id : null
+  const niveau = edl.niveaux.find((n) => n.id === niveauId)
+    ?? edl.niveaux.find((n) => n.id === niveauDeLaPiece)
+    ?? edl.niveaux[0]
 
   useEffect(() => {
     if (!edl.charge || !navigator.onLine || !edl.niveaux.length) return
@@ -176,6 +207,22 @@ export default function EtatDesLieuxModule({ lectureSeule = false }) {
   })
 
   const piecesDe = (id) => edl.pieces.filter((p) => p.niveau_id === id)
+  const aValiderDe = (id) => piecesDe(id).reduce((n, p) => {
+    const a = analyse.pieces.get(p.id)
+    return n + (a ? resumePieceRelecture({ ...p, ...a }, analyse.elements).aValider : 0)
+  }, 0)
+  const aValiderTotal = vueRelecture || relecturePossible ? edl.niveaux.reduce((n, nv) => n + aValiderDe(nv.id), 0) : 0
+  const ongletVue = (actif, libelle, compte, onClick) => (
+    <button type="button" role="tab" aria-selected={actif} onClick={onClick}
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 6, minHeight: 44, padding: '0 16px', cursor: 'pointer',
+        border: 'none', borderTop: '2px solid transparent', borderBottom: `2px solid ${actif ? 'var(--affaire-accent, #E8602C)' : 'transparent'}`,
+        background: 'none', fontSize: 14, fontWeight: actif ? 600 : 400, color: actif ? '#1F1B17' : '#5E5854',
+      }}>
+      {libelle}
+      {compte > 0 && <span style={{ fontSize: 12, fontWeight: 600, color: COULEUR_IA }}>{compte} à valider</span>}
+    </button>
+  )
   const horsLigne = typeof navigator !== 'undefined' && !navigator.onLine
 
   return (
@@ -205,12 +252,20 @@ export default function EtatDesLieuxModule({ lectureSeule = false }) {
         )}
       </div>
 
+      {(relecturePossible || vueRelecture) && (
+        <div role="tablist" aria-label="Vue" style={{ display: 'flex', alignItems: 'center', gap: 4, borderBottom: '0.5px solid rgba(0,0,0,0.1)' }}>
+          {ongletVue(!vueRelecture, 'Pièces', 0, () => choisirVue(false))}
+          {ongletVue(vueRelecture, 'Relecture', aValiderTotal, () => choisirVue(true))}
+        </div>
+      )}
+
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', borderBottom: '0.5px solid rgba(0,0,0,0.1)' }}>
         <div role="tablist" aria-label="Étages" style={{ display: 'flex', alignItems: 'center', gap: 4, flex: 1, flexWrap: 'wrap' }}>
           {edl.niveaux.map((n) => {
             const actif = n.id === niveau?.id
+            const aValider = vueRelecture ? aValiderDe(n.id) : 0
             return (
-              <button key={n.id} type="button" role="tab" aria-selected={actif} onClick={() => setNiveauId(n.id)}
+              <button key={n.id} type="button" role="tab" aria-selected={actif} onClick={() => choisirNiveau(n.id)}
                 style={{
                   display: 'inline-flex', alignItems: 'center', gap: 6, minHeight: 40, padding: '0 16px', cursor: 'pointer',
                   border: 'none', borderTop: '2px solid transparent', borderBottom: `2px solid ${actif ? 'var(--affaire-accent, #E8602C)' : 'transparent'}`,
@@ -218,11 +273,12 @@ export default function EtatDesLieuxModule({ lectureSeule = false }) {
                 }}>
                 {n.nom}
                 <span style={{ fontSize: 12, color: '#9C9591', fontWeight: 400 }}>{piecesDe(n.id).length}</span>
+                {aValider > 0 && <span style={{ fontSize: 12, color: COULEUR_IA, fontWeight: 600 }}>· {aValider} à valider</span>}
               </button>
             )
           })}
         </div>
-        {!lectureSeule && niveau && (
+        {!lectureSeule && niveau && !vueRelecture && (
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#5E5854', paddingBottom: 4 }}>
             Nom de l’étage
             <input
@@ -240,7 +296,15 @@ export default function EtatDesLieuxModule({ lectureSeule = false }) {
           <button type="button" onClick={() => edl.setErreur(null)} style={{ border: 'none', background: 'none', color: '#B8412C', cursor: 'pointer', fontSize: 12 }}>Fermer</button>
         </p>
       )}
-      {niveau && (
+      {niveau && vueRelecture && (
+        <div style={{ flex: 1, minHeight: 0 }}>
+          <RelectureEdl
+            affaireId={affaireId} niveau={niveau} pieces={piecesDe(niveau.id)} visite={visite} analyse={analyse}
+            obtenirLiens={obtenirLiens} lectureSeule={lectureSeule} pieceId={pieceRelue} onOuvrirPiece={ouvrirPiece}
+          />
+        </div>
+      )}
+      {niveau && !vueRelecture && (
         <div style={{ flex: 1, minHeight: 0 }}>
           <EditeurPieces
             key={niveau.id}

@@ -4,6 +4,7 @@ import { versPixels, versMetres, centre } from '../geometrieEdl'
 import { cadrePiece, COULEURS_PIECE, etatPiece, pointProche, ZOOM_MAX_VISITE } from './visiteLogique'
 import { useVecteursEdl } from '../useVecteursEdl'
 import { zoomMaxVectoriel } from '../vecteursEdlLogique'
+import { COULEUR_IA } from '../../../chantier/comptes-rendus/enregistrement/styleProposition'
 
 // ─── Plan de la visite ───────────────────────────────────────────────────────
 //
@@ -14,13 +15,16 @@ import { zoomMaxVectoriel } from '../vecteursEdlLogique'
 // 44 px) ou en pose un nouveau ; seul le point choisi capture le doigt et se
 // glisse. Un second doigt ou un `pointercancel` annulent le glisser (règle du
 // projet : rien d'enregistré).
+// `consultation` (relecture au bureau) : aucun point ne se glisse, un appui
+// ne fait que choisir un point ; le point choisi porte un halo bleu, celui
+// des propositions de l'IA, pour se repérer depuis la liste des éléments.
 
 const ACCENT = 'var(--affaire-accent, #E8602C)'
 // Zone sensible de 44 px au doigt, rond visible plus petit
 const RAYON_TOUCHER = 22
 const SEUIL_GLISSE = 6
 
-export function PlanVisite({ niveau, pieces, points, nbPhotos, visitees, etats = null, piece, pointId, obtenirLiens, onToucher, onChoisirPoint, onDeplacerPoint }) {
+export function PlanVisite({ niveau, pieces, points, nbPhotos, visitees, etats = null, piece, pointId, obtenirLiens, onToucher, onChoisirPoint, onDeplacerPoint, consultation = false }) {
   const svg = useRef(null)
   const glisseCourant = useRef(null)
   const pointeurs = useRef(new Set()) // doigts posés sur le plan, glisser compris
@@ -62,7 +66,7 @@ export function PlanVisite({ niveau, pieces, points, nbPhotos, visitees, etats =
     const m = versMetres(c, [x * niveau.largeur, y * niveau.hauteur])
     const proche = pointProche(points.filter(touchable), m, toleranceMetres())
     if (proche) onChoisirPoint(proche.id)
-    else onToucher(m)
+    else onToucher?.(m)
   }
 
   const annulerGlisse = () => {
@@ -145,7 +149,10 @@ export function PlanVisite({ niveau, pieces, points, nbPhotos, visitees, etats =
           const r = (choisi ? 13 : 11) / zoom
           return (
             <g key={p.id} style={{ pointerEvents: 'none', opacity: piece ? (touchable(p) ? 1 : 0.35) : (p.piece_id ? 0.55 : 1) }}>
-              {choisi && (
+              {choisi && consultation && (
+                <circle cx={cx} cy={cy} r={22 / zoom} style={{ fill: 'rgba(47,111,181,0.18)', stroke: COULEUR_IA, strokeWidth: 2.5 / zoom }} />
+              )}
+              {choisi && !consultation && (
                 // Seule poignée qui capture le doigt
                 <circle
                   cx={cx} cy={cy} r={RAYON_TOUCHER / zoom}

@@ -85,7 +85,12 @@ export function champsValidation(champs = {}, maintenant = new Date()) {
     const v = champs[c]
     if (c === 'a_verifier') ligne[c] = v === true
     else if (c === 'libelle') ligne[c] = texte(v)
-    else if (c === 'point_id' || c === 'calque') ligne[c] = v ?? null
+    else if (c === 'calque') {
+      // Colonne NOT NULL : un calque vide n'est pas envoyé (la base
+      // refuserait toute la validation), l'élément garde le sien
+      const calque = texteOuNull(v)
+      if (calque) ligne[c] = calque
+    } else if (c === 'point_id') ligne[c] = v || null
     else ligne[c] = texteOuNull(v)
   }
   return { ...ligne, a_valider: false, valide_le: new Date(maintenant).toISOString() }

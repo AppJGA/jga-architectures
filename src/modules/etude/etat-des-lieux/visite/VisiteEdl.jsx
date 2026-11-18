@@ -4,7 +4,9 @@ import { useEnregistrementEdl } from './useEnregistrementEdl'
 import { enregistrementActif } from '../../../chantier/comptes-rendus/enregistrement/enregistrementLogique'
 import {
   pieceSous, piecesVisitees, visiteEnCours, evenementPourEtat, penseBete, messageArret, designationPiece, arrondirMetre,
+  etatPieceVisite,
 } from './visiteLogique'
+import { apresSortieDePiece } from '../analyse/analyseEdl'
 import { typeEdl } from '../calquesEdl'
 import { aire } from '../geometrieEdl'
 import { PlanVisite } from './PlanVisite'
@@ -21,6 +23,12 @@ import { PanneauPoint } from './PanneauPoint'
 // enregistré (pause, micro coupé, échec), le plan est grisé et les gestes
 // bloqués, sauf « Reprendre l'enregistrement ». Chaque geste est noté au
 // journal avec l'heure de l'appareil.
+//
+// Lot 3 : chaque sortie de pièce (et la fin de la visite) fait partir, avec
+// du réseau et sans attendre, les gestes, le son puis l'analyse des pièces
+// prêtes ; les pièces prennent la couleur de leur analyse et le pense-bête
+// se coche d'après la fiche. Sans réseau, rien ne change : tout part au
+// retour du réseau (moteur de synchro de l'app).
 //
 // Barre de la pièce et panneau du point restent toujours montés, à hauteur
 // fixe, et les messages s'affichent par-dessus le plan : la visionneuse ne
@@ -69,7 +77,7 @@ function ConfirmerFin({ onConfirmer, onAnnuler }) {
   )
 }
 
-export function VisiteEdl({ affaireId, visite, obtenirLiens, onFermer }) {
+export function VisiteEdl({ affaireId, visite, analyse = null, obtenirLiens, onFermer }) {
   const { donnees, recharger } = visite
   const [visiteId, setVisiteId] = useState(null)
   const [niveauId, setNiveauId] = useState(null)
@@ -88,7 +96,15 @@ export function VisiteEdl({ affaireId, visite, obtenirLiens, onFermer }) {
 
   const niveaux = useMemo(() => donnees?.niveaux ?? [], [donnees?.niveaux])
   const niveau = niveaux.find((n) => n.id === niveauId) ?? niveaux[0] ?? null
-  const pieces = useMemo(() => (donnees?.pieces ?? []).filter((p) => p.niveau_id === niveau?.id), [donnees?.pieces, niveau?.id])
+  // L'état de l'analyse lu en ligne passe par-dessus celui de l'instantané
+  // (emporté pour la visite sans réseau)
+  const analysePieces = analyse?.pieces
+  const pieces = useMemo(() => (donnees?.pieces ?? [])
+    .filter((p) => p.niveau_id === niveau?.id)
+    .map((p) => {
+      const a = analysePieces?.get(p.id)
+      return a ? { ...p, ...a } : p
+    }), [donnees?.pieces, niveau?.id, analysePieces])
   const piece = pieces.find((p) => p.id === pieceId) ?? null
   const points = useMemo(() => (donnees?.points ?? []).filter((p) => p.niveau_id === niveau?.id), [donnees?.points, niveau?.id])
   const point = (donnees?.points ?? []).find((p) => p.id === pointId) ?? null
@@ -99,6 +115,10 @@ export function VisiteEdl({ affaireId, visite, obtenirLiens, onFermer }) {
     return n
   }, [donnees?.photos])
   const visitees = useMemo(() => piecesVisitees(donnees?.entrees), [donnees?.entrees])
+  const pieceEnAnalyse = analyse?.enCours ?? null
+  const etats = useMemo(() => new Map(pieces.map((p) => [
+    p.id, etatPieceVisite(p, { visitees, entrees: donnees?.entrees, enCours: pieceEnAnalyse }),
+  ])), [pieces, visitees, donnees?.entrees, pieceEnAnalyse])
   const ancienne = visiteEnCours(donnees?.visites)
 
   useEffect(() => { contexte.current = { visiteId, niveauId: niveau?.id ?? null, pieceId: piece?.id ?? null } })
@@ -121,6 +141,22 @@ export function VisiteEdl({ affaireId, visite, obtenirLiens, onFermer }) {
     Promise.resolve().then(() => { if (vivant) recharger() })
     return () => { vivant = false }
   }, [recharger])
+
+  // Ouverture de la visite avec du réseau : les pièces des visites
+  // précédentes qui attendent partent (un seul déclenchement par ouverture)
+  const lancerAnalyse = analyse?.lancer
+  useEffect(() => {
+    let vivant = true
+    Promise.resolve().then(() => { if (vivant) lancerAnalyse?.() })
+    return () => { vivant = false }
+  }, [lancerAnalyse])
+
+  // Sans attendre et avec du réseau seulement : la visite continue pendant
+  // l'envoi, la transcription et l'analyse
+  const analyserApres = (edlVisiteId) => {
+    if (!edlVisiteId || navigator.onLine === false) return
+    apresSortieDePiece(affaireId, edlVisiteId).catch((err) => console.warn('Analyse après la sortie :', err))
+  }
 
   // La page derrière ne défile plus tant que la visite est ouverte
   useEffect(() => {
@@ -175,9 +211,11 @@ export function VisiteEdl({ affaireId, visite, obtenirLiens, onFermer }) {
     try {
       const notes = [rec.couper()]
       // Passage direct d'une pièce à une autre : la sortie de la première d'abord
-      if (ctx.pieceId && ctx.pieceId !== p.id) notes.push(visite.noter('sortie', ctx))
+      const quitte = ctx.pieceId && ctx.pieceId !== p.id
+      if (quitte) notes.push(visite.noter('sortie', ctx))
       notes.push(visite.noter('entree', dedans))
       await Promise.all(notes)
+      if (quitte) analyserApres(ctx.visiteId)
     } catch (err) { echouer(err) }
   }
 
@@ -192,6 +230,7 @@ export function VisiteEdl({ affaireId, visite, obtenirLiens, onFermer }) {
     setPointId(null)
     try {
       await Promise.all([rec.couper(), visite.noter('sortie', ctx)])
+      analyserApres(ctx.visiteId)
     } catch (err) { echouer(err) }
   }
 
@@ -296,6 +335,9 @@ export function VisiteEdl({ affaireId, visite, obtenirLiens, onFermer }) {
       if (ctx.pieceId) await visite.noter('sortie', ctx)
       await rec.arreter()
       if (ctx.visiteId) await visite.terminer(ctx.visiteId, ctx)
+      // La fin ferme le passage en cours ; son dernier morceau, rangé juste
+      // après, relance lui-même l'analyse une fois transcrit
+      analyserApres(ctx.visiteId)
       onFermer()
     } catch (err) {
       setFermeture(false)
@@ -454,7 +496,7 @@ export function VisiteEdl({ affaireId, visite, obtenirLiens, onFermer }) {
         {niveau && (
           <PlanVisite
             key={niveau.id}
-            niveau={niveau} pieces={pieces} points={points} nbPhotos={nbPhotos} visitees={visitees}
+            niveau={niveau} pieces={pieces} points={points} nbPhotos={nbPhotos} visitees={visitees} etats={etats}
             piece={piece} pointId={pointId} obtenirLiens={obtenirLiens}
             onToucher={toucher} onChoisirPoint={choisirPoint} onDeplacerPoint={deplacer}
           />

@@ -128,6 +128,16 @@ export async function morceauxEtatsDesLieux() {
   return (tous ?? []).filter((x) => x?.edlVisiteId != null).sort(dansLOrdre)
 }
 
+/**
+ * Tranches des visites d'état des lieux pas encore rangées en morceau : le
+ * morceau en cours (ou tout juste coupé), et les restes d'une page fermée.
+ * L'analyse attend celles d'un passage qu'elle couvrirait.
+ */
+export async function tranchesEtatsDesLieux() {
+  const tranches = await transaction(TRANCHES, 'readonly', (m) => m.getAll())
+  return (tranches ?? []).filter((x) => x?.edlVisiteId != null)
+}
+
 /** Enregistrements de cette visite qui ont des tranches orphelines (page fermée en plein enregistrement). */
 export async function enregistrementsInterrompus(visite) {
   const tranches = await transaction(TRANCHES, 'readonly', (m) => m.getAll())

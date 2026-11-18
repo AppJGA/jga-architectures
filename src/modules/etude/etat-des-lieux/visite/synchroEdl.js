@@ -64,29 +64,34 @@ export function envoyerFileEdl(affaireId) {
 /**
  * Toutes les affaires qui ont des gestes en attente (moteur de synchro de
  * l'app), puis l'audio des visites : après les gestes, pour qu'une visite
- * créée hors ligne soit dans la base avant ses morceaux.
+ * créée hors ligne soit dans la base avant ses morceaux. Enfin l'analyse,
+ * pour les seules affaires dont des gestes ou des morceaux viennent de
+ * partir (ou dont une relance est due) : appelé toutes les minutes, il ne
+ * doit rien lire d'autre.
  */
 export async function envoyerToutEdl() {
   if (!disponible()) return { envoyees: 0 }
   const ops = aEnvoyer(await tout(MAGASINS_EDL.operations).catch(() => []))
   let envoyees = 0
   let coupure = false
+  const affairesEnvoyees = []
   for (const affaireId of [...new Set(ops.map((o) => o.affaireId))]) {
     const r = await envoyerFileEdl(affaireId)
     envoyees += r.envoyees
+    if (r.envoyees > 0) affairesEnvoyees.push(affaireId)
     if (r.coupure) { coupure = true; break }
   }
-  if (!coupure) lancerTranscriptions()
+  if (!coupure) lancerTranscriptions(affairesEnvoyees)
   return { envoyees }
 }
 
-// Sans attendre : une transcription dure (un appel Mistral par morceau) et ne
-// doit pas retenir le compte rendu de l'envoi des gestes. Chargé à la demande,
-// comme ce module.
-function lancerTranscriptions() {
-  import('../analyse/transcriptionEdl')
-    .then((m) => m.transcrireEdlEnAttente(null))
-    .catch((err) => console.warn('Transcription des visites d’état des lieux :', err))
+// Sans attendre : une transcription dure (un appel Mistral par morceau), une
+// analyse aussi, et ni l'une ni l'autre ne doit retenir le compte rendu de
+// l'envoi des gestes. Chargé à la demande, comme ce module.
+function lancerTranscriptions(affaires) {
+  import('../analyse/analyseEdl')
+    .then((m) => m.transcrireEtAnalyserTout({ affaires }))
+    .catch((err) => console.warn('Transcription et analyse des visites d’état des lieux :', err))
 }
 
 /**

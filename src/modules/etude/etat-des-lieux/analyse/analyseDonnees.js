@@ -69,6 +69,93 @@ export async function lireAnalyse(affaireId, { delaiMs = DELAI_LECTURE_MS } = {}
   }
 }
 
+// Ce que la visite et le tableau des pièces affichent : fiche, état de
+// l'analyse, HSP lue (la complétude en dépend)
+const COLONNES_ETAT_PIECES = 'synchro_id:id, id, niveau_id, fiche, hsp_lue, analyse_le, analyse_erreur, fiche_a_valider'
+
+/** État de l'analyse d'une affaire, léger (ni transcriptions ni journal) : pièces et éléments. */
+export async function lireEtatAnalyse(affaireId, { delaiMs = DELAI_LECTURE_MS } = {}) {
+  const deLAffaire = (q) => q.eq('affaire_id', affaireId)
+  try {
+    const [pieces, elements] = await Promise.all([
+      toutes('edl_pieces', COLONNES_ETAT_PIECES, deLAffaire, delaiMs),
+      toutes('edl_elements', 'synchro_id:id, *', deLAffaire, delaiMs),
+    ])
+    return { indisponible: false, pieces, elements }
+  } catch (err) {
+    if (analyseIndisponible(err)) return { ...INDISPONIBLE, pieces: [], elements: [] }
+    throw err
+  }
+}
+
+/** Choix des pièces à analyser : leur état et les entrées / sorties du journal. */
+export async function lireSuiviAnalyse(affaireId, { delaiMs = DELAI_LECTURE_MS } = {}) {
+  const deLAffaire = (q) => q.eq('affaire_id', affaireId)
+  try {
+    const [pieces, evenements] = await Promise.all([
+      toutes('edl_pieces', COLONNES_ETAT_PIECES, deLAffaire, delaiMs),
+      toutes('edl_evenements', 'synchro_id:id, id, visite_id, niveau_id, piece_id, point_id, type, le', deLAffaire, delaiMs),
+    ])
+    return { indisponible: false, pieces, evenements }
+  } catch (err) {
+    if (analyseIndisponible(err)) return { ...INDISPONIBLE, pieces: [], evenements: [] }
+    throw err
+  }
+}
+
+/**
+ * Tout ce que la frise d'une pièce demande, relu juste avant l'appel à
+ * Claude : la pièce, le journal et les points de l'affaire (un point d'une
+ * autre pièce peut y avoir été rattaché), les transcriptions des visites de
+ * la pièce, ses éléments déjà validés.
+ */
+export async function lireFriseAnalyse(affaireId, pieceId, { delaiMs = DELAI_LECTURE_MS } = {}) {
+  const deLAffaire = (q) => q.eq('affaire_id', affaireId)
+  try {
+    const [pieces, evenements, points, elementsValides] = await Promise.all([
+      toutes('edl_pieces', 'synchro_id:id, *', (q) => q.eq('id', pieceId), delaiMs),
+      toutes('edl_evenements', 'synchro_id:id, *', deLAffaire, delaiMs),
+      toutes('edl_points', 'synchro_id:id, *', deLAffaire, delaiMs),
+      toutes('edl_elements', 'synchro_id:id, *', (q) => q.eq('piece_id', pieceId).eq('a_valider', false), delaiMs),
+    ])
+    const piece = pieces[0] ?? null
+    // `select('*')` sans la 082 ne dit rien : la colonne manquerait en silence
+    if (piece && !('analyse_le' in piece)) return { ...INDISPONIBLE }
+    const visites = [...new Set(evenements.filter((e) => e.piece_id === pieceId).map((e) => e.visite_id))]
+    const enregistrements = visites.length
+      ? await toutes('edl_enregistrements', 'synchro_id:id, *', (q) => deLAffaire(q).in('visite_id', visites), delaiMs)
+      : []
+    return { indisponible: false, piece, evenements, points, enregistrements, elementsValides }
+  } catch (err) {
+    if (analyseIndisponible(err)) return { ...INDISPONIBLE }
+    throw err
+  }
+}
+
+/**
+ * Écriture « à blanc » sur la pièce avant de payer un appel à Claude : le
+ * motif d'échec est réécrit tel quel, à condition que `analyse_le` n'ait pas
+ * bougé depuis la lecture. Aucune ligne touchée : soit la pièce vient d'être
+ * analysée ailleurs ('deja'), soit la base refuse d'y écrire ('refus' — un
+ * refus RLS ne rend pas d'erreur), et le résultat ne pourrait pas s'écrire.
+ */
+export async function reserverAnalyse(piece) {
+  let requete = supabase.from('edl_pieces').update({ analyse_erreur: piece.analyse_erreur ?? null }).eq('id', piece.id)
+  requete = piece.analyse_le ? requete.eq('analyse_le', piece.analyse_le) : requete.is('analyse_le', null)
+  const { data, error } = await requete.select('id')
+  if (error) {
+    if (analyseIndisponible(error)) return 'indisponible'
+    throw error
+  }
+  if (data?.length) return 'ok'
+  const { data: relue, error: erreurRelue } = await bornerDelai((signal) => supabase
+    .from('edl_pieces').select('synchro_id:id, analyse_le').eq('id', piece.id).abortSignal(signal).maybeSingle())
+  if (erreurRelue) throw erreurRelue
+  if (!relue) return 'deja'
+  const heure = (v) => (v ? Date.parse(v) : null)
+  return heure(relue.analyse_le) === heure(piece.analyse_le) ? 'refus' : 'deja'
+}
+
 /** Upsert par identifiant du morceau : une transcription rejouée réécrit la même ligne. */
 export async function enregistrerTranscription(ligne) {
   const { data, error } = await supabase

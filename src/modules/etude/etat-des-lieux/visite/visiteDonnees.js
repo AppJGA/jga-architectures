@@ -20,6 +20,7 @@ import { edlIndisponible, colonnesVecteursManquantes } from '../edlConstantes'
 import { MAGASINS_EDL, ecrire } from './baseEdl'
 import { sousVerrouEdl } from './synchroEdl'
 import { bornerDelai, DELAI_LECTURE_MS } from './visiteLogique'
+import { analyseIndisponible } from '../analyse/analyseDonneesLogique'
 
 const FRAIS = 'synchro_id:id, *'
 const COLONNES_ETAT = 'synchro_id:id, id, affaire_id'
@@ -48,6 +49,18 @@ async function toutes(table, colonnes, filtrer, delaiMs) {
   }
 }
 
+// État de l'analyse (migration 082) emporté avec les pièces : sans réseau,
+// la visite garde les couleurs et le pense-bête de la dernière lecture.
+// Relu sans lui quand la base n'a pas la 082.
+async function lirePieces(filtrer, delaiMs) {
+  try {
+    return await toutes('edl_pieces', `${COLONNES_PIECES}, analyse_le, analyse_erreur, fiche_a_valider`, filtrer, delaiMs)
+  } catch (err) {
+    if (!analyseIndisponible(err)) throw err
+    return toutes('edl_pieces', COLONNES_PIECES, filtrer, delaiMs)
+  }
+}
+
 async function lireNiveaux(filtrer, delaiMs) {
   try {
     return await toutes('edl_niveaux', `${COLONNES_NIVEAUX}, chemin_vecteurs`, filtrer, delaiMs)
@@ -73,7 +86,7 @@ export async function lireToutEdl(affaireId, { delaiMs = DELAI_LECTURE_MS } = {}
   if (error) throw error
   const [niveaux, pieces, points, photos, entrees] = await Promise.all([
     lireNiveaux(deLAffaire, delaiMs),
-    toutes('edl_pieces', COLONNES_PIECES, deLAffaire, delaiMs),
+    lirePieces(deLAffaire, delaiMs),
     toutes('edl_points', FRAIS, deLAffaire, delaiMs),
     toutes('edl_photos', FRAIS, deLAffaire, delaiMs),
     toutes('edl_evenements', 'synchro_id:id, id, visite_id, niveau_id, piece_id, type, le', (q) => deLAffaire(q).eq('type', 'entree'), delaiMs),

@@ -478,3 +478,208 @@ export function etatAnalysePiece(piece, { visitee = false, attente = false } = {
   if (attente || !piece?.analyse_le) return 'attente'
   return completudeFiche(piece.fiche, { hspLue: piece.hsp_lue }).complete ? 'complete' : 'incomplete'
 }
+
+// ─── Quand lancer l'analyse ─────────────────────────────────────────────────
+//
+// Chaque analyse se paie : ces règles décident, sans navigateur, si une pièce
+// part chez Claude. Le branchement (lectures, verrou, appel) est dans
+// analyseEdlPasse.js / analyseEdl.js.
+
+// Tranches d'un morceau pas encore rangé : celles du morceau en cours ou
+// tout juste coupé (un morceau dure 3 minutes au plus) bloquent l'analyse.
+// Plus vieilles, ce sont les restes d'une page fermée en plein
+// enregistrement : elles ne se recollent qu'à la reprise de leur visite, qui
+// peut ne jamais venir ; les attendre figerait la pièce dans le sablier.
+export const DELAI_TRANCHE_VIVANTE_MS = 10 * 60 * 1000
+
+// Après un échec, la pièce ne repart pas avant 10 minutes, puis 1 heure à
+// chaque nouvel échec : un essai raté ne doit jamais tourner en boucle
+export const ATTENTES_APRES_ECHEC_MS = [10 * 60 * 1000, 60 * 60 * 1000]
+
+export function attenteApresEchecs(essais) {
+  const rang = Math.min(Math.max(Math.trunc(Number(essais) || 1), 1), ATTENTES_APRES_ECHEC_MS.length)
+  return ATTENTES_APRES_ECHEC_MS[rang - 1]
+}
+
+// Heure de début d'un morceau ou d'une tranche de l'appareil (ms) : `debut`
+// du moteur, à défaut le début de l'enregistrement (plus tôt : plus prudent)
+function debutAudio(x) {
+  if (Number.isFinite(x?.debut)) return x.debut
+  const t = Date.parse(x?.debut ?? x?.debutEnregistrement ?? '')
+  return Number.isFinite(t) ? t : null
+}
+
+/**
+ * Son encore sur l'appareil qui interdit d'analyser un passage : morceaux de
+ * la même visite, pas encore transcrits, commencés avant la fin du passage
+ * (ce qu'on y a dit manquerait à la frise, et la pièce, une fois analysée,
+ * ne repartirait plus pour lui). Ne bloquent pas : un morceau mis de côté
+ * après `echecsMax` refus (il n'est plus jamais retenté de lui-même), un
+ * morceau sans heure (il ne se place dans aucune pièce, il n'est jamais
+ * transcrit), et les tranches orphelines (voir DELAI_TRANCHE_VIVANTE_MS).
+ *
+ * @param intervalle { fin, visiteId } de `intervallesPiece`
+ * @returns morceaux et tranches qui bloquent
+ */
+export function morceauxQuiBloquent(intervalle, { morceaux = [], tranches = [], maintenant = null, echecsMax = 3 } = {}) {
+  const deLaVisite = (x) => x?.edlVisiteId != null && x.edlVisiteId === intervalle?.visiteId
+  const avantLaFin = (x) => {
+    const t = debutAudio(x)
+    return t != null && t < intervalle.fin
+  }
+  const enAttente = (morceaux ?? []).filter((m) => deLaVisite(m) && avantLaFin(m) && (m.echecs ?? 0) < echecsMax)
+  const vivantes = (tranches ?? []).filter((t) => deLaVisite(t) && avantLaFin(t)
+    && (maintenant == null || maintenant - debutAudio(t) < DELAI_TRANCHE_VIVANTE_MS))
+  return [...enAttente, ...vivantes]
+}
+
+/**
+ * Gestes de l'appareil pas encore envoyés, notés avant la fin du passage : le
+ * journal de la base ne les a pas, la frise les perdrait. `creeLe` (ms) est
+ * l'heure de l'appareil, comme celle des événements qu'il note.
+ */
+export const gestesQuiBloquent = (intervalle, gestes = []) =>
+  (gestes ?? []).filter((g) => Number.isFinite(g?.creeLe) && g.creeLe <= intervalle.fin)
+
+const memeHeure = (a, b) => temps(a) === temps(b)
+
+/**
+ * Le suivi local d'une pièce (essai fait sur cet appareil) vaut tant que la
+ * pièce n'a pas été analysée depuis : même `analyse_le` qu'avant l'essai.
+ * @param suivi { essais, dernier, couvert, analyseLe, definitif }
+ */
+export function suiviValable(suivi, piece) {
+  return Boolean(suivi) && memeHeure(suivi.analyseLe ?? null, piece?.analyse_le ?? null)
+}
+
+// Heure jusqu'où un essai couvre la pièce : jamais avant la fin des passages
+// qu'il a vus (l'horloge de la tablette peut avancer sur celle du bureau)
+const couverture = (maintenant, intervalles) =>
+  Math.max(maintenant, ...intervalles.map((iv) => iv.fin).filter(Number.isFinite))
+
+/**
+ * Faut-il envoyer la pièce chez Claude maintenant ?
+ *
+ * Dans l'ordre : il faut un passage nouveau et fini (`aAnalyser`, ou tous les
+ * passages finis pour `relancer`, réanalyse demandée) ; aucun geste ni son de
+ * ces passages ne doit attendre sur l'appareil ; enfin une pièce en échec ne
+ * repart que sur demande (`forcer`, « Réessayer »), quand une nouvelle visite
+ * de la pièce s'est terminée après l'essai, ou après l'attente (10 min, puis
+ * 1 h). Un échec « définitif » (frise trop longue) ne repart que sur demande.
+ * Une pièce en échec dans la base sans suivi sur cet appareil (essai fait
+ * ailleurs, mémoire effacée) commence par une attente : `suivi` est alors le
+ * suivi à garder.
+ *
+ * @param maintenant ms — `Date.now()` de l'appareil, obligatoire (abandon, attentes)
+ * @returns { tenter, raison, suivi? }
+ */
+export function decisionAnalyse({
+  piece, evenements, morceaux = [], tranches = [], gestes = [], suivi = null, maintenant,
+  forcer = false, relancer = false, echecsMax = 3,
+}) {
+  if (!piece?.id) return { tenter: false, raison: 'rien' }
+  const intervalles = intervallesPiece(evenements, piece.id)
+  if (!intervalles.length) return { tenter: false, raison: 'rien' }
+  if (relancer) {
+    if (!intervalles.every((iv) => fini(iv, maintenant))) return { tenter: false, raison: 'en-cours' }
+  } else if (!aAnalyser(piece, evenements, { maintenant })) {
+    return { tenter: false, raison: 'rien' }
+  }
+  if (intervalles.some((iv) => gestesQuiBloquent(iv, gestes).length)) return { tenter: false, raison: 'gestes' }
+  if (intervalles.some((iv) => morceauxQuiBloquent(iv, { morceaux, tranches, maintenant, echecsMax }).length)) {
+    return { tenter: false, raison: 'audio' }
+  }
+  if (forcer || relancer) return { tenter: true, raison: 'demande' }
+
+  const valable = suiviValable(suivi, piece)
+  if (!piece.analyse_erreur && !valable) return { tenter: true, raison: 'a-analyser' }
+  if (!valable) {
+    return {
+      tenter: false,
+      raison: 'attente-echec',
+      suivi: { essais: 1, dernier: maintenant, couvert: couverture(maintenant, intervalles), analyseLe: piece.analyse_le ?? null, definitif: false },
+    }
+  }
+  if (suivi.definitif) return { tenter: false, raison: 'definitif' }
+  const couvert = Number.isFinite(suivi.couvert) ? suivi.couvert : suivi.dernier
+  if (intervalles.some((iv) => iv.fin > couvert)) return { tenter: true, raison: 'nouvelle-visite' }
+  if (maintenant - suivi.dernier >= attenteApresEchecs(suivi.essais)) return { tenter: true, raison: 'relance' }
+  return { tenter: false, raison: 'attente-echec' }
+}
+
+/** Suivi noté juste avant l'appel : un onglet fermé pendant l'appel compte comme un échec. */
+export function suiviTentative(suivi, piece, { maintenant, intervalles = [] }) {
+  const essais = suiviValable(suivi, piece) ? (suivi.essais ?? 0) : 0
+  return {
+    essais: essais + 1,
+    dernier: maintenant,
+    couvert: couverture(maintenant, intervalles),
+    analyseLe: piece?.analyse_le ?? null,
+    definitif: false,
+  }
+}
+
+/**
+ * `analyse_le` à écrire : l'heure de la lecture de la frise, jamais avant la
+ * fin des passages analysés. `aAnalyser` compare la fin des passages à
+ * cette heure ; ce qui arrive pendant l'appel à Claude reste ainsi à analyser.
+ */
+export function analyseLeApres(luLe, intervalles = []) {
+  return new Date(couverture(luLe, intervalles)).toISOString()
+}
+
+/**
+ * Prochain moment où une pièce de l'affaire pourra partir sans qu'aucune
+ * donnée n'arrive : fin d'une attente après échec, ou délai d'abandon d'un
+ * passage resté ouvert (visite quittée par le bouton Retour). `null` : rien
+ * à relancer à heure fixe (le reste repart sur un envoi ou une transcription).
+ */
+export function prochaineRelance({ pieces = [], evenements = [], suivis = {}, maintenant }) {
+  let prochaine = null
+  const garder = (t) => {
+    if (Number.isFinite(t) && t > maintenant && (prochaine == null || t < prochaine)) prochaine = t
+  }
+  for (const piece of pieces ?? []) {
+    const analyse = temps(piece?.analyse_le)
+    const nouveaux = intervallesPiece(evenements, piece?.id).filter((iv) => analyse == null || iv.fin > analyse)
+    if (!nouveaux.length) continue
+    for (const iv of nouveaux) if (!iv.clos) garder(iv.dernier + DELAI_ABANDON_MS)
+    const s = suivis?.[piece.id]
+    if (suiviValable(s, piece) && !s.definitif) garder(s.dernier + attenteApresEchecs(s.essais))
+  }
+  return prochaine
+}
+
+// Réponses du serveur pour lesquelles Claude n'a pas été appelé : rien n'est
+// payé, la pièce n'y est pour rien (session, configuration)
+export const CODES_SANS_APPEL = ['session', 'agence-seule', 'analyse-non-configuree', 'supabase-non-configure', 'methode']
+
+const MOTIFS_TROP_LONG = ['trop-de-lignes', 'trop-long', 'trop-de-releves']
+
+export const MESSAGE_FRISE_TROP_LONGUE = 'Trop de gestes et de paroles dans cette pièce pour une seule analyse (plus de 2 000 lignes). Elle ne repartira que sur « Réessayer ».'
+
+const MESSAGES_ECHEC = {
+  refus: 'Claude n’a pas accepté d’analyser cette pièce.',
+  'reponse-tronquee': 'La réponse de Claude était trop longue pour cette pièce.',
+  'reponse-illisible': 'La réponse de Claude était illisible.',
+  anthropic: 'Le service de Claude n’a pas répondu.',
+}
+
+/** Motif d'échec gardé sur la pièce (`analyse_erreur`), en français. */
+export function messageEchecAnalyse(err) {
+  if (err?.code === 'demande') {
+    return MOTIFS_TROP_LONG.includes(err.detail) ? MESSAGE_FRISE_TROP_LONGUE : `La demande d’analyse a été refusée (${err.detail ?? 'demande'}).`
+  }
+  return MESSAGES_ECHEC[err?.code] ?? (String(err?.message ?? '').trim() || 'Analyse impossible.')
+}
+
+/** Pièce telle que Claude la reçoit : désignation, surface et HSP lues sur le plan. */
+export function pieceDemandee(piece, surfaceDessinee = null) {
+  const lue = Number(piece?.surface_lue)
+  return {
+    nom: piece?.nom ?? '',
+    numero: piece?.numero ?? null,
+    surface: lue > 0 ? lue : (Number(surfaceDessinee) > 0 ? Number(surfaceDessinee) : null),
+    hsp: Number(piece?.hsp_lue) > 0 ? Number(piece.hsp_lue) : null,
+  }
+}

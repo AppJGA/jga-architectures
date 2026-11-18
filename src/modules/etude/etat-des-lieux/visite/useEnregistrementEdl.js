@@ -12,6 +12,7 @@ import { useEnregistreur } from '../../../chantier/comptes-rendus/enregistrement
 import { morceauxEnAttente, enregistrementsInterrompus, recupererMorceaux } from '../../../chantier/comptes-rendus/enregistrement/audioLocal'
 import { enregistrementsARecuperer } from '../../../chantier/comptes-rendus/enregistrement/enregistrementLogique'
 import { transcrireEdlEnAttente, EVENEMENT_TRANSCRIPTION_EDL } from '../analyse/transcriptionEdl'
+import { analyserEnAttente } from '../analyse/analyseEdl'
 
 export function useEnregistrementEdl({ visiteId, affaireId, surEtat }) {
   const [enAttente, setEnAttente] = useState(0)
@@ -24,13 +25,18 @@ export function useEnregistrementEdl({ visiteId, affaireId, surEtat }) {
 
   const champs = useMemo(() => ({ affaireId }), [affaireId])
   // Chaque morceau part dès qu'il est rangé s'il y a du réseau ; sinon il
-  // attend le moteur de synchro de l'app (envoyerToutEdl)
+  // attend le moteur de synchro de l'app (envoyerToutEdl). Un morceau
+  // transcrit peut être le dernier qu'attendait une pièce quittée : sa
+  // sortie coupe le morceau, qui n'est rangé qu'après, et l'analyse lancée à
+  // la sortie l'a trouvé encore sur l'appareil.
   const surMorceau = useCallback((morceau) => {
     recompter()
     const edlVisiteId = morceau?.edlVisiteId
     if (!edlVisiteId || (typeof navigator !== 'undefined' && navigator.onLine === false)) return
-    transcrireEdlEnAttente({ edlVisiteId }).catch((err) => console.warn('Transcription de la visite :', err))
-  }, [recompter])
+    transcrireEdlEnAttente({ edlVisiteId })
+      .then((r) => { if (r?.transcrits > 0 && affaireId) return analyserEnAttente(affaireId) })
+      .catch((err) => console.warn('Transcription et analyse de la visite :', err))
+  }, [recompter, affaireId])
   const moteur = useEnregistreur({ champs, surEtat, surMorceau })
   const { enregistrementCourant } = moteur
 

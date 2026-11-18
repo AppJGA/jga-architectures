@@ -12,6 +12,7 @@ import { useVisiteEdl } from './visite/useVisiteEdl'
 import { VisiteEdl } from './visite/VisiteEdl'
 import { visiteEnCours, perteRemplacement } from './visite/visiteLogique'
 import { oublierEdlLocal } from './visite/synchroEdl'
+import { useAnalyseEdl } from './analyse/useAnalyseEdl'
 
 // ─── État des lieux d'un bâtiment existant ───────────────────────────────────
 //
@@ -77,6 +78,8 @@ export default function EtatDesLieuxModule({ lectureSeule = false }) {
   const [confirmer, setConfirmer] = useState(false)
   const [params, setParams] = useSearchParams()
   const visite = useVisiteEdl(affaireId)
+  // Lot 3 : à l'ouverture avec du réseau, les pièces visitées partent à l'analyse
+  const analyse = useAnalyseEdl(affaireId, { lectureSeule })
   const visiteOuverte = params.get('visite') === '1' && !lectureSeule
   const [suppression, setSuppression] = useState(false)
   const aEuUneVisite = (visite.donnees?.visites?.length ?? 0) > 0
@@ -105,7 +108,7 @@ export default function EtatDesLieuxModule({ lectureSeule = false }) {
   // La visite s'ouvre même si la lecture du lot 1 échoue sans réseau : elle
   // lit son propre instantané
   if (visiteOuverte) {
-    return <VisiteEdl affaireId={affaireId} visite={visite} obtenirLiens={obtenirLiens} onFermer={fermerVisite} />
+    return <VisiteEdl affaireId={affaireId} visite={visite} analyse={analyse} obtenirLiens={obtenirLiens} onFermer={fermerVisite} />
   }
 
   if (edl.indisponible) {

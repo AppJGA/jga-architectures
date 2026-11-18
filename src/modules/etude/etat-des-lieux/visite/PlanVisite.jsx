@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { VisionneusePlan } from '../../../chantier/comptes-rendus/VisionneusePlan'
-import { versPixels, versMetres } from '../geometrieEdl'
+import { versPixels, versMetres, centre } from '../geometrieEdl'
 import { cadrePiece, COULEURS_PIECE, etatPiece, pointProche, ZOOM_MAX_VISITE } from './visiteLogique'
 import { useVecteursEdl } from '../useVecteursEdl'
 import { zoomMaxVectoriel } from '../vecteursEdlLogique'
@@ -20,7 +20,7 @@ const ACCENT = 'var(--affaire-accent, #E8602C)'
 const RAYON_TOUCHER = 22
 const SEUIL_GLISSE = 6
 
-export function PlanVisite({ niveau, pieces, points, nbPhotos, visitees, piece, pointId, obtenirLiens, onToucher, onChoisirPoint, onDeplacerPoint }) {
+export function PlanVisite({ niveau, pieces, points, nbPhotos, visitees, etats = null, piece, pointId, obtenirLiens, onToucher, onChoisirPoint, onDeplacerPoint }) {
   const svg = useRef(null)
   const glisseCourant = useRef(null)
   const pointeurs = useRef(new Set()) // doigts posés sur le plan, glisser compris
@@ -118,7 +118,8 @@ export function PlanVisite({ niveau, pieces, points, nbPhotos, visitees, piece, 
     return (
       <svg ref={svg} width={largeur} height={hauteur} style={{ position: 'absolute', left: 0, top: 0, overflow: 'visible', pointerEvents: 'none' }}>
         {pieces.map((p) => {
-          const couleurs = COULEURS_PIECE[etatPiece(p, visitees)]
+          const etat = etats?.get(p.id) ?? etatPiece(p, visitees)
+          const couleurs = COULEURS_PIECE[etat] ?? COULEURS_PIECE.visitee
           const ouverte = p.id === piece?.id
           return (
             <polygon
@@ -129,6 +130,13 @@ export function PlanVisite({ niveau, pieces, points, nbPhotos, visitees, piece, 
               }}
             />
           )
+        })}
+        {/* Sablier discret au milieu d'une pièce qui attend son analyse ; pas
+            sur la pièce ouverte, où il couvrirait les points */}
+        {pieces.map((p) => {
+          if (p.id === piece?.id || etats?.get(p.id) !== 'attente') return null
+          const [cx, cy] = enCalque(centre(p.contour))
+          return <Sablier key={`s-${p.id}`} x={cx} y={cy} taille={14 / zoom} attenue={!!piece} />
         })}
         {points.map((p) => {
           const pos = glisse?.id === p.id ? glisse.pos : [Number(p.x), Number(p.y)]
@@ -169,5 +177,19 @@ export function PlanVisite({ niveau, pieces, points, nbPhotos, visitees, piece, 
         cadre={cadre} zoomMax={dessinFond ? (e) => zoomMaxVectoriel(e, niveau.cadrage?.pxParMetre, ZOOM_MAX_VISITE) : ZOOM_MAX_VISITE} dessinFond={dessinFond} sansPleine={sansPleine}
       />
     </div>
+  )
+}
+
+// Sablier dessiné (pas de police : il doit rester net à tout zoom)
+function Sablier({ x, y, taille, attenue }) {
+  const d = taille / 2
+  return (
+    <g aria-hidden="true" style={{ pointerEvents: 'none', opacity: attenue ? 0.35 : 0.85 }}>
+      <circle cx={x} cy={y} r={d * 1.15} style={{ fill: 'white', stroke: ACCENT, strokeWidth: taille / 14 }} />
+      <path
+        d={`M ${x - d * 0.5} ${y - d * 0.65} H ${x + d * 0.5} L ${x} ${y} L ${x + d * 0.5} ${y + d * 0.65} H ${x - d * 0.5} L ${x} ${y} Z`}
+        style={{ fill: ACCENT, fillOpacity: 0.35, stroke: ACCENT, strokeWidth: taille / 12, strokeLinejoin: 'round' }}
+      />
+    </g>
   )
 }

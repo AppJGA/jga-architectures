@@ -5,6 +5,7 @@
 // Pur, testé (tests/etat-des-lieux-visite.test.js).
 
 import { aire, pointDansPolygone, boite, versPixels } from '../geometrieEdl'
+import { etatAnalysePiece } from '../analyse/analyseEdlLogique'
 
 // Un placard sur un étage de 60 m doit pouvoir remplir l'écran ; le plan
 // (image) s'adoucit à ce zoom, les contours et les points restent nets (SVG)
@@ -74,12 +75,35 @@ export function piecesVisitees(entrees) {
   return new Set((entrees ?? []).map((e) => e.piece_id).filter(Boolean))
 }
 
-// Lot 2 : visitée ou non. Le lot 3 ajoute l'attente d'analyse, complète, incomplète.
+// Lot 2 : visitée ou non (encore employé sans la migration 082)
 export const etatPiece = (piece, visitees) => (visitees.has(piece.id) ? 'visitee' : 'non-visitee')
 
+/**
+ * Lot 3 : couleur d'après l'analyse (`etatAnalysePiece`). Une pièce est en
+ * attente tant qu'elle n'a jamais été analysée, qu'on y est entré depuis la
+ * dernière analyse (entrées de l'appareil comprises, pas encore envoyées) ou
+ * que l'analyse tourne. Sans la 082 (`analyse_le` absent de la pièce), la
+ * couleur du lot 2.
+ *
+ * @param entrees événements « entree » de la visite (instantané + file)
+ * @param enCours identifiant de la pièce en cours d'analyse
+ */
+export function etatPieceVisite(piece, { visitees, entrees = [], enCours = null }) {
+  if (!visitees.has(piece.id)) return 'non-visitee'
+  if (!('analyse_le' in (piece ?? {}))) return 'visitee'
+  const analyse = piece.analyse_le ? Date.parse(piece.analyse_le) : null
+  const revisitee = analyse != null && (entrees ?? []).some((e) => e.piece_id === piece.id && Date.parse(e.le) > analyse)
+  return etatAnalysePiece(piece, { visitee: true, attente: enCours === piece.id || revisitee })
+}
+
+// Charte : alertes rouge #B8412C, ambre #F59E0B / #92400E ; vert du pense-bête
 export const COULEURS_PIECE = {
   'non-visitee': { fond: 'rgba(156,149,145,0.16)', trait: '#9C9591' },
   visitee: { fond: 'var(--affaire-accent-clair, rgba(232,96,44,0.10))', trait: 'var(--affaire-accent, #E8602C)' },
+  attente: { fond: 'var(--affaire-accent-clair, rgba(232,96,44,0.10))', trait: 'var(--affaire-accent, #E8602C)' },
+  complete: { fond: 'rgba(42,138,78,0.16)', trait: '#2A8A4E' },
+  incomplete: { fond: 'rgba(245,158,11,0.22)', trait: '#D97706' },
+  echec: { fond: 'rgba(184,65,44,0.12)', trait: '#B8412C' },
 }
 
 /** La visite qu'on peut reprendre : la plus récente qui n'a pas été terminée. */

@@ -5,7 +5,8 @@ import { supabase } from '../../../core/supabase/client'
 import { lirePropositionsPieces } from './piecesIaLogique'
 
 export class ErreurPiecesIa extends Error {
-  constructor(code, message) { super(message); this.code = code }
+  // `detail` : précision du serveur (motif d'une demande refusée…)
+  constructor(code, message, detail = null) { super(message); this.code = code; this.detail = detail }
 }
 
 const MESSAGES = {
@@ -14,6 +15,7 @@ const MESSAGES = {
   'agence-seule': 'Réservé aux comptes de l’agence.',
   refus: 'Claude n’a pas accepté d’analyser ce plan.',
   'reponse-tronquee': 'La réponse de Claude était trop longue pour cet étage.',
+  'reponse-illisible': 'La réponse de Claude était illisible.',
 }
 
 // Appel d'une fonction serveur de l'état des lieux (pièces, relecture) : même
@@ -35,7 +37,7 @@ export async function appelerClaude(route, demande) {
   }
   const json = await reponse.json().catch(() => null)
   if (!reponse.ok) {
-    throw new ErreurPiecesIa(json?.erreur ?? 'erreur', MESSAGES[json?.erreur] ?? `L’analyse a échoué (${json?.detail ?? reponse.status}).`)
+    throw new ErreurPiecesIa(json?.erreur ?? 'erreur', MESSAGES[json?.erreur] ?? `L’analyse a échoué (${json?.detail ?? reponse.status}).`, json?.detail ?? null)
   }
   return json?.resultat
 }

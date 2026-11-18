@@ -10,6 +10,8 @@ import { test, describe, beforeEach, afterEach } from 'node:test'
 import {
   ligneTranscription, heureSegment, morceauxAPurger, segmentsNettoyes, debutMorceauMs,
   visitesCreeesSurLAppareil, visitePasEncoreEnvoyee, DELAI_PURGE_MS,
+  ESPACEMENT_ECHECS_MS, statutPassager, refusCompte, refusPassager, ecriturePassagere, morceauTranscriptible,
+  rienAEnvoyer, morceauxRefuses,
 } from '../src/modules/etude/etat-des-lieux/analyse/transcriptionEdlLogique.js'
 import { passeTranscriptionEdl } from '../src/modules/etude/etat-des-lieux/analyse/transcriptionEdlPasse.js'
 import handler from '../api/transcrire.js'
@@ -142,8 +144,8 @@ function simule({
     aSession: async () => session,
     lireMorceaux: async () => { journal.push(['lire']); return [...appareil.values()] },
     visitesLocales: async () => { if (locales === 'illisible') throw new Error('illisible'); return locales },
-    migrationPassee: async () => migration,
-    visitesDansLaBase: async () => new Set(enBase),
+    migrationPassee: async () => { journal.push(['sonde']); return migration },
+    visitesDansLaBase: async () => { journal.push(['base']); return new Set(enBase) },
     lecturesProuvees: async (affaireId) => { journal.push(['preuve', affaireId]); return preuve },
     transcrire: async (m) => {
       journal.push(['transcrire', m.id])
@@ -151,7 +153,7 @@ function simule({
     },
     enregistrer: async (ligne) => { journal.push(['enregistrer', ligne.id]); return enregistrer ? enregistrer(ligne) : { indisponible: false } },
     effacer: async (id) => { journal.push(['effacer', id]); appareil.delete(id) },
-    marquerEchec: async (m) => { journal.push(['echec', m.id]); appareil.set(m.id, { ...m, echecs: (m.echecs ?? 0) + 1 }) },
+    marquerEchec: async (m, champs = {}) => { journal.push(['echec', m.id]); appareil.set(m.id, { ...m, ...champs, echecs: (m.echecs ?? 0) + 1 }) },
     signaler: (detail) => journal.push(['signal', detail]),
     maintenant: () => maintenant,
     estCoupure: (err) => err?.code === 'COUPURE',
@@ -279,6 +281,118 @@ describe('passeTranscriptionEdl', () => {
     assert.deepEqual(s.actions('echec'), [])
     assert.deepEqual(s.actions('transcrire'), ['a'])
     assert.equal(s.appareil.size, 2)
+  })
+})
+
+// ─── Pannes passagères, refus espacés, passages sans rien à envoyer ──────────
+
+describe('échecs de transcription : panne ou refus', () => {
+  const refus = (statut) => Object.assign(new Error('x'), { code: 'refus', statut })
+  test('statuts passagers : 408, 429, 5xx', () => {
+    for (const s of [408, 429, 500, 502, 503, 504]) assert.equal(statutPassager(s), true, String(s))
+    for (const s of [400, 401, 403, 413, 422, NaN]) assert.equal(statutPassager(s), false, String(s))
+  })
+  test('seul un vrai 4xx compte contre le morceau ; statut inconnu : compté comme avant', () => {
+    assert.equal(refusCompte(refus(400)), true)
+    assert.equal(refusCompte(refus(413)), true)
+    assert.equal(refusCompte(refus(422)), true)
+    assert.equal(refusCompte(refus(undefined)), true)
+    for (const s of [401, 403, 408, 429, 500, 503]) assert.equal(refusCompte(refus(s)), false, String(s))
+    assert.equal(refusCompte(Object.assign(new Error('x'), { code: 'reseau' })), false)
+    assert.equal(refusPassager(refus(429)), true)
+    assert.equal(refusPassager(refus(503)), true)
+    assert.equal(refusPassager(refus(400)), false)
+  })
+  test('écriture : 5xx et délais de la base passagers, refus de la base non', () => {
+    assert.equal(ecriturePassagere({ statut: 503 }), true)
+    assert.equal(ecriturePassagere({ code: 'PGRST003' }), true)
+    assert.equal(ecriturePassagere({ code: '57014' }), true)
+    assert.equal(ecriturePassagere({ code: '08006' }), true)
+    assert.equal(ecriturePassagere({ code: '40001' }), true)
+    assert.equal(ecriturePassagere({ code: '42501', statut: 403 }), false)
+    assert.equal(ecriturePassagere({ code: '23514', statut: 400 }), false)
+    assert.equal(ecriturePassagere(new Error('Lecture seule')), false)
+  })
+  test('morceau refusé : pas renvoyé avant 10 minutes ; trois refus : mis de côté', () => {
+    const t = DEBUT + 3_600_000
+    assert.equal(ESPACEMENT_ECHECS_MS, 10 * 60 * 1000)
+    assert.equal(morceauTranscriptible(morceau(), { maintenant: t }), true)
+    assert.equal(morceauTranscriptible(morceau({ echecs: 1, dernierEchec: t - 60_000 }), { maintenant: t }), false)
+    assert.equal(morceauTranscriptible(morceau({ echecs: 1, dernierEchec: t - ESPACEMENT_ECHECS_MS }), { maintenant: t }), true)
+    // Compté avant que l'espacement existe : renvoyé comme avant
+    assert.equal(morceauTranscriptible(morceau({ echecs: 1 }), { maintenant: t }), true)
+    assert.equal(morceauTranscriptible(morceau({ echecs: 3 }), { maintenant: t, echecsMax: 3 }), false)
+    assert.equal(morceauTranscriptible(morceau({ debut: null, debutEnregistrement: null }), { maintenant: t }), false)
+  })
+  test('rienAEnvoyer : morceaux mis de côté, en attente ou sans heure', () => {
+    const t = DEBUT + 3_600_000
+    assert.equal(rienAEnvoyer([morceau({ echecs: 3 }), morceau({ id: 'b', echecs: 1, dernierEchec: t - 1000 })], { maintenant: t }), true)
+    assert.equal(rienAEnvoyer([morceau({ debut: null, debutEnregistrement: null })], { maintenant: t }), true)
+    assert.equal(rienAEnvoyer([morceau({ echecs: 3 }), morceau({ id: 'b' })], { maintenant: t }), false)
+  })
+  test('morceauxRefuses : ceux de l’affaire, mis de côté, état des lieux seulement', () => {
+    const l = [
+      morceau({ id: 'a', echecs: 3 }), morceau({ id: 'b', echecs: 2 }), morceau({ id: 'c', echecs: 3, affaireId: 'a-2' }),
+      { id: 'cr', crId: 'cr-1', affaireId: 'a-1', echecs: 3 },
+    ]
+    assert.deepEqual(morceauxRefuses(l, 'a-1', 3).map((m) => m.id), ['a'])
+    assert.deepEqual(morceauxRefuses(l, null, 3), [])
+  })
+})
+
+describe('passeTranscriptionEdl : pannes et relances bornées', () => {
+  const refus = (statut) => () => { throw Object.assign(new Error('x'), { code: 'refus', statut }) }
+  test('Mistral saturé (429) ou en panne (5xx) : arrêt, rien de compté, rien d’effacé', async () => {
+    for (const statut of [429, 503]) {
+      const s = simule({ morceaux: [morceau({ id: 'a' }), morceau({ id: 'b', rang: 3 })], enBase: ['v-1'], transcrire: refus(statut) })
+      const r = await passeTranscriptionEdl(null, s.d)
+      assert.equal(r.erreur.code, 'passager')
+      assert.deepEqual(s.actions('echec'), [])
+      assert.deepEqual(s.actions('transcrire'), ['a'])
+      assert.equal(s.appareil.size, 2)
+    }
+  })
+  test('vrai refus (400) : compté avec son heure, la suite continue', async () => {
+    const maintenant = DEBUT + DELAI_PURGE_MS + 60_000
+    const s = simule({ morceaux: [morceau({ id: 'a' }), morceau({ id: 'b', rang: 3 })], enBase: ['v-1'], maintenant, transcrire: (m) => (m.id === 'a' ? refus(400)() : { texte: 'ok', segments: null }) })
+    const r = await passeTranscriptionEdl(null, s.d)
+    assert.equal(r.transcrits, 1)
+    assert.deepEqual(s.actions('echec'), ['a'])
+    assert.equal(s.appareil.get('a').dernierEchec, maintenant)
+    assert.equal(s.appareil.get('a').echecs, 1)
+  })
+  test('base en panne à l’écriture (5xx, délai) : arrêt sans échec compté', async () => {
+    for (const err of [{ statut: 503 }, { code: 'PGRST003' }]) {
+      const s = simule({ morceaux: [morceau()], enBase: ['v-1'], enregistrer: () => { throw Object.assign(new Error('x'), err) } })
+      const r = await passeTranscriptionEdl(null, s.d)
+      assert.equal(r.erreur.code, 'passager')
+      assert.deepEqual(s.actions('echec'), [])
+      assert.equal(s.appareil.size, 1)
+    }
+  })
+  test('refus récent : pas renvoyé ; 10 minutes après : renvoyé', async () => {
+    const maintenant = DEBUT + DELAI_PURGE_MS + 60_000
+    const recent = simule({ morceaux: [morceau({ echecs: 1, dernierEchec: maintenant - 60_000 })], enBase: ['v-1'], maintenant })
+    await passeTranscriptionEdl(null, recent.d)
+    assert.deepEqual(recent.actions('transcrire'), [])
+    const ancien = simule({ morceaux: [morceau({ echecs: 1, dernierEchec: maintenant - ESPACEMENT_ECHECS_MS })], enBase: ['v-1'], maintenant })
+    await passeTranscriptionEdl(null, ancien.d)
+    assert.deepEqual(ancien.actions('transcrire'), ['m-1'])
+  })
+  test('rien d’envoyable ni de purgeable : aucune lecture en ligne', async () => {
+    const maintenant = DEBUT + DELAI_PURGE_MS + 60_000
+    const s = simule({
+      morceaux: [
+        morceau({ id: 'use', echecs: 3 }),
+        morceau({ id: 'attend', echecs: 1, dernierEchec: maintenant - 1000 }),
+        morceau({ id: 'sans-heure', debut: null, debutEnregistrement: null }),
+      ],
+      enBase: ['v-1'], maintenant,
+    })
+    const r = await passeTranscriptionEdl(null, s.d)
+    assert.equal(r.erreur, null)
+    assert.deepEqual(s.journal.filter((j) => ['sonde', 'base', 'preuve', 'transcrire'].includes(j[0])), [])
+    assert.equal(s.appareil.size, 3)
   })
 })
 

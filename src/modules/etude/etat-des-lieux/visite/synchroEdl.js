@@ -11,6 +11,7 @@ import { MAGASINS_EDL, lire, ecrire, effacer, tout, operationsDeLAffaire, dispon
 import { aEnvoyer, ESSAIS_MAX, appliquerOperationEdl, photosDesOperations, fermePassage } from './fileEdlLogique'
 import { envoyerOperationEdl } from './envoiEdl'
 import { erreurReseau } from '../../../chantier/comptes-rendus/horsLigne/envoi'
+import { effacerAudioEtatDesLieux } from '../../../chantier/comptes-rendus/enregistrement/audioLocal'
 
 export const EVENEMENT_FILE_EDL = 'jga-file-edl'
 
@@ -99,12 +100,19 @@ function lancerTranscriptions(affaires) {
 
 /**
  * Après « Remplacer les plans » : l'appareil oublie l'état des lieux de
- * l'affaire (instantané, gestes en attente et leurs photos). Sous le verrou
- * de l'envoi, pour qu'aucun de ces gestes ne parte pendant l'effacement.
+ * l'affaire (instantané, gestes en attente et leurs photos, et le son pas
+ * encore transcrit de ses visites). Sous le verrou de l'envoi, pour qu'aucun
+ * de ces gestes ne parte pendant l'effacement. Appelé seulement après la
+ * suppression réussie en base : ce geste explicite de l'utilisateur vaut
+ * preuve, là où la purge automatique du son exige une lecture en ligne qui
+ * peut ne jamais venir (le son restait alors sur l'appareil sans fin).
  */
 export function oublierEdlLocal(affaireId) {
   return sousVerrouEdl(async () => {
     const ops = await operationsDeLAffaire(affaireId)
     await oublierAffaire(affaireId, photosDesOperations(ops))
+    // Le son d'abord sous ce verrou, puis le signal : un écran qui recompte
+    // ne le voit plus. Une base `jga-audio` illisible n'empêche pas le reste.
+    await effacerAudioEtatDesLieux(affaireId).catch((err) => console.warn('Son de l’état des lieux :', err))
   }).finally(signalerFileEdl)
 }

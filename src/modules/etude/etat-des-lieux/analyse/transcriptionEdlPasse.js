@@ -14,7 +14,8 @@
 //     rende quelque chose (une de ses visites, ou son état des lieux).
 
 import {
-  ligneTranscription, morceauxAPurger, visitePasEncoreEnvoyee, debutMorceauMs,
+  ligneTranscription, morceauxAPurger, visitePasEncoreEnvoyee, morceauTranscriptible, rienAEnvoyer,
+  refusCompte, refusPassager, ecriturePassagere,
 } from './transcriptionEdlLogique'
 
 const erreurParDefaut = (code, message) => Object.assign(new Error(message), { code })
@@ -29,7 +30,7 @@ const erreurParDefaut = (code, message) => Object.assign(new Error(message), { c
  *   visitesDansLaBase(ids) → Set des visites lues ;
  *   lecturesProuvees(affaireId) → vrai si une lecture de l'affaire rend au moins une ligne ;
  *   transcrire(morceau) → { texte, segments } ; enregistrer(ligne) → { indisponible } ;
- *   effacer(id), marquerEchec(morceau), signaler(detail), maintenant(), estCoupure(err),
+ *   effacer(id), marquerEchec(morceau, { dernierEchec }), signaler(detail), maintenant(), estCoupure(err),
  *   erreur(code, message) → l'erreur rendue, messageIndisponible,
  *   echecsMax (ECHECS_MAX des comptes rendus, passé par l'appelant : ce
  *   module reste chargeable sans le client Supabase).
@@ -46,6 +47,10 @@ export async function passeTranscriptionEdl(visite, d) {
 
   const morceaux = (await d.lireMorceaux(visite)).filter((m) => m.edlVisiteId != null)
   if (!morceaux.length) return fin()
+  // Rien d'envoyable (morceaux mis de côté, en attente après un refus, sans
+  // heure) ni de purgeable : aucune lecture en ligne. Le moteur de synchro
+  // repasse chaque minute ; sans cela, il interrogeait la base à chaque fois
+  if (rienAEnvoyer(morceaux, { maintenant: d.maintenant(), echecsMax })) return fin()
 
   // Sans session, les lectures rendraient des listes vides sans erreur :
   // ni décision, ni appel payant
@@ -83,26 +88,31 @@ export async function passeTranscriptionEdl(visite, d) {
     d.signaler({ morceauId: m.id, visiteId: m.edlVisiteId, purge: true })
   }
 
+  const passager = (err) => erreur('passager', err?.message ?? 'service indisponible')
+  const compterEchec = async (m) => {
+    await d.marquerEchec(m, { dernierEchec: d.maintenant() })
+    d.signaler({ morceauId: m.id, visiteId: m.edlVisiteId, refus: true })
+  }
   const pasEncore = new Set()
   for (const m of morceaux) {
     // Visite pas encore dans la base (créée hors ligne, envoi en route) :
     // le morceau attend, aucun échec n'est compté
     if (!enBase.has(m.edlVisiteId) || pasEncore.has(m.edlVisiteId)) continue
     // Voulu : un morceau refusé trois fois reste sur l'appareil, jamais effacé
-    // ni retenté (chaque essai se paie) ; il reste compté parmi ceux qui
-    // attendent, et seul un geste de l'utilisateur pourra le reprendre
-    if ((m.echecs ?? 0) >= echecsMax) continue
-    // Sans heure, le morceau ne se placerait dans aucune pièce : il reste
-    if (debutMorceauMs(m) == null) continue
+    // ni retenté de lui-même (chaque essai se paie). Il ne bloque plus
+    // l'analyse (morceauxQuiBloquent) : la parole qu'il porte en est absente
+    // tant que « Réessayer le son refusé » (relecture) ne l'a pas repris.
+    // Un refus plus récent que ESPACEMENT_ECHECS_MS attend ; un morceau sans
+    // heure ne se placerait dans aucune pièce : il reste.
+    if (!morceauTranscriptible(m, { maintenant: d.maintenant(), echecsMax })) continue
     let ligne
     try {
       ligne = ligneTranscription(m, await d.transcrire(m))
     } catch (err) {
-      if (err?.code === 'refus') {
-        await d.marquerEchec(m)
-        d.signaler({ morceauId: m.id, visiteId: m.edlVisiteId, refus: true })
-        continue
-      }
+      // Mistral saturé ou en panne : le morceau n'y est pour rien, arrêt
+      // sans rien compter (comme une coupure), reprise au déclencheur suivant
+      if (refusPassager(err)) return fin(passager(err))
+      if (refusCompte(err)) { await compterEchec(m); continue }
       return fin(err)
     }
     try {
@@ -112,8 +122,9 @@ export async function passeTranscriptionEdl(visite, d) {
       // Visite supprimée ou pas encore arrivée depuis la lecture : on attend
       if (visitePasEncoreEnvoyee(err)) { pasEncore.add(m.edlVisiteId); continue }
       if (d.estCoupure(err)) return fin(erreur('reseau', err?.message ?? 'réseau'))
-      await d.marquerEchec(m)
-      d.signaler({ morceauId: m.id, visiteId: m.edlVisiteId, refus: true })
+      // Base en panne ou trop lente : rien contre le morceau
+      if (ecriturePassagere(err)) return fin(passager(err))
+      await compterEchec(m)
       continue
     }
     await d.effacer(m.id)

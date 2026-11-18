@@ -172,6 +172,20 @@ export function ficheModifiee(fiche, brouillon) {
   return RUBRIQUES_FICHE.some((r) => texte(fiche?.[r] == null ? '' : String(fiche[r])) !== texte(brouillon?.[r]))
 }
 
+/**
+ * Une autre fiche arrive de la base (nouvelle analyse, enregistrement relu)
+ * pendant qu'un brouillon est ouvert. Brouillon propre (identique à la fiche
+ * vue jusque-là) ou déjà égal à la fiche reçue : il est remplacé. Brouillon
+ * modifié : il est gardé — une saisie en cours ne se perd pas parce qu'une
+ * analyse est arrivée ; l'écran le dit et propose de charger la fiche reçue.
+ * @returns 'remplacer' | 'garder'
+ */
+export function suiteFicheRecue({ precedente, brouillon, recue }) {
+  if (!ficheModifiee(precedente, brouillon)) return 'remplacer'
+  if (!ficheModifiee(recue, brouillon)) return 'remplacer'
+  return 'garder'
+}
+
 /** Rubriques signalées manquantes à l'écran (seulement une fois la pièce analysée). */
 export function rubriquesManquantes(piece, brouillon) {
   if (!piece?.analyse_le) return []

@@ -672,12 +672,13 @@ const non = (raison, suivi) => (suivi ? { tenter: false, raison, suivi } : { ten
  * « Réessayer »), quand une nouvelle visite de la pièce s'est terminée après
  * l'échec, ou après l'attente (10 min, puis 1 h) tant qu'elle n'a pas échoué
  * ESSAIS_AUTO_MAX fois ou d'un échec définitif (frise trop longue, refus de
- * Claude). Une pièce en échec dans la base sans suivi sur cet appareil (essai
- * fait ailleurs, mémoire effacée) repart si une visite s'est terminée plus
+ * Claude, réponse tronquée). Un motif suffixé (SUFFIXE_DEFINITIF) dans la
+ * base passe avant le suivi de l'appareil : seule une visite terminée plus
  * de MARGE_HORLOGE_MS (5 min) après max(`updated_at`, `analyse_le`) — heure
- * de l'échec vue du serveur, la marge couvrant l'horloge de la tablette ;
- * sinon, motif suffixé (SUFFIXE_DEFINITIF) : échec définitif ; sinon une
- * attente, et `suivi` est alors le suivi à garder.
+ * de l'échec vue du serveur, la marge couvrant l'horloge de la tablette — le
+ * lève. Une pièce en échec dans la base sans suivi sur cet appareil (essai
+ * fait ailleurs, mémoire effacée) repart sur la même règle, sinon attend ;
+ * `suivi` est alors le suivi à garder.
  *
  * Raisons d'un refus : 'non-visitee', 'deja-fait', 'passage' (pas fini),
  * 'gestes', 'son', 'echec-definitif', 'attente-echec'.
@@ -708,21 +709,25 @@ export function decisionAnalyse({
 
   const valable = suiviValable(suivi, piece)
   if (!piece.analyse_erreur && !valable) return { tenter: true, raison: 'a-analyser' }
+  // Heure de l'échec vue de la base (horloge du serveur), avec une marge
+  // pour l'horloge de la tablette, qui date les passages
+  const echecLe = Math.max(temps(piece.updated_at) ?? -Infinity, temps(piece.analyse_le) ?? -Infinity)
+  const visiteApresEchec = Number.isFinite(echecLe) && intervalles.some((iv) => iv.fin > echecLe + MARGE_HORLOGE_MS)
+  // Échec définitif noté dans la base, d'abord : il a pu être écrit par un
+  // autre appareil, après un passage que le suivi de celui-ci ne couvre pas.
+  // Seule une visite finie après l'échec (heure de la base) le lève ;
+  // sinon chaque appareil repayait la frise que l'autre avait abandonnée.
+  if (echecDefinitifNote(piece.analyse_erreur)) {
+    return visiteApresEchec ? { tenter: true, raison: 'nouvelle-visite' } : non('echec-definitif')
+  }
   if (!valable) {
-    // Heure de l'échec vue de la base (horloge du serveur), avec une marge
-    // pour l'horloge de la tablette, qui date les passages
-    const echecLe = Math.max(temps(piece.updated_at) ?? -Infinity, temps(piece.analyse_le) ?? -Infinity)
-    if (Number.isFinite(echecLe) && intervalles.some((iv) => iv.fin > echecLe + MARGE_HORLOGE_MS)) {
-      return { tenter: true, raison: 'nouvelle-visite' }
-    }
-    // Plafond atteint sur un autre appareil : le motif le dit
-    if (echecDefinitifNote(piece.analyse_erreur)) return non('echec-definitif')
+    if (visiteApresEchec) return { tenter: true, raison: 'nouvelle-visite' }
     return non('attente-echec', {
       essais: 1, dernier: maintenant, couvert: couverture(maintenant, intervalles), analyseLe: piece.analyse_le ?? null, definitif: false,
     })
   }
   if (intervalles.some((iv) => iv.fin > couvertDe(suivi))) return { tenter: true, raison: 'nouvelle-visite' }
-  if (suivi.definitif || (suivi.essais ?? 0) >= ESSAIS_AUTO_MAX || echecDefinitifNote(piece.analyse_erreur)) return non('echec-definitif')
+  if (suivi.definitif || (suivi.essais ?? 0) >= ESSAIS_AUTO_MAX) return non('echec-definitif')
   if (maintenant - suivi.dernier >= attenteApresEchecs(suivi.essais)) return { tenter: true, raison: 'relance' }
   return non('attente-echec')
 }
@@ -746,10 +751,13 @@ export function suiviTentative(suivi, piece, { maintenant, intervalles = [] }) {
 
 /**
  * Suivi après un échec noté : définitif pour une demande trop longue, un
- * refus de Claude (il refusera encore) ou le dernier essai automatique.
+ * refus de Claude (il refusera encore), une réponse tronquée (la même frise
+ * donnerait la même longueur de réponse) ou le dernier essai automatique.
+ * Une réponse illisible, elle, peut tenir au hasard : elle reste relancée.
  */
 export function suiviApresEchec(suivi, err) {
   const definitif = suivi?.definitif === true || err?.code === 'demande' || err?.code === 'refus'
+    || err?.code === 'reponse-tronquee'
     || (suivi?.essais ?? 0) >= ESSAIS_AUTO_MAX
   return { ...suivi, definitif }
 }

@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 1450 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans, gestion de l'application, état des lieux)
+npm test         # 1464 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans, gestion de l'application, état des lieux)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -914,7 +914,15 @@ lot 1 : `docs/superpowers/plans/2026-11-17-etat-des-lieux-lot1-preparer.md`.
     l'appareil, segments en secondes) ; un morceau est continu (une pause en
     ouvre un nouveau) : heure d'une phrase = `debut + debut_s`. Le son n'est
     effacé qu'après l'écriture réussie ; une visite pas encore en base fait
-    attendre (23503 = « pas encore »). **Purge des morceaux orphelins
+    attendre (23503 = « pas encore »). **Panne passagère ≠ refus** :
+    Mistral 408 / 429 / 5xx (statut porté par `ErreurTranscription`) ou base
+    en 5xx / délai (`ecriturePassagere`) arrêtent le passage sans rien
+    compter ; seul un vrai 4xx compte (`refusCompte`), noté avec
+    `dernierEchec`, et le morceau n'est pas renvoyé avant 10 min. Rien
+    d'envoyable ni de purgeable : aucune lecture en ligne (`rienAEnvoyer`).
+    Morceaux mis de côté (3 refus) : « Réessayer le son refusé » en
+    relecture. « Remplacer les plans » efface aussi le son de l'affaire
+    (`effacerAudioEtatDesLieux`, jamais celui des CR). **Purge des morceaux orphelins
     seulement sur preuve** : session valide, lecture de l'affaire qui rend au
     moins une ligne, plus de 10 min, jamais hors ligne (une lecture vide sans
     erreur — session expirée — effaçait du son).
@@ -940,19 +948,22 @@ lot 1 : `docs/superpowers/plans/2026-11-17-etat-des-lieux-lot1-preparer.md`.
     sans elle ; une correction de l'agence pendant l'appel est gardée). Une
     pause ou une coupure d'iOS reprise dans la pièce ne fait pas de trou dans
     la couverture (`arrets` des passages). **Relances payantes
-    plafonnées** : 10 min puis 1 h, 3 essais automatiques au plus, `refus` et
-    frise trop longue définitifs ; ensuite seulement « Réessayer » /
+    plafonnées** : 10 min puis 1 h, 3 essais automatiques au plus, `refus`,
+    réponse tronquée et frise trop longue définitifs (un motif définitif de
+    la base passe avant le suivi de l'appareil) ; ensuite seulement « Réessayer » /
     « Relancer l'analyse » ou une nouvelle visite. Déclencheurs : sortie de
     pièce, ouverture du module ou de la visite en ligne, moteur de synchro
-    après une sortie / fin ou une transcription. Limite connue : deux
-    appareils qui réservent la même pièce dans la même seconde paient chacun.
+    après une sortie / fin ou une transcription. Limite connue : un appareil
+    qui réserve la pièce pendant l'appel de l'autre appareil paie aussi le
+    sien (un seul résultat s'écrit).
   - **Écran** : pièces grises (non visitées), sablier (en attente), vertes
     (fiche complète), ambre (rubrique manquante, `completudeFiche`), rouge
     pâle (échec) ; pense-bête coché d'après la fiche. **Relecture**
     (`RelectureEdl.jsx`, onglet à côté de « Pièces », `?vue=relecture&piece=`)
     : pièces à valider d'abord ; plan de la pièce (`PlanVisite` en
     `consultation`), fiche modifiable (bleue tant que `fiche_a_valider`,
-    modifier vaut validation), éléments par calque en bleu avec l'extrait
+    modifier vaut validation ; un brouillon modifié survit à une nouvelle
+    analyse, `suiteFicheRecue`), éléments par calque en bleu avec l'extrait
     entendu : Valider / Modifier / Écarter (confirmation), « Ajouter un
     élément », « Relancer l'analyse » (confirmée : elle se paie).
 

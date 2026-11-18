@@ -111,3 +111,78 @@ export function morceauxAPurger(morceaux, visitesConnues, maintenant = Date.now(
 export function visitePasEncoreEnvoyee(err) {
   return err?.code === '23503'
 }
+
+// ─── Échecs : ce qui compte contre un morceau, ce qui n'est qu'une panne ─────
+//
+// Chaque essai se paie, et un morceau compté trois fois quitte l'analyse
+// (il n'est plus retenté de lui-même). Une panne passagère — Mistral saturé
+// (429), en panne (5xx), trop lent (408), ou la base qui ne répond pas — ne
+// dit rien du morceau : le passage s'arrête sans rien compter, comme sur une
+// coupure de réseau, et repart au déclencheur suivant.
+
+// Après un refus compté, le morceau attend avant d'être renvoyé : trois
+// refus en trois minutes (moteur de synchro) ne prouvent rien de plus qu'un
+export const ESPACEMENT_ECHECS_MS = 10 * 60 * 1000
+
+/** Statut HTTP d'une panne passagère (rien à reprocher à la demande). */
+export const statutPassager = (s) => s === 408 || s === 429 || (Number.isFinite(s) && s >= 500)
+
+/**
+ * Refus de la transcription qui compte contre le morceau : un vrai 4xx
+ * (audio illisible, trop gros…). Ni une panne passagère, ni 401 / 403
+ * (compte ou clé : le morceau n'y est pour rien). Statut inconnu : compté.
+ */
+export function refusCompte(err) {
+  if (err?.code !== 'refus') return false
+  const s = Number(err?.statut)
+  if (!Number.isFinite(s) || s <= 0) return true
+  return s >= 400 && s < 500 && ![401, 403, 408, 429].includes(s)
+}
+
+/** Panne passagère de Mistral ou de la fonction serveur. */
+export const refusPassager = (err) => err?.code === 'refus' && statutPassager(Number(err?.statut))
+
+// Codes de la base (PostgREST, PostgreSQL) d'une écriture qui pourrait
+// passer plus tard : connexion, ressources, délai dépassé, verrou, conflit
+// de sérialisation
+const CODES_BASE_PASSAGERS = new Set(['PGRST000', 'PGRST001', 'PGRST002', 'PGRST003', '40001', '40P01', '55P03'])
+
+/** L'écriture d'une transcription a échoué pour une raison passagère (5xx, délai). */
+export function ecriturePassagere(err) {
+  if (statutPassager(Number(err?.statut ?? err?.status))) return true
+  const code = String(err?.code ?? '')
+  return CODES_BASE_PASSAGERS.has(code) || /^(08|53|57)/.test(code)
+}
+
+/**
+ * Morceau à envoyer à ce passage : d'une visite d'état des lieux, avec une
+ * heure (sinon il ne se placerait dans aucune pièce), pas mis de côté
+ * (`echecsMax` refus), et pas refusé il y a moins de ESPACEMENT_ECHECS_MS.
+ */
+export function morceauTranscriptible(m, { maintenant = Date.now(), echecsMax = 3 } = {}) {
+  if (m?.edlVisiteId == null || debutMorceauMs(m) == null) return false
+  const echecs = m.echecs ?? 0
+  if (echecs >= echecsMax) return false
+  return !(echecs > 0 && Number.isFinite(m.dernierEchec) && maintenant - m.dernierEchec < ESPACEMENT_ECHECS_MS)
+}
+
+/**
+ * Rien à faire en ligne pour ces morceaux : aucun à envoyer, et aucun que la
+ * purge pourrait viser. Un morceau déjà refusé a été envoyé, donc sa visite
+ * était dans la base : il n'est pas candidat (sinon un seul morceau mis de
+ * côté relançait les lectures à chaque minute du moteur de synchro, sans
+ * fin). Il reste repris par « Réessayer le son refusé ».
+ */
+export function rienAEnvoyer(morceaux, { maintenant = Date.now(), echecsMax = 3 } = {}) {
+  return !(morceaux ?? []).some((m) => {
+    if (morceauTranscriptible(m, { maintenant, echecsMax })) return true
+    const debut = debutMorceauMs(m)
+    return m?.edlVisiteId != null && !(m.echecs > 0) && debut != null && maintenant - debut > DELAI_PURGE_MS
+  })
+}
+
+/** Morceaux de l'affaire mis de côté sur cet appareil (`echecsMax` refus comptés). */
+export function morceauxRefuses(morceaux, affaireId, echecsMax = 3) {
+  if (!affaireId) return []
+  return (morceaux ?? []).filter((m) => m?.edlVisiteId != null && m.affaireId === affaireId && (m.echecs ?? 0) >= echecsMax)
+}

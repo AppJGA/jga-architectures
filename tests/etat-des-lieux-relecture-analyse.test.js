@@ -9,7 +9,7 @@ import { test, describe } from 'node:test'
 import {
   resumePieceRelecture, piecesARelire, totalAValider, elementsParCalque, optionsType, valeurType, lireValeurType,
   pointsProposes, erreurSaisieElement, champsElementSaisis, saisieElement, titreElement, brouillonFiche,
-  ficheDepuisBrouillon, ficheModifiee, rubriquesManquantes, messageLancement,
+  ficheDepuisBrouillon, ficheModifiee, rubriquesManquantes, messageLancement, suiteFicheRecue,
 } from '../src/modules/etude/etat-des-lieux/analyse/relectureAnalyseLogique.js'
 import { champsValidation } from '../src/modules/etude/etat-des-lieux/analyse/analyseDonneesLogique.js'
 import { CALQUES_DE_POINT } from '../src/modules/etude/etat-des-lieux/calquesEdl.js'
@@ -177,6 +177,18 @@ describe('fiche de la pièce', () => {
     assert.equal(ficheModifiee(fiche, brouillonFiche(fiche)), false)
     assert.equal(ficheModifiee(fiche, { ...brouillonFiche(fiche), sol: 'parquet ' }), false)
     assert.equal(ficheModifiee(fiche, { ...brouillonFiche(fiche), sol: 'parquet chêne' }), true)
+  })
+
+  test('fiche reçue pendant la relecture : brouillon propre remplacé, brouillon modifié gardé', () => {
+    const avant = { sol: 'parquet' }
+    const recue = { sol: 'parquet chêne', murs: 'peinture' }
+    // Rien touché : la nouvelle analyse s'affiche
+    assert.equal(suiteFicheRecue({ precedente: avant, brouillon: brouillonFiche(avant), recue }), 'remplacer')
+    // Saisie en cours : elle n'est pas perdue
+    const saisi = { ...brouillonFiche(avant), murs: 'toile de verre' }
+    assert.equal(suiteFicheRecue({ precedente: avant, brouillon: saisi, recue }), 'garder')
+    // Notre propre enregistrement relu : identique au brouillon, rien à garder
+    assert.equal(suiteFicheRecue({ precedente: avant, brouillon: saisi, recue: ficheDepuisBrouillon(avant, saisi) }), 'remplacer')
   })
 
   test('rubriques manquantes signalées une fois la pièce analysée', () => {

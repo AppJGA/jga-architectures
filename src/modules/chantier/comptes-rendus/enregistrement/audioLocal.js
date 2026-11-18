@@ -148,7 +148,62 @@ export function effacerMorceau(id) {
   return transaction(MORCEAUX, 'readwrite', (m) => { m.delete(id) }).then(() => undefined)
 }
 
-/** Un morceau que la transcription a refusé : on le garde, avec ses échecs comptés. */
-export function marquerEchec(morceau) {
-  return transaction(MORCEAUX, 'readwrite', (m) => { m.put({ ...morceau, echecs: (morceau.echecs ?? 0) + 1 }) }).then(() => undefined)
+/**
+ * Un morceau que la transcription a refusé : on le garde, avec ses échecs
+ * comptés. `champs` (état des lieux : `dernierEchec`) s'ajoute au morceau ;
+ * les comptes rendus n'en passent pas.
+ */
+export function marquerEchec(morceau, champs = {}) {
+  return transaction(MORCEAUX, 'readwrite', (m) => { m.put({ ...morceau, ...champs, echecs: (morceau.echecs ?? 0) + 1 }) }).then(() => undefined)
+}
+
+/**
+ * « Réessayer le son refusé » (état des lieux) : les échecs de ces morceaux
+ * remis à zéro, relus sous la transaction (un morceau effacé entre-temps
+ * n'est pas recréé).
+ * @returns le nombre de morceaux remis en file
+ */
+export function remettreEnFile(ids) {
+  const voulus = new Set(ids ?? [])
+  if (!voulus.size) return Promise.resolve(0)
+  return transaction(MORCEAUX, 'readwrite', (m) => {
+    const compte = { result: 0 }
+    const lecture = m.getAll()
+    lecture.onsuccess = () => {
+      for (const x of lecture.result ?? []) {
+        if (!voulus.has(x.id)) continue
+        m.put({ ...x, echecs: 0, dernierEchec: null })
+        compte.result += 1
+      }
+    }
+    return compte
+  })
+}
+
+/**
+ * « Remplacer les plans » : le son des visites d'état des lieux de cette
+ * affaire (morceaux et tranches) quitte l'appareil avec elles. Les visites
+ * n'existent plus : ce son ne se rattacherait à rien, et la purge
+ * automatique, qui exige une preuve lue en ligne, pourrait ne jamais le
+ * trouver. Le son des comptes rendus (sans `edlVisiteId`) n'est pas touché.
+ * @returns { morceaux, tranches } effacés
+ */
+export async function effacerAudioEtatDesLieux(affaireId) {
+  const effaces = { morceaux: 0, tranches: 0 }
+  if (!affaireId) return effaces
+  for (const [magasin, cle] of [[MORCEAUX, 'morceaux'], [TRANCHES, 'tranches']]) {
+    effaces[cle] = await transaction(magasin, 'readwrite', (m) => {
+      const compte = { result: 0 }
+      const lecture = m.getAll()
+      lecture.onsuccess = () => {
+        for (const x of lecture.result ?? []) {
+          if (x?.edlVisiteId == null || x.affaireId !== affaireId) continue
+          m.delete(x.id)
+          compte.result += 1
+        }
+      }
+      return compte
+    })
+  }
+  return effaces
 }

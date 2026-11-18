@@ -185,11 +185,13 @@ export async function reserverAnalyse(piece) {
 
 /** Upsert par identifiant du morceau : une transcription rejouée réécrit la même ligne. */
 export async function enregistrerTranscription(ligne) {
-  const { data, error } = await supabase
+  const { data, error, status } = await supabase
     .from('edl_enregistrements').upsert(ligneEnregistrement(ligne), { onConflict: 'id' }).select('id')
   if (error) {
     if (analyseIndisponible(error)) return INDISPONIBLE
-    throw error
+    // Le statut HTTP dit si la base était en panne (5xx) : la transcription
+    // n'est alors pas comptée contre le morceau (ecriturePassagere)
+    throw Object.assign(error, { statut: status })
   }
   if (!data?.length) throw new Error(LECTURE_SEULE)
   return { indisponible: false }

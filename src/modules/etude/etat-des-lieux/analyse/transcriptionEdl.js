@@ -31,7 +31,9 @@ function signaler(detail) {
 }
 
 export function messageTranscriptionEdl(err) {
-  return err?.code === 'indisponible' ? MESSAGE_ANALYSE_INDISPONIBLE : messageTranscription(err)
+  if (err?.code === 'indisponible') return MESSAGE_ANALYSE_INDISPONIBLE
+  if (err?.code === 'passager') return 'Le service de transcription ne répond pas pour l’instant : le son attend sur l’appareil et repartira de lui-même.'
+  return messageTranscription(err)
 }
 
 const horsLigne = () => typeof navigator !== 'undefined' && navigator.onLine === false

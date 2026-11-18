@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Check } from 'lucide-react'
 import { styleProposition, COULEUR_IA } from '../../../chantier/comptes-rendus/enregistrement/styleProposition'
 import { RUBRIQUES_FICHE } from './analyseEdlLogique'
-import { LIBELLES_FICHE, brouillonFiche, ficheDepuisBrouillon, ficheModifiee, rubriquesManquantes } from './relectureAnalyseLogique'
+import { LIBELLES_FICHE, brouillonFiche, ficheDepuisBrouillon, ficheModifiee, rubriquesManquantes, suiteFicheRecue } from './relectureAnalyseLogique'
 
 // ─── Fiche d'une pièce, à la relecture ───────────────────────────────────────
 //
@@ -11,8 +11,9 @@ import { LIBELLES_FICHE, brouillonFiche, ficheDepuisBrouillon, ficheModifiee, ru
 // des comptes rendus. Comme pour une remarque proposée, modifier vaut
 // validation : « Enregistrer » valide aussi. Les rubriques que la visite n'a
 // pas dites sont signalées en ambre (l'orange est la couleur de la phase).
-// Le parent la remonte (clé) quand une nouvelle analyse arrive : le
-// brouillon repart de la fiche reçue.
+// Une fiche reçue de la base (nouvelle analyse, enregistrement relu)
+// remplace le brouillon s'il est propre ; un brouillon modifié est gardé
+// (`suiteFicheRecue`), avec un avis et de quoi charger la nouvelle fiche.
 
 const AMBRE = { fond: '#FFFBEB', trait: '#F59E0B', texte: '#92400E' }
 const champ = {
@@ -23,9 +24,32 @@ const bouton = { display: 'inline-flex', alignItems: 'center', gap: 6, minHeight
 
 const metres = (v) => `${String(Math.round(Number(v) * 100) / 100).replace('.', ',')} m`
 
+// Ce qui distingue une fiche reçue de la précédente : son contenu et l'heure d'analyse
+const cleFiche = (piece) => `${piece.analyse_le ?? ''}|${JSON.stringify(brouillonFiche(piece.fiche))}`
+
 export function FicheRelecture({ piece, lectureSeule, onEnregistrer }) {
   const [brouillon, setBrouillon] = useState(() => brouillonFiche(piece.fiche))
   const [enCours, setEnCours] = useState(false)
+  // Fiche vue au dernier rendu, et avis d'une analyse arrivée sur un brouillon modifié
+  const [vue, setVue] = useState(() => ({ cle: cleFiche(piece), fiche: piece.fiche, analyseLe: piece.analyse_le ?? null }))
+  const [nouvelleAnalyse, setNouvelleAnalyse] = useState(false)
+  const cle = cleFiche(piece)
+  if (cle !== vue.cle) {
+    // Ajusté pendant le rendu (et non dans un effet) : le brouillon périmé
+    // ne s'affiche jamais, même une image
+    const suite = suiteFicheRecue({ precedente: vue.fiche, brouillon, recue: piece.fiche })
+    setVue({ cle, fiche: piece.fiche, analyseLe: piece.analyse_le ?? null })
+    if (suite === 'remplacer') {
+      setBrouillon(brouillonFiche(piece.fiche))
+      setNouvelleAnalyse(false)
+    } else if ((piece.analyse_le ?? null) !== vue.analyseLe) {
+      setNouvelleAnalyse(true)
+    }
+  }
+  const chargerNouvelle = () => {
+    setBrouillon(brouillonFiche(piece.fiche))
+    setNouvelleAnalyse(false)
+  }
   const aValider = piece.fiche_a_valider === true
   const modifiee = ficheModifiee(piece.fiche, brouillon)
   const manquantes = new Set(rubriquesManquantes(piece, brouillon))
@@ -71,6 +95,15 @@ export function FicheRelecture({ piece, lectureSeule, onEnregistrer }) {
         <h3 style={{ flex: 1, margin: 0, fontSize: 14, fontWeight: 600, color: '#1F1B17' }}>Fiche de la pièce</h3>
         {aValider && <span style={{ fontSize: 12, fontWeight: 600, color: COULEUR_IA }}>Proposée par l’IA, à relire</span>}
       </div>
+      {nouvelleAnalyse && (
+        <p role="status" style={{ margin: '0 0 10px', fontSize: 12, color: AMBRE.texte, background: AMBRE.fond, border: `0.5px solid ${AMBRE.trait}`, padding: '6px 10px', display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ flex: 1 }}>Nouvelle analyse reçue — vos modifications ne sont pas enregistrées.</span>
+          <button type="button" disabled={enCours} onClick={chargerNouvelle}
+            style={{ ...bouton, border: `0.5px solid ${AMBRE.trait}`, background: 'white', color: AMBRE.texte }}>
+            Charger la nouvelle fiche
+          </button>
+        </p>
+      )}
       {manquantes.size > 0 && (
         <p style={{ margin: '0 0 10px', fontSize: 12, color: AMBRE.texte, background: AMBRE.fond, border: `0.5px solid ${AMBRE.trait}`, padding: '6px 10px' }}>
           Pas dit pendant la visite : {[...manquantes].map((r) => LIBELLES_FICHE[r].toLowerCase()).join(', ')}.
@@ -82,7 +115,7 @@ export function FicheRelecture({ piece, lectureSeule, onEnregistrer }) {
       {!lectureSeule && (modifiee || aValider) && (
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
           {modifiee && (
-            <button type="button" disabled={enCours} onClick={() => setBrouillon(brouillonFiche(piece.fiche))}
+            <button type="button" disabled={enCours} onClick={chargerNouvelle}
               style={{ ...bouton, border: '0.5px solid rgba(0,0,0,0.15)', background: 'white', color: '#1F1B17' }}>
               Annuler les modifications
             </button>

@@ -16,6 +16,7 @@ import { useAnalyseEdl } from './analyse/useAnalyseEdl'
 import { RelectureEdl } from './analyse/RelectureEdl'
 import { resumePieceRelecture } from './analyse/relectureAnalyseLogique'
 import { COULEUR_IA } from '../../chantier/comptes-rendus/enregistrement/styleProposition'
+import { morceauxEtatsDesLieux } from '../../chantier/comptes-rendus/enregistrement/audioLocal'
 
 // ─── État des lieux d'un bâtiment existant ───────────────────────────────────
 //
@@ -89,6 +90,17 @@ export default function EtatDesLieuxModule({ lectureSeule = false }) {
   const analyse = useAnalyseEdl(affaireId, { lectureSeule })
   const visiteOuverte = params.get('visite') === '1' && !lectureSeule
   const [suppression, setSuppression] = useState(false)
+  // Morceaux de son de l'affaire pas encore transcrits sur cet appareil :
+  // « Remplacer les plans » les efface, la fenêtre doit le dire
+  const [sonAPerdre, setSonAPerdre] = useState({ affaireId: null, n: 0 })
+  useEffect(() => {
+    if (!confirmer) return undefined
+    let vivant = true
+    morceauxEtatsDesLieux()
+      .then((l) => { if (vivant) setSonAPerdre({ affaireId, n: l.filter((m) => m.affaireId === affaireId).length }) })
+      .catch(() => {})
+    return () => { vivant = false }
+  }, [confirmer, affaireId])
   const aEuUneVisite = (visite.donnees?.visites?.length ?? 0) > 0
   const ouvrirVisite = () => setParams((p) => { const n = new URLSearchParams(p); n.set('visite', '1'); return n })
   const fermerVisite = () => {
@@ -204,6 +216,7 @@ export default function EtatDesLieuxModule({ lectureSeule = false }) {
     points: visite.donnees?.points?.length ?? 0,
     photos: visite.donnees?.photos?.length ?? 0,
     enAttente: visite.resume?.enAttente ?? 0,
+    son: sonAPerdre.affaireId === affaireId ? sonAPerdre.n : 0,
   })
 
   const piecesDe = (id) => edl.pieces.filter((p) => p.niveau_id === id)

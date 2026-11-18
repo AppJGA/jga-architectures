@@ -13,10 +13,16 @@ import { morceauxEnAttente, effacerMorceau, marquerEchec, effacerEnregistrement 
 export const ECHECS_MAX = 3
 
 export class ErreurTranscription extends Error {
-  /** @param code 'non-configuree' | 'reseau' | 'refus' | 'session' */
-  constructor(code, message) {
+  /**
+   * @param code 'non-configuree' | 'reseau' | 'refus' | 'session'
+   * @param statut statut HTTP du refus (celui de Mistral quand c'est lui qui
+   *   refuse) : l'état des lieux y distingue une panne passagère (429, 5xx)
+   *   d'un vrai refus ; les comptes rendus l'ignorent
+   */
+  constructor(code, message, statut = null) {
     super(message)
     this.code = code
+    this.statut = statut
   }
 }
 
@@ -72,7 +78,8 @@ export async function appelerTranscription({ corps = null, type = '', chemin = n
   if (!json || json.erreur === 'transcription-non-configuree') throw new ErreurTranscription('non-configuree', 'non configurée')
   if (json.erreur === 'session') throw new ErreurTranscription('session', 'session')
   if (json.erreur === 'reseau') throw new ErreurTranscription('reseau', json.detail ?? 'réseau')
-  throw new ErreurTranscription('refus', json.detail || json.erreur || `erreur ${reponse.status}`)
+  const statut = Number(json.statut) || reponse.status
+  throw new ErreurTranscription('refus', json.detail || json.erreur || `erreur ${reponse.status}`, statut)
 }
 
 /** Ajoute le texte d'un morceau à son enregistrement ; la ligne naît au premier. */

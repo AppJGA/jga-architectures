@@ -1079,3 +1079,31 @@ describe('Correctifs (tour 3)', () => {
     assert.equal((await seul.passe({ seulement: 'salon' })).raison, 'conflit')
   })
 })
+
+describe('Correctifs (vague finale)', () => {
+  test('réponse tronquée : définitive (même frise, même longueur) ; illisible : relancée', () => {
+    assert.equal(suiviApresEchec({ essais: 1 }, { code: 'reponse-tronquee' }).definitif, true)
+    assert.equal(suiviApresEchec({ essais: 1 }, { code: 'reponse-illisible' }).definitif, false)
+  })
+
+  test('échec définitif noté par un autre appareil : passe avant le suivi de celui-ci', () => {
+    // La tablette a échoué une fois (couverture 10:11). Le salon est revisité
+    // de 10:21 à 10:26, puis le bureau échoue définitivement à 10:40 sur
+    // cette visite-là. La tablette ne doit pas repayer à son tour.
+    const revisite = [...journal(), ev('entree', '10:21:00', { piece_id: 'salon' }), ev('sortie', '10:26:00', { piece_id: 'salon' })]
+    const sons = [{ visite_id: 'v1', debut: H('09:59:00'), duree_s: 3600 }]
+    const suivi = { essais: 1, dernier: ms('10:11:00'), couvert: ms('10:11:00'), analyseLe: null, definitif: false }
+    const piece = salon({ analyse_erreur: motifEchec('Le service de Claude n’a pas répondu.', { definitif: true }), updated_at: H('10:40:00') })
+    const base = { piece, suivi, enregistrements: sons, maintenant: ms('11:00:00') }
+    assert.equal(decisionAnalyse({ ...base, evenements: revisite }).raison, 'echec-definitif')
+    // Le même motif sans suffixe : la visite nouvelle pour cet appareil repart
+    assert.equal(decisionAnalyse({ ...base, piece: salon({ analyse_erreur: 'x', updated_at: H('10:40:00') }), evenements: revisite }).raison, 'nouvelle-visite')
+    // Une visite finie après l'échec (base + 5 min) lève le définitif, sur tout appareil
+    const apres = [...revisite, ev('entree', '10:44:00', { piece_id: 'salon' }), ev('sortie', '10:46:00', { piece_id: 'salon' })]
+    assert.equal(decisionAnalyse({ ...base, evenements: apres }).raison, 'nouvelle-visite')
+    assert.equal(decisionAnalyse({ ...base, suivi: null, evenements: apres }).raison, 'nouvelle-visite')
+    // Dans la marge de 5 minutes : encore définitif
+    const marge = [...revisite, ev('entree', '10:41:00', { piece_id: 'salon' }), ev('sortie', '10:44:00', { piece_id: 'salon' })]
+    assert.equal(decisionAnalyse({ ...base, evenements: marge }).raison, 'echec-definitif')
+  })
+})

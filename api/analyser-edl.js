@@ -40,7 +40,7 @@ export default async function handler(req, res) {
     // et la réflexion qui suit dépasseraient les délais d'une requête simple
     const message = await client.beta.messages.stream({
       model: MODELE_ANALYSE,
-      max_tokens: 16000,
+      max_tokens: 64000,
       betas: ['server-side-fallback-2026-07-01'],
       fallbacks: 'default',
       ...construireDemandeAnalyse({

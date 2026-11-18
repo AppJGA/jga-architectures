@@ -354,6 +354,10 @@ describe('remplacer les plans après une visite', async () => {
       'L’état des lieux déjà réalisé sera supprimé définitivement : 1 visite, 2 points, 0 photo, avec leur journal.',
     )
     assert.match(perteRemplacement({ visites: 1, points: 1, photos: 3, enAttente: 4 }), /Les 4 gestes pas encore envoyés depuis cet appareil seront aussi abandonnés\.$/)
+    // Le son pas encore transcrit de l'affaire part avec les visites
+    assert.match(perteRemplacement({ visites: 1, points: 0, photos: 0, son: 3 }), /Les 3 morceaux de son non transcrits de cet appareil seront effacés\.$/)
+    assert.match(perteRemplacement({ visites: 1, points: 0, photos: 0, son: 1 }), /Le morceau de son non transcrit de cet appareil sera effacé\.$/)
+    assert.doesNotMatch(perteRemplacement({ visites: 1, points: 0, photos: 0, son: 0 }), /son/)
   })
   test('photos gardées sur l’appareil par les gestes en attente', () => {
     const o = { affaireId: 'a' }

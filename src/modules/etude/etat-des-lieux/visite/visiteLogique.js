@@ -175,9 +175,13 @@ const nombre = (n, un, plusieurs) => `${n} ${n > 1 ? plusieurs : un}`
  * Ce que « Remplacer les plans » emporte, en une phrase : tout l'état des
  * lieux, et d'abord ce qui a été saisi sur place (demande de l'agence, 2026-11-18).
  */
-export function perteRemplacement({ visites = 0, points = 0, photos = 0, enAttente = 0 } = {}) {
-  if (!visites && !enAttente) return null
+export function perteRemplacement({ visites = 0, points = 0, photos = 0, enAttente = 0, son = 0 } = {}) {
+  if (!visites && !enAttente && !son) return null
   const saisi = [nombre(visites, 'visite', 'visites'), nombre(points, 'point', 'points'), nombre(photos, 'photo', 'photos')].join(', ')
   const appareil = enAttente ? ` Les ${nombre(enAttente, 'geste', 'gestes')} pas encore envoyé${enAttente > 1 ? 's' : ''} depuis cet appareil seront aussi abandonnés.` : ''
-  return `L’état des lieux déjà réalisé sera supprimé définitivement : ${saisi}, avec leur journal.${appareil}`
+  // Le son pas encore transcrit est effacé de l'appareil avec les visites
+  const audio = !son ? ''
+    : son > 1 ? ` Les ${son} morceaux de son non transcrits de cet appareil seront effacés.`
+      : ' Le morceau de son non transcrit de cet appareil sera effacé.'
+  return `L’état des lieux déjà réalisé sera supprimé définitivement : ${saisi}, avec leur journal.${appareil}${audio}`
 }

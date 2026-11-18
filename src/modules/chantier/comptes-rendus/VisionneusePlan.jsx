@@ -14,7 +14,10 @@ import { zoomAutour, limiterVue, pointSurPlan, vueSurCadre, cleDeCadre, recadrer
 // `dessinFond(ctx, { largeurImage, hauteurImage, versEcran, echelle, ecran })`
 // (facultatif, plan vectoriel de l'état des lieux) : un canevas sous le plan,
 // redessiné à chaque vue, garde le dessin net à tous les zooms là où l'image
-// devient floue. L'image reste, invisible, pour la mesure des appuis.
+// devient floue. Un bloc transparent de la taille du plan sert alors à la
+// mesure des appuis. `sansPleine` : l'image pleine (6 000 px, ~96 Mo de
+// mémoire sur l'iPad) n'est pas chargée, l'aperçu suffit pendant le
+// chargement du dessin ; l'appelant le retire si le dessin échoue.
 
 const SEUIL_APPUI = 6 // px de déplacement au-delà desquels ce n'est plus un appui
 
@@ -42,9 +45,17 @@ function peindreFond(canvas, e) {
   const lf = e.largeurImage * k
   const hf = e.hauteurImage * k
   ctx.save()
-  ctx.shadowColor = OMBRE_FEUILLE.couleur
-  ctx.shadowBlur = OMBRE_FEUILLE.flou
-  ctx.shadowOffsetY = OMBRE_FEUILLE.y
+  // Feuille plus grande que l'écran : son ombre ne se verrait pas, et une
+  // ombre floue sur tout le canevas coûte cher à chaque image d'un pincement
+  const couvre = x0 <= 0 && y0 <= 0 && x0 + lf >= largeur && y0 + hf >= hauteur
+  if (!couvre) {
+    // Flou et décalage d'ombre ignorent la transformation : en pixels
+    // physiques, d'où le rapport du canevas
+    const ratio = canvas.width / largeur
+    ctx.shadowColor = OMBRE_FEUILLE.couleur
+    ctx.shadowBlur = OMBRE_FEUILLE.flou * ratio
+    ctx.shadowOffsetY = OMBRE_FEUILLE.y * ratio
+  }
   ctx.fillStyle = '#FFFFFF'
   ctx.fillRect(x0, y0, lf, hf)
   ctx.restore()
@@ -64,7 +75,7 @@ function peindreFond(canvas, e) {
   ctx.restore()
 }
 
-export function VisionneusePlan({ version, obtenirLiens, pastilles = [], idActive, onToucher, onPastille, calque, cadre = null, zoomMax = 12, dessinFond = null }) {
+export function VisionneusePlan({ version, obtenirLiens, pastilles = [], idActive, onToucher, onPastille, calque, cadre = null, zoomMax = 12, dessinFond = null, sansPleine = false }) {
   const conteneur = useRef(null)
   const image = useRef(null)
   const [taille, setTaille] = useState({ largeur: 0, hauteur: 0 })
@@ -80,17 +91,17 @@ export function VisionneusePlan({ version, obtenirLiens, pastilles = [], idActiv
   useEffect(() => {
     if (!version) return
     let abandon = false
-    obtenirLiens([version.chemin_apercu, version.chemin]).then(liens => {
+    obtenirLiens(sansPleine ? [version.chemin_apercu] : [version.chemin_apercu, version.chemin]).then(liens => {
       if (abandon) return
       setUrlApercu(liens.get(version.chemin_apercu))
-      const pleine = liens.get(version.chemin)
+      const pleine = sansPleine ? null : liens.get(version.chemin)
       if (!pleine) return
       const prechargement = new Image()
       prechargement.onload = () => { if (!abandon) setUrlPleine(pleine) }
       prechargement.src = pleine
     }).catch(err => console.warn('Plan :', err))
     return () => { abandon = true }
-  }, [version?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [version?.id, sansPleine]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useLayoutEffect(() => {
     const el = conteneur.current
@@ -123,9 +134,12 @@ export function VisionneusePlan({ version, obtenirLiens, pastilles = [], idActiv
   // Un seul dessin par image affichée : un pincement change la vue à chaque
   // événement pointeur, souvent plusieurs fois entre deux images. Le dessin
   // lit les dernières valeurs au moment de l'image, pas celles de la demande.
+  // Demandé avant que le navigateur peigne (useLayoutEffect) : un effet
+  // ordinaire passe après, et le dessin suivait le calque avec une image de
+  // retard — les murs glissaient sous les contours des pièces.
   const largeurImage = version?.largeur
   const hauteurImage = version?.hauteur
-  useEffect(() => {
+  useLayoutEffect(() => {
     const f = fond.current
     f.etat = { dessinFond, vue, taille, echelle, ox, oy, largeurImage, hauteurImage }
     if (!dessinFond || f.attente) return
@@ -237,15 +251,15 @@ export function VisionneusePlan({ version, obtenirLiens, pastilles = [], idActiv
       )}
       {version && echelle > 0 && (
         <div style={{ position: 'absolute', left: ox, top: oy, width: bw, height: bh, transform: `translate(${vue.dx}px, ${vue.dy}px) scale(${vue.zoom})`, transformOrigin: '0 0' }}>
-          {/* Avec un dessin de fond, l'image garde sa place et sert à la mesure
-              des appuis (pointSurPlan), sans se voir — même avant d'être lue,
-              ou absente de l'appareil : le plan vectoriel suffit. */}
-          {(urlPleine || urlApercu || dessinFond) && (
+          {/* Avec un dessin de fond, un bloc transparent tient la place du plan
+              et sert à la mesure des appuis (pointSurPlan) : aucune image à
+              décoder, et l'appui marche même sans image sur l'appareil. */}
+          {dessinFond ? (
+            <div ref={image} style={{ width: bw, height: bh }} />
+          ) : (urlPleine || urlApercu) && (
             <img
-              ref={image} src={urlPleine ?? urlApercu ?? undefined} alt="Plan" draggable={false}
-              style={dessinFond
-                ? { width: bw, height: bh, display: 'block', opacity: 0 }
-                : { width: bw, height: bh, display: 'block', background: 'white', boxShadow: '0 6px 24px -12px rgba(0,0,0,0.4)' }}
+              ref={image} src={sansPleine ? urlApercu : (urlPleine ?? urlApercu)} alt="Plan" draggable={false}
+              style={{ width: bw, height: bh, display: 'block', background: 'white', boxShadow: '0 6px 24px -12px rgba(0,0,0,0.4)' }}
             />
           )}
           {calque?.({ largeur: bw, hauteur: bh, zoom: vue.zoom })}

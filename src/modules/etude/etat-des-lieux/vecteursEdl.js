@@ -23,17 +23,22 @@ export const vecteursEnMemoire = (chemin) => decodes.get(chemin) ?? null
 async function lireOctets(chemin, obtenirLiens) {
   const url = (await obtenirLiens([chemin])).get(chemin)
   if (!url) throw new Error('Fichier vectoriel introuvable')
-  let reponse
+  let reponse = null
+  let erreur = null
   try {
     reponse = await fetch(url)
   } catch (err) {
-    // Réseau tombé entre le lien signé et la lecture : la copie de
-    // l'appareil, s'il y en a une
-    const local = await lienLocal(chemin)
-    if (!local) throw err
-    reponse = await fetch(local)
+    erreur = err
   }
-  if (!reponse.ok) throw new Error(`Fichier vectoriel : ${reponse.status}`)
+  if (!reponse?.ok) {
+    // Réseau tombé entre le lien signé et la lecture, ou réponse refusée
+    // (service worker sans copie, lien périmé) : la copie de l'appareil,
+    // s'il y en a une
+    const local = await lienLocal(chemin)
+    if (!local) throw erreur ?? new Error(`Fichier vectoriel : ${reponse?.status}`)
+    reponse = await fetch(local)
+    if (!reponse.ok) throw new Error(`Fichier vectoriel : ${reponse.status}`)
+  }
   return new Uint8Array(await reponse.arrayBuffer())
 }
 

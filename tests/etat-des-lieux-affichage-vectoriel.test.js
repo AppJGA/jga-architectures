@@ -180,6 +180,24 @@ describe('dessinerVecteurs', () => {
     assert.ok(HAUTEUR_TEXTE_MIN === 6)
   })
 
+  test('deux images de suite : mêmes appels (préparation gardée par fichier)', () => {
+    const a = contexte()
+    const b = contexte()
+    dessinerVecteurs(a, vecteurs, CADRAGE, vue())
+    dessinerVecteurs(b, vecteurs, CADRAGE, vue())
+    assert.deepEqual(b.appels, a.appels)
+  })
+
+  test('zoom 1 : textes trop petits ignorés, hors écran rien de tracé', () => {
+    const ctx = contexte()
+    // 0,3 m × 100 px/m × 0,2 = 6 px : tout juste lisible ; « cote » non
+    dessinerVecteurs(ctx, vecteurs, CADRAGE, vue({ zoom: 1, dx: 0, dy: 0 }))
+    assert.deepEqual(ctx.appels.filter((x) => x[0] === 'fillText').map((x) => x[1]), ['Séjour', '24 m²'])
+    const loin = contexte()
+    dessinerVecteurs(loin, vecteurs, CADRAGE, vue({ zoom: 12, dx: -9000, dy: -100 }))
+    assert.equal(loin.appels.filter((x) => x[0] === 'moveTo' || x[0] === 'fillText').length, 0)
+  })
+
   test('sans échelle ou sans vecteurs : rien n’est dessiné', () => {
     const ctx = contexte()
     dessinerVecteurs(ctx, null, CADRAGE, vue())

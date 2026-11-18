@@ -54,12 +54,38 @@ export function boiteTexte({ texte, pos, hauteur }) {
   return [x, y - (lignes.length - 1) * hauteur * INTERLIGNE - hauteur * 0.3, x + longueur * hauteur * LARGEUR_CARACTERE, y + hauteur]
 }
 
+// Ce qui ne dépend que du fichier, calculé une fois par objet décodé et non à
+// chaque image d'un pincement : emprise et lignes des textes, masses
+// rangées par calque
+const preparations = new WeakMap()
+
+function preparation(vecteurs) {
+  let p = preparations.get(vecteurs)
+  if (p) return p
+  const textes = (vecteurs.textes ?? []).map((x) => ({
+    boite: x.pos ? boiteTexte(x) : null,
+    lignes: String(x.texte ?? '').split('\n'),
+  }))
+  const parCalque = new Map()
+  for (const m of vecteurs.masses ?? []) {
+    if (!parCalque.has(m.calque)) parCalque.set(m.calque, [])
+    parCalque.get(m.calque).push(m)
+  }
+  p = { textes, massesParCalque: [...parCalque.values()] }
+  preparations.set(vecteurs, p)
+  return p
+}
+
+const visible = (b, r) => !!b && boitesCroisees(b, r)
+
 /** Traits, masses et textes dont l'emprise croise `rect` (mètres). */
 export function elementsVisibles(vecteurs, rect) {
+  if (!vecteurs) return { traits: [], masses: [], textes: [] }
+  const { textes } = preparation(vecteurs)
   return {
-    traits: (vecteurs?.traits ?? []).filter((t) => t.boite && boitesCroisees(t.boite, rect)),
-    masses: (vecteurs?.masses ?? []).filter((m) => m.boite && boitesCroisees(m.boite, rect)),
-    textes: (vecteurs?.textes ?? []).filter((x) => x.pos && boitesCroisees(boiteTexte(x), rect)),
+    traits: (vecteurs.traits ?? []).filter((t) => visible(t.boite, rect)),
+    masses: (vecteurs.masses ?? []).filter((m) => visible(m.boite, rect)),
+    textes: (vecteurs.textes ?? []).filter((x, i) => visible(textes[i].boite, rect)),
   }
 }
 
@@ -80,11 +106,13 @@ function tracer(ctx, pts, ferme, r) {
  * Dessine l'étage dans `ctx`, repère en pixels CSS du conteneur (`t` : second
  * argument de `dessinFond` de la visionneuse). Masses d'abord (les traits
  * longs gardés des murs passent par-dessus), puis traits, puis textes, comme
- * l'image enregistrée.
+ * l'image enregistrée. Chaque élément est testé et tracé sur place : aucune
+ * liste filtrée n'est construite à chaque image.
  */
 export function dessinerVecteurs(ctx, vecteurs, cadrage, t) {
   if (!vecteurs || !cadrage || !(t?.echelle > 0)) return
-  const visibles = elementsVisibles(vecteurs, rectangleVisible(cadrage, t))
+  const rect = rectangleVisible(cadrage, t)
+  const prep = preparation(vecteurs)
   // versEcran(versPixels(p)) développé : sx = ex + (x − x0)·ppm·e,
   // sy = ey + (y1 − y)·ppm·e
   const [ex, ey] = t.versEcran(0, 0)
@@ -93,47 +121,60 @@ export function dessinerVecteurs(ctx, vecteurs, cadrage, t) {
   ctx.lineJoin = 'round'
   ctx.lineCap = 'round'
 
-  if (visibles.masses.length) {
-    // Un remplissage par calque : en evenodd sur un seul chemin, deux masses
-    // de calques différents qui se chevauchent se creuseraient l'une
-    // l'autre ; celles d'un même calque, nées d'une même grille, ne se
-    // chevauchent jamais. Une vingtaine de masses sur un étage réel.
-    const parCalque = new Map()
-    for (const m of visibles.masses) {
-      if (!parCalque.has(m.calque)) parCalque.set(m.calque, [])
-      parCalque.get(m.calque).push(m)
+  // Un remplissage par calque : en evenodd sur un seul chemin, deux masses
+  // de calques différents qui se chevauchent se creuseraient l'une l'autre ;
+  // celles d'un même calque, nées d'une même grille, ne se chevauchent
+  // jamais. Une vingtaine de masses sur un étage réel.
+  let massesVues = false
+  ctx.fillStyle = '#FFFFFF'
+  for (const masses of prep.massesParCalque) {
+    let vues = false
+    for (const m of masses) {
+      if (!visible(m.boite, rect)) continue
+      if (!vues) { ctx.beginPath(); vues = true }
+      for (const anneau of m.anneaux) tracer(ctx, anneau, true, vers)
     }
-    ctx.fillStyle = '#FFFFFF'
-    for (const masses of parCalque.values()) {
-      ctx.beginPath()
-      for (const m of masses) for (const anneau of m.anneaux) tracer(ctx, anneau, true, vers)
-      ctx.fill('evenodd')
-    }
+    if (vues) { ctx.fill('evenodd'); massesVues = true }
+  }
+  if (massesVues) {
     ctx.strokeStyle = COULEUR_MASSE
     ctx.lineWidth = EPAISSEUR_CONTOUR_MASSE
     ctx.beginPath()
-    for (const m of visibles.masses) for (const anneau of m.anneaux) tracer(ctx, anneau, true, vers)
+    for (const m of vecteurs.masses) {
+      if (visible(m.boite, rect)) for (const anneau of m.anneaux) tracer(ctx, anneau, true, vers)
+    }
     ctx.stroke()
   }
 
-  if (visibles.traits.length) {
-    ctx.strokeStyle = COULEUR_TRAIT
-    ctx.lineWidth = EPAISSEUR_TRAIT
-    ctx.beginPath()
-    for (const trait of visibles.traits) tracer(ctx, trait.pts, trait.ferme, vers)
-    ctx.stroke()
+  let traitsVus = false
+  for (const trait of vecteurs.traits ?? []) {
+    if (!visible(trait.boite, rect)) continue
+    if (!traitsVus) {
+      ctx.strokeStyle = COULEUR_TRAIT
+      ctx.lineWidth = EPAISSEUR_TRAIT
+      ctx.beginPath()
+      traitsVus = true
+    }
+    tracer(ctx, trait.pts, trait.ferme, vers)
   }
+  if (traitsVus) ctx.stroke()
 
   ctx.fillStyle = COULEUR_MASSE
   ctx.textBaseline = 'alphabetic'
   let police = null
-  for (const x of visibles.textes) {
+  const textes = vecteurs.textes ?? []
+  for (let i = 0; i < textes.length; i++) {
+    const x = textes[i]
+    // La hauteur d'abord : la plupart des textes sont trop petits en vue
+    // d'ensemble, inutile de tester leur emprise
     const h = x.hauteur * k // hauteur réelle, en pixels d'écran
     if (!(h >= HAUTEUR_TEXTE_MIN)) continue
+    const { boite: b, lignes } = prep.textes[i]
+    if (!visible(b, rect)) continue
     const voulue = `${Math.round(h * 10) / 10}px Arial, sans-serif`
     if (voulue !== police) { ctx.font = voulue; police = voulue }
     const sx = vers.ax + x.pos[0] * k
     const sy = vers.ay - x.pos[1] * k
-    String(x.texte).split('\n').forEach((ligne, k) => ctx.fillText(ligne, sx, sy + k * h * INTERLIGNE))
+    for (let n = 0; n < lignes.length; n++) ctx.fillText(lignes[n], sx, sy + n * h * INTERLIGNE)
   }
 }

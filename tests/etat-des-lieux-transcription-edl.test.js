@@ -11,6 +11,7 @@ import {
   ligneTranscription, heureSegment, morceauxAPurger, segmentsNettoyes, debutMorceauMs,
   visitesCreeesSurLAppareil, visitePasEncoreEnvoyee, DELAI_PURGE_MS,
 } from '../src/modules/etude/etat-des-lieux/analyse/transcriptionEdlLogique.js'
+import { passeTranscriptionEdl } from '../src/modules/etude/etat-des-lieux/analyse/transcriptionEdlPasse.js'
 import handler from '../api/transcrire.js'
 
 const DEBUT = Date.UTC(2026, 10, 18, 9, 30, 0)
@@ -128,6 +129,159 @@ describe('morceauxAPurger', () => {
   })
 })
 
+// ─── Un passage de transcription, base et appareil simulés ───────────────────
+
+function simule({
+  morceaux, enLigne = true, session = true, locales = [], enBase = [], migration = true, preuve = true,
+  transcrire = null, enregistrer = null, maintenant = DEBUT + DELAI_PURGE_MS + 60_000,
+}) {
+  const journal = []
+  const appareil = new Map(morceaux.map((m) => [m.id, { ...m }]))
+  const d = {
+    enLigne: () => enLigne,
+    aSession: async () => session,
+    lireMorceaux: async () => { journal.push(['lire']); return [...appareil.values()] },
+    visitesLocales: async () => { if (locales === 'illisible') throw new Error('illisible'); return locales },
+    migrationPassee: async () => migration,
+    visitesDansLaBase: async () => new Set(enBase),
+    lecturesProuvees: async (affaireId) => { journal.push(['preuve', affaireId]); return preuve },
+    transcrire: async (m) => {
+      journal.push(['transcrire', m.id])
+      return transcrire ? transcrire(m) : { texte: 'Texte inventé.', segments: [{ debut_s: 0, fin_s: 1, texte: 'Texte inventé.' }] }
+    },
+    enregistrer: async (ligne) => { journal.push(['enregistrer', ligne.id]); return enregistrer ? enregistrer(ligne) : { indisponible: false } },
+    effacer: async (id) => { journal.push(['effacer', id]); appareil.delete(id) },
+    marquerEchec: async (m) => { journal.push(['echec', m.id]); appareil.set(m.id, { ...m, echecs: (m.echecs ?? 0) + 1 }) },
+    signaler: (detail) => journal.push(['signal', detail]),
+    maintenant: () => maintenant,
+    estCoupure: (err) => err?.code === 'COUPURE',
+    echecsMax: 3,
+  }
+  const actions = (type) => journal.filter((j) => j[0] === type).map((j) => j[1])
+  return { d, journal, appareil, actions }
+}
+
+describe('passeTranscriptionEdl', () => {
+  test('transcrit puis efface, dans l’ordre ; l’effacement suit l’écriture', async () => {
+    const s = simule({ morceaux: [morceau({ id: 'a' }), morceau({ id: 'b', rang: 3 })], enBase: ['v-1'] })
+    const r = await passeTranscriptionEdl({ edlVisiteId: 'v-1' }, s.d)
+    assert.equal(r.erreur, null)
+    assert.equal(r.transcrits, 2)
+    const ordre = s.journal.filter((j) => ['enregistrer', 'effacer'].includes(j[0])).map((j) => j.join(':'))
+    assert.deepEqual(ordre, ['enregistrer:a', 'effacer:a', 'enregistrer:b', 'effacer:b'])
+    assert.equal(s.appareil.size, 0)
+    assert.equal(s.actions('signal').filter((x) => x.transcrit).length, 2)
+  })
+
+  test('visite pas encore dans la base : attente, rien d’envoyé ni compté', async () => {
+    const s = simule({
+      morceaux: [morceau({ id: 'recent', debut: DEBUT + DELAI_PURGE_MS }), morceau({ id: 'en-file', edlVisiteId: 'v-locale' })],
+      locales: ['v-locale'],
+    })
+    const r = await passeTranscriptionEdl(null, s.d)
+    assert.equal(r.erreur, null)
+    assert.deepEqual(s.actions('transcrire'), [])
+    assert.deepEqual(s.actions('echec'), [])
+    assert.deepEqual(s.actions('effacer'), [])
+    assert.equal(s.appareil.size, 2)
+  })
+
+  test('23503 : pas d’échec compté, morceaux gardés, la visite attend', async () => {
+    const s = simule({
+      morceaux: [morceau({ id: 'a' }), morceau({ id: 'b', rang: 3 })],
+      enBase: ['v-1'],
+      enregistrer: () => { throw Object.assign(new Error('fk'), { code: '23503' }) },
+    })
+    const r = await passeTranscriptionEdl(null, s.d)
+    assert.equal(r.erreur, null)
+    assert.deepEqual(s.actions('echec'), [])
+    assert.deepEqual(s.actions('effacer'), [])
+    assert.deepEqual(s.actions('transcrire'), ['a'])
+    assert.equal(s.appareil.size, 2)
+  })
+
+  test('hors ligne : rien de lu, rien d’effacé', async () => {
+    const s = simule({ morceaux: [morceau({ edlVisiteId: 'disparue' })], enLigne: false })
+    const r = await passeTranscriptionEdl(null, s.d)
+    assert.equal(r.erreur.code, 'reseau')
+    assert.deepEqual(s.actions('lire'), [])
+    assert.equal(s.appareil.size, 1)
+  })
+
+  test('sans session : lectures vides, mais rien d’effacé ni d’envoyé', async () => {
+    const s = simule({ morceaux: [morceau({ edlVisiteId: 'disparue' })], session: false })
+    const r = await passeTranscriptionEdl(null, s.d)
+    assert.equal(r.erreur.code, 'session')
+    assert.deepEqual(s.actions('preuve'), [])
+    assert.deepEqual(s.actions('transcrire'), [])
+    assert.equal(s.appareil.size, 1)
+  })
+
+  test('orphelin : effacé seulement si une lecture de l’affaire rend quelque chose', async () => {
+    const sansPreuve = simule({ morceaux: [morceau({ edlVisiteId: 'disparue' })], preuve: false })
+    assert.equal((await passeTranscriptionEdl(null, sansPreuve.d)).purges, 0)
+    assert.equal(sansPreuve.appareil.size, 1)
+
+    const avecPreuve = simule({ morceaux: [morceau({ edlVisiteId: 'disparue' })], preuve: true })
+    const r = await passeTranscriptionEdl(null, avecPreuve.d)
+    assert.equal(r.purges, 1)
+    assert.deepEqual(avecPreuve.actions('preuve'), ['a-1'])
+    assert.deepEqual(avecPreuve.actions('transcrire'), [])
+    assert.equal(avecPreuve.appareil.size, 0)
+  })
+
+  test('orphelin : file de l’appareil illisible ou morceau récent, rien d’effacé', async () => {
+    const illisible = simule({ morceaux: [morceau({ edlVisiteId: 'disparue' })], locales: 'illisible' })
+    await passeTranscriptionEdl(null, illisible.d)
+    assert.equal(illisible.appareil.size, 1)
+    const recent = simule({ morceaux: [morceau({ edlVisiteId: 'disparue' })], maintenant: DEBUT + 60_000 })
+    await passeTranscriptionEdl(null, recent.d)
+    assert.equal(recent.appareil.size, 1)
+  })
+
+  test('écriture refusée : échec compté, morceau gardé ; 082 absente : arrêt sans échec', async () => {
+    const refus = simule({ morceaux: [morceau()], enBase: ['v-1'], enregistrer: () => { throw new Error('refus') } })
+    await passeTranscriptionEdl(null, refus.d)
+    assert.deepEqual(refus.actions('echec'), ['m-1'])
+    assert.deepEqual(refus.actions('effacer'), [])
+
+    const absente = simule({ morceaux: [morceau()], enBase: ['v-1'], enregistrer: () => ({ indisponible: true }) })
+    const r = await passeTranscriptionEdl(null, absente.d)
+    assert.equal(r.erreur.code, 'indisponible')
+    assert.deepEqual(absente.actions('echec'), [])
+    assert.equal(absente.appareil.size, 1)
+  })
+
+  test('082 absente à la sonde : aucun appel à Mistral', async () => {
+    const s = simule({ morceaux: [morceau()], enBase: ['v-1'], migration: false })
+    const r = await passeTranscriptionEdl(null, s.d)
+    assert.equal(r.erreur.code, 'indisponible')
+    assert.deepEqual(s.actions('transcrire'), [])
+  })
+
+  test('refus de Mistral compté, la suite continue ; trois refus : le morceau reste, non retenté', async () => {
+    const s = simule({
+      morceaux: [morceau({ id: 'a' }), morceau({ id: 'b', rang: 3 }), morceau({ id: 'use', rang: 4, echecs: 3 })],
+      enBase: ['v-1'],
+      transcrire: (m) => { if (m.id === 'a') throw Object.assign(new Error('non'), { code: 'refus' }); return { texte: 'ok', segments: null } },
+    })
+    const r = await passeTranscriptionEdl(null, s.d)
+    assert.equal(r.transcrits, 1)
+    assert.deepEqual(s.actions('echec'), ['a'])
+    assert.deepEqual(s.actions('transcrire'), ['a', 'b'])
+    assert.ok(s.appareil.has('use'))
+  })
+
+  test('coupure pendant l’écriture : arrêt, rien de compté ni d’effacé', async () => {
+    const s = simule({ morceaux: [morceau({ id: 'a' }), morceau({ id: 'b', rang: 3 })], enBase: ['v-1'], enregistrer: () => { throw Object.assign(new Error('x'), { code: 'COUPURE' }) } })
+    const r = await passeTranscriptionEdl(null, s.d)
+    assert.equal(r.erreur.code, 'reseau')
+    assert.deepEqual(s.actions('echec'), [])
+    assert.deepEqual(s.actions('transcrire'), ['a'])
+    assert.equal(s.appareil.size, 2)
+  })
+})
+
 // ─── api/transcrire.js, fetch simulé ─────────────────────────────────────────
 
 describe('api/transcrire : mode horodaté', () => {
@@ -185,6 +339,12 @@ describe('api/transcrire : mode horodaté', () => {
     const res = await appeler({ 'x-horodatage': 'segment' })
     assert.deepEqual(res.corps, { texte: 'Texte seul.', segments: null })
     assert.deepEqual(envois.map((e) => e[1]), [['timestamp_granularities', 'segment'], ['language', 'fr']])
+  })
+
+  test('segments sans heures lisibles écartés', async () => {
+    reponsesMistral.push({ status: 200, corps: { text: 'a b', segments: [{ start: 0, end: 1, text: 'a' }, { start: null, end: 'x', text: 'b' }] } })
+    const res = await appeler({ 'x-horodatage': 'segment' })
+    assert.deepEqual(res.corps.segments, [{ debut_s: 0, fin_s: 1, texte: 'a' }])
   })
 
   test('panne de Mistral (5xx) : pas de repli, erreur rendue', async () => {

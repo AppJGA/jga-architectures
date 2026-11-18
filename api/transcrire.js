@@ -64,12 +64,13 @@ async function appelerMistral(cle, { fichier, lien, vocabulaire, horodatage = fa
 }
 
 // Segments de Mistral ({ start, end, text }) → ceux de l'app ; `null` si la
-// réponse n'en porte pas (texte seul)
+// réponse n'en porte pas (texte seul). Un segment sans heures lisibles ne se
+// placerait nulle part : écarté (NaN deviendrait `null` dans le JSON)
 function segmentsDe(resultat) {
   if (!Array.isArray(resultat?.segments)) return null
-  return resultat.segments.map((s) => ({
-    debut_s: Number(s?.start), fin_s: Number(s?.end), texte: String(s?.text ?? '').trim(),
-  }))
+  return resultat.segments
+    .map((s) => ({ debut_s: Number(s?.start), fin_s: Number(s?.end), texte: String(s?.text ?? '').trim() }))
+    .filter((s) => Number.isFinite(s.debut_s) && Number.isFinite(s.fin_s))
 }
 
 export default async function handler(req, res) {

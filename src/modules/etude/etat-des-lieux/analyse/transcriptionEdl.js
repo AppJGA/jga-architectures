@@ -11,7 +11,8 @@
 // morceaux attendent sans qu'aucun échec soit compté.
 //
 // Un seul passage à la fois, même entre fenêtres (verrou du navigateur) : un
-// morceau ne part jamais deux fois.
+// morceau ne part jamais deux fois. L'enchaînement est dans
+// transcriptionEdlPasse.js (testé) ; ici, seulement ce qu'il lit et écrit.
 
 import { supabase } from '../../../../core/supabase/client'
 import { appelerTranscription, ErreurTranscription, ECHECS_MAX, messageTranscription } from '../../../chantier/comptes-rendus/enregistrement/transcription'
@@ -20,9 +21,8 @@ import { erreurReseau } from '../../../chantier/comptes-rendus/horsLigne/envoi'
 import { bornerDelai, delaiDepasse } from '../visite/visiteLogique'
 import { MAGASINS_EDL, tout, disponible } from '../visite/baseEdl'
 import { enregistrerTranscription, analyseIndisponible, MESSAGE_ANALYSE_INDISPONIBLE } from './analyseDonnees'
-import {
-  ligneTranscription, morceauxAPurger, visitesCreeesSurLAppareil, visitePasEncoreEnvoyee, debutMorceauMs,
-} from './transcriptionEdlLogique'
+import { visitesCreeesSurLAppareil } from './transcriptionEdlLogique'
+import { passeTranscriptionEdl } from './transcriptionEdlPasse'
 
 export const EVENEMENT_TRANSCRIPTION_EDL = 'jga-transcription-edl'
 
@@ -57,6 +57,11 @@ async function visitesDansLaBase(ids) {
   return new Set((data ?? []).map((l) => l.synchro_id))
 }
 
+// Une table absente se dit par une erreur (42P01 / PGRST205) : les règles RLS
+// filtrent des lignes, jamais une table. Une réponse vide sans erreur prouve
+// donc que la 082 est passée — la session, elle, est vérifiée avant (sans
+// elle, tout se lirait vide). Toute autre erreur remonte : ni « passée », ni
+// « manquante ».
 async function migrationPassee() {
   const { error } = await bornerDelai(
     (signal) => supabase.from('edl_enregistrements').select('synchro_id:id').limit(1).abortSignal(signal),
@@ -66,77 +71,44 @@ async function migrationPassee() {
   throw error
 }
 
-async function passe(visite, vocabulaire) {
-  let transcrits = 0
-  let purges = 0
-  const fin = (erreur = null) => ({ transcrits, purges, erreur })
-  // Hors ligne, on ne lit rien et surtout on n'efface rien
-  if (horsLigne()) return fin(new ErreurTranscription('reseau', 'hors ligne'))
-
-  const morceaux = (visite ? await morceauxEnAttente(visite) : await morceauxEtatsDesLieux())
-    .filter((m) => m.edlVisiteId != null)
-  if (!morceaux.length) return fin()
-
-  // La file de l'appareil d'abord, la base ensuite : une visite qui quitte la
-  // file entre les deux lectures est déjà dans la base, elle est vue d'un côté
-  // ou de l'autre. Dans l'ordre inverse, elle pouvait échapper aux deux et ses
-  // morceaux être effacés.
-  let locales
-  try { locales = disponible() ? visitesCreeesSurLAppareil(await tout(MAGASINS_EDL.operations)) : [] } catch { locales = null }
-
-  let enBase
-  try {
-    const [passee, ids] = await Promise.all([migrationPassee(), visitesDansLaBase([...new Set(morceaux.map((m) => m.edlVisiteId))])])
-    if (!passee) return fin(new ErreurTranscription('indisponible', MESSAGE_ANALYSE_INDISPONIBLE))
-    enBase = ids
-  } catch (err) {
-    return fin(coupure(err) ? new ErreurTranscription('reseau', err?.message ?? 'réseau') : err)
-  }
-
-  // File de l'appareil illisible : dans le doute, rien n'est effacé
-  if (locales !== null) {
-    for (const m of morceauxAPurger(morceaux, new Set([...enBase, ...locales]), Date.now())) {
-      await effacerMorceau(m.id)
-      purges += 1
-      signaler({ morceauId: m.id, visiteId: m.edlVisiteId, purge: true })
-    }
-  }
-
-  const pasEncore = new Set()
-  for (const m of morceaux) {
-    if (!enBase.has(m.edlVisiteId) || pasEncore.has(m.edlVisiteId)) continue
-    if ((m.echecs ?? 0) >= ECHECS_MAX) continue
-    // Sans heure, le morceau ne se placerait dans aucune pièce : il reste
-    if (debutMorceauMs(m) == null) continue
-    let ligne
-    try {
-      const reponse = await appelerTranscription({ corps: m.blob, type: m.type, vocabulaire, horodatage: true })
-      ligne = ligneTranscription(m, reponse)
-    } catch (err) {
-      if (err instanceof ErreurTranscription && err.code === 'refus') {
-        await marquerEchec(m)
-        signaler({ morceauId: m.id, visiteId: m.edlVisiteId, refus: true })
-        continue
-      }
-      return fin(err)
-    }
-    try {
-      const ecrit = await enregistrerTranscription(ligne)
-      if (ecrit?.indisponible) return fin(new ErreurTranscription('indisponible', MESSAGE_ANALYSE_INDISPONIBLE))
-    } catch (err) {
-      // Visite supprimée ou pas encore arrivée depuis la lecture : on attend
-      if (visitePasEncoreEnvoyee(err)) { pasEncore.add(m.edlVisiteId); continue }
-      if (coupure(err)) return fin(new ErreurTranscription('reseau', err?.message ?? 'réseau'))
-      await marquerEchec(m)
-      signaler({ morceauId: m.id, visiteId: m.edlVisiteId, refus: true })
-      continue
-    }
-    await effacerMorceau(m.id)
-    transcrits += 1
-    signaler({ morceauId: m.id, visiteId: m.edlVisiteId, transcrit: true })
-  }
-  return fin()
+async function aSession() {
+  const { data } = await supabase.auth.getSession()
+  return Boolean(data?.session?.access_token)
 }
+
+// Avant de croire une visite disparue : une lecture de la même affaire doit
+// rendre quelque chose (une visite, ou son état des lieux). Une liste vide
+// partout peut n'être qu'un refus silencieux des règles RLS.
+async function lecturesProuvees(affaireId) {
+  for (const table of ['edl_visites', 'edl_etats']) {
+    const { data, error } = await bornerDelai(
+      (signal) => supabase.from(table).select('synchro_id:id').eq('affaire_id', affaireId).limit(1).abortSignal(signal),
+    )
+    if (error) throw error
+    if (data?.length) return true
+  }
+  return false
+}
+
+const dependances = (vocabulaire) => ({
+  enLigne: () => !horsLigne(),
+  aSession,
+  lireMorceaux: (visite) => (visite ? morceauxEnAttente(visite) : morceauxEtatsDesLieux()),
+  visitesLocales: async () => (disponible() ? visitesCreeesSurLAppareil(await tout(MAGASINS_EDL.operations)) : []),
+  migrationPassee,
+  visitesDansLaBase,
+  lecturesProuvees,
+  transcrire: (m) => appelerTranscription({ corps: m.blob, type: m.type, vocabulaire, horodatage: true }),
+  enregistrer: enregistrerTranscription,
+  effacer: effacerMorceau,
+  marquerEchec,
+  signaler,
+  maintenant: () => Date.now(),
+  estCoupure: coupure,
+  erreur: (code, message) => new ErreurTranscription(code, message),
+  messageIndisponible: MESSAGE_ANALYSE_INDISPONIBLE,
+  echecsMax: ECHECS_MAX,
+})
 
 // Un passage qui attend déjà le verrou couvre les demandes suivantes pour la
 // même visite : inutile d'en empiler un par morceau ou par minute
@@ -154,7 +126,7 @@ export function transcrireEdlEnAttente(visite = null, { vocabulaire = [] } = {})
   if (enFile.has(cle)) return enFile.get(cle)
   const travail = sousVerrou(() => {
     enFile.delete(cle)
-    return passe(visite?.edlVisiteId ? { edlVisiteId: visite.edlVisiteId } : null, vocabulaire)
+    return passeTranscriptionEdl(visite?.edlVisiteId ? { edlVisiteId: visite.edlVisiteId } : null, dependances(vocabulaire))
   })
   enFile.set(cle, travail)
   // Un verrou qui échoue avant de lancer le passage ne doit pas bloquer les suivants

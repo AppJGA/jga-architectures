@@ -17,25 +17,26 @@
 //     nouvelle visite le font repartir) ;
 //   · une même pièce n'est tentée qu'une fois par passage, quoi qu'il arrive.
 // Une écriture « à blanc » sur la pièce (`reserver`) vérifie aussi, avant de
-// payer, que la base acceptera le résultat (compte en lecture seule), et
-// rend l'`updated_at` sur lequel l'écriture finale est conditionnée : une
-// fiche corrigée au bureau pendant l'appel n'est pas écrasée.
+// payer, que la base acceptera le résultat (compte en lecture seule) et que
+// la fiche est encore celle de la frise ; elle rend l'`updated_at` sur lequel
+// la « prise » d'`ecrire` se conditionne : une version de la pièce n'est
+// prise qu'une fois, avant tout élément écrit, et une fiche corrigée ou
+// validée au bureau pendant l'appel n'est pas écrasée.
 //
-// Limite connue : sans colonne de bail dans la base, deux appareils peuvent
-// encore réserver la même pièce dans la même seconde et payer chacun un
-// appel. Le second résultat ne remplace alors pas le premier ('deja-fait').
+// Limite connue : sans colonne de bail dans la base, un appareil peut
+// réserver la pièce pendant tout l'appel d'un autre, et payer le sien. Un
+// seul des deux résultats s'écrit, fiche et éléments ensemble ; l'autre
+// trouve la pièce analysée ('deja-fait') et n'écrit rien.
 
 import {
   decisionAnalyse, suiviTentative, suiviApresEchec, analyseLeApres, prochaineRelance, intervallesPiece,
   friseDePiece, erreurDemandeAnalyse, lireAnalyse, messageEchecAnalyse, pieceDemandee, suiteConflitEcriture,
-  CODES_SANS_APPEL,
+  motifEchec, CODES_SANS_APPEL,
 } from './analyseEdlLogique'
 
 // Après un arrêt (réseau, session, base qui refuse), l'affaire est revue au
 // plus tôt dans 10 minutes par le moteur de synchro
 export const RELANCE_APRES_ARRET_MS = 10 * 60 * 1000
-
-export const MESSAGE_LECTURE_SEULE = 'Lecture seule : rien n’a été modifié.'
 
 /**
  * @param affaireId
@@ -47,17 +48,20 @@ export const MESSAGE_LECTURE_SEULE = 'Lecture seule : rien n’a été modifié.
  *   lireSuivi(affaireId) → { indisponible, pieces, evenements, enregistrements } (choix des pièces) ;
  *   lireFrise(affaireId, pieceId) → { indisponible, piece, evenements, points, enregistrements, elementsValides } ;
  *   audioLocal() → { morceaux, tranches } ; gestesEnAttente(affaireId) → [{ creeLe }] ;
- *   reserver(piece) → { etat: 'ok' | 'deja' | 'refus' | 'indisponible', updatedAt } ;
- *   relirePiece(pieceId) → { id, fiche, analyse_le, updated_at } | null ;
+ *   reserver(piece) → { etat: 'ok' | 'deja' | 'relire' | 'refus' | 'indisponible', updatedAt } ;
+ *   relirePiece(pieceId) → { id, fiche, fiche_a_valider, analyse_le, updated_at } | null ;
  *   appeler(corps) → résultat brut de Claude ;
  *   ecrire({ affaireId, piece, fiche, elements, analyseLe, siMisAJour, garderFiche, elementsEcrits })
- *     → { indisponible, conflit } (`conflit` : l'écriture conditionnelle n'a touché aucune ligne) ;
+ *     → { indisponible, conflit, elementsEcrits, attendu } : prise, éléments, puis pièce
+ *     (`conflit` : une condition sur updated_at n'a touché aucune ligne) ;
  *   noterErreur(pieceId, message, { analyseLe }) ; lireSuivis() → { pieceId: suivi } ;
  *   ecrireSuivi(pieceId, suivi | null) ; noterRelance(affaireId, ms | null) ; signaler(detail) ;
  *   maintenant() ; estCoupure(err) ; surfaceDessinee(piece) → m² ; echecsMax.
  * @returns { analysees, echecs, raison } — pour une pièce seule qui n'est pas
  *   partie, `raison` dit pourquoi : 'son', 'passage', 'gestes',
- *   'echec-definitif', 'deja-fait', 'non-visitee', 'attente-echec'…
+ *   'echec-definitif', 'deja-fait', 'non-visitee', 'attente-echec'… ;
+ *   après un conflit d'écriture : 'conflit' (rien d'écrit) ou
+ *   'conflit-elements' (éléments écrits, fiche et analyse_le non).
  */
 export async function passeAnalyseEdl(affaireId, options = {}, d) {
   const { seulement = null, forcer = false, relancer = false } = options
@@ -140,8 +144,9 @@ export async function passeAnalyseEdl(affaireId, options = {}, d) {
   return fin(seulement && !analysees && !echecs ? raisonSeule : null)
 
   // Rend 'faite' | 'echec' | 'passee' (rien à faire, finalement), ou le
-  // motif d'un arrêt du passage
-  async function analyserUne(pieceId) {
+  // motif d'un arrêt du passage. `relue` : seconde lecture, la fiche ayant
+  // changé entre la frise et la réservation (une seule fois)
+  async function analyserUne(pieceId, relue = false) {
     let lu
     try {
       lu = await d.lireFrise(affaireId, pieceId)
@@ -187,6 +192,13 @@ export async function passeAnalyseEdl(affaireId, options = {}, d) {
       return d.estCoupure(err) ? 'reseau' : 'refus'
     }
     if (reservation?.etat === 'indisponible') return 'indisponible'
+    // Fiche changée au bureau depuis la lecture : la frise est refaite avant
+    // de payer, avec la fiche à jour
+    if (reservation?.etat === 'relire') {
+      if (!relue) return analyserUne(pieceId, true)
+      if (pieceId === seulement) raisonSeule = 'fiche-modifiee'
+      return 'passee'
+    }
     if (reservation?.etat === 'deja') {
       if (pieceId === seulement) raisonSeule = 'deja-fait'
       return 'passee'
@@ -215,7 +227,7 @@ export async function passeAnalyseEdl(affaireId, options = {}, d) {
       let ecrit
       try {
         ecrit = await d.ecrire({ ...ecriture, siMisAJour: reservation.updatedAt })
-        if (ecrit?.conflit) ecrit = await apresConflit(piece, ecriture, reservation.updatedAt)
+        if (ecrit?.conflit) ecrit = await apresConflit(piece, ecriture, ecrit)
       } catch (err) {
         if (d.estCoupure(err)) return 'reseau'
         return await echouer(piece, err, tentative)
@@ -230,31 +242,38 @@ export async function passeAnalyseEdl(affaireId, options = {}, d) {
   }
 
   // La pièce a bougé pendant l'appel : une seule nouvelle écriture, sur la
-  // version relue, jamais une boucle. Les éléments sont déjà écrits.
-  async function apresConflit(piece, ecriture, reserve) {
+  // version relue, jamais une boucle. `conflit.elementsEcrits` : la prise
+  // avait réussi, les éléments sont déjà en place (seule la pièce manque).
+  async function apresConflit(piece, ecriture, conflit) {
+    const dejaEcrits = conflit.elementsEcrits === true
     const relue = await d.relirePiece(piece.id)
-    const suite = suiteConflitEcriture({ piece, reserve, relue })
+    const suite = suiteConflitEcriture({ piece, reserve: conflit.attendu, relue })
     if (suite === 'disparue' || suite === 'deja-fait') {
       garderSuivi(piece.id, null)
       if (piece.id === seulement) raisonSeule = 'deja-fait'
       return 'passee'
     }
-    // Rien n'a bougé et rien ne s'écrit : la base refuse (essai compté, payé)
-    if (suite === 'lecture-seule') return 'refus'
+    // Rien n'a bougé et la condition échoue : la base refuse (essai compté,
+    // payé). Sans élément écrit, c'est bien « Lecture seule »
+    if (suite === 'lecture-seule') return dejaEcrits ? 'conflit-elements' : 'refus'
     const ecrit = await d.ecrire({
-      ...ecriture, siMisAJour: relue.updated_at, elementsEcrits: true, garderFiche: suite === 'fiche-agence',
+      ...ecriture, siMisAJour: relue.updated_at, elementsEcrits: dejaEcrits, garderFiche: suite === 'fiche-agence',
     })
-    return ecrit?.conflit ? 'refus' : ecrit
+    // Second conflit : on s'arrête, en disant ce qui est resté écrit
+    if (ecrit?.conflit) return dejaEcrits || ecrit.elementsEcrits ? 'conflit-elements' : 'conflit'
+    return ecrit
   }
 
-  async function echouer(piece, err, suivi) {
-    garderSuivi(piece.id, suiviApresEchec(suivi, err))
+  async function echouer(piece, err, suiviEssai) {
+    const suivi = suiviApresEchec(suiviEssai, err)
+    garderSuivi(piece.id, suivi)
     // Le suivi de l'appareil suffit à empêcher la boucle : un motif qui ne
     // s'écrit pas (réseau, droits) ne change rien à l'attente. Conditionné
     // sur `analyse_le` lu : une pièce analysée ailleurs entre-temps ne passe
     // pas en échec.
     try {
-      await d.noterErreur(piece.id, messageEchecAnalyse(err), { analyseLe: piece.analyse_le ?? null })
+      // Définitif : le motif le dit, pour que tout appareil le tienne pour tel
+      await d.noterErreur(piece.id, motifEchec(messageEchecAnalyse(err), { definitif: suivi.definitif }), { analyseLe: piece.analyse_le ?? null })
     } catch { /* attente gardée */ }
     return 'echec'
   }

@@ -551,10 +551,15 @@ export const MARGE_SON_MS = 30 * 1000
  * Le son d'un passage est-il dans la base ? Oui si les transcriptions de sa
  * visite vont jusqu'à sa fin (dernier `debut + duree_s`, à 30 s près). Une
  * pause ferme le passage et coupe le morceau : elle est couverte aussi.
+ * Seuls comptent les morceaux commencés avant la fin du passage : un
+ * morceau est coupé à chaque entrée et sortie, et celui de la pièce suivante
+ * (transcrit) ne dit rien de celui de cette pièce (peut-être encore refusé
+ * sur la tablette). Limite : un morceau du milieu d'un long passage
+ * (morceaux de 3 min) qui manquerait ne se voit pas d'ici.
  */
 export function sonTranscritJusquA(intervalle, enregistrements = []) {
   const fins = (enregistrements ?? [])
-    .filter((e) => e?.visite_id === intervalle?.visiteId)
+    .filter((e) => e?.visite_id === intervalle?.visiteId && temps(e.debut) != null && temps(e.debut) < intervalle.fin)
     .map((e) => temps(e.debut) + (Number(e.duree_s) || 0) * 1000)
     .filter(Number.isFinite)
   return fins.length > 0 && Math.max(...fins) >= intervalle.fin - MARGE_SON_MS
@@ -595,6 +600,30 @@ const couverture = (maintenant, intervalles) =>
   Math.max(maintenant, ...intervalles.map((iv) => iv.fin).filter(Number.isFinite))
 
 const couvertDe = (suivi) => (Number.isFinite(suivi?.couvert) ? suivi.couvert : suivi?.dernier)
+
+// Écart toléré entre l'horloge du serveur (updated_at) et celle de la
+// tablette (fin des passages) pour dater un échec vu dans la base
+export const MARGE_HORLOGE_MS = 5 * 60 * 1000
+
+// Fin du motif d'un échec définitif. Le suivi des essais est propre à
+// l'appareil ; ce suffixe, écrit dans `analyse_erreur`, fait que tout
+// appareil tient l'échec pour définitif (sinon un appareil neuf relançait
+// une pièce que la tablette avait abandonnée).
+export const SUFFIXE_DEFINITIF = ' — ne repartira que sur « Réessayer »'
+
+export const echecDefinitifNote = (motif) => typeof motif === 'string' && motif.includes(SUFFIXE_DEFINITIF.trim())
+
+// Longueur gardée du motif avant le suffixe (le tout reste sous les 500
+// caractères de messageErreurAnalyse)
+const MOTIF_MAX = 400
+
+/** Motif à écrire sur la pièce : suffixé s'il est définitif, sans doublon. */
+export function motifEchec(message, { definitif = false } = {}) {
+  const t = String(message ?? '').trim() || 'Analyse impossible.'
+  const tete = t.length > MOTIF_MAX ? `${t.slice(0, MOTIF_MAX - 1)}…` : t
+  if (!definitif || echecDefinitifNote(tete)) return tete
+  return `${tete.replace(/[.\s]+$/, '')}${SUFFIXE_DEFINITIF}`
+}
 
 // Essais automatiques pour une même couverture : au-delà, l'échec est
 // définitif. L'attente plafonne le rythme, ce plafond le nombre : chaque
@@ -648,14 +677,20 @@ export function decisionAnalyse({
   const valable = suiviValable(suivi, piece)
   if (!piece.analyse_erreur && !valable) return { tenter: true, raison: 'a-analyser' }
   if (!valable) {
-    const echecLe = temps(piece.updated_at)
-    if (echecLe != null && intervalles.some((iv) => iv.fin > echecLe)) return { tenter: true, raison: 'nouvelle-visite' }
+    // Heure de l'échec vue de la base (horloge du serveur), avec une marge
+    // pour l'horloge de la tablette, qui date les passages
+    const echecLe = Math.max(temps(piece.updated_at) ?? -Infinity, temps(piece.analyse_le) ?? -Infinity)
+    if (Number.isFinite(echecLe) && intervalles.some((iv) => iv.fin > echecLe + MARGE_HORLOGE_MS)) {
+      return { tenter: true, raison: 'nouvelle-visite' }
+    }
+    // Plafond atteint sur un autre appareil : le motif le dit
+    if (echecDefinitifNote(piece.analyse_erreur)) return non('echec-definitif')
     return non('attente-echec', {
       essais: 1, dernier: maintenant, couvert: couverture(maintenant, intervalles), analyseLe: piece.analyse_le ?? null, definitif: false,
     })
   }
   if (intervalles.some((iv) => iv.fin > couvertDe(suivi))) return { tenter: true, raison: 'nouvelle-visite' }
-  if (suivi.definitif || (suivi.essais ?? 0) >= ESSAIS_AUTO_MAX) return non('echec-definitif')
+  if (suivi.definitif || (suivi.essais ?? 0) >= ESSAIS_AUTO_MAX || echecDefinitifNote(piece.analyse_erreur)) return non('echec-definitif')
   if (maintenant - suivi.dernier >= attenteApresEchecs(suivi.essais)) return { tenter: true, raison: 'relance' }
   return non('attente-echec')
 }
@@ -689,6 +724,9 @@ export function suiviApresEchec(suivi, err) {
 
 const ficheComparable = (f) => JSON.stringify(RUBRIQUES_FICHE.map((r) => String(f?.[r] ?? '').trim()))
 
+/** Même contenu de fiche (rubriques connues, espaces autour ignorés). */
+export const memeFiche = (a, b) => ficheComparable(a) === ficheComparable(b)
+
 /**
  * L'écriture finale, conditionnée sur l'`updated_at` de la réservation, n'a
  * touché aucune ligne : que s'est-il passé pendant l'appel ? D'après la
@@ -696,7 +734,7 @@ const ficheComparable = (f) => JSON.stringify(RUBRIQUES_FICHE.map((r) => String(
  * - 'disparue' : supprimée ;
  * - 'deja-fait' : analysée ailleurs entre-temps (son résultat reste) ;
  * - 'lecture-seule' : rien n'a bougé, c'est la base qui refuse ;
- * - 'fiche-agence' : la fiche a été modifiée au bureau, elle est gardée ;
+ * - 'fiche-agence' : la fiche a été modifiée ou validée au bureau, elle est gardée ;
  * - 'reessayer' : autre écriture sans toucher à la fiche (motif, réservation
  *   d'un autre appareil) : le résultat s'écrit sur la nouvelle version.
  */
@@ -705,6 +743,9 @@ export function suiteConflitEcriture({ piece, reserve, relue }) {
   if (!memeHeure(relue.analyse_le ?? null, piece?.analyse_le ?? null)) return 'deja-fait'
   if (memeHeure(relue.updated_at ?? null, reserve ?? null)) return 'lecture-seule'
   if (ficheComparable(relue.fiche) !== ficheComparable(piece?.fiche)) return 'fiche-agence'
+  // « Valider la fiche » pendant l'appel : même contenu, mais la fiche est
+  // désormais relue par l'agence, elle ne doit pas repasser « à valider »
+  if (piece?.fiche_a_valider === true && relue.fiche_a_valider === false) return 'fiche-agence'
   return 'reessayer'
 }
 
@@ -749,10 +790,10 @@ export const CODES_SANS_APPEL = ['session', 'agence-seule', 'analyse-non-configu
 
 const MOTIFS_TROP_LONG = ['trop-de-lignes', 'trop-long', 'trop-de-releves']
 
-export const MESSAGE_FRISE_TROP_LONGUE = 'Trop de gestes et de paroles dans cette pièce pour une seule analyse (plus de 2 000 lignes). Elle ne repartira que sur « Réessayer ».'
+export const MESSAGE_FRISE_TROP_LONGUE = 'Trop de gestes et de paroles dans cette pièce pour une seule analyse (plus de 2 000 lignes)'
 
 const MESSAGES_ECHEC = {
-  refus: 'Claude n’a pas accepté d’analyser cette pièce. Elle ne repartira que sur « Réessayer ».',
+  refus: 'Claude n’a pas accepté d’analyser cette pièce.',
   'reponse-tronquee': 'La réponse de Claude était trop longue pour cette pièce.',
   'reponse-illisible': 'La réponse de Claude était illisible.',
   anthropic: 'Le service de Claude n’a pas répondu.',

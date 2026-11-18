@@ -156,8 +156,12 @@ export function analyserEnAttente(affaireId) {
 
 /**
  * Une pièce seule, si elle attend. `forcer` (« Réessayer ») passe outre
- * l'attente après un échec ; `relancer` réanalyse une pièce déjà faite.
- * Rend `{ analysees, echecs, raison }` : `raison: 'rien'` = pas partie.
+ * l'attente et l'échec définitif ; `relancer` réanalyse une pièce déjà faite.
+ * Rend `{ analysees, echecs, raison }`. Rien de parti (`analysees` et
+ * `echecs` à 0) : `raison` dit pourquoi — 'son', 'passage', 'gestes',
+ * 'echec-definitif', 'deja-fait', 'non-visitee', 'fiche-modifiee',
+ * 'conflit', 'conflit-elements', ou un arrêt ('hors-ligne', 'refus'…).
+ * Messages : `messageLancement` (relectureAnalyseLogique.js).
  */
 export function analyserPiece(affaireId, pieceId, { forcer = false, relancer = false } = {}) {
   return sousVerrou(() => passeAnalyseEdl(affaireId, { seulement: pieceId, forcer, relancer }, dependances()))

@@ -10,7 +10,7 @@ import {
   morceauxQuiBloquent, gestesQuiBloquent, decisionAnalyse, suiviTentative, suiviValable, analyseLeApres,
   prochaineRelance, attenteApresEchecs, messageEchecAnalyse, pieceDemandee, DELAI_TRANCHE_VIVANTE_MS,
   DELAI_ABANDON_MS, MESSAGE_FRISE_TROP_LONGUE, LIGNES_MAX, sonTranscritJusquA, sonPret, suiviApresEchec,
-  suiteConflitEcriture, ESSAIS_AUTO_MAX, MARGE_SON_MS,
+  suiteConflitEcriture, ESSAIS_AUTO_MAX, MARGE_SON_MS, SUFFIXE_DEFINITIF, MARGE_HORLOGE_MS, motifEchec, echecDefinitifNote,
 } from '../src/modules/etude/etat-des-lieux/analyse/analyseEdlLogique.js'
 import { passeAnalyseEdl, RELANCE_APRES_ARRET_MS } from '../src/modules/etude/etat-des-lieux/analyse/analyseEdlPasse.js'
 import { etatPieceVisite, COULEURS_PIECE } from '../src/modules/etude/etat-des-lieux/visite/visiteLogique.js'
@@ -264,6 +264,9 @@ function monde({ pieces = [salon()], evenements = journal(), maintenant = ms('10
     ecrireMarche: true,
   }
   const piece = (id) => m.base.pieces.find((p) => p.id === id)
+  // Le déclencheur edl_pieces_touche : chaque écriture avance updated_at
+  // (heure du serveur : celle de l'appareil qui écrit, toujours croissante)
+  const toucher = (ligne) => { ligne.updated_at = new Date(Math.max(Date.parse(ligne.updated_at) + 1000, m.maintenant)).toISOString() }
   m.d = {
     enLigne: () => m.enLigne,
     aSession: async () => m.session,
@@ -276,12 +279,15 @@ function monde({ pieces = [salon()], evenements = journal(), maintenant = ms('10
     }),
     audioLocal: async () => m.audio,
     gestesEnAttente: async () => m.gestes,
-    // Écriture « à blanc » : comme le déclencheur, elle avance updated_at
+    // Écriture « à blanc », comme reserverAnalyse : conditionnée sur
+    // analyse_le, elle avance updated_at (déclencheur) et rend la fiche
     reserver: async (p) => {
       const etat = m.reservation(p)
       if (etat !== 'ok') return { etat }
       const ligne = piece(p.id)
-      ligne.updated_at = new Date(Date.parse(ligne.updated_at) + 1000).toISOString()
+      if (!ligne || (ligne.analyse_le ?? null) !== (p.analyse_le ?? null)) return { etat: 'deja' }
+      toucher(ligne)
+      if (JSON.stringify(ligne.fiche ?? {}) !== JSON.stringify(p.fiche ?? {})) return { etat: 'relire' }
       return { etat, updatedAt: ligne.updated_at }
     },
     relirePiece: async (id) => (piece(id) ? { ...piece(id) } : null),
@@ -291,24 +297,43 @@ function monde({ pieces = [salon()], evenements = journal(), maintenant = ms('10
       m.maxEnVol = Math.max(m.maxEnVol, m.enVol)
       await new Promise((r) => setTimeout(r, 1))
       m.enVol -= 1
-      return m.reponse(corps)
+      return await m.reponse(corps)
     },
-    // Écriture conditionnée sur updated_at, comme ecrireResultatAnalyse
+    // Même ordre qu'ecrireResultatAnalyse : prise conditionnée sur
+    // siMisAJour, éléments, puis pièce conditionnée sur la version prise.
+    // `m.entreEtapes(etape)` laisse un autre appareil (ou le bureau) agir
+    // entre deux étapes.
     ecrire: async (x) => {
       m.ecritures.push(x)
       const ligne = piece(x.piece.id)
-      if (m.ecritureRefusee || (x.siMisAJour !== undefined && ligne.updated_at !== x.siMisAJour)) return { indisponible: false, conflit: true }
-      if (m.ecrireMarche) {
-        Object.assign(ligne, { analyse_le: x.analyseLe, analyse_erreur: null, updated_at: new Date(Date.parse(ligne.updated_at) + 1000).toISOString() })
-        if (!x.garderFiche) ligne.fiche = x.fiche
+      const marque = JSON.stringify(x.fiche)
+      let version = x.siMisAJour
+      if (!x.elementsEcrits && x.siMisAJour !== undefined) {
+        await m.entreEtapes?.('prise')
+        if (m.ecritureRefusee || ligne.updated_at !== x.siMisAJour) return { indisponible: false, conflit: true, elementsEcrits: false, attendu: x.siMisAJour }
+        toucher(ligne)
+        version = ligne.updated_at
       }
-      return { indisponible: false }
+      if (!x.elementsEcrits) {
+        m.base.elements = m.base.elements.filter((e) => e.piece_id !== ligne.id)
+        m.base.elements.push({ piece_id: ligne.id, de: marque })
+        await m.entreEtapes?.('elements')
+      }
+      await m.entreEtapes?.('piece', x)
+      if (version !== undefined && ligne.updated_at !== version) return { indisponible: false, conflit: true, elementsEcrits: true, attendu: version }
+      if (m.ecrireMarche) {
+        Object.assign(ligne, { analyse_le: x.analyseLe, analyse_erreur: null })
+        if (!x.garderFiche) Object.assign(ligne, { fiche: x.fiche, fiche_a_valider: true, ficheDe: marque })
+        toucher(ligne)
+      }
+      return { indisponible: false, elementsEcrits: true }
     },
     noterErreur: async (id, message, { analyseLe } = {}) => {
       const ligne = piece(id)
       if ((ligne.analyse_le ?? null) !== (analyseLe ?? null)) return { ignoree: true }
       m.erreursNotees.push({ id, message })
       ligne.analyse_erreur = message
+      toucher(ligne)
       return {}
     },
     lireSuivis: () => m.suivis,
@@ -425,7 +450,7 @@ describe('passeAnalyseEdl', () => {
     m.base.evenements = longue
     await m.passe()
     assert.equal(m.appels.length, 0)
-    assert.equal(m.erreursNotees[0].message, MESSAGE_FRISE_TROP_LONGUE)
+    assert.equal(m.erreursNotees[0].message, MESSAGE_FRISE_TROP_LONGUE + SUFFIXE_DEFINITIF)
     m.maintenant = ms('23:00:00')
     await m.passe()
     assert.equal(m.erreursNotees.length, 1)
@@ -640,7 +665,9 @@ describe('Correctifs (tour 1)', () => {
     assert.equal(m.base.pieces[0].analyse_le, H('10:31:00'))
     assert.equal(m.ecritures.length, 2)
     assert.equal(m.ecritures[1].garderFiche, true)
-    assert.equal(m.ecritures[1].elementsEcrits, true)
+    // La prise a échoué : aucun élément écrit au premier essai, ils le sont au second
+    assert.equal(m.ecritures[1].elementsEcrits, false)
+    assert.equal(m.base.elements.length, 1)
   })
 
   test('autre écriture sans toucher la fiche : le résultat s’écrit sur la version relue', async () => {
@@ -686,5 +713,190 @@ describe('Correctifs (tour 1)', () => {
     await m.passe()
     assert.equal(m.erreursNotees.length, 0)
     assert.equal(m.base.pieces[0].analyse_erreur, null)
+  })
+})
+
+describe('Correctifs (tour 2)', () => {
+  test('couverture : le morceau transcrit de la pièce suivante ne couvre pas celle-ci', () => {
+    // Morceau du salon (10:00-10:10) refusé une fois, encore sur la tablette ;
+    // celui de la cuisine (10:10-10:20) transcrit. Vu du bureau.
+    const cuisine = [{ visite_id: 'v1', debut: H('10:10:00'), duree_s: 600 }]
+    const iv = { debut: ms('10:00:00'), fin: ms('10:10:00'), visiteId: 'v1', clos: true }
+    assert.equal(sonTranscritJusquA(iv, cuisine), false)
+    assert.equal(sonPret(iv, { enregistrements: cuisine, maintenant: ms('10:21:00') }), false)
+    const d = decisionAnalyse({ piece: salon(), evenements: journal(), enregistrements: cuisine, maintenant: ms('10:21:00') })
+    assert.equal(d.raison, 'son')
+    // Le morceau du salon arrive : couvert
+    const tout = [{ visite_id: 'v1', debut: H('10:00:00'), duree_s: 600 }, ...cuisine]
+    assert.equal(sonTranscritJusquA(iv, tout), true)
+  })
+
+  test('motifEchec : suffixe des échecs définitifs, reconnu partout, jamais doublé', () => {
+    const m1 = motifEchec('Claude n’a pas accepté d’analyser cette pièce.', { definitif: true })
+    assert.equal(m1, `Claude n’a pas accepté d’analyser cette pièce${SUFFIXE_DEFINITIF}`)
+    assert.equal(echecDefinitifNote(m1), true)
+    assert.equal(motifEchec(m1, { definitif: true }), m1)
+    assert.equal(echecDefinitifNote(motifEchec('Le service de Claude n’a pas répondu.')), false)
+    assert.ok(motifEchec('x'.repeat(2000), { definitif: true }).length <= 500)
+    assert.equal(echecDefinitifNote(motifEchec('x'.repeat(2000), { definitif: true })), true)
+  })
+
+  test('échec définitif noté dans la base : un appareil neuf ne relance pas', () => {
+    const piece = salon({ analyse_erreur: motifEchec('Le service de Claude n’a pas répondu.', { definitif: true }), updated_at: H('10:31:00') })
+    const base = { evenements: journal(), enregistrements: transcrit() }
+    assert.equal(decisionAnalyse({ ...base, piece, maintenant: ms('23:00:00') }).raison, 'echec-definitif')
+    assert.equal(decisionAnalyse({ ...base, piece, maintenant: ms('23:00:00'), forcer: true }).raison, 'demande')
+    // Suivi local valable mais motif définitif écrit par un autre appareil
+    const suivi = { essais: 1, dernier: ms('10:31:00'), couvert: ms('10:31:00'), analyseLe: null }
+    assert.equal(decisionAnalyse({ ...base, piece, suivi, maintenant: ms('23:00:00') }).raison, 'echec-definitif')
+  })
+
+  test('règle 7 : marge de 5 minutes et analyse_le comptée', () => {
+    const avec = (fin) => [...journal(), ev('entree', '10:21:00', { piece_id: 'salon' }), ev('sortie', fin, { piece_id: 'salon' })]
+    const base = { enregistrements: [{ visite_id: 'v1', debut: H('09:59:00'), duree_s: 3600 }], maintenant: ms('11:00:00') }
+    const piece = salon({ analyse_erreur: 'x', updated_at: H('10:20:00') })
+    // Fin à 10:24 : dans la marge (10:20 + 5 min) → attente
+    assert.equal(decisionAnalyse({ ...base, piece, evenements: avec('10:24:00') }).raison, 'attente-echec')
+    // Fin à 10:26 : au-delà → essai tout de suite
+    assert.equal(decisionAnalyse({ ...base, piece, evenements: avec('10:26:00') }).raison, 'nouvelle-visite')
+    // analyse_le plus tard que updated_at : c'est lui qui compte
+    const analysee = salon({ analyse_erreur: 'x', updated_at: H('10:00:00'), analyse_le: H('10:22:00') })
+    assert.equal(decisionAnalyse({ ...base, piece: analysee, evenements: avec('10:26:00') }).raison, 'attente-echec')
+    assert.equal(MARGE_HORLOGE_MS, 5 * 60 * 1000)
+  })
+
+  test('plafond atteint : le motif porte le suffixe, un autre appareil s’abstient', async () => {
+    const tablette = monde()
+    tablette.reponse = () => { throw erreur('anthropic') }
+    for (const t of ['10:31:00', '10:41:00', '11:41:00']) {
+      tablette.maintenant = ms(t)
+      await tablette.passe()
+    }
+    assert.equal(echecDefinitifNote(tablette.base.pieces[0].analyse_erreur), true)
+    assert.equal(echecDefinitifNote(tablette.erreursNotees[0].message), false)
+    const bureau = monde()
+    bureau.base = tablette.base
+    bureau.maintenant = ms('23:00:00')
+    await bureau.passe()
+    assert.equal(bureau.appels.length, 0)
+  })
+
+  test('deux appareils : un seul résultat s’écrit, fiche et éléments ensemble', async () => {
+    const a = monde()
+    const b = monde()
+    b.base = a.base
+    b.reponse = () => ({ fiche: { sol: 'tomettes (B)' }, elements: [] })
+    // Pendant l'appel de A, B fait toute son analyse
+    a.reponse = async () => {
+      await b.passe()
+      return { fiche: { sol: 'parquet (A)' }, elements: [] }
+    }
+    await a.passe()
+    assert.equal(a.appels.length, 1)
+    assert.equal(b.appels.length, 1)
+    const ligne = a.base.pieces[0]
+    assert.equal(ligne.fiche.sol, 'tomettes (B)')
+    assert.equal(a.base.elements.length, 1)
+    assert.equal(a.base.elements[0].de, ligne.ficheDe)
+    // A n'a rien écrit et ne note aucun échec
+    assert.equal(a.ecritures.length, 1)
+    assert.equal(a.erreursNotees.length, 0)
+  })
+
+  test('deux appareils : B réserve pendant l’appel de A, A écrit, B trouve la pièce faite', async () => {
+    const a = monde()
+    const b = monde()
+    b.base = a.base
+    let ouvrir
+    const porte = new Promise((r) => { ouvrir = r })
+    b.reponse = async () => { await porte; return { fiche: { sol: 'tomettes (B)' }, elements: [] } }
+    let passeB
+    a.reponse = async () => {
+      passeB = b.passe() // B réserve et part chez Claude
+      await new Promise((r) => setTimeout(r, 5))
+      return { fiche: { sol: 'parquet (A)' }, elements: [] }
+    }
+    await a.passe()
+    ouvrir()
+    const rb = await passeB
+    const ligne = a.base.pieces[0]
+    assert.equal(ligne.fiche.sol, 'parquet (A)')
+    assert.equal(a.base.elements[0].de, ligne.ficheDe)
+    assert.equal(rb.analysees, 0)
+    assert.equal(b.erreursNotees.length, 0)
+    // Les deux ont payé : limite connue, sans colonne de bail
+    assert.equal(a.appels.length + b.appels.length, 2)
+  })
+
+  test('« Valider la fiche » pendant l’appel : la fiche reste validée', async () => {
+    const m = monde({ pieces: [salon({ fiche: { sol: 'parquet' }, fiche_a_valider: true, analyse_le: H('10:05:00') })] })
+    m.base.evenements = [...journal(), ev('entree', '10:21:00', { piece_id: 'salon' }), ev('sortie', '10:25:00', { piece_id: 'salon' })]
+    m.reponse = () => {
+      const ligne = m.base.pieces[0]
+      ligne.fiche_a_valider = false
+      ligne.updated_at = H('10:31:30')
+      return { fiche: { sol: 'parquet ciré' }, elements: [] }
+    }
+    const r = await m.passe()
+    assert.equal(r.analysees, 1)
+    assert.equal(m.base.pieces[0].fiche_a_valider, false)
+    assert.deepEqual(m.base.pieces[0].fiche, { sol: 'parquet' })
+    assert.equal(m.ecritures[1].garderFiche, true)
+  })
+
+  test('second conflit dans « reessayer » : rien d’écrit → « conflit »', async () => {
+    const m = monde()
+    m.reponse = () => {
+      m.base.pieces[0].updated_at = H('10:31:30') // autre écriture, fiche inchangée
+      return { fiche: { sol: 'parquet' }, elements: [] }
+    }
+    let n2 = 0
+    m.entreEtapes = (etape) => {
+      if (etape === 'prise' && ++n2 === 2) m.base.pieces[0].updated_at = H('10:31:50')
+    }
+    const r = await m.passe({ seulement: 'salon' })
+    assert.equal(r.raison, 'conflit')
+    assert.equal(m.base.elements.length, 0)
+    assert.equal(m.base.pieces[0].analyse_le, null)
+    assert.equal(m.erreursNotees.length, 0)
+  })
+
+  test('second conflit après les éléments : « conflit-elements », jamais « Lecture seule »', async () => {
+    const m = monde()
+    // Une écriture concurrente juste avant la pièce, aux deux essais
+    m.entreEtapes = (etape) => {
+      if (etape === 'piece') m.base.pieces[0].updated_at = new Date(Date.parse(m.base.pieces[0].updated_at) + 5000).toISOString()
+    }
+    const r = await m.passe({ seulement: 'salon' })
+    assert.equal(r.raison, 'conflit-elements')
+    assert.equal(m.base.elements.length, 1)
+  })
+
+  test('fiche changée au bureau entre la frise et la réservation : frise refaite avant de payer', async () => {
+    const m = monde({ pieces: [salon({ fiche: { sol: 'parquet' } })] })
+    const lireFrise = m.d.lireFrise
+    let lectures = 0
+    m.d.lireFrise = async (a, id) => {
+      const lu = await lireFrise(a, id)
+      if (++lectures === 1) m.base.pieces[0].fiche = { sol: 'parquet chêne' }
+      return lu
+    }
+    await m.passe()
+    assert.equal(lectures, 2)
+    assert.equal(m.appels.length, 1)
+    assert.deepEqual(m.appels[0].ficheActuelle, { sol: 'parquet chêne' })
+  })
+
+  test('réservation : pièce analysée entre-temps (analyse_le), rien n’est payé', async () => {
+    const m = monde()
+    const lireFrise = m.d.lireFrise
+    m.d.lireFrise = async (a, id) => {
+      const lu = await lireFrise(a, id)
+      m.base.pieces[0].analyse_le = H('10:30:59')
+      return lu
+    }
+    const r = await m.passe({ seulement: 'salon' })
+    assert.equal(r.raison, 'deja-fait')
+    assert.equal(m.appels.length, 0)
   })
 })

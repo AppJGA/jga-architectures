@@ -181,7 +181,9 @@ function deployer(entites, blocs) {
           const t = codesPourcent(decoderUnicode(val(e, 1) ?? '')).trim()
           const aligne = (entier(e, 72) || entier(e, 73)) && val(e, 11) !== undefined
           const pos = aligne ? [nombre(e, 11), nombre(e, 21)] : [nombre(e, 10), nombre(e, 20)]
-          if (t) textes.push({ calque, bloc: blocRacine, texte: t, pos: appliquer(m, pos), hauteur: nombre(e, 40) * echelleDe(m) })
+          // Rotation (degrés) : celle du texte et celle des blocs qui le portent
+          const rotation = nombre(e, 50) + (Math.atan2(m[1], m[0]) * 180) / Math.PI
+          if (t) textes.push({ calque, bloc: blocRacine, texte: t, pos: appliquer(m, pos), hauteur: nombre(e, 40) * echelleDe(m), rotation })
           break
         }
         case 'MTEXT': {
@@ -216,4 +218,18 @@ export function lireDxf(texte) {
   if (objet.traits.length >= MIN_TRAITS_OBJET) return { ...entete, ...objet }
   const papier = deployer(entites.filter((e) => val(e, 67) === '1'), blocs)
   return { ...entete, traits: [...objet.traits, ...papier.traits], textes: [...objet.textes, ...papier.textes] }
+}
+
+/**
+ * Calques déclarés dans la table LAYER et blocs définis, tels qu'écrits : de
+ * quoi vérifier qu'un fichier produit par l'export les annonce bien (un
+ * calque sans entrée de table n'apparaît pas toujours à l'import).
+ */
+export function lireTablesDxf(texte) {
+  const sections = lireSections(lirePaires(texte))
+  const calques = decouperEntites(sections.TABLES ?? [])
+    .filter((e) => e.type === 'LAYER')
+    .map((e) => ({ nom: val(e, 2), couleur: entier(e, 62), typeLigne: val(e, 6) ?? null }))
+  const blocs = decouperEntites(sections.BLOCKS ?? []).filter((e) => e.type === 'BLOCK').map((e) => val(e, 2))
+  return { calques, blocs }
 }

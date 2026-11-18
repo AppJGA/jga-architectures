@@ -1,0 +1,553 @@
+// ─── Export DXF de l'état des lieux, par calques EDL- ────────────────────────
+//
+// Un DXF texte par étage, à fusionner dans le projet ArchiCAD de l'agence
+// (conception § 7, décisions du plan du lot 4) :
+//   - R12 (AC1009) : le format le plus largement relu, sans identifiants ni
+//     objets à tenir à jour — rien à faire concorder avec un `$HANDSEED` ;
+//   - coordonnées et `$INSUNITS` dans l'unité du plan d'origine
+//     (`edl_niveaux.unites_par_metre`) : le fichier se superpose au plan sans
+//     déplacement ni mise à l'échelle ;
+//   - textes en Windows-1252 (`$DWGCODEPAGE ANSI_1252`, `encoderDxf`) ;
+//   - un bloc `EDL_<CODE>` par type de symbole utilisé, inséré à la rotation
+//     de la pièce (les plans sont souvent tournés) ; des `TEXT` seulement,
+//     `MTEXT` n'existant pas en R12.
+// Pur, sans navigateur ; chaque fichier produit est relu par notre propre
+// lecteur dans les tests (tests/etat-des-lieux-export-dxf.test.js).
+//
+// Placement des textes, dans le repère de la pièce (tourné comme elle, donc
+// jamais à l'envers : `orientationPiece` reste dans ]-45°, 45°]) :
+//   - au cœur de la pièce, centrés : nom (numéro), surface, HSP (EDL-Pièces),
+//     puis « Sol : … », « Murs : … »… (EDL-Finitions), puis les éléments sans
+//     point, chacun sur son calque ;
+//   - un élément : son symbole au point, « P7 · libellé » à droite du symbole
+//     (calé à gauche, centré sur la hauteur du symbole), ses cotes dessous
+//     (EDL-Cotes) ;
+//   - une photo : petit cercle en haut à gauche du symbole (ou sur le point
+//     s'il n'a pas d'élément), « Ph n » à sa gauche — à l'opposé du libellé.
+
+import { CALQUES, calqueEdl, typeEdl } from '../calquesEdl.js'
+import { aire, pointDansPolygone } from '../geometrieEdl.js'
+import { SYMBOLES, boiteSymbole, orientationPiece } from './symbolesEdl.js'
+import { dansCp1252, encoderCp1252 } from './encodageDxf.js'
+
+export const CALQUE_A_VALIDER = 'EDL-À valider'
+
+// Couleurs ACI : une par calque, assez distinctes pour se repérer à l'écran
+// d'ArchiCAD ; les propositions en bleu, comme dans l'app
+const COULEURS = {
+  pieces: 7, finitions: 33, plomberie: 5, electricite: 6, chauffage: 10, ventilation: 4,
+  menuiseries: 3, occultations: 94, cotes: 40, compteurs: 140, securite: 200, desordres: 1, photos: 210,
+}
+const COULEUR_A_VALIDER = 150
+// Le plan existant en gris : les calques EDL- doivent ressortir dessus
+const COULEUR_PLAN = 8
+
+// Hauteurs de texte en mètres (converties dans l'unité du plan)
+export const HAUTEUR_NOM = 0.2
+export const HAUTEUR_TEXTE = 0.12
+const INTERLIGNE = 1.5
+const ECART_LIBELLE = 0.08
+const RAYON_PHOTO = 0.06
+const RAYON_SANS_SYMBOLE = 0.05
+// Au-delà, une finition ou un libellé passe à la ligne : un « Murs : … » de
+// 500 caractères traversait sinon tout l'étage
+const CARACTERES_PAR_LIGNE = 60
+// Un TEXT R12 ne dépasse pas 255 caractères
+const LONGUEUR_TEXTE_MAX = 250
+
+const RUBRIQUES = [['sol', 'Sol'], ['murs', 'Murs'], ['plafond', 'Plafond'], ['plinthes', 'Plinthes']]
+
+// ─── Ce qui part dans l'export ──────────────────────────────────────────────
+
+const nombreOuNull = (v) => (v === null || v === undefined || v === '' || !Number.isFinite(Number(v)) ? null : Number(v))
+
+/**
+ * Éléments à dessiner (décisions du plan du lot 4) : les éléments validés,
+ * plus les propositions si demandé (`aValider`) ; un point typé en visite
+ * qu'aucun élément exporté ne couvre devient un élément de son type
+ * (libellé = type). Un point ni typé ni rattaché n'est pas dessiné.
+ *
+ * @returns [{ id, pieceId, pointId, x, y, calque (code), type, libelle, cotes, numero, aValider }]
+ *   x, y en mètres, `null` pour un élément sans point ; trié par numéro de point.
+ */
+export function elementsAExporter({ pieces = [], points = [], elements = [], inclurePropositions = false } = {}) {
+  const parPoint = new Map(points.map((p) => [p.id, p]))
+  const pieceDuPoint = (p) => p.piece_id
+    ?? pieces.find((pc) => Array.isArray(pc.contour) && pc.contour.length >= 3 && pointDansPolygone([Number(p.x), Number(p.y)], pc.contour))?.id
+    ?? null
+
+  const sortie = []
+  const pointsCouverts = new Set()
+  for (const e of elements) {
+    if (e.a_valider && !inclurePropositions) continue
+    const type = typeEdl(e.type)
+    const calque = type?.calque ?? (calqueEdl(e.calque) ? e.calque : null)
+    if (!calque) continue
+    const point = e.point_id ? parPoint.get(e.point_id) : null
+    if (point) pointsCouverts.add(point.id)
+    sortie.push({
+      id: e.id,
+      pieceId: e.piece_id ?? (point ? pieceDuPoint(point) : null),
+      pointId: point?.id ?? null,
+      x: point ? nombreOuNull(point.x) : null,
+      y: point ? nombreOuNull(point.y) : null,
+      calque,
+      type: type?.code ?? null,
+      libelle: e.libelle ?? '',
+      cotes: e.cotes ?? null,
+      numero: point?.numero ?? null,
+      aValider: !!e.a_valider,
+    })
+  }
+  for (const p of points) {
+    const type = typeEdl(p.type)
+    if (!type || pointsCouverts.has(p.id)) continue
+    sortie.push({
+      id: `point-${p.id}`,
+      pieceId: pieceDuPoint(p),
+      pointId: p.id,
+      x: nombreOuNull(p.x),
+      y: nombreOuNull(p.y),
+      calque: type.calque,
+      type: type.code,
+      libelle: type.libelle,
+      cotes: null,
+      numero: p.numero ?? null,
+      aValider: false,
+    })
+  }
+  return sortie
+    .map((e, i) => ({ e, i }))
+    .sort((a, b) => (a.e.numero ?? Infinity) - (b.e.numero ?? Infinity) || a.i - b.i)
+    .map(({ e }) => e)
+}
+
+// ─── Unités, noms, textes ───────────────────────────────────────────────────
+
+// Unités que `$INSUNITS` sait dire : m, dm, cm, mm
+const UNITES = [[1, 6, 'm'], [10, 14, 'dm'], [100, 5, 'cm'], [1000, 4, 'mm']]
+
+/**
+ * `$INSUNITS` du fichier. Les coordonnées restent dans l'unité du plan
+ * d'origine ; une unité que le DXF ne sait pas dire prend la plus proche, et
+ * `exacte` vaut faux pour que l'écran le signale.
+ */
+export function uniteDxf(unitesParMetre) {
+  const u = Number(unitesParMetre) > 0 ? Number(unitesParMetre) : 1
+  let meilleure = UNITES[0]
+  for (const unite of UNITES) {
+    if (Math.abs(Math.log(u / unite[0])) < Math.abs(Math.log(u / meilleure[0]))) meilleure = unite
+  }
+  return { unitesParMetre: u, insunits: meilleure[1], nom: meilleure[2], exacte: Math.abs(u - meilleure[0]) < 1e-9 }
+}
+
+/** Nom de bloc d'un type : ASCII, majuscules, « - » → « _ ». */
+export const nomBloc = (code) => `EDL_${String(code).toUpperCase().replace(/[^A-Z0-9]/g, '_')}`
+
+// Caractères refusés dans un nom de calque par AutoCAD et ArchiCAD
+const INTERDITS = /[<>/\\":;?*|=,`]/
+
+/**
+ * Nom de calque d'origine rendu acceptable : 31 caractères au plus,
+ * caractères interdits (et ceux que Windows-1252 n'a pas, qui deviendraient
+ * « ? », lui-même interdit) remplacés par « _ ».
+ */
+export function nomCalqueValide(nom) {
+  const remplace = [...String(nom ?? '')]
+    .map((c) => (c.codePointAt(0) < 32 || INTERDITS.test(c) || !dansCp1252(c) ? '_' : c))
+    .join('')
+    .trim()
+  return [...remplace].slice(0, 31).join('').trim() || 'SANS_NOM'
+}
+
+/** Texte d'une ligne de TEXT : ni retour à la ligne ni caractère de contrôle. */
+export function texteDxf(brut) {
+  // Un saut de ligne dans une valeur décalerait toutes les paires code / valeur qui suivent
+  const sansControle = [...String(brut ?? '')].map((c) => {
+    const code = c.codePointAt(0)
+    return code < 0x20 || (code >= 0x7f && code <= 0x9f) ? ' ' : c
+  }).join('')
+  const t = sansControle.replace(/\s+/g, ' ').trim()
+  return t.length > LONGUEUR_TEXTE_MAX ? `${t.slice(0, LONGUEUR_TEXTE_MAX - 1)}…` : t
+}
+
+/** Coupe un texte en lignes d'au plus `max` caractères, aux espaces. */
+export function couperLignes(brut, max = CARACTERES_PAR_LIGNE) {
+  const lignes = []
+  let courante = ''
+  for (const mot of texteDxf(brut).split(' ').filter(Boolean)) {
+    let reste = mot
+    while (reste.length > max) {
+      if (courante) { lignes.push(courante); courante = '' }
+      lignes.push(reste.slice(0, max))
+      reste = reste.slice(max)
+    }
+    if (!courante) courante = reste
+    else if (courante.length + 1 + reste.length <= max) courante += ` ${reste}`
+    else { lignes.push(courante); courante = reste }
+  }
+  if (courante) lignes.push(courante)
+  return lignes
+}
+
+const decimales = (v, n) => String(Math.round(v * 10 ** n) / 10 ** n).replace('.', ',')
+
+/** « 12,5 m² » : surface écrite sur le plan, sinon dessinée. */
+export function texteSurface(piece) {
+  const lue = Number(piece?.surface_lue)
+  const surface = lue > 0 ? lue : (Array.isArray(piece?.contour) && piece.contour.length >= 3 ? aire(piece.contour) : 0)
+  return surface > 0 ? `${decimales(surface, 2)} m²` : null
+}
+
+/** « HSP 2,50 » : lue sur le plan, sinon dite en visite (fiche). */
+export function texteHsp(piece, { fiche = true } = {}) {
+  const lue = Number(piece?.hsp_lue)
+  if (lue > 0) return `HSP ${lue.toFixed(2).replace('.', ',')}`
+  const dite = fiche ? texteDxf(piece?.fiche?.hsp) : ''
+  return dite ? `HSP ${dite}` : null
+}
+
+// ─── Écriture R12 ───────────────────────────────────────────────────────────
+
+const nb = (v) => {
+  const r = Math.round(v * 1e6) / 1e6 || 0
+  const s = String(r)
+  return /[.e]/.test(s) ? s : `${s}.0`
+}
+const entier = (v) => String(Math.round(v)).padStart(6, ' ')
+
+// Codes de groupe sur trois caractères, alignés à droite, comme AutoCAD
+function ecrivain() {
+  const lignes = []
+  const g = (code, valeur) => { lignes.push(String(code).padStart(3, ' '), String(valeur)) }
+  const point = (base, [x, y]) => { g(base, nb(x)); g(base + 10, nb(y)); g(base + 20, '0.0') }
+
+  return {
+    lignes,
+    g,
+    ligne(calque, a, b) {
+      g(0, 'LINE'); g(8, calque); point(10, a); point(11, b)
+    },
+    polyligne(calque, pts, ferme) {
+      g(0, 'POLYLINE'); g(8, calque); g(66, entier(1)); point(10, [0, 0]); g(70, entier(ferme ? 1 : 0))
+      for (const p of pts) { g(0, 'VERTEX'); g(8, calque); point(10, p) }
+      g(0, 'SEQEND'); g(8, calque)
+    },
+    cercle(calque, c, r) {
+      g(0, 'CIRCLE'); g(8, calque); point(10, c); g(40, nb(r))
+    },
+    arc(calque, c, r, debut, fin) {
+      g(0, 'ARC'); g(8, calque); point(10, c); g(40, nb(r)); g(50, nb(debut)); g(51, nb(fin))
+    },
+    // h : 0 gauche, 1 centre, 2 droite ; v : 0 ligne de base, 2 milieu.
+    // Aligné, le point qui compte est 11/21 ; 10/20 reçoit le même, AutoCAD
+    // le recalcule à l'ouverture.
+    texte(calque, pos, hauteur, valeur, { rotation = 0, h = 0, v = 0 } = {}) {
+      g(0, 'TEXT'); g(8, calque); point(10, pos); g(40, nb(hauteur)); g(1, valeur)
+      if (Math.abs(rotation) > 1e-9) g(50, nb(rotation))
+      if (h) g(72, entier(h))
+      if (h || v) point(11, pos)
+      if (v) g(73, entier(v))
+    },
+    insert(calque, nom, pos, rotation) {
+      g(0, 'INSERT'); g(8, calque); g(2, nom); point(10, pos)
+      g(41, '1.0'); g(42, '1.0'); g(43, '1.0')
+      if (Math.abs(rotation) > 1e-9) g(50, nb(rotation))
+    },
+  }
+}
+
+// Primitives d'un symbole (mètres) écrites dans l'unité du fichier
+function ecrirePrimitives(w, calque, primitives, u) {
+  const s = ([x, y]) => [x * u, y * u]
+  for (const p of primitives) {
+    if (p.ligne) w.ligne(calque, s(p.ligne[0]), s(p.ligne[1]))
+    else if (p.polyligne) w.polyligne(calque, p.polyligne.map(s), p.ferme)
+    else if (p.cercle) w.cercle(calque, s(p.cercle), p.cercle[2] * u)
+    else if (p.arc) w.arc(calque, s(p.arc), p.arc[2] * u, p.arc[3], p.arc[4])
+    else if (p.texte) w.texte(calque, s(p.pos), p.hauteur * u, texteDxf(p.texte), { rotation: p.rotation ?? 0, h: 1, v: 2 })
+  }
+}
+
+// ─── Géométrie des pièces ───────────────────────────────────────────────────
+
+/**
+ * Point où écrire dans une pièce : le centre de gravité de la surface, ou,
+ * s'il tombe dehors (pièce en L, en U), le milieu de la plus large traversée
+ * horizontale à sa hauteur.
+ */
+export function pointInterieur(contour) {
+  let a = 0, cx = 0, cy = 0
+  for (let i = 0; i < contour.length; i++) {
+    const [x1, y1] = contour[i]
+    const [x2, y2] = contour[(i + 1) % contour.length]
+    const k = x1 * y2 - x2 * y1
+    a += k; cx += (x1 + x2) * k; cy += (y1 + y2) * k
+  }
+  const moyenne = [contour.reduce((s, p) => s + p[0], 0) / contour.length, contour.reduce((s, p) => s + p[1], 0) / contour.length]
+  if (Math.abs(a) < 1e-12) return moyenne
+  const c = [cx / (3 * a), cy / (3 * a)]
+  if (pointDansPolygone(c, contour)) return c
+  const y = c[1]
+  const xs = []
+  for (let i = 0, j = contour.length - 1; i < contour.length; j = i++) {
+    const [xi, yi] = contour[i]
+    const [xj, yj] = contour[j]
+    if ((yi > y) !== (yj > y)) xs.push(xi + ((y - yi) * (xj - xi)) / (yj - yi))
+  }
+  xs.sort((p, q) => p - q)
+  let meilleur = null
+  for (let i = 0; i + 1 < xs.length; i += 2) {
+    if (!meilleur || xs[i + 1] - xs[i] > meilleur[1] - meilleur[0]) meilleur = [xs[i], xs[i + 1]]
+  }
+  return meilleur ? [(meilleur[0] + meilleur[1]) / 2, y] : moyenne
+}
+
+// Repère tourné d'une pièce : (u, v) local en mètres → mètres du plan
+const repere = ([ox, oy], angle) => {
+  const r = (angle * Math.PI) / 180
+  const c = Math.cos(r), s = Math.sin(r)
+  return ([u, v]) => [ox + u * c - v * s, oy + u * s + v * c]
+}
+
+// ─── Fichier ────────────────────────────────────────────────────────────────
+
+/**
+ * DXF R12 d'un étage, en texte (fins de ligne CRLF) ; `encoderDxf` en fait
+ * les octets à enregistrer.
+ *
+ * @param niveau        ligne `edl_niveaux` (unité de repli : `unites_par_metre`)
+ * @param pieces        lignes `edl_pieces` de l'étage (contour en mètres, fiche)
+ * @param elementsExport sortie d'`elementsAExporter`
+ * @param photos        [{ point_id, numero? }] — numérotées dans l'ordre reçu
+ *                      si `numero` manque (« Ph n »)
+ * @param points        lignes `edl_points` (position des photos d'un point
+ *                      sans élément exporté)
+ * @param unitesParMetre unité du plan d'origine (1 m, 100 cm, 1000 mm)
+ * @param plan          plan allégé décodé (`decoderVecteurs`) ou null
+ * @param inclurePropositions fiche pas encore relue (`fiche_a_valider`) :
+ *                      ses finitions sur `EDL-À valider` si vrai, omises sinon
+ */
+export function genererDxfEdl({
+  niveau = null, pieces = [], elementsExport = [], photos = [], points = [],
+  unitesParMetre, plan = null, inclurePropositions = false,
+} = {}) {
+  const { unitesParMetre: u, insunits } = uniteDxf(unitesParMetre ?? niveau?.unites_par_metre)
+  const w = ecrivain()
+  const calquesUtilises = new Set()
+  const typesUtilises = new Set()
+  const etendue = [Infinity, Infinity, -Infinity, -Infinity]
+  // Tout passe par là : coordonnées converties et étendue tenue à jour
+  const enUnites = ([x, y]) => {
+    const p = [x * u, y * u]
+    if (p[0] < etendue[0]) etendue[0] = p[0]
+    if (p[1] < etendue[1]) etendue[1] = p[1]
+    if (p[0] > etendue[2]) etendue[2] = p[0]
+    if (p[1] > etendue[3]) etendue[3] = p[1]
+    return p
+  }
+  const utiliser = (nom) => { calquesUtilises.add(nom); return nom }
+  const nomCalque = (code, aValider) => utiliser(aValider ? CALQUE_A_VALIDER : calqueEdl(code).nom)
+  const NOM_PIECES = calqueEdl('pieces').nom
+  const NOM_FINITIONS = calqueEdl('finitions').nom
+  const NOM_COTES = calqueEdl('cotes').nom
+  const NOM_PHOTOS = calqueEdl('photos').nom
+
+  // ── Plan existant, en dessous de tout ──
+  const calquesPlan = new Map()
+  if (plan) {
+    const pris = new Set([...CALQUES.map((c) => c.nom), CALQUE_A_VALIDER].map((n) => n.toUpperCase()))
+    const calqueDuPlan = (nom) => {
+      if (calquesPlan.has(nom)) return calquesPlan.get(nom)
+      const base = nomCalqueValide(nom)
+      let valide = base
+      // AutoCAD ne distingue pas la casse : « Murs » et « MURS » seraient un seul calque
+      for (let i = 2; pris.has(valide.toUpperCase()) && valide !== '0'; i++) valide = `${[...base].slice(0, 31 - String(i).length - 1).join('')}_${i}`
+      if (valide !== '0') pris.add(valide.toUpperCase())
+      calquesPlan.set(nom, valide)
+      return valide
+    }
+    for (const t of plan.traits ?? []) {
+      if (!t.pts || t.pts.length < 2) continue
+      const calque = calqueDuPlan(t.calque)
+      const pts = t.pts.map(enUnites)
+      if (pts.length === 2 && !t.ferme) w.ligne(calque, pts[0], pts[1])
+      else w.polyligne(calque, pts, !!t.ferme)
+    }
+    for (const m of plan.masses ?? []) {
+      for (const anneau of m.anneaux ?? []) {
+        if (anneau.length >= 3) w.polyligne(calqueDuPlan(m.calque), anneau.map(enUnites), true)
+      }
+    }
+    for (const t of plan.textes ?? []) {
+      const hauteur = Number(t.hauteur) > 0 ? Number(t.hauteur) : HAUTEUR_TEXTE
+      String(t.texte ?? '').split('\n').map(texteDxf).forEach((ligne, i) => {
+        if (ligne) w.texte(calqueDuPlan(t.calque), enUnites([t.pos[0], t.pos[1] - i * hauteur * 1.4]), hauteur * u, ligne)
+      })
+    }
+  }
+
+  // ── Pièces : contour et textes au centre ──
+  const parId = new Map(pieces.map((p) => [p.id, p]))
+  const angleDe = (pieceId) => {
+    const piece = pieceId ? parId.get(pieceId) : null
+    return piece && Array.isArray(piece.contour) ? orientationPiece(piece.contour) : 0
+  }
+  const sansPoint = new Map()
+  for (const e of elementsExport) {
+    if (e.x !== null && e.x !== undefined && e.y !== null && e.y !== undefined) continue
+    if (!e.pieceId || !parId.has(e.pieceId)) continue
+    if (!sansPoint.has(e.pieceId)) sansPoint.set(e.pieceId, [])
+    sansPoint.get(e.pieceId).push(e)
+  }
+
+  for (const piece of pieces) {
+    if (!Array.isArray(piece.contour) || piece.contour.length < 3) continue
+    w.polyligne(utiliser(NOM_PIECES), piece.contour.map(enUnites), true)
+
+    const ficheLisible = !piece.fiche_a_valider || inclurePropositions
+    const calqueFiche = piece.fiche_a_valider ? CALQUE_A_VALIDER : NOM_FINITIONS
+    const lignes = []
+    const ajouter = (texte, calque, hauteur = HAUTEUR_TEXTE) => {
+      for (const l of couperLignes(texte)) lignes.push({ texte: l, calque, hauteur })
+    }
+    const nom = texteDxf(piece.nom)
+    const numero = texteDxf(piece.numero)
+    ajouter(numero ? `${nom || 'Pièce'} (${numero})` : nom || 'Pièce', NOM_PIECES, HAUTEUR_NOM)
+    const surface = texteSurface(piece)
+    if (surface) ajouter(surface, NOM_PIECES)
+    const hspLue = Number(piece.hsp_lue) > 0
+    const hsp = texteHsp(piece, { fiche: ficheLisible })
+    if (hsp) ajouter(hsp, hspLue ? NOM_PIECES : piece.fiche_a_valider ? CALQUE_A_VALIDER : NOM_PIECES)
+    if (ficheLisible) {
+      for (const [cle, libelle] of RUBRIQUES) {
+        const valeur = texteDxf(piece.fiche?.[cle])
+        if (valeur) ajouter(`${libelle} : ${valeur}`, calqueFiche)
+      }
+    }
+    for (const e of sansPoint.get(piece.id) ?? []) {
+      const libelle = texteDxf(e.libelle) || typeEdl(e.type)?.libelle || calqueEdl(e.calque).libelle
+      ajouter(libelle, nomCalque(e.calque, e.aValider))
+      if (texteDxf(e.cotes)) ajouter(e.cotes, e.aValider ? CALQUE_A_VALIDER : NOM_COTES)
+    }
+
+    const angle = orientationPiece(piece.contour)
+    const place = repere(pointInterieur(piece.contour), angle)
+    let v = lignes.reduce((s, l) => s + l.hauteur * INTERLIGNE, 0) / 2
+    for (const l of lignes) {
+      v -= (l.hauteur * INTERLIGNE) / 2
+      w.texte(utiliser(l.calque), enUnites(place([0, v])), l.hauteur * u, l.texte, { rotation: angle, h: 1, v: 2 })
+      v -= (l.hauteur * INTERLIGNE) / 2
+    }
+  }
+
+  // ── Éléments placés : symbole, libellé, cotes ──
+  const boites = new Map()
+  for (const e of elementsExport) {
+    if (e.x === null || e.x === undefined || e.y === null || e.y === undefined) continue
+    const angle = angleDe(e.pieceId)
+    const place = repere([Number(e.x), Number(e.y)], angle)
+    const calque = nomCalque(e.calque, e.aValider)
+    let boite
+    if (e.type && SYMBOLES[e.type]) {
+      typesUtilises.add(e.type)
+      boite = boiteSymbole(e.type)
+      // L'étendue suit la boîte tournée du symbole, pas seulement son point
+      for (const coin of [[boite.xmin, boite.ymin], [boite.xmax, boite.ymax], [boite.xmin, boite.ymax], [boite.xmax, boite.ymin]]) enUnites(place(coin))
+      w.insert(calque, nomBloc(e.type), enUnites(place([0, 0])), angle)
+    } else {
+      // Sans type (désordre non classé…) : un petit rond suffit à le situer
+      boite = { xmin: -RAYON_SANS_SYMBOLE, ymin: -RAYON_SANS_SYMBOLE, xmax: RAYON_SANS_SYMBOLE, ymax: RAYON_SANS_SYMBOLE }
+      w.cercle(calque, enUnites(place([0, 0])), RAYON_SANS_SYMBOLE * u)
+    }
+    if (e.pointId) boites.set(e.pointId, { boite, angle })
+
+    const libelle = texteDxf(e.libelle) || typeEdl(e.type)?.libelle || calqueEdl(e.calque).libelle
+    const lignes = [
+      ...couperLignes(e.numero !== null && e.numero !== undefined ? `P${e.numero} · ${libelle}` : libelle).map((t) => ({ t, calque })),
+      ...couperLignes(e.cotes).map((t) => ({ t, calque: utiliser(e.aValider ? CALQUE_A_VALIDER : NOM_COTES) })),
+    ]
+    const x = boite.xmax + ECART_LIBELLE
+    let y = (boite.ymin + boite.ymax) / 2
+    for (const l of lignes) {
+      w.texte(l.calque, enUnites(place([x, y])), HAUTEUR_TEXTE * u, l.t, { rotation: angle, v: 2 })
+      y -= HAUTEUR_TEXTE * INTERLIGNE
+    }
+  }
+
+  // ── Photos : un repère par point, « Ph 3, 4 » ──
+  const pointsParId = new Map(points.map((p) => [p.id, p]))
+  const elementParPoint = new Map(elementsExport.filter((e) => e.pointId && e.x !== null && e.x !== undefined).map((e) => [e.pointId, e]))
+  const photosParPoint = new Map()
+  photos.forEach((ph, i) => {
+    if (!ph?.point_id) return
+    if (!photosParPoint.has(ph.point_id)) photosParPoint.set(ph.point_id, [])
+    photosParPoint.get(ph.point_id).push(ph.numero ?? i + 1)
+  })
+  for (const [pointId, numeros] of photosParPoint) {
+    const point = pointsParId.get(pointId)
+    const element = elementParPoint.get(pointId)
+    const position = element ? [Number(element.x), Number(element.y)] : point ? [Number(point.x), Number(point.y)] : null
+    if (!position || !position.every(Number.isFinite)) continue
+    const repereElement = boites.get(pointId)
+    const angle = repereElement?.angle ?? angleDe(point?.piece_id ?? element?.pieceId)
+    const place = repere(position, angle)
+    const centre = repereElement ? [repereElement.boite.xmin - RAYON_PHOTO, repereElement.boite.ymax + RAYON_PHOTO] : [0, 0]
+    w.cercle(utiliser(NOM_PHOTOS), enUnites(place(centre)), RAYON_PHOTO * u)
+    w.texte(NOM_PHOTOS, enUnites(place([centre[0] - RAYON_PHOTO - 0.03, centre[1]])), HAUTEUR_TEXTE * u, texteDxf(`Ph ${numeros.join(', ')}`), { rotation: angle, h: 2, v: 2 })
+  }
+
+  // ── Assemblage : en-tête, tables, blocs, entités ──
+  const f = ecrivain()
+  const { g } = f
+  const vide = !Number.isFinite(etendue[0])
+  const min = vide ? [0, 0] : [etendue[0], etendue[1]]
+  const max = vide ? [0, 0] : [etendue[2], etendue[3]]
+
+  g(0, 'SECTION'); g(2, 'HEADER')
+  g(9, '$ACADVER'); g(1, 'AC1009')
+  g(9, '$DWGCODEPAGE'); g(3, 'ANSI_1252')
+  g(9, '$INSBASE'); g(10, '0.0'); g(20, '0.0'); g(30, '0.0')
+  g(9, '$EXTMIN'); g(10, nb(min[0])); g(20, nb(min[1])); g(30, '0.0')
+  g(9, '$EXTMAX'); g(10, nb(max[0])); g(20, nb(max[1])); g(30, '0.0')
+  g(9, '$INSUNITS'); g(70, entier(insunits))
+  g(0, 'ENDSEC')
+
+  // Calques dans l'ordre de `calquesEdl.js`, puis « À valider », puis ceux du plan
+  const calquesEdl = CALQUES.map((c) => ({ nom: c.nom, couleur: COULEURS[c.code] ?? 7 })).filter((c) => calquesUtilises.has(c.nom))
+  if (calquesUtilises.has(CALQUE_A_VALIDER)) calquesEdl.push({ nom: CALQUE_A_VALIDER, couleur: COULEUR_A_VALIDER })
+  const calquesOrigine = [...new Set(calquesPlan.values())].filter((n) => n !== '0').map((nom) => ({ nom, couleur: COULEUR_PLAN }))
+  const tousCalques = [{ nom: '0', couleur: 7 }, ...calquesEdl, ...calquesOrigine]
+
+  g(0, 'SECTION'); g(2, 'TABLES')
+  g(0, 'TABLE'); g(2, 'LTYPE'); g(70, entier(1))
+  g(0, 'LTYPE'); g(2, 'CONTINUOUS'); g(70, entier(0)); g(3, 'Solid line'); g(72, entier(65)); g(73, entier(0)); g(40, '0.0')
+  g(0, 'ENDTAB')
+  g(0, 'TABLE'); g(2, 'LAYER'); g(70, entier(tousCalques.length))
+  for (const c of tousCalques) { g(0, 'LAYER'); g(2, c.nom); g(70, entier(0)); g(62, entier(c.couleur)); g(6, 'CONTINUOUS') }
+  g(0, 'ENDTAB')
+  g(0, 'TABLE'); g(2, 'STYLE'); g(70, entier(1))
+  g(0, 'STYLE'); g(2, 'STANDARD'); g(70, entier(0)); g(40, '0.0'); g(41, '1.0'); g(50, '0.0'); g(71, entier(0)); g(42, nb(HAUTEUR_TEXTE * u)); g(3, 'txt'); g(4, '')
+  g(0, 'ENDTAB')
+  g(0, 'ENDSEC')
+
+  // Symboles en blocs, sur le calque 0 : ils prennent le calque (et la
+  // couleur) de leur insertion
+  g(0, 'SECTION'); g(2, 'BLOCKS')
+  for (const code of Object.keys(SYMBOLES).filter((c) => typesUtilises.has(c))) {
+    const nom = nomBloc(code)
+    g(0, 'BLOCK'); g(8, '0'); g(2, nom); g(70, entier(0)); g(10, '0.0'); g(20, '0.0'); g(30, '0.0'); g(3, nom)
+    ecrirePrimitives(f, '0', SYMBOLES[code].primitives, u)
+    g(0, 'ENDBLK'); g(8, '0')
+  }
+  g(0, 'ENDSEC')
+
+  g(0, 'SECTION'); g(2, 'ENTITIES')
+  f.lignes.push(...w.lignes)
+  g(0, 'ENDSEC')
+  g(0, 'EOF')
+  return `${f.lignes.join('\r\n')}\r\n`
+}
+
+/** Octets du fichier, en Windows-1252 (caractère hors table → « ? »). */
+export const encoderDxf = (texte) => encoderCp1252(texte)

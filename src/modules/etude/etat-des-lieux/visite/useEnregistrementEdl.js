@@ -1,8 +1,9 @@
 // ─── Enregistrement de la visite d'un état des lieux ─────────────────────────
 //
 // Le moteur commun des visites (`useEnregistreur`), ses morceaux marqués
-// `edlVisiteId`. Lot 2 : rien n'est transcrit, les morceaux attendent sur
-// l'appareil (base `jga-audio`) l'analyse du lot 3 ; on les compte. Une page
+// `edlVisiteId`. Chaque morceau rangé part à la transcription horodatée
+// (lot 3, `analyse/transcriptionEdl.js`) ; sans réseau, il attend sur
+// l'appareil (base `jga-audio`) et l'on compte ceux qui attendent. Une page
 // fermée en plein enregistrement : les tranches restées seules se recollent
 // à la réouverture de la visite.
 
@@ -10,6 +11,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useEnregistreur } from '../../../chantier/comptes-rendus/enregistrement/useEnregistreur'
 import { morceauxEnAttente, enregistrementsInterrompus, recupererMorceaux } from '../../../chantier/comptes-rendus/enregistrement/audioLocal'
 import { enregistrementsARecuperer } from '../../../chantier/comptes-rendus/enregistrement/enregistrementLogique'
+import { transcrireEdlEnAttente, EVENEMENT_TRANSCRIPTION_EDL } from '../analyse/transcriptionEdl'
 
 export function useEnregistrementEdl({ visiteId, affaireId, surEtat }) {
   const [enAttente, setEnAttente] = useState(0)
@@ -21,8 +23,24 @@ export function useEnregistrementEdl({ visiteId, affaireId, surEtat }) {
   }, [visiteId])
 
   const champs = useMemo(() => ({ affaireId }), [affaireId])
-  const moteur = useEnregistreur({ champs, surEtat, surMorceau: () => { recompter() } })
+  // Chaque morceau part dès qu'il est rangé s'il y a du réseau ; sinon il
+  // attend le moteur de synchro de l'app (envoyerToutEdl)
+  const surMorceau = useCallback((morceau) => {
+    recompter()
+    const edlVisiteId = morceau?.edlVisiteId
+    if (!edlVisiteId || (typeof navigator !== 'undefined' && navigator.onLine === false)) return
+    transcrireEdlEnAttente({ edlVisiteId }).catch((err) => console.warn('Transcription de la visite :', err))
+  }, [recompter])
+  const moteur = useEnregistreur({ champs, surEtat, surMorceau })
   const { enregistrementCourant } = moteur
+
+  // Un morceau transcrit (ou effacé) ne compte plus parmi ceux qui attendent
+  useEffect(() => {
+    if (!visiteId) return undefined
+    const surTranscription = () => { recompter() }
+    window.addEventListener(EVENEMENT_TRANSCRIPTION_EDL, surTranscription)
+    return () => window.removeEventListener(EVENEMENT_TRANSCRIPTION_EDL, surTranscription)
+  }, [visiteId, recompter])
 
   // `visiteId` n'est connu qu'une fois l'enregistrement démarré : celui en
   // cours a déjà des tranches sans morceau, il est laissé de côté

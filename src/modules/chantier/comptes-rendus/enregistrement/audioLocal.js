@@ -114,12 +114,18 @@ export async function effacerEnregistrement(enregistrementId) {
 //
 // `visite` : l'identifiant d'un CR (comme avant), ou { edlVisiteId }.
 
+const dansLOrdre = (a, b) => (a.debutEnregistrement ?? '').localeCompare(b.debutEnregistrement ?? '') || a.rang - b.rang
+
 /** Morceaux de cette visite encore à transcrire, dans l'ordre d'enregistrement. */
 export async function morceauxEnAttente(visite) {
   const tous = await transaction(MORCEAUX, 'readonly', (m) => m.getAll())
-  return (tous ?? [])
-    .filter((x) => deLaVisite(x, visite))
-    .sort((a, b) => (a.debutEnregistrement ?? '').localeCompare(b.debutEnregistrement ?? '') || a.rang - b.rang)
+  return (tous ?? []).filter((x) => deLaVisite(x, visite)).sort(dansLOrdre)
+}
+
+/** Morceaux de toutes les visites d'état des lieux (envoi depuis toute l'app). */
+export async function morceauxEtatsDesLieux() {
+  const tous = await transaction(MORCEAUX, 'readonly', (m) => m.getAll())
+  return (tous ?? []).filter((x) => x?.edlVisiteId != null).sort(dansLOrdre)
 }
 
 /** Enregistrements de cette visite qui ont des tranches orphelines (page fermée en plein enregistrement). */

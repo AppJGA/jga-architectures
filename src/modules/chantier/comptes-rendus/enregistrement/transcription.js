@@ -38,7 +38,12 @@ function enteteVocabulaire(vocabulaire = []) {
   return code
 }
 
-async function appelerTranscription({ corps = null, type = '', chemin = null, vocabulaire = [] }) {
+/**
+ * Un morceau (ou un fichier déposé) envoyé à `api/transcrire`. Rend le texte ;
+ * avec `horodatage` (visite d'un état des lieux), rend `{ texte, segments }`,
+ * `segments` nul si Mistral n'a rendu que le texte.
+ */
+export async function appelerTranscription({ corps = null, type = '', chemin = null, vocabulaire = [], horodatage = false }) {
   const { data } = await supabase.auth.getSession()
   const jeton = data?.session?.access_token
   if (!jeton) throw new ErreurTranscription('session', 'session')
@@ -51,6 +56,7 @@ async function appelerTranscription({ corps = null, type = '', chemin = null, vo
         'Content-Type': 'application/octet-stream',
         'X-Type-Audio': type,
         'X-Vocabulaire': enteteVocabulaire(vocabulaire),
+        ...(horodatage ? { 'X-Horodatage': 'segment' } : {}),
       },
       body: corps,
     })
@@ -58,7 +64,10 @@ async function appelerTranscription({ corps = null, type = '', chemin = null, vo
     throw new ErreurTranscription('reseau', err?.message ?? 'réseau')
   }
   const json = await reponse.json().catch(() => null)
-  if (reponse.ok && json) return String(json.texte ?? '')
+  if (reponse.ok && json) {
+    if (!horodatage) return String(json.texte ?? '')
+    return { texte: String(json.texte ?? ''), segments: Array.isArray(json.segments) ? json.segments : null }
+  }
   // Sans fonction serveur (développement local), la réponse n'est pas du JSON
   if (!json || json.erreur === 'transcription-non-configuree') throw new ErreurTranscription('non-configuree', 'non configurée')
   if (json.erreur === 'session') throw new ErreurTranscription('session', 'session')

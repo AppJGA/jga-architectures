@@ -61,17 +61,32 @@ export function envoyerFileEdl(affaireId) {
   })
 }
 
-/** Toutes les affaires qui ont des gestes en attente (moteur de synchro de l'app). */
+/**
+ * Toutes les affaires qui ont des gestes en attente (moteur de synchro de
+ * l'app), puis l'audio des visites : après les gestes, pour qu'une visite
+ * créée hors ligne soit dans la base avant ses morceaux.
+ */
 export async function envoyerToutEdl() {
   if (!disponible()) return { envoyees: 0 }
   const ops = aEnvoyer(await tout(MAGASINS_EDL.operations).catch(() => []))
   let envoyees = 0
+  let coupure = false
   for (const affaireId of [...new Set(ops.map((o) => o.affaireId))]) {
     const r = await envoyerFileEdl(affaireId)
     envoyees += r.envoyees
-    if (r.coupure) break
+    if (r.coupure) { coupure = true; break }
   }
+  if (!coupure) lancerTranscriptions()
   return { envoyees }
+}
+
+// Sans attendre : une transcription dure (un appel Mistral par morceau) et ne
+// doit pas retenir le compte rendu de l'envoi des gestes. Chargé à la demande,
+// comme ce module.
+function lancerTranscriptions() {
+  import('../analyse/transcriptionEdl')
+    .then((m) => m.transcrireEdlEnAttente(null))
+    .catch((err) => console.warn('Transcription des visites d’état des lieux :', err))
 }
 
 /**

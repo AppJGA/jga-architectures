@@ -545,6 +545,19 @@ describe('Correctifs (tour 1)', () => {
     assert.equal(sonTranscritJusquA(iv, []), false)
   })
 
+  test('sonTranscritJusquA : un morceau manquant au milieu d’un long passage bloque', () => {
+    const iv = { debut: ms('10:00:00'), fin: ms('10:09:00'), visiteId: 'v1' }
+    const enr = (debut, duree_s) => ({ visite_id: 'v1', debut: H(debut), duree_s })
+    // Trois morceaux de 3 minutes, tous transcrits : couvert
+    assert.equal(sonTranscritJusquA(iv, [enr('10:00:00', 180), enr('10:03:00', 180), enr('10:06:00', 180)]), true)
+    // Celui du milieu attend encore sur la tablette : pas couvert
+    assert.equal(sonTranscritJusquA(iv, [enr('10:00:00', 180), enr('10:06:00', 180)]), false)
+    // Coupure d'iOS de quelques secondes entre deux morceaux : toléré
+    assert.equal(sonTranscritJusquA(iv, [enr('10:00:00', 175), enr('10:03:05', 360)]), true)
+    // Rien au début du passage : pas couvert
+    assert.equal(sonTranscritJusquA(iv, [enr('10:03:00', 360)]), false)
+  })
+
   test('sonPret : sans morceau de la visite, il faut la transcription ou le délai d’abandon', () => {
     const iv = { fin: ms('10:10:00'), visiteId: 'v1' }
     // Bureau : rien sur l'appareil, rien dans la base

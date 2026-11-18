@@ -557,12 +557,28 @@ export const MARGE_SON_MS = 30 * 1000
  * sur la tablette). Limite : un morceau du milieu d'un long passage
  * (morceaux de 3 min) qui manquerait ne se voit pas d'ici.
  */
+// Trou toléré entre deux morceaux transcrits d'un même passage : une
+// coupure d'iOS (micro rendu puis repris) laisse quelques secondes sans son
+export const TROU_SON_MS = 30_000
+
 export function sonTranscritJusquA(intervalle, enregistrements = []) {
-  const fins = (enregistrements ?? [])
+  // Les morceaux sont coupés à chaque entrée et sortie : seuls comptent ceux
+  // commencés avant la fin du passage (celui de la pièce suivante ne couvre
+  // rien ici). Ils doivent se suivre sans trou : un morceau de 3 minutes
+  // encore sur la tablette au milieu d'un long passage laisserait sinon
+  // analyser la pièce sans lui.
+  const plages = (enregistrements ?? [])
     .filter((e) => e?.visite_id === intervalle?.visiteId && temps(e.debut) != null && temps(e.debut) < intervalle.fin)
-    .map((e) => temps(e.debut) + (Number(e.duree_s) || 0) * 1000)
-    .filter(Number.isFinite)
-  return fins.length > 0 && Math.max(...fins) >= intervalle.fin - MARGE_SON_MS
+    .map((e) => [temps(e.debut), temps(e.debut) + (Number(e.duree_s) || 0) * 1000])
+    .filter(([d, f]) => Number.isFinite(d) && Number.isFinite(f) && !(f <= intervalle.debut - TROU_SON_MS))
+    .sort((a, b) => a[0] - b[0])
+  if (!plages.length) return false
+  let atteint = Number.isFinite(intervalle.debut) ? intervalle.debut : plages[0][0]
+  for (const [d, f] of plages) {
+    if (d > atteint + TROU_SON_MS) return false
+    atteint = Math.max(atteint, f)
+  }
+  return atteint >= intervalle.fin - MARGE_SON_MS
 }
 
 /**

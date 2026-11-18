@@ -18,7 +18,7 @@ import { proposerPiecesIa } from './piecesIa'
 import { rendreNiveauDxf } from './renduNiveau'
 import { assurerEtat, envoyerSource, envoyerVecteurs, enregistrerNiveau, enregistrerPieces, enregistrerRelecture, annulerImport } from './edlDonnees'
 import { analyserNiveaux, decisionsParDefaut, parCalque, simplifierNiveau, encoderVecteurs } from './simplificationPlan'
-import { CALQUES_EN_ATTENTE, fusionnerDecisions, valeurCalques } from './calquesIaLogique'
+import { CALQUES_EN_ATTENTE, reprendreDecisions, valeurCalques } from './calquesIaLogique'
 import { proposerTraitementsIa } from './calquesIa'
 import { relireNiveau } from './relectureIa'
 
@@ -57,23 +57,23 @@ export async function preparerFichier(fichier, { surConversion } = {}) {
 
 // Changer d'unité (DXF sans contours de pièces) : étages recalculés, et
 // calques réanalysés (la longueur d'un trait court change avec l'unité) ;
-// un calque déjà réglé, par Claude ou à la main, garde son traitement.
+// un calque réglé par Claude ou à la main garde son traitement, les autres
+// reprennent les défauts de la nouvelle analyse.
 export function changerUnite(preparation, unitesParMetre) {
   const niveaux = proposerNiveaux(preparation.lecture, preparation.detection, unitesParMetre, preparation.nom)
     .map((n, i) => ({ ...n, nom: preparation.niveaux[i]?.nom ?? n.nom, garde: preparation.niveaux[i]?.garde ?? true }))
   const analyse = analyserNiveaux(niveaux)
-  return { ...preparation, unitesParMetre, niveaux, analyse, decisions: fusionnerDecisions(decisionsParDefaut(analyse), preparation.decisions) }
+  return { ...preparation, unitesParMetre, niveaux, analyse, decisions: reprendreDecisions(preparation, analyse) }
 }
 
 /**
  * Claude choisit le traitement de chaque calque du fichier. Ne lève jamais :
- * sans Claude (réseau, clé, refus), les décisions par défaut s'appliquent et
- * `avertissement` dit pourquoi.
- * @returns { decisions, raisons, proposees, avertissement? } — `decisions`
- *   complétées par les défauts, `proposees` seulement celles de Claude
+ * sans Claude (réseau, clé, refus), `avertissement` dit pourquoi et les
+ * décisions déjà affichées (défauts ou choix à la main) restent.
+ * @returns { raisons, proposees, avertissement? } — `proposees` : seulement
+ *   les calques que Claude a traités, appliqués par `appliquerProposition`
  */
 export async function proposerTraitements(preparation) {
-  const defauts = decisionsParDefaut(preparation.analyse)
   try {
     // Les extraits se dessinent d'un bloc avant l'envoi : on laisse d'abord
     // la fenêtre afficher le fichier qui vient d'être lu
@@ -81,9 +81,9 @@ export async function proposerTraitements(preparation) {
     const traits = parCalque(preparation.niveaux.flatMap((n) => n.traits))
     const textes = parCalque(preparation.niveaux.flatMap((n) => n.textes))
     const { decisions, raisons } = await proposerTraitementsIa(preparation.analyse, traits, textes)
-    return { decisions: fusionnerDecisions(defauts, decisions), raisons, proposees: decisions }
+    return { raisons, proposees: decisions }
   } catch (err) {
-    return { decisions: defauts, raisons: {}, proposees: {}, avertissement: err?.message ?? String(err) }
+    return { raisons: {}, proposees: {}, avertissement: err?.message ?? String(err) }
   }
 }
 

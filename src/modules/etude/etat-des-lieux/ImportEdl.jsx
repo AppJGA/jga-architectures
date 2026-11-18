@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { X, Upload, AlertTriangle, Check, Sparkles, ChevronDown, ChevronRight } from 'lucide-react'
 import { preparerFichier, changerUnite, importer, proposerTraitements } from './importerPlans'
@@ -57,37 +57,44 @@ function mentionCalques(calques) {
 // des traits et des décisions : renommer un étage ne relance rien.
 function ApercuCalques({ niveau, decisions }) {
   const canevas = useRef(null)
+  // `compte` porte les traits dont il parle : un autre étage coché en premier
+  // n'affiche jamais les chiffres (ni le dessin) du précédent
   const [compte, setCompte] = useState(null)
   const traits = niveau?.traits
   const textes = niveau?.textes
   const boite = niveau?.boite
+  const aJour = compte && compte.traits === traits
 
   useEffect(() => {
     if (!traits) return undefined
     const minuteur = setTimeout(() => {
       const allege = simplifierNiveau({ traits, textes }, decisions)
       if (canevas.current && dessinerApercu(canevas.current, allege, boite, LARGEUR_APERCU)) {
-        setCompte({ gardes: allege.traits.length, total: traits.length, masses: allege.masses.length })
-      }
+        setCompte({ traits, gardes: allege.traits.length, total: traits.length, masses: allege.masses.length })
+      } else setCompte(null)
     }, DELAI_APERCU)
     return () => clearTimeout(minuteur)
   }, [traits, textes, boite, decisions])
 
-  // Le canevas affiché se libère à la fermeture (plafond de mémoire de l'iPad)
-  useEffect(() => {
-    const c = canevas.current
-    return () => { if (c) libererCanevas(c) }
+  // Le canevas se libère quand il quitte la page (plafond de mémoire de
+  // l'iPad) : la référence de rappel vise l'élément qui part, quel qu'il soit
+  const poserCanevas = useCallback((el) => {
+    canevas.current = el
+    return () => {
+      if (el) libererCanevas(el)
+      if (canevas.current === el) canevas.current = null
+    }
   }, [])
 
   if (!niveau) return <p style={{ margin: 0, fontSize: 12, color: '#9C9591' }}>Aucun étage coché : pas d’aperçu.</p>
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
       <div style={{ background: 'white', border: '0.5px solid rgba(0,0,0,0.12)', borderRadius: 2, padding: 4, minHeight: 60 }}>
-        <canvas ref={canevas} aria-label={`Aperçu de l’étage ${niveau.nom} allégé`}
-          style={{ display: compte ? 'block' : 'none', margin: '0 auto', maxWidth: '100%', maxHeight: 480, width: 'auto', height: 'auto' }} />
-        {!compte && <p style={{ margin: 0, padding: 16, fontSize: 12, color: '#9C9591', textAlign: 'center' }}>Aperçu en préparation…</p>}
+        <canvas ref={poserCanevas} aria-label={`Aperçu de l’étage ${niveau.nom} allégé`}
+          style={{ display: aJour ? 'block' : 'none', margin: '0 auto', maxWidth: '100%', maxHeight: 480, width: 'auto', height: 'auto' }} />
+        {!aJour && <p style={{ margin: 0, padding: 16, fontSize: 12, color: '#9C9591', textAlign: 'center' }}>Aperçu en préparation…</p>}
       </div>
-      {compte && (
+      {aJour && (
         <p style={{ margin: 0, fontSize: 11, color: '#5E5854' }}>
           « {niveau.nom} » : {compte.gardes.toLocaleString('fr-FR')} traits sur {compte.total.toLocaleString('fr-FR')}
           {compte.masses > 0 && ` · ${pluriel(compte.masses, 'masse')} de murs`}

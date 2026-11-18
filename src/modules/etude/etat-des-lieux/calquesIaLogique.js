@@ -9,7 +9,7 @@
 // le plan elle-même d'après ces choix. Fichier partagé avec la fonction
 // serveur api/edl-calques.js : imports avec l'extension `.js`.
 
-import { TRAITEMENTS, LONGUEUR_MOTIF } from './simplificationPlan.js'
+import { TRAITEMENTS, LONGUEUR_MOTIF, decisionsParDefaut } from './simplificationPlan.js'
 
 export const MODELE_CALQUES = 'claude-opus-5-5'
 // Au-delà, la demande dépasserait la limite de corps des fonctions Vercel
@@ -188,10 +188,12 @@ export function cadreDense(traits, { cellule = CELLULE_DENSE, cote = COTE_EXTRAI
 //
 // Un fichier préparé porte `decisions` (le traitement courant de chaque
 // calque) et `calques` : { etat: 'attente' | 'claude' | 'defaut', raisons,
-// touches, avertissement }. `touches` liste les calques changés à la main :
-// une réponse de Claude arrivée après coup ne les écrase pas.
+// touches, proposees, avertissement }. `touches` liste les calques changés à
+// la main : une réponse de Claude arrivée après coup ne les écrase pas.
+// `proposees` garde les choix de Claude : seuls ceux-là et ceux de la main
+// survivent à une nouvelle analyse (`reprendreDecisions`).
 
-export const CALQUES_EN_ATTENTE = { etat: 'attente', raisons: {}, touches: [] }
+export const CALQUES_EN_ATTENTE = { etat: 'attente', raisons: {}, touches: [], proposees: {} }
 
 /** Réponse de `proposerTraitements` appliquée au fichier tel qu'il est devenu entre-temps. */
 export function appliquerProposition(prep, proposition) {
@@ -204,8 +206,24 @@ export function appliquerProposition(prep, proposition) {
   return {
     ...prep,
     decisions: fusionnerDecisions(prep.decisions, proposees),
-    calques: { ...prep.calques, touches, etat: 'claude', raisons: proposition.raisons ?? {}, avertissement: null },
+    calques: { ...prep.calques, touches, etat: 'claude', raisons: proposition.raisons ?? {}, proposees: proposition.proposees ?? {}, avertissement: null },
   }
+}
+
+/**
+ * Décisions après une nouvelle analyse du fichier (changement d'unité : la
+ * longueur d'un trait court change). Un calque réglé à la main ou par Claude
+ * garde son traitement ; tous les autres reprennent les défauts de la
+ * nouvelle analyse, sans quoi les défauts calculés avec la mauvaise unité
+ * resteraient.
+ */
+export function reprendreDecisions(prep, analyse) {
+  const c = prep.calques ?? {}
+  const gardes = {}
+  for (const nom of [...Object.keys(c.proposees ?? {}), ...(c.touches ?? [])]) {
+    if (Object.hasOwn(prep.decisions ?? {}, nom)) gardes[nom] = prep.decisions[nom]
+  }
+  return fusionnerDecisions(decisionsParDefaut(analyse), gardes)
 }
 
 export function choisirTraitement(prep, nom, traitement) {

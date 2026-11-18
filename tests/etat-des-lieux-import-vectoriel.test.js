@@ -9,7 +9,7 @@ import {
   analyserNiveaux, parCalque, decisionsParDefaut, simplifierNiveau, encoderVecteurs, decoderVecteurs,
 } from '../src/modules/etude/etat-des-lieux/simplificationPlan.js'
 import {
-  CALQUES_EN_ATTENTE, appliquerProposition, choisirTraitement, valeurCalques, fusionnerDecisions,
+  CALQUES_EN_ATTENTE, appliquerProposition, choisirTraitement, valeurCalques, reprendreDecisions,
 } from '../src/modules/etude/etat-des-lieux/calquesIaLogique.js'
 import { colonnesVecteursManquantes, edlIndisponible } from '../src/modules/etude/etat-des-lieux/edlConstantes.js'
 
@@ -65,15 +65,29 @@ describe('analyse des calques par fichier', () => {
     assert.equal(m.get('B').length, 1)
   })
 
-  test('après un changement d’unité, un calque déjà réglé garde son traitement', () => {
-    const avant = { MURS: 'garder', TUILES: 'masquer', DISPARU: 'masquer' }
-    // Nouvelle analyse (traits 100 fois plus longs : plus aucun trait court)
-    const niveaux = fichier().map((n) => ({ ...n, traits: n.traits.map((t) => ({ ...t, pts: t.pts.map(([x, y]) => [x * 100, y * 100]) })) }))
-    const analyse = analyserNiveaux(niveaux)
-    const apres = fusionnerDecisions(decisionsParDefaut(analyse), avant)
-    assert.equal(apres.MURS, 'garder')
-    assert.equal(apres.TUILES, 'masquer')
-    assert.equal(apres.CONTOURS, 'garder')
+  // Traits 100 fois plus longs : le fichier lu avec la mauvaise unité n'a
+  // plus aucun trait court, tout est « garder »
+  const agrandi = () => fichier().map((n) => ({ ...n, traits: n.traits.map((t) => ({ ...t, pts: t.pts.map(([x, y]) => [x * 100, y * 100]) })) }))
+
+  test('mauvaise unité puis la bonne, sans Claude : les défauts sont recalculés', () => {
+    const analyseFausse = analyserNiveaux(agrandi())
+    const faux = { niveaux: agrandi(), analyse: analyseFausse, decisions: decisionsParDefaut(analyseFausse), calques: CALQUES_EN_ATTENTE }
+    assert.equal(faux.decisions.MURS, 'garder')
+    assert.equal(faux.decisions.TUILES, 'garder')
+    const juste = reprendreDecisions(faux, analyserNiveaux(fichier()))
+    assert.equal(juste.MURS, 'masse')
+    assert.equal(juste.TUILES, 'masquer-motif')
+    assert.equal(juste.CONTOURS, 'garder')
+  })
+
+  test('changement d’unité : les choix de Claude et de la main restent, le reste suit les défauts', () => {
+    let prep = appliquerProposition(preparation(), { proposees: { CONTOURS: 'masquer' }, raisons: {} })
+    prep = choisirTraitement(prep, 'TUILES', 'garder')
+    prep = { ...prep, decisions: { ...prep.decisions, DISPARU: 'masquer' } }
+    const apres = reprendreDecisions(prep, analyserNiveaux(agrandi()))
+    assert.equal(apres.CONTOURS, 'masquer', 'choix de Claude')
+    assert.equal(apres.TUILES, 'garder', 'choix à la main')
+    assert.equal(apres.MURS, 'garder', 'défaut de la nouvelle analyse (était « masse »)')
     assert.ok(!('DISPARU' in apres))
   })
 })
@@ -81,7 +95,7 @@ describe('analyse des calques par fichier', () => {
 describe('choix des calques dans la fenêtre', () => {
   test('la réponse de Claude remplace les défauts', () => {
     const prep = appliquerProposition(preparation(), {
-      decisions: {}, proposees: { TUILES: 'masquer', CONTOURS: 'garder' }, raisons: { TUILES: 'Couverture en tuiles.' },
+      proposees: { TUILES: 'masquer', CONTOURS: 'garder' }, raisons: { TUILES: 'Couverture en tuiles.' },
     })
     assert.equal(prep.decisions.TUILES, 'masquer')
     assert.equal(prep.decisions.MURS, 'masse')
@@ -105,7 +119,7 @@ describe('choix des calques dans la fenêtre', () => {
 
   test('Claude indisponible : décisions inchangées, avertissement gardé', () => {
     const depart = choisirTraitement(preparation(), 'CONTOURS', 'masquer')
-    const prep = appliquerProposition(depart, { decisions: {}, proposees: {}, raisons: {}, avertissement: 'Pas de réseau.' })
+    const prep = appliquerProposition(depart, { proposees: {}, raisons: {}, avertissement: 'Pas de réseau.' })
     assert.equal(prep.decisions, depart.decisions)
     assert.equal(prep.calques.etat, 'defaut')
     assert.equal(prep.calques.avertissement, 'Pas de réseau.')
@@ -162,6 +176,8 @@ describe('repli sans la migration 081', () => {
     assert.ok(!colonnesVecteursManquantes({ code: '23505', message: 'duplicate key value' }))
     assert.ok(!colonnesVecteursManquantes({ code: '42501', message: 'new row violates row-level security policy' }))
     assert.ok(!colonnesVecteursManquantes(null))
+    assert.ok(!colonnesVecteursManquantes({ code: '42703', message: 'column "source_page" of relation "edl_niveaux" does not exist' }), 'autre colonne')
+    assert.ok(!colonnesVecteursManquantes({ code: 'PGRST204', message: "Could not find the 'echelle' column of 'edl_niveaux' in the schema cache" }), 'autre colonne')
     assert.ok(!edlIndisponible({ code: '42703', message: 'column "calques" does not exist' }))
   })
 })

@@ -71,6 +71,7 @@ export async function imageIaDepuisUrl(url) {
 // Contour des masses (murs pochés) : nettement plus épais que les traits,
 // comme un mur coupé sur un plan imprimé
 const EPAISSEUR_MASSE = 2.5
+const SEGMENTS_PAR_TRACE = 5000
 
 function tracerAnneaux(ctx, masse, c) {
   for (const anneau of masse.anneaux) {
@@ -105,8 +106,9 @@ function peindre(ctx, niveau, c) {
     ctx.stroke()
   }
   ctx.lineWidth = epaisseur
-  // Un seul chemin pour tout l'étage : des dizaines de milliers de traits se
-  // dessinent en une fois
+  // Traits tracés par paquets : un étage qui garde des centaines de milliers
+  // de traits en un seul chemin fige le navigateur au moment du tracé
+  let segments = 0
   ctx.beginPath()
   for (const t of niveau.traits) {
     t.pts.forEach((p, i) => {
@@ -115,8 +117,14 @@ function peindre(ctx, niveau, c) {
       else ctx.lineTo(x, y)
     })
     if (t.ferme) ctx.closePath()
+    segments += t.pts.length
+    if (segments >= SEGMENTS_PAR_TRACE) {
+      ctx.stroke()
+      ctx.beginPath()
+      segments = 0
+    }
   }
-  ctx.stroke()
+  if (segments) ctx.stroke()
   ctx.fillStyle = '#1F1B17'
   for (const t of niveau.textes) {
     const h = t.hauteur * c.pxParMetre

@@ -11,6 +11,10 @@ export const edlIndisponible = (error) =>
 // Base sans la migration 081 : la colonne manque (42703 de PostgreSQL, ou
 // PGRST204 quand le cache de PostgREST ne la connaît pas). L'étage s'enregistre
 // alors sans son fichier vectoriel et s'affiche par son image, comme avant.
-export const colonnesVecteursManquantes = (error) =>
-  error?.code === '42703' || error?.code === 'PGRST204' ||
-  /(chemin_vecteurs|calques).*(does not exist|schema cache)|column .*(chemin_vecteurs|calques)/i.test(error?.message ?? '')
+// Le nom de la colonne est exigé : une autre colonne manquante ne doit pas
+// faire perdre le fichier vectoriel en silence.
+export function colonnesVecteursManquantes(error) {
+  const texte = `${error?.message ?? ''} ${error?.details ?? ''} ${error?.hint ?? ''}`
+  if (!/chemin_vecteurs|calques/i.test(texte)) return false
+  return error?.code === '42703' || error?.code === 'PGRST204' || /does not exist|schema cache/i.test(texte)
+}

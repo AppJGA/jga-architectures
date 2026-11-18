@@ -10,8 +10,9 @@ import { decoderDxf, lireDxf, lireTablesDxf } from '../src/modules/etude/etat-de
 import { pointDansPolygone } from '../src/modules/etude/etat-des-lieux/geometrieEdl.js'
 import { primitivesPlacees } from '../src/modules/etude/etat-des-lieux/export/symbolesEdl.js'
 import { encoderCp1252, octetCp1252 } from '../src/modules/etude/etat-des-lieux/export/encodageDxf.js'
+import { numeroterPhotos } from '../src/modules/etude/etat-des-lieux/export/numerotationEdl.js'
 import {
-  CALQUE_A_VALIDER, couperLignes, elementsAExporter, encoderDxf, genererDxfEdl, nomBloc, nomCalqueValide,
+  CALQUE_A_VALIDER, couperLignes, echapperPourcent, elementsAExporter, encoderDxf, genererDxfEdl, nomBloc, nomCalqueValide,
   pointInterieur, texteHsp, texteSurface, uniteDxf,
 } from '../src/modules/etude/etat-des-lieux/export/exportDxfEdl.js'
 
@@ -19,6 +20,19 @@ const proche = (a, b, ecart = 1e-6) => assert.ok(Math.abs(a - b) < ecart, `${a} 
 const prochePoint = (p, q, ecart = 1e-6) => { proche(p[0], q[0], ecart); proche(p[1], q[1], ecart) }
 
 // Relecture complète : octets Windows-1252 → texte → lecteur
+// Entités brutes d'un type (groupes code → valeur), pour lire ce que le
+// lecteur ne rend pas (rotation d'un INSERT)
+function entitesBrutes(texte, type) {
+  const lignes = texte.split('\r\n')
+  const entites = []
+  let courante = null
+  for (let i = 0; i + 1 < lignes.length; i += 2) {
+    const code = Number(lignes[i])
+    if (code === 0) { courante = lignes[i + 1] === type ? new Map() : null; if (courante) entites.push(courante) } else if (courante && !courante.has(code)) courante.set(code, lignes[i + 1])
+  }
+  return entites
+}
+
 const relire = (texte) => {
   const decode = decoderDxf(encoderDxf(texte))
   return { ...lireDxf(decode), ...lireTablesDxf(decode), brut: decode }
@@ -212,7 +226,8 @@ describe('fichier DXF', () => {
     const point = { id: 'p', numero: 9, x: 12, y: 12, type: 'radiateur', piece_id: piece.id }
     const elementsExport = elementsAExporter({ pieces: [piece], points: [point], elements: [] })
     const l = relire(genererDxfEdl({ pieces: [piece], elementsExport, unitesParMetre: 1 }))
-    assert.match(l.brut, /INSERT\r\n {2}8\r\nEDL-Chauffage\r\n {2}2\r\nEDL_RADIATEUR\r\n(?:.*\r\n){12} 50\r\n30\.0\r\n/)
+    const [insertion] = entitesBrutes(l.brut, 'INSERT')
+    assert.deepEqual([insertion.get(8), insertion.get(2), Number(insertion.get(50))], ['EDL-Chauffage', 'EDL_RADIATEUR', 30])
     const trait = l.traits.find((t) => t.bloc === 'EDL_RADIATEUR')
     const attendu = primitivesPlacees('radiateur', { x: 12, y: 12, angle: 30 }).find((p) => p.polyligne)
     trait.pts.forEach((p, i) => prochePoint(p, attendu.polyligne[i]))
@@ -332,5 +347,92 @@ describe('fichier DXF', () => {
     const textes = textesDe(l, 'EDL-Désordres')
     assert.equal(textes[0], 'P12 · Tache d’humidité')
     assert.ok(textes.every((t) => t.length <= 60))
+  })
+  test('plusieurs éléments sur un point : symboles côte à côte, libellés empilés', () => {
+    const piece = { ...sejour, contour: rectangle(0, 0, 5, 4, 20) }
+    const p3 = { id: 'pt-3', numero: 3, x: 2, y: 0.1, type: 'fenetre', piece_id: piece.id }
+    const els = [
+      { id: 'f', point_id: 'pt-3', piece_id: piece.id, calque: 'menuiseries', type: 'fenetre', libelle: 'Fenêtre bois double vitrage', cotes: 'allège 90, largeur 120', a_valider: false },
+      { id: 'v', point_id: 'pt-3', piece_id: piece.id, calque: 'occultations', type: 'volet', libelle: 'Volet roulant', cotes: '', a_valider: false },
+      { id: 'g', point_id: 'pt-3', piece_id: piece.id, calque: 'menuiseries', type: 'fenetre', libelle: 'Grille de défense', cotes: null, a_valider: false },
+    ]
+    const elementsExport = elementsAExporter({ pieces: [piece], points: [p3], elements: els })
+    const l = relire(genererDxfEdl({ pieces: [piece], elementsExport, points: [p3], photos: [{ point_id: 'pt-3' }], unitesParMetre: 1 }))
+    // Aucun texte posé sur un autre
+    const positions = l.textes.map((t) => t.pos.map((v) => v.toFixed(4)).join(' '))
+    assert.equal(new Set(positions).size, positions.length)
+    // Un symbole par type, deux types : deux insertions, la seconde décalée le long de la pièce
+    const insertions = entitesBrutes(l.brut, 'INSERT')
+    assert.deepEqual(insertions.map((i) => i.get(2)), ['EDL_FENETRE', 'EDL_VOLET'])
+    const [a, b] = insertions.map((i) => [Number(i.get(10)), Number(i.get(20))])
+    prochePoint(a, [2, 0.1])
+    const r = (20 * Math.PI) / 180
+    assert.ok((b[0] - a[0]) * Math.cos(r) + (b[1] - a[1]) * Math.sin(r) > 0.1)
+    proche(-(b[0] - a[0]) * Math.sin(r) + (b[1] - a[1]) * Math.cos(r), 0)
+    // Libellés et cotes dans l'ordre, une ligne sous l'autre (axe de la pièce)
+    const pile = ['P3 · Fenêtre bois double vitrage', 'allège 90, largeur 120', 'P3 · Volet roulant', 'P3 · Grille de défense']
+      .map((t) => l.textes.find((x) => x.texte === t))
+    const v = (t) => -(t.pos[0] - 2) * Math.sin(r) + (t.pos[1] - 0.1) * Math.cos(r)
+    const uDe = (t) => (t.pos[0] - 2) * Math.cos(r) + (t.pos[1] - 0.1) * Math.sin(r)
+    pile.slice(1).forEach((t, i) => proche(v(pile[i]) - v(t), 0.12 * 1.5))
+    pile.forEach((t) => proche(uDe(t), uDe(pile[0])))
+    assert.equal(textesDe(l, 'EDL-Photos').length, 1)
+  })
+
+  test('« %% » échappé dans les TEXT, relu tel qu’écrit', () => {
+    assert.equal(echapperPourcent('100%%d'), '100%%%%%%d')
+    assert.equal(echapperPourcent('Pente 2 %'), 'Pente 2 %')
+    const elementsExport = [{ id: 'x', pieceId: 'pc-1', pointId: 'p', x: 2, y: 2, calque: 'desordres', type: null, libelle: 'Humidité 100%%d, pente 2 %', cotes: null, numero: 1, aValider: false }]
+    const texte = genererDxfEdl({ pieces: [sejour], elementsExport, unitesParMetre: 1 })
+    assert.ok(texte.includes('\r\nP1 · Humidité 100%%%%%%d, pente 2 %\r\n'))
+    assert.deepEqual(textesDe(relire(texte), 'EDL-Désordres'), ['P1 · Humidité 100%%d, pente 2 %'])
+  })
+
+  test('photos numérotées pour toute l’affaire (numeroterPhotos) : « Ph n » les reprend', () => {
+    const photos = numeroterPhotos(
+      [{ id: 'f1', point_id: 'pt-5', prise_le: '2026-11-10T10:00:00Z' }, { id: 'f2', point_id: 'pt-1', prise_le: '2026-11-10T10:05:00Z' }, { id: 'f3', point_id: 'pt-1', prise_le: '2026-11-10T09:00:00Z' }],
+      points.map((p) => ({ ...p, niveau_id: 'n1' })),
+      { niveaux: [{ id: 'n1', ordre: 0 }], pieces: [{ id: 'pc-1', ordre: 0 }] },
+    )
+    // On n'exporte que deux des trois photos, dans le désordre : les numéros restent ceux de l'affaire
+    const deux = [photos.find((p) => p.id === 'f1'), photos.find((p) => p.id === 'f2')]
+    const elementsExport = elementsAExporter({ pieces: [sejour], points, elements })
+    const l = relire(genererDxfEdl({ pieces: [sejour], elementsExport, points, photos: deux, unitesParMetre: 1 }))
+    assert.deepEqual(textesDe(l, 'EDL-Photos').sort(), [`Ph ${deux[0].numero}`, `Ph ${deux[1].numero}`].sort())
+    assert.deepEqual(photos.map((p) => [p.id, p.numero]), [['f3', 1], ['f2', 2], ['f1', 3]])
+    assert.ok(textesDe(l, 'EDL-Photos').includes('Ph 2') && textesDe(l, 'EDL-Photos').includes('Ph 3'))
+  })
+
+  test('en millimètres : $INSUNITS 4, tout × 1000', () => {
+    const elementsExport = elementsAExporter({ pieces: [sejour], points, elements })
+    const l = relire(genererDxfEdl({ pieces: [sejour], elementsExport, unitesParMetre: 1000 }))
+    assert.equal(l.unites, 4)
+    const contour = l.traits.find((t) => t.calque === 'EDL-Pièces' && !t.bloc)
+    assert.deepEqual(contour.pts, sejour.contour.map(([x, y]) => [x * 1000, y * 1000]))
+    const radiateur = l.traits.find((t) => t.bloc === 'EDL_RADIATEUR')
+    const attendu = primitivesPlacees('radiateur', { x: 1, y: 1, angle: 0 }).find((p) => p.polyligne)
+    radiateur.pts.forEach((p, i) => prochePoint(p, [attendu.polyligne[i][0] * 1000, attendu.polyligne[i][1] * 1000], 1e-3))
+    proche(l.textes.find((t) => t.texte === 'Séjour (1.04)').hauteur, 200)
+    proche(l.textes.find((t) => t.texte === 'P1 · Radiateur fonte sous la fenêtre').hauteur, 120)
+  })
+
+  test('coordonnées Lambert 93 (grands nombres) : position et forme gardées, en m comme en mm', () => {
+    const X = 651234.567, Y = 6862345.678
+    const piece = { ...sejour, contour: rectangle(X, Y, 5, 4, 15) }
+    const point = { id: 'p', numero: 4, x: X + 2, y: Y + 1.5, type: 'lavabo', piece_id: piece.id }
+    const elementsExport = elementsAExporter({ pieces: [piece], points: [point], elements: [] })
+    for (const u of [1, 1000]) {
+      const l = relire(genererDxfEdl({ pieces: [piece], elementsExport, unitesParMetre: u }))
+      const contour = l.traits.find((t) => t.calque === 'EDL-Pièces' && !t.bloc)
+      contour.pts.forEach((p, i) => prochePoint(p, [piece.contour[i][0] * u, piece.contour[i][1] * u], 1e-5 * u))
+      const lavabo = l.traits.find((t) => t.bloc === 'EDL_LAVABO' && t.pts.length > 4)
+      const attendu = primitivesPlacees('lavabo', { x: X + 2, y: Y + 1.5, angle: 15 }).find((p) => p.polyligne && p.polyligne.length === lavabo.pts.length)
+      // Au millimètre près : la forme du symbole ne se déforme pas loin de l'origine
+      lavabo.pts.forEach((p, i) => prochePoint(p, [attendu.polyligne[i][0] * u, attendu.polyligne[i][1] * u], 1e-3 * u))
+      const xMin = Number(l.brut.match(/\$EXTMIN\r\n 10\r\n([^\r]+)\r\n/)[1])
+      proche(xMin, Math.min(...piece.contour.map((c) => c[0])) * u, 1e-5 * u)
+      const libelle = l.textes.find((t) => t.texte === 'P4 · Lavabo')
+      assert.ok(pointDansPolygone([libelle.pos[0] / u, libelle.pos[1] / u], piece.contour))
+    }
   })
 })

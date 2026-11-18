@@ -114,7 +114,10 @@ function pointsArc(e, cercle) {
 }
 
 const decoderUnicode = (s) => s.replace(/\\U\+([0-9A-Fa-f]{4})/g, (_, h) => String.fromCharCode(parseInt(h, 16)))
-const codesPourcent = (s) => s.replace(/%%[cC]/g, 'Ø').replace(/%%[dD]/g, '°').replace(/%%[pP]/g, '±').replace(/%%[uUoO]/g, '')
+// Lu de gauche à droite en une passe : « %%% » est un « % » littéral, et
+// « %%%%%%d » (deux « % » échappés puis « d ») ne devient pas « %° »
+const CODES_POURCENT = { '%': '%', c: 'Ø', d: '°', p: '±', u: '', o: '' }
+const codesPourcent = (s) => s.replace(/%%([%cCdDpPuUoO])/g, (_, c) => CODES_POURCENT[c.toLowerCase()])
 
 export function nettoyerMtext(brut) {
   return codesPourcent(decoderUnicode(brut))

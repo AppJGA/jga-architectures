@@ -49,6 +49,8 @@ const INTERLIGNE = 1.5
 const ECART_LIBELLE = 0.08
 const RAYON_PHOTO = 0.06
 const RAYON_SANS_SYMBOLE = 0.05
+// Entre deux symboles de types différents posés sur le même point
+const ECART_SYMBOLES = 0.05
 // Au-delà, une finition ou un libellé passe à la ligne : un « Murs : … » de
 // 500 caractères traversait sinon tout l'étage
 const CARACTERES_PAR_LIGNE = 60
@@ -171,6 +173,14 @@ export function texteDxf(brut) {
   return t.length > LONGUEUR_TEXTE_MAX ? `${t.slice(0, LONGUEUR_TEXTE_MAX - 1)}…` : t
 }
 
+/**
+ * « %% » ouvre un code dans un TEXT (%%d = °, %%c = Ø…) : un « 100%%d »
+ * dicté s'afficherait « 100° ». Dans une suite d'au moins deux « % »,
+ * chacun s'écrit « %%% » (le pourcent littéral du DXF) ; un « % » isolé
+ * n'est pas un code et reste tel quel, lisible par tout lecteur.
+ */
+export const echapperPourcent = (texte) => String(texte).replace(/%{2,}/g, (suite) => '%%%'.repeat(suite.length))
+
 /** Coupe un texte en lignes d'au plus `max` caractères, aux espaces. */
 export function couperLignes(brut, max = CARACTERES_PAR_LIGNE) {
   const lignes = []
@@ -243,7 +253,7 @@ function ecrivain() {
     // Aligné, le point qui compte est 11/21 ; 10/20 reçoit le même, AutoCAD
     // le recalcule à l'ouverture.
     texte(calque, pos, hauteur, valeur, { rotation = 0, h = 0, v = 0 } = {}) {
-      g(0, 'TEXT'); g(8, calque); point(10, pos); g(40, nb(hauteur)); g(1, valeur)
+      g(0, 'TEXT'); g(8, calque); point(10, pos); g(40, nb(hauteur)); g(1, echapperPourcent(valeur))
       if (Math.abs(rotation) > 1e-9) g(50, nb(rotation))
       if (h) g(72, entier(h))
       if (h || v) point(11, pos)
@@ -354,6 +364,10 @@ export function genererDxfEdl({
   const NOM_PHOTOS = calqueEdl('photos').nom
 
   // ── Plan existant, en dessous de tout ──
+  // Limite connue : le fichier vectoriel allégé ne garde des textes que leur
+  // point, leur hauteur et leur contenu — ni rotation ni alignement. Dans
+  // `…-avec-plan.dxf`, les textes du plan existant sont donc écrits droits,
+  // calés à gauche sur ce point ; le DXF d'origine reste la référence.
   const calquesPlan = new Map()
   if (plan) {
     const pris = new Set([...CALQUES.map((c) => c.nom), CALQUE_A_VALIDER].map((n) => n.toUpperCase()))
@@ -441,37 +455,70 @@ export function genererDxfEdl({
     }
   }
 
-  // ── Éléments placés : symbole, libellé, cotes ──
-  const boites = new Map()
+  // ── Éléments placés : symboles, libellés, cotes ──
+  // Plusieurs éléments sur un même point (« un élément par chose dite » :
+  // une fenêtre et son volet sur P3) : un symbole par type, côte à côte
+  // le long de la pièce, et leurs libellés empilés à droite du dernier.
+  const groupes = new Map()
   for (const e of elementsExport) {
     if (e.x === null || e.x === undefined || e.y === null || e.y === undefined) continue
-    const angle = angleDe(e.pieceId)
-    const place = repere([Number(e.x), Number(e.y)], angle)
-    const calque = nomCalque(e.calque, e.aValider)
-    let boite
-    if (e.type && SYMBOLES[e.type]) {
-      typesUtilises.add(e.type)
-      boite = boiteSymbole(e.type)
-      // L'étendue suit la boîte tournée du symbole, pas seulement son point
-      for (const coin of [[boite.xmin, boite.ymin], [boite.xmax, boite.ymax], [boite.xmin, boite.ymax], [boite.xmax, boite.ymin]]) enUnites(place(coin))
-      w.insert(calque, nomBloc(e.type), enUnites(place([0, 0])), angle)
-    } else {
-      // Sans type (désordre non classé…) : un petit rond suffit à le situer
-      boite = { xmin: -RAYON_SANS_SYMBOLE, ymin: -RAYON_SANS_SYMBOLE, xmax: RAYON_SANS_SYMBOLE, ymax: RAYON_SANS_SYMBOLE }
-      w.cercle(calque, enUnites(place([0, 0])), RAYON_SANS_SYMBOLE * u)
-    }
-    if (e.pointId) boites.set(e.pointId, { boite, angle })
+    const cle = e.pointId ?? `${Number(e.x)} ${Number(e.y)}`
+    if (!groupes.has(cle)) groupes.set(cle, [])
+    groupes.get(cle).push(e)
+  }
+  const boites = new Map()
+  for (const [cle, groupe] of groupes) {
+    const premier = groupe[0]
+    const angle = angleDe(premier.pieceId)
+    const place = repere([Number(premier.x), Number(premier.y)], angle)
 
-    const libelle = texteDxf(e.libelle) || typeEdl(e.type)?.libelle || calqueEdl(e.calque).libelle
-    const lignes = [
-      ...couperLignes(e.numero !== null && e.numero !== undefined ? `P${e.numero} · ${libelle}` : libelle).map((t) => ({ t, calque })),
-      ...couperLignes(e.cotes).map((t) => ({ t, calque: utiliser(e.aValider ? CALQUE_A_VALIDER : NOM_COTES) })),
-    ]
+    // Un emplacement par type ; le symbole va sur le calque de l'élément
+    // validé s'il y en a un, sur « À valider » si tous sont des propositions
+    const emplacements = []
+    for (const e of groupe) {
+      const type = e.type && SYMBOLES[e.type] ? e.type : null
+      const deja = emplacements.find((em) => em.type === type)
+      if (deja) { if (!e.aValider && deja.element.aValider) deja.element = e; continue }
+      emplacements.push({ type, element: e })
+    }
+    const boite = { xmin: Infinity, ymin: Infinity, xmax: -Infinity, ymax: -Infinity }
+    let bord = null
+    for (const em of emplacements) {
+      const b = em.type
+        ? boiteSymbole(em.type)
+        : { xmin: -RAYON_SANS_SYMBOLE, ymin: -RAYON_SANS_SYMBOLE, xmax: RAYON_SANS_SYMBOLE, ymax: RAYON_SANS_SYMBOLE }
+      const dx = bord === null ? 0 : bord + ECART_SYMBOLES - b.xmin
+      bord = dx + b.xmax
+      boite.xmin = Math.min(boite.xmin, dx + b.xmin)
+      boite.xmax = Math.max(boite.xmax, dx + b.xmax)
+      boite.ymin = Math.min(boite.ymin, b.ymin)
+      boite.ymax = Math.max(boite.ymax, b.ymax)
+      const calque = nomCalque(em.element.calque, em.element.aValider)
+      if (em.type) {
+        typesUtilises.add(em.type)
+        // L'étendue suit la boîte tournée du symbole, pas seulement son point
+        for (const coin of [[b.xmin, b.ymin], [b.xmax, b.ymax], [b.xmin, b.ymax], [b.xmax, b.ymin]]) enUnites(place([dx + coin[0], coin[1]]))
+        w.insert(calque, nomBloc(em.type), enUnites(place([dx, 0])), angle)
+      } else {
+        // Sans type (désordre non classé…) : un petit rond suffit à le situer
+        w.cercle(calque, enUnites(place([dx, 0])), RAYON_SANS_SYMBOLE * u)
+      }
+    }
+    boites.set(cle, { boite, angle })
+
     const x = boite.xmax + ECART_LIBELLE
     let y = (boite.ymin + boite.ymax) / 2
-    for (const l of lignes) {
-      w.texte(l.calque, enUnites(place([x, y])), HAUTEUR_TEXTE * u, l.t, { rotation: angle, v: 2 })
-      y -= HAUTEUR_TEXTE * INTERLIGNE
+    for (const e of groupe) {
+      const calque = nomCalque(e.calque, e.aValider)
+      const libelle = texteDxf(e.libelle) || typeEdl(e.type)?.libelle || calqueEdl(e.calque).libelle
+      const lignes = [
+        ...couperLignes(e.numero !== null && e.numero !== undefined ? `P${e.numero} · ${libelle}` : libelle).map((t) => ({ t, calque })),
+        ...couperLignes(e.cotes).map((t) => ({ t, calque: utiliser(e.aValider ? CALQUE_A_VALIDER : NOM_COTES) })),
+      ]
+      for (const l of lignes) {
+        w.texte(l.calque, enUnites(place([x, y])), HAUTEUR_TEXTE * u, l.t, { rotation: angle, v: 2 })
+        y -= HAUTEUR_TEXTE * INTERLIGNE
+      }
     }
   }
 

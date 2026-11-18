@@ -152,9 +152,22 @@ export async function annulerImport({ niveauIds, chemins, etatCreeId }) {
 
 // Remplacer les plans : tout l'état des lieux part (étages et pièces par
 // cascade), puis ses fichiers
+// Tout l'état des lieux, visites comprises (cascade : points, photos,
+// journal). Les chemins des photos sont lus avant : après, plus rien ne les
+// désigne ; un fichier resté malgré tout est rattrapé par « Nettoyer le stockage ».
 export async function supprimerEtat(affaireId, niveaux) {
+  const { data: photos } = await supabase.from('edl_photos').select('chemin, chemin_miniature').eq('affaire_id', affaireId)
   const { data, error } = await supabase.from('edl_etats').delete().eq('affaire_id', affaireId).select('id')
-  if (error) throw error
+  if (error) {
+    // Base sans la 080 : le déclencheur de la 079 refuse encore après une visite
+    if (error.code === 'P0001' && /visite/i.test(error.message ?? '')) {
+      throw new Error('Une visite a déjà eu lieu : pour remplacer les plans, la migration 080 doit d’abord être passée dans Supabase.')
+    }
+    throw error
+  }
   if (!data?.length) throw new Error(LECTURE_SEULE)
-  await retirer([...new Set(niveaux.flatMap((n) => [n.chemin, n.chemin_apercu, n.chemin_source]))])
+  await retirer([...new Set([
+    ...niveaux.flatMap((n) => [n.chemin, n.chemin_apercu, n.chemin_source]),
+    ...(photos ?? []).flatMap((p) => [p.chemin, p.chemin_miniature]),
+  ])])
 }

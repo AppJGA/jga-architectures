@@ -83,3 +83,23 @@ export function instantaneEtOperations(affaireId) {
     tx.onabort = () => reject(tx.error)
   }))
 }
+
+/**
+ * Tout ce que l'appareil garde de l'état des lieux d'une affaire (instantané,
+ * gestes en attente, photos de ces gestes), effacé d'un seul tenant : après
+ * « Remplacer les plans », ces gestes visent des lignes qui n'existent plus.
+ */
+export function oublierAffaire(affaireId, idsPhotos) {
+  if (!disponible()) return Promise.resolve()
+  return ouvrir().then((db) => new Promise((resolve, reject) => {
+    const tx = db.transaction([MAGASINS_EDL.instantanes, MAGASINS_EDL.operations, MAGASINS_EDL.fichiers], 'readwrite')
+    tx.objectStore(MAGASINS_EDL.instantanes).delete(affaireId)
+    const ops = tx.objectStore(MAGASINS_EDL.operations)
+    const cles = ops.index('affaireId').getAllKeys(affaireId)
+    cles.onsuccess = () => { for (const cle of cles.result ?? []) ops.delete(cle) }
+    for (const id of idsPhotos ?? []) tx.objectStore(MAGASINS_EDL.fichiers).delete(id)
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error)
+    tx.onabort = () => reject(tx.error)
+  }))
+}

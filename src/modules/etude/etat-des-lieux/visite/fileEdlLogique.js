@@ -123,3 +123,13 @@ export function operationInverse(geste, points) {
       return null
   }
 }
+
+/** Identifiants des photos gardées sur l'appareil par ces gestes (magasin `fichiers`). */
+export function photosDesOperations(operations) {
+  const ids = new Set()
+  for (const op of operations ?? []) {
+    if (op.type === TYPES_EDL.photoAjouter && op.charge?.photo?.id) ids.add(op.charge.photo.id)
+    if (op.type === TYPES_EDL.pointPoser) for (const ph of op.charge?.photos ?? []) if (ph?.id) ids.add(ph.id)
+  }
+  return [...ids]
+}

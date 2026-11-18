@@ -7,8 +7,8 @@
 // préparation de l'instantané passe sous le même verrou : une lecture faite
 // pendant un envoi ne peut pas effacer de l'écran ce qui vient de partir.
 
-import { MAGASINS_EDL, lire, ecrire, effacer, tout, operationsDeLAffaire, disponible } from './baseEdl'
-import { aEnvoyer, ESSAIS_MAX, appliquerOperationEdl } from './fileEdlLogique'
+import { MAGASINS_EDL, lire, ecrire, effacer, tout, operationsDeLAffaire, disponible, oublierAffaire } from './baseEdl'
+import { aEnvoyer, ESSAIS_MAX, appliquerOperationEdl, photosDesOperations } from './fileEdlLogique'
 import { envoyerOperationEdl } from './envoiEdl'
 import { erreurReseau } from '../../../chantier/comptes-rendus/horsLigne/envoi'
 
@@ -72,4 +72,16 @@ export async function envoyerToutEdl() {
     if (r.coupure) break
   }
   return { envoyees }
+}
+
+/**
+ * Après « Remplacer les plans » : l'appareil oublie l'état des lieux de
+ * l'affaire (instantané, gestes en attente et leurs photos). Sous le verrou
+ * de l'envoi, pour qu'aucun de ces gestes ne parte pendant l'effacement.
+ */
+export function oublierEdlLocal(affaireId) {
+  return sousVerrouEdl(async () => {
+    const ops = await operationsDeLAffaire(affaireId)
+    await oublierAffaire(affaireId, photosDesOperations(ops))
+  }).finally(signalerFileEdl)
 }

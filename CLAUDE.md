@@ -191,7 +191,7 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
   Toujours lire par `referencesCadastre` (repli sur les anciennes colonnes) ;
   l'enregistrement (`colonnesCadastre`) tient aussi à jour `cadastre_section`
   / `cadastre_parcelle` (première ligne) et `cadastre_superficie` (total).
-- **Base** : `supabase/migrations/`, numérotées, 79 fichiers, **passées à la
+- **Base** : `supabase/migrations/`, numérotées, 80 fichiers, **passées à la
   main** dans le SQL Editor de Supabase : un code qui dépend d'une nouvelle
   colonne doit tolérer son absence tant que la migration n'est pas faite.
   **Toute table créée depuis le 2026-10-30 doit recevoir ses droits d'API
@@ -776,9 +776,8 @@ lot 1 : `docs/superpowers/plans/2026-11-17-etat-des-lieux-lot1-preparer.md`.
   (contour, surface et HP lues, origine dxf / ia / main, `a_verifier`,
   `fiche` pour le lot 3). Stockage privé `edl` (`<affaire>/edl/…`), compté
   par `fichiers_orphelins()` et la gestion de l'application. « Remplacer les
-  plans » supprime tout l'état des lieux — **tant qu'aucune visite n'a eu
-  lieu** : ensuite (ou tant que la visite n'est pas lue) le bouton
-  disparaît et la base refuse (079, `edl_etats_garde_visites`). **La règle restrictive de stockage
+  plans » supprime tout l'état des lieux, visites comprises (voir plus
+  bas). **La règle restrictive de stockage
   de la migration 060 est remplacée en bloc** : toute future migration qui
   ajoute un bucket doit répéter la liste complète, `edl` compris (sinon ce
   bucket s'ouvre à tout compte agence).
@@ -859,10 +858,16 @@ lot 1 : `docs/superpowers/plans/2026-11-17-etat-des-lieux-lot1-preparer.md`.
   envoyées en `upsert`. Un point supprimé emporte ses lignes de photos
   mais **pas leurs fichiers** (« Annuler » le rend intact) :
   `fichiers_orphelins()` (079) les rattrape.
-- **Plus de « Remplacer les plans » après une visite** : bouton retiré (et
-  aussi tant que la visite n'est pas lue), et déclencheur
-  `edl_etats_garde_visites` (la cascade de suppression d'affaire passe,
-  `pg_trigger_depth() > 1`).
+- **« Remplacer les plans » toujours proposé, même après une visite**
+  (demande de l'agence, 2026-11-18 ; la 079 l'interdisait, la **migration
+  080** retire `edl_etats_garde_visites`) : la fenêtre de confirmation dit
+  en rouge ce qui sera perdu (`perteRemplacement` : visites, points,
+  photos, gestes pas encore envoyés). Tout part par cascade depuis
+  `edl_etats` ; `supprimerEtat` lit d'abord les chemins des photos pour
+  retirer leurs fichiers, puis l'appareil oublie l'affaire
+  (`oublierEdlLocal`, sous le verrou de l'envoi : instantané, file et
+  photos locales). Sans la 080, la base refuse (P0001) et l'écran dit de
+  passer la migration.
 
 ## To-do list (`src/modules/etude/todo/`)
 

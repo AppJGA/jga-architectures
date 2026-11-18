@@ -340,3 +340,28 @@ describe('geste en attente dont la pièce a été supprimée au bureau', () => {
     assert.equal(essais.length, 1)
   })
 })
+
+describe('remplacer les plans après une visite', async () => {
+  const { perteRemplacement } = await import('../src/modules/etude/etat-des-lieux/visite/visiteLogique.js')
+  const { photosDesOperations, operationEdl, TYPES_EDL } = await import('../src/modules/etude/etat-des-lieux/visite/fileEdlLogique.js')
+
+  test('sans visite ni geste en attente : rien de plus à dire', () => {
+    assert.equal(perteRemplacement({}), null)
+  })
+  test('la fenêtre dit ce qui a été saisi sur place', () => {
+    assert.equal(
+      perteRemplacement({ visites: 1, points: 2, photos: 0 }),
+      'L’état des lieux déjà réalisé sera supprimé définitivement : 1 visite, 2 points, 0 photo, avec leur journal.',
+    )
+    assert.match(perteRemplacement({ visites: 1, points: 1, photos: 3, enAttente: 4 }), /Les 4 gestes pas encore envoyés depuis cet appareil seront aussi abandonnés\.$/)
+  })
+  test('photos gardées sur l’appareil par les gestes en attente', () => {
+    const o = { affaireId: 'a' }
+    const ops = [
+      operationEdl(TYPES_EDL.photoAjouter, { photo: { id: 'p1' } }, o),
+      operationEdl(TYPES_EDL.pointPoser, { point: { id: 'x' }, photos: [{ id: 'p2' }, { id: 'p1' }] }, o),
+      operationEdl(TYPES_EDL.evenement, { evenement: { id: 'e' } }, o),
+    ]
+    assert.deepEqual(photosDesOperations(ops).sort(), ['p1', 'p2'])
+  })
+})

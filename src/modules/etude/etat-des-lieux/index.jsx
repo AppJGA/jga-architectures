@@ -10,7 +10,8 @@ import { ImportEdl } from './ImportEdl'
 import { EditeurPieces } from './EditeurPieces'
 import { useVisiteEdl } from './visite/useVisiteEdl'
 import { VisiteEdl } from './visite/VisiteEdl'
-import { visiteEnCours } from './visite/visiteLogique'
+import { visiteEnCours, perteRemplacement } from './visite/visiteLogique'
+import { oublierEdlLocal } from './visite/synchroEdl'
 
 // ─── État des lieux d'un bâtiment existant ───────────────────────────────────
 //
@@ -22,8 +23,9 @@ import { visiteEnCours } from './visite/visiteLogique'
 // fenêtres à liseré de la couleur de la phase).
 // Lot 2 : « Démarrer la visite » ouvre l'écran plein de la visite (?visite=1,
 // gardé au rechargement) ; l'état des lieux est recopié sur l'appareil à
-// chaque ouverture avec du réseau. Après une visite, les plans ne se
-// remplacent plus (points rattachés aux étages ; refusé aussi par la base).
+// chaque ouverture avec du réseau. « Remplacer les plans » reste proposé
+// après une visite (demande de l'agence, 2026-11-18) : la fenêtre dit tout ce
+// qui sera supprimé, visites, points et photos compris (migration 080).
 
 const texteDiscret = { margin: 0, fontSize: 12, color: '#9C9591' }
 const boutonPrincipal = { display: 'inline-flex', alignItems: 'center', gap: 8, minHeight: 40, padding: '0 16px', border: 'none', borderRadius: 3, background: 'var(--affaire-accent, #E8602C)', color: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer' }
@@ -32,26 +34,33 @@ const alerte = { margin: 0, fontSize: 13, color: '#B8412C', background: '#FDF2F0
 
 const pluriel = (n, mot) => `${n} ${mot}${n > 1 ? 's' : ''}`
 
-function ConfirmerRemplacement({ onConfirmer, onAnnuler }) {
+function ConfirmerRemplacement({ perte, enCours, onConfirmer, onAnnuler }) {
   useEffect(() => {
-    const touche = (e) => { if (e.key === 'Escape') onAnnuler() }
+    const touche = (e) => { if (e.key === 'Escape' && !enCours) onAnnuler() }
     window.addEventListener('keydown', touche)
     return () => window.removeEventListener('keydown', touche)
-  }, [onAnnuler])
+  }, [onAnnuler, enCours])
   return createPortal(
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(20,18,16,0.38)', zIndex: 400, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 'calc(80px + env(safe-area-inset-top)) 16px 32px' }}>
       <div role="alertdialog" aria-modal="true" aria-label="Remplacer les plans"
         style={{ background: '#FAF7F2', width: '100%', maxWidth: 460, borderTop: '3px solid #B8412C', boxShadow: '0 24px 60px -24px rgba(31,27,23,0.55)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 20px', background: 'white', borderBottom: '0.5px solid rgba(0,0,0,0.08)' }}>
           <h2 style={{ flex: 1, margin: 0, fontSize: 15, fontWeight: 600, color: '#1F1B17' }}>Remplacer les plans ?</h2>
-          <button type="button" onClick={onAnnuler} aria-label="Fermer" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9C9591', padding: 4, display: 'inline-flex' }}><X size={18} /></button>
+          <button type="button" onClick={onAnnuler} disabled={enCours} aria-label="Fermer" style={{ width: 44, height: 44, background: 'none', border: 'none', cursor: 'pointer', color: '#9C9591', padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><X size={18} /></button>
         </div>
+        {perte && (
+          <p role="alert" style={{ margin: '16px 20px 0', fontSize: 13, fontWeight: 600, color: '#B8412C', background: '#FDF2F0', border: '0.5px solid rgba(184,65,44,0.4)', padding: '10px 12px' }}>
+            {perte}
+          </p>
+        )}
         <p style={{ margin: 0, padding: '16px 20px', fontSize: 13, color: '#5E5854' }}>
           Les étages et les pièces de cet état des lieux, corrections comprises, seront supprimés avant le nouvel import.
         </p>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, padding: '0 20px 18px' }}>
-          <button type="button" onClick={onAnnuler} style={boutonSecondaire}>Annuler</button>
-          <button type="button" onClick={onConfirmer} style={{ ...boutonPrincipal, background: '#B8412C' }}>Supprimer et réimporter</button>
+          <button type="button" onClick={onAnnuler} disabled={enCours} style={boutonSecondaire}>Annuler</button>
+          <button type="button" onClick={onConfirmer} disabled={enCours} style={{ ...boutonPrincipal, background: '#B8412C', opacity: enCours ? 0.6 : 1 }}>
+            {enCours ? 'Suppression…' : perte ? 'Tout supprimer et réimporter' : 'Supprimer et réimporter'}
+          </button>
         </div>
       </div>
     </div>,
@@ -69,10 +78,8 @@ export default function EtatDesLieuxModule({ lectureSeule = false }) {
   const [params, setParams] = useSearchParams()
   const visite = useVisiteEdl(affaireId)
   const visiteOuverte = params.get('visite') === '1' && !lectureSeule
+  const [suppression, setSuppression] = useState(false)
   const aEuUneVisite = (visite.donnees?.visites?.length ?? 0) > 0
-  // Tant que la visite n'est pas lue, on ne sait pas s'il y en a eu une :
-  // « Remplacer les plans » attend (la base le refuserait de toute façon)
-  const remplacementPossible = !aEuUneVisite && (visite.charge || visite.sansMemoire)
   const ouvrirVisite = () => setParams((p) => { const n = new URLSearchParams(p); n.set('visite', '1'); return n })
   const fermerVisite = () => {
     setParams((p) => { const n = new URLSearchParams(p); n.delete('visite'); return n }, { replace: true })
@@ -132,15 +139,30 @@ export default function EtatDesLieuxModule({ lectureSeule = false }) {
   }
 
   const remplacer = async () => {
-    setConfirmer(false)
+    setSuppression(true)
     try {
       await supprimerEtat(affaireId, edl.niveaux)
+      // L'appareil oublie aussi la visite : ses gestes en attente viseraient
+      // des lignes supprimées. Un échec ici ne remet rien en cause en base.
+      await oublierEdlLocal(affaireId).catch(() => {})
+      setConfirmer(false)
       edl.recharger()
+      visite.recharger()
       setImportOuvert(true)
     } catch (err) {
+      setConfirmer(false)
       edl.setErreur(err?.message ?? String(err))
+    } finally {
+      setSuppression(false)
     }
   }
+
+  const perte = perteRemplacement({
+    visites: visite.donnees?.visites?.length ?? 0,
+    points: visite.donnees?.points?.length ?? 0,
+    photos: visite.donnees?.photos?.length ?? 0,
+    enAttente: visite.resume?.enAttente ?? 0,
+  })
 
   const piecesDe = (id) => edl.pieces.filter((p) => p.niveau_id === id)
   const horsLigne = typeof navigator !== 'undefined' && !navigator.onLine
@@ -167,7 +189,7 @@ export default function EtatDesLieuxModule({ lectureSeule = false }) {
             <Mic size={15} /> {visiteEnCours(visite.donnees.visites) ? 'Reprendre la visite' : 'Démarrer la visite'}
           </button>
         )}
-        {!lectureSeule && remplacementPossible && (
+        {!lectureSeule && (
           <button type="button" onClick={() => setConfirmer(true)} style={boutonSecondaire}><RefreshCw size={14} /> Remplacer les plans</button>
         )}
       </div>
@@ -223,7 +245,7 @@ export default function EtatDesLieuxModule({ lectureSeule = false }) {
           />
         </div>
       )}
-      {confirmer && <ConfirmerRemplacement onConfirmer={remplacer} onAnnuler={() => setConfirmer(false)} />}
+      {confirmer && <ConfirmerRemplacement perte={perte} enCours={suppression} onConfirmer={remplacer} onAnnuler={() => setConfirmer(false)} />}
       {fenetreImport}
     </div>
   )

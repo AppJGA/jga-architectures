@@ -267,7 +267,7 @@ export default function EtatDesLieuxModule({ lectureSeule = false }) {
             <Mic size={15} /> {visiteEnCours(visite.donnees.visites) ? 'Reprendre la visite' : 'Démarrer la visite'}
           </button>
         )}
-        <button type="button" onClick={() => setExportOuvert(true)} style={boutonSecondaire}><FileDown size={14} /> Exporter</button>
+        <button type="button" onClick={() => setExportOuvert(true)} style={{ ...boutonSecondaire, minHeight: 44 }}><FileDown size={14} /> Exporter</button>
         {!lectureSeule && (
           <button type="button" onClick={() => setConfirmer(true)} style={boutonSecondaire}><RefreshCw size={14} /> Remplacer les plans</button>
         )}

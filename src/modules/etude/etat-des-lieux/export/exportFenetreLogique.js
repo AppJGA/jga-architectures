@@ -141,14 +141,82 @@ export function nomsFichiersDxf(affaire, niveaux = [], date = new Date()) {
 }
 
 /**
- * Le ZIP : `fichiers` = [{ nom, octets (Uint8Array) }]. Les DXF et le PDF
- * sont déjà compressés ou peu compressibles à l'échelle d'un téléchargement :
- * niveau 6, le défaut de fflate.
+ * Le ZIP : `fichiers` = [{ nom, octets (Uint8Array) }]. Les DXF (texte) se
+ * compressent bien : niveau 6, le défaut de fflate. Le PDF est déjà
+ * compressé (images JPEG, flux dégonflés) : rangé tel quel (niveau 0),
+ * sans passer des secondes à le recompresser pour rien sur un iPad.
  */
 export function fabriquerZip(fichiers = []) {
   const contenu = {}
-  for (const f of fichiers) contenu[f.nom] = f.octets
+  for (const f of fichiers) contenu[f.nom] = /\.pdf$/i.test(f.nom) ? [f.octets, { level: 0 }] : [f.octets, { level: 6 }]
   return zipSync(contenu)
+}
+
+// ─── Données fraîches de l'analyse ──────────────────────────────────────────
+
+const CHAMPS_ANALYSE = ['fiche', 'fiche_a_valider', 'hsp_lue', 'analyse_le']
+
+/**
+ * Les pièces de `chargerEtat` (qui peut venir de la mémoire du service
+ * worker) recouvertes par les champs frais que `lireEtatAnalyse` relit
+ * (lecture `synchro_id`, jamais servie par la mémoire) : une fiche validée
+ * juste avant l'export part validée. Seuls les champs présents dans la
+ * lecture fraîche remplacent (sans la 082, rien n'est relu).
+ */
+export function superposerAnalyse(pieces = [], fraiches = []) {
+  const parId = new Map((fraiches ?? []).map((p) => [p.id, p]))
+  return (pieces ?? []).map((p) => {
+    const f = parId.get(p.id)
+    if (!f) return p
+    const champs = {}
+    for (const c of CHAMPS_ANALYSE) if (c in f) champs[c] = f[c]
+    return { ...p, ...champs }
+  })
+}
+
+// ─── Mémoire bornée des sorties ─────────────────────────────────────────────
+//
+// Un rapport pèse 10 à 30 Mo en Blob, un DXF avec le plan plusieurs Mo de
+// texte : garder tout ce qui a été essayé dans la séance fait tomber
+// l'onglet sur iPad. On ne garde que ce que l'écran montre ou pourrait
+// montrer tout de suite, et ce qu'un export en cours attend.
+
+/**
+ * Clés à garder : le rapport des réglages (affichés et différés), les deux
+ * variantes du DXF de l'étage visible, le dessin à l'écran, et les clés
+ * qu'un export attend (`retenues`).
+ * @param reglages liste de réglages (l'écran, l'aperçu différé), null ignorés
+ * @returns { rapport, dxf, dessins } : trois Set de clés
+ */
+export function clesAGarder({ reglages = [], etageVisible = null, dessinVisible = null, retenues = [] } = {}) {
+  const rapport = new Set()
+  const dxf = new Set()
+  const dessins = new Set()
+  for (const r of reglages) {
+    if (!r) continue
+    if (r.rapport) rapport.add(cleRapport(r))
+    if (etageVisible && r.niveaux?.includes(etageVisible)) {
+      for (const avec of [false, true]) dxf.add(cleDxf(etageVisible, r, avec))
+    }
+  }
+  if (dessinVisible) dessins.add(dessinVisible)
+  for (const k of retenues) (String(k).startsWith('rapport|') ? rapport : dxf).add(k)
+  return { rapport, dxf, dessins }
+}
+
+/**
+ * Clés à retirer d'un cache : celles qui ne sont pas à garder et dont la
+ * fabrication est finie (`regle`). Une fabrication en cours n'est pas
+ * coupée ici : périmée, elle s'arrête d'elle-même et se retire en échouant.
+ * @param entrees Map clé → { regle } (ou valeur simple : comptée réglée)
+ */
+export function clesAEvincer(entrees, garder) {
+  const sortie = []
+  for (const [cle, e] of entrees ?? []) {
+    const regle = e && typeof e === 'object' && 'regle' in e ? e.regle : true
+    if (regle && !garder.has(cle)) sortie.push(cle)
+  }
+  return sortie
 }
 
 // ─── Avertissements ─────────────────────────────────────────────────────────
@@ -174,6 +242,12 @@ export function avertissementsExport({ donnees, reglages, enLigne = true }) {
     if (fiches > 0) sortie.push(`${fiches} ${pluriel(fiches, 'fiche')} de pièce à valider : finitions non exportées.`)
   }
   for (const n of niveaux) {
+    // Sans unité connue, `uniteDxf` prend le mètre : le dire, un plan en cm
+    // arriverait cent fois trop grand
+    if (!(Number(n.unites_par_metre) > 0)) {
+      sortie.push(`Unité du plan inconnue : DXF en mètres (étage ${n.nom || 'sans nom'}).`)
+      continue
+    }
     const u = uniteDxf(n.unites_par_metre)
     if (!u.exacte) {
       sortie.push(`Étage ${n.nom || 'sans nom'} : unité du plan inhabituelle (${String(u.unitesParMetre).replace(".", ",")} par mètre). Le DXF garde les coordonnées du plan et annonce « ${u.nom} », l’unité la plus proche.`)
@@ -283,10 +357,13 @@ export function zoomer(vue, facteur, px, py) {
 
 export const deplacer = (vue, dx, dy) => ({ ...vue, tx: vue.tx + dx, ty: vue.ty + dy })
 
-// Alignements DXF (72 / 73) traduits pour le canevas
-const ALIGN_H = ['left', 'center', 'right', 'left', 'center', 'left']
+// Alignements DXF (72 / 73) traduits pour le canevas. Le lecteur place un
+// texte aligné sur son second point (11 / 21) : pour « aligné » (3) et
+// « ajusté » (5), c'est le bout droit de la ligne de base, donc calé à
+// droite ; pour « milieu » (4), le milieu du texte dans les deux sens.
+const ALIGN_H = ['left', 'center', 'right', 'right', 'center', 'right']
 const ALIGN_V = ['alphabetic', 'bottom', 'middle', 'top']
 export const alignementCanevas = (texte) => ({
   textAlign: ALIGN_H[texte?.alignH ?? 0] ?? 'left',
-  textBaseline: ALIGN_V[texte?.alignV ?? 0] ?? 'alphabetic',
+  textBaseline: texte?.alignH === 4 ? 'middle' : ALIGN_V[texte?.alignV ?? 0] ?? 'alphabetic',
 })

@@ -11,8 +11,8 @@ import { lireDonneesExport, chargerPlanNiveau } from './exportDonnees'
 import { genererRapportEdl } from './genererRapportEdl'
 import { encoderDxf } from './exportDxfEdl'
 import {
-  avertissementsExport, cleDxf, cleRapport, dessinDxf, dxfDuNiveau, exportPossible, fabriquerZip, nomFichierZip,
-  nomsFichiersDxf, preparerExport, reglagesParDefaut,
+  avertissementsExport, cleDxf, cleRapport, clesAEvincer, clesAGarder, dessinDxf, dxfDuNiveau, exportPossible,
+  fabriquerZip, nomFichierZip, nomsFichiersDxf, preparerExport, reglagesParDefaut,
 } from './exportFenetreLogique'
 import { nomFichierRapportEdl } from './rapportEdlLogique'
 import { PlancheSymboles } from './PlancheSymboles'
@@ -42,7 +42,7 @@ const AMBRE = { fond: '#FFFBEB', bord: '#F59E0B', texte: '#92400E' }
 const titreSection = { margin: '0 0 6px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: PALE }
 const boutonPrincipal = { display: 'inline-flex', alignItems: 'center', gap: 8, minHeight: 44, padding: '0 18px', border: 'none', borderRadius: 3, background: ACCENT, color: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer' }
 const boutonSecondaire = { display: 'inline-flex', alignItems: 'center', gap: 6, minHeight: 44, padding: '0 16px', border: '0.5px solid rgba(0,0,0,0.15)', borderRadius: 3, background: 'white', color: ENCRE, fontSize: 13, cursor: 'pointer' }
-const boutonPetit = { display: 'inline-flex', alignItems: 'center', gap: 4, minHeight: 32, padding: '0 10px', fontSize: 11, border: '0.5px solid rgba(0,0,0,0.15)', background: 'white', borderRadius: 2, cursor: 'pointer', color: '#374151' }
+const boutonPetit = { display: 'inline-flex', alignItems: 'center', gap: 4, minHeight: 44, padding: '0 10px', fontSize: 11, border: '0.5px solid rgba(0,0,0,0.15)', background: 'white', borderRadius: 2, cursor: 'pointer', color: '#374151' }
 const caseACocher = { width: 18, height: 18, minHeight: 0, margin: 0, flexShrink: 0, accentColor: ACCENT }
 const ligneCase = { minHeight: 44, display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontSize: 13, color: ENCRE }
 
@@ -53,22 +53,40 @@ class Abandon extends Error {}
 const pluriel = (n, mot) => `${n} ${mot}${n > 1 ? 's' : ''}`
 
 function nouveauxCaches() {
-  // dxf : clé → Promise<texte> ; dessins : clé → dessin relu ;
-  // rapport : clé → Promise<{ blob, nomFichier, avertissements }>
+  // dxf : clé → { promesse (texte), regle } ; dessins : clé → dessin relu ;
+  // rapport : clé → { promesse ({ blob, nomFichier, avertissements }), regle }.
+  // Bornés par `elaguer` : seulement ce que l'écran montre et ce qu'un
+  // export attend (exportFenetreLogique.js, `clesAGarder`)
   return { dxf: new Map(), dessins: new Map(), rapport: new Map() }
 }
 
-// Un DXF fabriqué une fois par clé ; l'aperçu et le ZIP le partagent
-function obtenirDxf(caches, etage, reglages, avecPlan, obtenirLiens) {
-  const cle = cleDxf(etage.niveau.id, reglages, avecPlan)
-  if (!caches.dxf.has(cle)) {
-    const promesse = (avecPlan ? chargerPlanNiveau(etage.niveau, obtenirLiens) : Promise.resolve(null))
-      .then((plan) => dxfDuNiveau(etage, { plan, inclurePropositions: !!reglages.inclurePropositions }))
-    caches.dxf.set(cle, promesse)
-    // Un échec (réseau) n'est pas retenu : le prochain essai refait
-    promesse.catch(() => { if (caches.dxf.get(cle) === promesse) caches.dxf.delete(cle) })
+function elaguer(c, garder) {
+  for (const k of clesAEvincer(c.rapport, garder.rapport)) c.rapport.delete(k)
+  for (const k of clesAEvincer(c.dxf, garder.dxf)) c.dxf.delete(k)
+  for (const k of clesAEvincer(c.dessins, garder.dessins)) c.dessins.delete(k)
+}
+
+// Une fabrication gardée par clé : réglée, elle devient évinçable ; un
+// échec (réseau) n'est pas retenu, le prochain essai refait
+function memoriser(cache, cle, fabriquer, surRegle) {
+  if (!cache.has(cle)) {
+    const entree = { promesse: null, regle: false }
+    entree.promesse = fabriquer()
+    cache.set(cle, entree)
+    entree.promesse.then(
+      () => { entree.regle = true; surRegle?.() },
+      () => { entree.regle = true; if (cache.get(cle) === entree) cache.delete(cle); surRegle?.() },
+    )
   }
-  return caches.dxf.get(cle)
+  return cache.get(cle).promesse
+}
+
+// Un DXF fabriqué une fois par clé ; l'aperçu et le ZIP le partagent
+function obtenirDxf(caches, etage, reglages, avecPlan, obtenirLiens, surRegle) {
+  return memoriser(caches.dxf, cleDxf(etage.niveau.id, reglages, avecPlan), () => (
+    (avecPlan ? chargerPlanNiveau(etage.niveau, obtenirLiens) : Promise.resolve(null))
+      .then((plan) => dxfDuNiveau(etage, { plan, inclurePropositions: !!reglages.inclurePropositions }))
+  ), surRegle)
 }
 
 function liberer(pages) {
@@ -154,33 +172,38 @@ export function ExportEdl({ affaireId, obtenirLiens, enAttente = 0, onFermer }) 
   }, [reglages])
   useEffect(() => () => { cleVivante.current = null }, [])
 
+  // Ce que l'écran montre et ce qu'un export attend : le reste des caches
+  // part dès que ses fabrications sont finies
+  const vus = useRef({ reglages: [], etageVisible: null, dessinVisible: null })
+  const retenues = useRef(new Set())
+  const elaguerMaintenant = useCallback(() => {
+    elaguer(caches.current, clesAGarder({ ...vus.current, retenues: [...retenues.current] }))
+  }, [])
+
   const [etapeRapport, setEtapeRapport] = useState(null) // { cle, texte }
   const obtenirRapport = useCallback((voulus) => {
     const cle = cleRapport(voulus)
-    const c = caches.current
-    if (!c.rapport.has(cle)) {
-      const r = preparerExport(donnees, voulus).rapport
-      const surEtape = (texte) => {
-        if (cleVivante.current !== cle) throw new Abandon()
-        setEtapeRapport({ cle, texte })
-      }
-      const promesse = (async () => {
-        // Les plans par le même chemin que les DXF « avec plan » (déjà lus
-        // si l'aperçu d'un DXF les a ouverts) ; un plan illisible ici est
-        // retenté, puis remplacé par l'aperçu, par le rapport lui-même
-        surEtape('Rapport : plans des étages…')
-        const vecteurs = new Map()
-        for (const n of r.niveaux) {
-          const v = await chargerPlanNiveau(n, obtenirLiens).catch(() => null)
-          if (v) vecteurs.set(n.id, v)
-        }
-        return genererRapportEdl({ affaire: affaireExport, etat: donnees.etat, ...r, redacteur, date, obtenirLiens, vecteurs, surEtape })
-      })()
-      c.rapport.set(cle, promesse)
-      promesse.catch(() => { if (c.rapport.get(cle) === promesse) c.rapport.delete(cle) })
+    // Arrêt d'une fabrication périmée : entre deux étapes, avant chaque
+    // extrait de pièce et avant chaque photo
+    const verifier = () => { if (cleVivante.current !== cle) throw new Abandon() }
+    const surEtape = (texte) => {
+      verifier()
+      setEtapeRapport({ cle, texte })
     }
-    return c.rapport.get(cle)
-  }, [donnees, affaireExport, redacteur, date, obtenirLiens])
+    return memoriser(caches.current.rapport, cle, () => (async () => {
+      const r = preparerExport(donnees, voulus).rapport
+      // Les plans par le même chemin que les DXF « avec plan » (déjà lus
+      // si l'aperçu d'un DXF les a ouverts) ; un plan illisible ici est
+      // retenté, puis remplacé par l'aperçu, par le rapport lui-même
+      surEtape('Rapport : plans des étages…')
+      const vecteurs = new Map()
+      for (const n of r.niveaux) {
+        const v = await chargerPlanNiveau(n, obtenirLiens).catch(() => null)
+        if (v) vecteurs.set(n.id, v)
+      }
+      return genererRapportEdl({ affaire: affaireExport, etat: donnees.etat, ...r, redacteur, date, obtenirLiens, vecteurs, surEtape, verifier })
+    })(), elaguerMaintenant)
+  }, [donnees, affaireExport, redacteur, date, obtenirLiens, elaguerMaintenant])
   // L'aperçu lit la dernière version sans en dépendre : un rendu qui refait
   // la fonction (affaire relue) ne doit pas recommencer le rendu des pages
   const obtenirRapportCourant = useRef(obtenirRapport)
@@ -249,6 +272,13 @@ export function ExportEdl({ affaireId, obtenirLiens, enAttente = 0, onFermer }) 
   const varianteAvecPlan = planPossible && avecPlanVu
   const cleDessin = etageOnglet ? cleDxf(etageOnglet.niveau.id, reglagesApercu, varianteAvecPlan) : null
   const [apercuDxf, setApercuDxf] = useState({ cle: null, dessin: null, erreur: null })
+  const [relanceDxf, setRelanceDxf] = useState(0)
+
+  // Ce qui est à l'écran, pour borner les caches
+  useEffect(() => {
+    vus.current = { reglages: [reglages, reglagesApercu], etageVisible: etageOnglet?.niveau.id ?? null, dessinVisible: cleDessin }
+    elaguerMaintenant()
+  }, [reglages, reglagesApercu, etageOnglet, cleDessin, elaguerMaintenant])
 
   useEffect(() => {
     if (!etageOnglet || !pret) return undefined
@@ -258,17 +288,19 @@ export function ExportEdl({ affaireId, obtenirLiens, enAttente = 0, onFermer }) 
     const deja = c.dessins.get(cle)
     const promesse = deja
       ? Promise.resolve(deja)
-      : obtenirDxf(c, etageOnglet, reglagesApercu, varianteAvecPlan, obtenirLiens).then((texte) => {
+      : obtenirDxf(c, etageOnglet, reglagesApercu, varianteAvecPlan, obtenirLiens, elaguerMaintenant).then((texte) => {
         const d = { ...dessinDxf(texte), octets: texte.length }
         c.dessins.set(cle, d)
+        elaguerMaintenant()
         return d
       })
     promesse.then(
       (dessin) => { if (!fini) setApercuDxf({ cle, dessin, erreur: null }) },
-      (err) => { if (!fini) setApercuDxf((a) => ({ ...a, cle, erreur: err?.message ?? String(err) })) },
+      // L'ancien dessin ne reste pas : il pourrait passer pour le fichier demandé
+      (err) => { if (!fini) setApercuDxf({ cle, dessin: null, erreur: err?.message ?? String(err) }) },
     )
     return () => { fini = true }
-  }, [etageOnglet, reglagesApercu, varianteAvecPlan, pret, obtenirLiens])
+  }, [etageOnglet, reglagesApercu, varianteAvecPlan, pret, obtenirLiens, elaguerMaintenant, relanceDxf])
 
   // ── Agrandir ──
   const [agrandi, setAgrandi] = useState(false)
@@ -294,17 +326,22 @@ export function ExportEdl({ affaireId, obtenirLiens, enAttente = 0, onFermer }) 
     if (!pret || !exportPossible(reglages)) return
     const voulus = reglages
     const c = caches.current
+    const prep = preparerExport(donnees, voulus)
+    // Tout ce que ce ZIP attend reste en cache jusqu'à la fin
+    retenues.current = new Set([
+      ...prep.etages.flatMap((e) => [cleDxf(e.niveau.id, voulus, false), cleDxf(e.niveau.id, voulus, true)]),
+      ...(voulus.rapport ? [cleRapport(voulus)] : []),
+    ])
     try {
-      const prep = preparerExport(donnees, voulus)
       const fichiers = []
       for (const etage of prep.etages) {
         const nomEtage = etage.niveau.nom || 'sans nom'
         const n = noms.get(etage.niveau.id)
         setExportEtat({ etape: `Étage ${nomEtage} : DXF…` })
-        fichiers.push({ nom: n.edl, octets: encoderDxf(await obtenirDxf(c, etage, voulus, false, obtenirLiens)) })
+        fichiers.push({ nom: n.edl, octets: encoderDxf(await obtenirDxf(c, etage, voulus, false, obtenirLiens, elaguerMaintenant)) })
         if (voulus.avecPlan && etage.niveau.chemin_vecteurs) {
           setExportEtat({ etape: `Étage ${nomEtage} : DXF avec le plan…` })
-          fichiers.push({ nom: n.avecPlan, octets: encoderDxf(await obtenirDxf(c, etage, voulus, true, obtenirLiens)) })
+          fichiers.push({ nom: n.avecPlan, octets: encoderDxf(await obtenirDxf(c, etage, voulus, true, obtenirLiens, elaguerMaintenant)) })
         }
       }
       let avertissements = []
@@ -322,6 +359,9 @@ export function ExportEdl({ affaireId, obtenirLiens, enAttente = 0, onFermer }) 
       setExportEtat({ fini: true, avertissements, fichiers: fichiers.length })
     } catch (err) {
       setExportEtat({ erreur: err instanceof Abandon ? 'Export interrompu.' : err?.message ?? String(err) })
+    } finally {
+      retenues.current = new Set()
+      elaguerMaintenant()
     }
   }
 
@@ -430,7 +470,7 @@ export function ExportEdl({ affaireId, obtenirLiens, enAttente = 0, onFermer }) 
               <div role="group" aria-label="Fichier montré" style={{ display: 'flex', border: '0.5px solid rgba(0,0,0,0.15)' }}>
                 {[[false, noms.get(etageOnglet.niveau.id)?.edl], [true, noms.get(etageOnglet.niveau.id)?.avecPlan]].map(([avec, nom]) => (
                   <button key={nom} type="button" aria-pressed={avecPlanVu === avec} onClick={() => setAvecPlanVu(avec)}
-                    style={{ minHeight: 32, padding: '0 10px', fontSize: 11, border: 'none', cursor: 'pointer', background: avecPlanVu === avec ? ACCENT : 'white', color: avecPlanVu === avec ? 'white' : GRIS }}>
+                    style={{ minHeight: 44, padding: '0 10px', fontSize: 11, border: 'none', cursor: 'pointer', background: avecPlanVu === avec ? ACCENT : 'white', color: avecPlanVu === avec ? 'white' : GRIS }}>
                     {nom}
                   </button>
                 ))}
@@ -445,7 +485,12 @@ export function ExportEdl({ affaireId, obtenirLiens, enAttente = 0, onFermer }) 
             )}
           </div>
           {apercuDxf.erreur && apercuDxf.cle === cleDessin && (
-            <p role="alert" style={{ margin: '0 0 8px', fontSize: 12, color: '#B8412C' }}>Aperçu impossible : {apercuDxf.erreur}</p>
+            <p role="alert" style={{ margin: '0 0 8px', fontSize: 12, color: '#B8412C', display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ flex: 1 }}>Aperçu impossible : {apercuDxf.erreur}</span>
+              <button type="button" onClick={() => { setApercuDxf({ cle: null, dessin: null, erreur: null }); setRelanceDxf((n) => n + 1) }} style={boutonPetit}>
+                <RefreshCw size={12} /> Réessayer
+              </button>
+            </p>
           )}
           <div style={{ flex: 1, minHeight: 280 }}>
             <ApercuDxfEdl dessin={apercuDxf.dessin} pali={dxfEnCours} />

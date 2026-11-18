@@ -11,7 +11,7 @@ import { unzipSync } from 'fflate'
 import { decoderDxf, lireDxf } from '../src/modules/etude/etat-des-lieux/dxfLecture.js'
 import { encoderDxf } from '../src/modules/etude/etat-des-lieux/export/exportDxfEdl.js'
 import {
-  COULEUR_PLAN_APERCU, alignementCanevas, avertissementsExport, boiteDessin, cleDxf, cleRapport, couleurCalqueApercu,
+  COULEUR_PLAN_APERCU, alignementCanevas, clesAEvincer, clesAGarder, superposerAnalyse, avertissementsExport, boiteDessin, cleDxf, cleRapport, couleurCalqueApercu,
   deplacer, dessinDxf, dxfDuNiveau, exportPossible, fabriquerZip, nomFichierZip, nomsFichiersDxf, preparerExport,
   reglagesParDefaut, versDessin, versEcran, vueAjustee, zoomer,
 } from '../src/modules/etude/etat-des-lieux/export/exportFenetreLogique.js'
@@ -256,5 +256,73 @@ describe('vue du canevas', () => {
     assert.deepEqual(v, { echelle: 1, tx: 100, ty: 50 })
     const p = vueAjustee({ x0: 5, y0: 5, x1: 5, y1: 5 }, 200, 100)
     assert.ok(Number.isFinite(p.echelle))
+  })
+})
+
+describe('correctifs (tour 1)', () => {
+  test('mémoire bornée : rapport et DXF de l’écran, dessin visible, ce qu’un export attend', () => {
+    const d = donneesEssai()
+    const r = reglagesParDefaut(d.niveaux)
+    const differe = { ...r, inclurePropositions: true }
+    const g = clesAGarder({
+      reglages: [r, differe, null], etageVisible: 'n1', dessinVisible: cleDxf('n1', differe, true),
+      retenues: [cleDxf('n2', r, false), cleRapport({ ...r, niveaux: ['n2'] })],
+    })
+    assert.deepEqual([...g.rapport].sort(), [cleRapport(r), cleRapport(differe), cleRapport({ ...r, niveaux: ['n2'] })].sort())
+    assert.ok(g.dxf.has(cleDxf('n1', r, false)) && g.dxf.has(cleDxf('n1', r, true)) && g.dxf.has(cleDxf('n1', differe, true)))
+    assert.ok(g.dxf.has(cleDxf('n2', r, false)))
+    assert.ok(!g.dxf.has(cleDxf('n2', r, true)))
+    assert.deepEqual([...g.dessins], [cleDxf('n1', differe, true)])
+    // Rapport décoché : plus de rapport gardé ; étage décoché : plus de DXF
+    const sans = clesAGarder({ reglages: [{ ...r, rapport: false, niveaux: ['n2'] }], etageVisible: 'n1' })
+    assert.equal(sans.rapport.size, 0)
+    assert.equal(sans.dxf.size, 0)
+  })
+
+  test('éviction : seulement les entrées réglées hors de la liste', () => {
+    const entrees = new Map([
+      ['a', { regle: true }], ['b', { regle: false }], ['c', { regle: true }], ['d', 'dessin'],
+    ])
+    assert.deepEqual(clesAEvincer(entrees, new Set(['c'])), ['a', 'd'])
+    assert.deepEqual(clesAEvincer(new Map(), new Set()), [])
+  })
+
+  test('le PDF est rangé sans compression, les DXF compressés', () => {
+    const pdf = new Uint8Array(20000) // des zéros : très compressibles
+    const dxf = new TextEncoder().encode('  0\r\nLINE\r\n'.repeat(2000))
+    const zip = fabriquerZip([{ nom: 'r.pdf', octets: pdf }, { nom: 'a.dxf', octets: dxf }])
+    // Stocké tel quel : l'archive dépasse la taille du PDF seul
+    assert.ok(zip.length > pdf.length)
+    const seulDxf = fabriquerZip([{ nom: 'a.dxf', octets: dxf }])
+    assert.ok(seulDxf.length < dxf.length / 5)
+    const relu = unzipSync(zip)
+    assert.equal(relu['r.pdf'].length, 20000)
+    assert.deepEqual([...relu['a.dxf']], [...dxf])
+  })
+
+  test('les champs frais de l’analyse recouvrent les pièces lues', () => {
+    const pieces = [
+      { id: 'p1', nom: 'Séjour', fiche: { sol: 'ancien' }, fiche_a_valider: true, hsp_lue: null },
+      { id: 'p2', nom: 'Cuisine', fiche: null },
+    ]
+    const fraiches = [{ id: 'p1', fiche: { sol: 'Parquet' }, fiche_a_valider: false, hsp_lue: 2.5, analyse_le: '2026-11-18T09:00:00Z', updated_at: 'x' }]
+    const r = superposerAnalyse(pieces, fraiches)
+    assert.deepEqual(r[0], { id: 'p1', nom: 'Séjour', fiche: { sol: 'Parquet' }, fiche_a_valider: false, hsp_lue: 2.5, analyse_le: '2026-11-18T09:00:00Z' })
+    assert.equal(r[1], pieces[1])
+    // Sans la 082 : rien de relu, rien de changé
+    assert.deepEqual(superposerAnalyse(pieces, []), pieces)
+  })
+
+  test('unité du plan inconnue : DXF en mètres', () => {
+    const d = donneesEssai()
+    d.niveaux[1].unites_par_metre = null
+    const a = avertissementsExport({ donnees: d, reglages: { ...reglagesParDefaut(d.niveaux), inclurePropositions: true } })
+    assert.deepEqual(a, ['Unité du plan inconnue : DXF en mètres (étage R+1).'])
+  })
+
+  test('alignements 3, 4 et 5 : placés comme le lecteur les pose (second point)', () => {
+    assert.equal(alignementCanevas({ alignH: 3, alignV: 0 }).textAlign, 'right')
+    assert.equal(alignementCanevas({ alignH: 5, alignV: 0 }).textAlign, 'right')
+    assert.deepEqual(alignementCanevas({ alignH: 4, alignV: 0 }), { textAlign: 'center', textBaseline: 'middle' })
   })
 })

@@ -15,6 +15,7 @@ import { chargerEtat } from '../edlDonnees'
 import { lireToutEdl } from '../visite/visiteDonnees'
 import { lireEtatAnalyse } from '../analyse/analyseDonnees'
 import { chargerVecteurs } from '../vecteursEdl'
+import { superposerAnalyse } from './exportFenetreLogique'
 
 // Un grand bâtiment fait plusieurs pages de points : plus large que la visite
 const DELAI_EXPORT_MS = 20000
@@ -37,7 +38,10 @@ export async function lireDonneesExport(affaireId) {
     indisponible: false,
     etat: base.etat,
     niveaux: base.niveaux,
-    pieces: base.pieces,
+    // `chargerEtat` peut venir de la mémoire du service worker : fiche,
+    // marque « à valider », HSP lue et date d'analyse sont pris dans la
+    // lecture fraîche de l'analyse
+    pieces: superposerAnalyse(base.pieces, analyse.pieces),
     points: v.points ?? [],
     photos: v.photos ?? [],
     entrees: v.entrees ?? [],

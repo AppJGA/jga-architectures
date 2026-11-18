@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Plus, Minus, Maximize } from 'lucide-react'
 import { alignementCanevas, deplacer, versEcran, vueAjustee, zoomer } from './exportFenetreLogique'
 
@@ -9,7 +9,10 @@ import { alignementCanevas, deplacer, versEcran, vueAjustee, zoomer } from './ex
 // en couleur, plan existant en gris clair ; une case par calque. Molette,
 // pincement ou glisser pour se déplacer, + / − / Ajuster pour qui n'a ni
 // molette ni deux doigts. La vue vit dans une référence et se redessine à
-// l'image suivante : un glisser ne repasse pas par React.
+// l'image suivante : un glisser ne repasse pas par React. Les traits de
+// chaque calque sont mis une fois en `Path2D` (par fichier), puis posés par
+// une transformation : un glisser ne reparcourt pas les sommets en
+// JavaScript à chaque image.
 
 const POLICE = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif'
 // Sous cette taille à l'écran, un texte n'est qu'une tache : il n'est pas dessiné
@@ -19,34 +22,56 @@ const boutonVue = {
   border: '0.5px solid rgba(0,0,0,0.15)', borderRadius: 2, background: 'white', color: '#1F1B17', cursor: 'pointer',
 }
 
-function dessiner(canvas, dessin, vue, masques) {
+/**
+ * Un `Path2D` par calque, en coordonnées du dessin moins une origine (le
+ * centre de la boîte) : en Lambert 93 et en cm, les coordonnées dépassent
+ * 10⁸ et le canevas, qui calcule en flottants simples, ferait trembler les
+ * traits. L'origine est rajoutée dans la transformation, en double.
+ */
+function cheminsDuDessin(dessin) {
+  if (!dessin) return null
+  const b = dessin.boite
+  const origine = b ? [(b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2] : [0, 0]
+  const chemins = new Map()
+  for (const c of dessin.calques) {
+    const chemin = new Path2D()
+    for (const t of c.traits) {
+      t.pts.forEach(([x, y], i) => {
+        if (i === 0) chemin.moveTo(x - origine[0], y - origine[1])
+        else chemin.lineTo(x - origine[0], y - origine[1])
+      })
+      if (t.ferme) chemin.closePath()
+    }
+    chemins.set(c.nom, chemin)
+  }
+  return { origine, chemins }
+}
+
+function dessiner(canvas, dessin, chemins, vue, masques) {
   const ctx = canvas.getContext('2d')
   const dpr = window.devicePixelRatio || 1
   ctx.setTransform(1, 0, 0, 1, 0, 0)
   ctx.fillStyle = 'white'
   ctx.fillRect(0, 0, canvas.width, canvas.height)
-  if (!dessin) return
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  if (!dessin || !chemins) return
   ctx.lineJoin = 'round'
+  const { echelle: s, tx, ty } = vue
+  const [ox, oy] = chemins.origine
   // Le plan existant d'abord, les calques EDL- par-dessus
   const calques = [...dessin.calques].reverse()
   for (const c of calques) {
     if (masques.has(c.nom)) continue
+    // y vers le haut dans le dessin : échelle verticale négative ; épaisseur
+    // divisée par l'échelle pour rester d'un pixel quel que soit le zoom
+    ctx.setTransform(dpr * s, 0, 0, -dpr * s, dpr * (tx + ox * s), dpr * (ty - oy * s))
     ctx.strokeStyle = c.couleur
-    ctx.lineWidth = c.edl ? 1.1 : 0.7
-    ctx.beginPath()
-    for (const t of c.traits) {
-      t.pts.forEach((p, i) => {
-        const [x, y] = versEcran(vue, p)
-        if (i === 0) ctx.moveTo(x, y)
-        else ctx.lineTo(x, y)
-      })
-      if (t.ferme) ctx.closePath()
-    }
-    ctx.stroke()
+    ctx.lineWidth = (c.edl ? 1.1 : 0.7) / s
+    const chemin = chemins.chemins.get(c.nom)
+    if (chemin) ctx.stroke(chemin)
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     ctx.fillStyle = c.couleur
     for (const t of c.textes) {
-      const taille = (t.hauteur || 0) * vue.echelle
+      const taille = (t.hauteur || 0) * s
       if (taille < TEXTE_MIN_PX) continue
       const [x, y] = versEcran(vue, t.pos)
       const { textAlign, textBaseline } = alignementCanevas(t)
@@ -86,14 +111,16 @@ export function ApercuDxfEdl({ dessin, pali = false }) {
     obs.observe(el)
     return () => obs.disconnect()
   }, [])
-  const etat = useRef({ dessin, masques })
-  useLayoutEffect(() => { etat.current = { dessin, masques } })
+  const chemins = useMemo(() => cheminsDuDessin(dessin), [dessin])
+  const etat = useRef({ dessin, chemins, masques })
+  useLayoutEffect(() => { etat.current = { dessin, chemins, masques } })
 
   const redessiner = () => {
     if (image.current) return
     image.current = requestAnimationFrame(() => {
       image.current = 0
-      if (canevas.current) dessiner(canevas.current, etat.current.dessin, vue.current, etat.current.masques)
+      const { dessin: d, chemins: ch, masques: m } = etat.current
+      if (canevas.current) dessiner(canevas.current, d, ch, vue.current, m)
     })
   }
   const redessinerCourant = useRef(redessiner)
@@ -151,7 +178,15 @@ export function ApercuDxfEdl({ dessin, pali = false }) {
     return () => c.removeEventListener('wheel', surMolette)
   }, [])
 
-  useEffect(() => () => { if (image.current) cancelAnimationFrame(image.current) }, [])
+  // Fermeture : image en attente annulée, mémoire du canevas rendue
+  // (l'iPad la plafonne pour toute la page)
+  useEffect(() => {
+    const c = canevas.current
+    return () => {
+      if (image.current) cancelAnimationFrame(image.current)
+      if (c) { c.width = 0; c.height = 0 }
+    }
+  }, [])
 
   const position = (e) => {
     const r = canevas.current.getBoundingClientRect()

@@ -72,12 +72,15 @@ async function fondImage(niveau, obtenirLiens) {
  * @param vecteurs Map niveauId → vecteurs déjà décodés (facultatif : sinon lus
  *   par `chargerVecteurs`, une fois par chemin)
  * @param surEtape (texte) → void, pour la progression de l'écran d'export
+ * @param verifier () → void, appelé avant chaque extrait de pièce et chaque
+ *   photo ; il lève une erreur pour arrêter une fabrication devenue inutile
+ *   (réglages changés) sans finir de télécharger et d'encoder les photos
  * Les autres paramètres sont ceux de `definitionRapportEdl`.
  * @returns { blob, nomFichier, avertissements }
  */
 export async function genererRapportEdl({
   affaire, etat = null, niveaux = [], pieces = [], points = [], elements = null, elementsExport = [], photos = [],
-  visitees = null, redacteur = '', date = new Date(), obtenirLiens, vecteurs = null, surEtape = () => {},
+  visitees = null, redacteur = '', date = new Date(), obtenirLiens, vecteurs = null, surEtape = () => {}, verifier = () => {},
 }) {
   const manquants = new Map()
   const tolerer = (promesse, quoi) => Promise.resolve(promesse).catch((err) => {
@@ -114,6 +117,7 @@ export async function genererRapportEdl({
       if (plan) plans.set(niveau.id, plan)
     }
     for (const piece of visiteesEtage) {
+      verifier()
       const cp = cadragePiece(piece)
       if (!cp) continue
       // Seulement les traits autour de la pièce, et ses seuls éléments
@@ -135,6 +139,7 @@ export async function genererRapportEdl({
     surEtape(`Rapport : ${retenues.length} photo${retenues.length > 1 ? 's' : ''}…`)
     const liens = await tolerer(obtenirLiens(retenues.map((ph) => ph.chemin)), 'lien des photos') ?? new Map()
     for (const ph of retenues) {
+      verifier()
       const url = liens.get(ph.chemin)
       const image = await tolerer(url ? imagePourPdf(url, TAILLE_PHOTO) : Promise.reject(new Error('lien absent')), 'photo')
       if (image) images.photos.set(ph.id, image)

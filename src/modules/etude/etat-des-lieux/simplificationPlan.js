@@ -11,8 +11,10 @@
 // Le fichier vectoriel enregistré par étage (`encoderVecteurs`) est un JSON
 // compact compressé : quelques milliers de traits au millimètre.
 
+// Extension écrite : `TRAITEMENTS` est aussi lu par la fonction serveur
+// api/edl-calques.js, où Node ne complète pas les chemins.
 import { gzipSync, gunzipSync, strToU8, strFromU8 } from 'fflate'
-import { boite, pointDansPolygone } from './geometrieEdl'
+import { boite, pointDansPolygone } from './geometrieEdl.js'
 
 export const TRAITEMENTS = ['garder', 'masse', 'masquer-motif', 'masquer']
 export const LIBELLES_TRAITEMENT = {

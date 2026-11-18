@@ -8,16 +8,20 @@ import { test, describe } from 'node:test'
 
 import { CALQUES } from '../src/modules/etude/etat-des-lieux/calquesEdl.js'
 import { elementsAExporter } from '../src/modules/etude/etat-des-lieux/export/exportDxfEdl.js'
+import { dxfDuNiveau, preparerExport } from '../src/modules/etude/etat-des-lieux/export/exportFenetreLogique.js'
+import { lireDxf } from '../src/modules/etude/etat-des-lieux/dxfLecture.js'
+import { decalagesSymboles } from '../src/modules/etude/etat-des-lieux/export/symbolesEdl.js'
 import { numeroterPhotos } from '../src/modules/etude/etat-des-lieux/export/numerotationEdl.js'
 import {
   definitionRapportEdl, etagesDuRapport, groupesElements, hspPiece, HORS_LATIN, nombreFr, nomFichierRapportEdl,
-  pieceVisitee, piedRapportEdl, pointsSansElement, surfacePiece, texteLatin,
+  pieceVisitee, piedRapportEdl, pointsSansElement, relevesHorsPieces, surfacePiece, texteLatin,
 } from '../src/modules/etude/etat-des-lieux/export/rapportEdlLogique.js'
 import {
   agrandir, cadragePiece, cadragePlan, dessinerPlanRapport, echelleSymbole, marquesElements, placementFond,
   vecteursDuCadrage, PX_PLAN_ETAGE, PX_PLAN_PIECE, PX_SYMBOLE_MIN,
 } from '../src/modules/etude/etat-des-lieux/export/planRapportEdl.js'
 
+const proche = (a, b, ecart = 1e-9) => assert.ok(Math.abs(a - b) < ecart, `${a} ≠ ${b}`)
 const carre = (x, y, c) => [[x, y], [x + c, y], [x + c, y + c], [x, y + c]]
 
 const affaire = { code_affaire: '9901', nom: 'Maison de l’essai', projet_adresse: '1 rue Imaginaire', projet_commune: 'Villefictive', moa_nom: 'Maître d’ouvrage inventé' }
@@ -99,6 +103,70 @@ function intertitres(noeud) {
   parcourir(noeud.stack)
   return vus
 }
+
+describe('rapport PDF et DXF : mêmes fiches, même HSP, mêmes photos', () => {
+  // Cas de la relecture : fiche proposée par l'analyse, HSP lue, point sans
+  // `piece_id` et photo, passés par `preparerExport` comme dans la fenêtre
+  const donneesFenetre = (plus = {}) => ({
+    niveaux: [{ id: 'n1', nom: 'RDC', ordre: 0, unites_par_metre: 100 }],
+    pieces: [{ id: 'p1', niveau_id: 'n1', nom: 'Chambre', contour: carre(0, 0, 4), fiche_a_valider: true, fiche: { sol: 'Moquette proposée', hsp: '2,70' }, hsp_lue: 2.5 }],
+    points: [{ id: 'pt1', niveau_id: 'n1', piece_id: null, numero: 3, x: 1, y: 1, type: null }],
+    photos: [{ id: 'ph1', point_id: 'pt1', chemin: 'x' }],
+    elements: [{ id: 'e1', point_id: 'pt1', piece_id: null, type: 'prise', calque: 'electricite', libelle: 'Prise', a_valider: false }],
+    entrees: [],
+    ...plus,
+  })
+  const exporterLesDeux = (d, inclurePropositions = false) => {
+    const prep = preparerExport(d, { niveaux: ['n1'], inclurePropositions, rapport: true })
+    const pdf = texteDe({ stack: definitionRapportEdl({ ...prep.rapport, images: { photos: new Map([['ph1', IMG]]) } }).content })
+    const dxf = lireDxf(dxfDuNiveau(prep.etages[0], { inclurePropositions })).textes.map((t) => t.texte).join(' | ')
+    return { prep, pdf, dxf }
+  }
+
+  test('fiche proposée écartée des deux côtés ; HSP lue « 2,50 m » des deux côtés', () => {
+    const { pdf, dxf } = exporterLesDeux(donneesFenetre())
+    assert.equal(pdf.includes('Moquette'), false)
+    assert.equal(dxf.includes('Moquette'), false)
+    assert.ok(pdf.includes('2,50 m') && !pdf.includes('2,70'), pdf)
+    assert.ok(dxf.includes('HSP 2,50 m') && !dxf.includes('2,70'), dxf)
+  })
+
+  test('fiche proposée incluse : imprimée des deux côtés, HSP lue toujours en tête', () => {
+    const { pdf, dxf } = exporterLesDeux(donneesFenetre(), true)
+    assert.ok(pdf.includes('Moquette proposée') && dxf.includes('Moquette proposée'))
+    assert.ok(pdf.includes('2,50 m') && dxf.includes('HSP 2,50 m'))
+  })
+
+  test('pièce dont la seule trace est une fiche proposée écartée : pas de fiche', () => {
+    const { pdf } = exporterLesDeux(donneesFenetre({ points: [], photos: [], elements: [] }))
+    assert.match(pdf, /non visitée \(1, sans fiche\)/)
+  })
+
+  test('point sans piece_id dans une pièce : rattaché des deux côtés, « Ph 1 » des deux côtés', () => {
+    const { prep, pdf, dxf } = exporterLesDeux(donneesFenetre())
+    assert.equal(prep.rapport.points[0].piece_id, 'p1')
+    assert.equal(prep.etages[0].points[0].piece_id, 'p1')
+    assert.ok(pdf.includes('Ph 1'), pdf)
+    assert.ok(dxf.includes('Ph 1'), dxf)
+  })
+
+  test('point hors de toute pièce : page « Hors pièces », « Ph 1 » des deux côtés, compté sur la garde', () => {
+    const d = donneesFenetre({ points: [{ id: 'pt1', niveau_id: 'n1', piece_id: null, numero: 3, x: 6, y: 1, type: null }] })
+    const prep = preparerExport(d, { niveaux: ['n1'], rapport: true })
+    assert.equal(prep.rapport.points[0].piece_id, null)
+    const def = definitionRapportEdl({ ...prep.rapport, images: { photos: new Map([['ph1', IMG]]) } })
+    const hors = def.content.find((n) => n.id === 'hors-pieces-n1')
+    assert.ok(hors, def.content.map((n) => n.id).join(', '))
+    assert.ok(texteDe(hors).includes('Hors pièces') && texteDe(hors).includes('Ph 1') && texteDe(hors).includes('Prise'))
+    // Plan de l'étage et garde comptent l'élément posé hors pièce
+    assert.match(texteDe(def.content.find((n) => n.id === 'plan-n1')), /1 élément/)
+    const garde = def.content[0].stack.find((n) => n.table?.headerRows === 1)
+    assert.equal(garde.table.body[1][3].text, '1')
+    assert.ok(lireDxf(dxfDuNiveau(prep.etages[0])).textes.some((t) => t.texte === 'Ph 1'))
+    const r = relevesHorsPieces({ niveauId: 'n1', ...prep.rapport, sansElement: [] })
+    assert.deepEqual([r.elements.length, r.photos.length], [1, 1])
+  })
+})
 
 describe('rapport PDF : structure', () => {
   const def = definitionRapportEdl(donnees())
@@ -238,13 +306,17 @@ describe('rapport PDF : calculs', () => {
     assert.equal(nombreFr(12), '12')
   })
 
-  test('surface écrite, sinon mesurée ; HSP dite, sinon lue', () => {
+  test('surface écrite, sinon mesurée ; HSP lue sur le plan, sinon dite (règle du DXF)', () => {
     assert.deepEqual(surfacePiece({ surface_lue: 12.5, contour: [] }), { texte: '12,5 m²', mesuree: false })
     assert.deepEqual(surfacePiece({ contour: carre(0, 0, 2) }), { texte: '4 m²', mesuree: true })
     assert.equal(surfacePiece({ contour: [] }), null)
-    assert.equal(hspPiece({ fiche: { hsp: '2,60' }, hsp_lue: 2.5 }), '2,60')
+    assert.equal(hspPiece({ fiche: { hsp: '2,60' }, hsp_lue: 2.5 }), '2,50 m')
+    assert.equal(hspPiece({ fiche: { hsp: '2,60' } }), '2,60 m')
     assert.equal(hspPiece({ fiche: {}, hsp_lue: 2.5 }), '2,50 m')
     assert.equal(hspPiece({}), null)
+    // Fiche proposée écartée : sa HSP dite non plus
+    assert.equal(hspPiece({ fiche_a_valider: true, fiche: { hsp: '2,60' } }), null)
+    assert.equal(hspPiece({ fiche_a_valider: true, fiche: { hsp: '2,60' } }, { inclurePropositions: true }), '2,60 m')
   })
 
   test('pièce visitée : entrée notée, élément, point, fiche ou analyse', () => {
@@ -253,6 +325,12 @@ describe('rapport PDF : calculs', () => {
     assert.equal(pieceVisitee({ id: 'x', fiche: { sol: ' ' } }, {}), false)
     assert.equal(pieceVisitee({ id: 'x', fiche: { sol: 'Carrelage' } }, {}), true)
     assert.equal(pieceVisitee({ id: 'x' }, { points: [{ piece_id: 'x' }] }), true)
+    // Seulement une fiche proposée laissée de côté (et l'analyse qui l'a faite) : pas visitée
+    const proposee = { id: 'x', fiche_a_valider: true, fiche: { sol: 'Moquette' }, analyse_le: '2026-11-18T09:00:00Z' }
+    assert.equal(pieceVisitee(proposee, {}), false)
+    assert.equal(pieceVisitee(proposee, { inclurePropositions: true }), true)
+    assert.equal(pieceVisitee(proposee, { visitees: ['x'] }), true)
+    assert.equal(pieceVisitee(proposee, { elementsExport: [{ pieceId: 'x' }] }), true)
     const etages = etagesDuRapport({ niveaux, pieces, elementsExport, points, visitees: null })
     assert.deepEqual(etages.map((e) => e.niveau.id), ['n1', 'n2'])
     assert.deepEqual(etages[0].nonVisitees.map((p) => p.id), ['p3'])
@@ -349,6 +427,28 @@ describe('plan du rapport', () => {
     assert.equal(m.filter((x) => x.numero === 'P1').length, 1, 'deux éléments au même point : une bulle')
     assert.equal(m.find((x) => x.element.id === 'e3').couleur, '#2F6FB5')
     assert.deepEqual(m.find((x) => x.element.id === 'e3').primitives, [])
+  })
+
+  test('plusieurs symboles au même point : côte à côte le long de la pièce, comme le DXF', () => {
+    const tournee = { id: 'pt', niveau_id: 'n1', contour: [[0, 0], [10, 0], [10, 1], [0, 1]].map(([u, v]) => {
+      const a = (20 * Math.PI) / 180
+      return [u * Math.cos(a) - v * Math.sin(a), u * Math.sin(a) + v * Math.cos(a)]
+    }) }
+    const memePoint = (id, type, aValider = false) => ({ id, pieceId: 'pt', pointId: 'q', x: 2, y: 3, type, calque: 'menuiseries', numero: 3, aValider })
+    const liste = [memePoint('f', 'fenetre'), memePoint('v', 'volet'), memePoint('f2', 'fenetre', true)]
+    const pxParMetre = 100
+    const m = marquesElements(liste, [tournee], pxParMetre)
+    // Deux types : deux symboles ; la fenêtre en double n'en fait qu'un, de l'élément validé
+    assert.deepEqual(m.map((x) => x.element.id), ['f', 'v'])
+    const { emplacements } = decalagesSymboles(['fenetre', 'volet'], { echelle: (t) => echelleSymbole(t, pxParMetre) })
+    const a = (20 * Math.PI) / 180
+    assert.ok(emplacements[1].dx > 0)
+    proche(m[1].x, 2 + emplacements[1].dx * Math.cos(a))
+    proche(m[1].y, 3 + emplacements[1].dx * Math.sin(a))
+    proche(m[0].x, 2)
+    // Une seule bulle, au coin haut droit de l'ensemble
+    assert.equal(m.filter((x) => x.numero).length, 1)
+    assert.ok(m[0].ancre[0] >= m[1].boite.xmax - 1e-9)
   })
 
   test('dessin sur un contexte quelconque : pièces, symboles, bulles, points seuls', () => {

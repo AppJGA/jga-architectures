@@ -25,7 +25,12 @@ export const dansCp1252 = (caractere) => octetCp1252(caractere) !== null
 
 /** Texte → octets Windows-1252 ; un caractère hors table devient « ? ». */
 export function encoderCp1252(texte) {
-  const octets = []
-  for (const caractere of texte) octets.push(octetCp1252(caractere) ?? 0x3f)
-  return Uint8Array.from(octets)
+  // Un octet par caractère, jamais plus que de positions UTF-16 (une paire
+  // de substitution donne un seul « ? ») : le tableau est réservé d'un coup.
+  // Un tableau JS intermédiaire coûtait ~8 octets par caractère, des
+  // centaines de Mo pour un DXF avec le plan sur iPad
+  const octets = new Uint8Array(texte.length)
+  let n = 0
+  for (const caractere of texte) octets[n++] = octetCp1252(caractere) ?? 0x3f
+  return octets.subarray(0, n)
 }

@@ -9,7 +9,9 @@ import { imagePourPdf, bandeauPourPdf } from '../../../chantier/comptes-rendus/i
 import { chargerImage } from '../../../chantier/comptes-rendus/compressionPhoto'
 import { canevasBlanc, libererCanevas } from '../renduNiveau'
 import { chargerVecteurs } from '../vecteursEdl'
-import { CADRE_PLAN_PIECE, definitionRapportEdl, etagesDuRapport, nomFichierRapportEdl, pointsSansElement } from './rapportEdlLogique'
+import {
+  CADRE_PLAN_PIECE, definitionRapportEdl, elementsDeLEtage, etagesDuRapport, nomFichierRapportEdl, pointsSansElement, relevesHorsPieces,
+} from './rapportEdlLogique'
 import { cadragePiece, cadragePlan, dessinerPlanRapport, vecteursDuCadrage, PX_PLAN_ETAGE } from './planRapportEdl'
 
 const QUALITE_PLAN = 0.82
@@ -81,6 +83,7 @@ async function fondImage(niveau, obtenirLiens) {
 export async function genererRapportEdl({
   affaire, etat = null, niveaux = [], pieces = [], points = [], elements = null, elementsExport = [], photos = [],
   visitees = null, redacteur = '', date = new Date(), obtenirLiens, vecteurs = null, surEtape = () => {}, verifier = () => {},
+  inclurePropositions = false,
 }) {
   const manquants = new Map()
   const tolerer = (promesse, quoi) => Promise.resolve(promesse).catch((err) => {
@@ -97,21 +100,28 @@ export async function genererRapportEdl({
   images.logo = await tolerer(imagePourPdf(`${window.location.origin}/Logo_JGA_Archi.jpg`, 400, 0.85), 'logo')
   if (affaire?.photo_url) images.photoAffaire = await tolerer(bandeauPourPdf(affaire.photo_url), 'photo de l’affaire')
 
-  const etages = etagesDuRapport({ niveaux, pieces, elementsExport, points, visitees })
+  const etages = etagesDuRapport({ niveaux, pieces, elementsExport, points, visitees, inclurePropositions })
   const seuls = pointsSansElement({ points, elements, elementsExport })
   const vues = new Set(etages.flatMap((e) => e.visitees.map((p) => p.id)))
+  const pointsParId = new Map(points.map((p) => [p.id, p]))
+  const position = (p) => (p && Number.isFinite(Number(p.x)) && Number.isFinite(Number(p.y)) ? [Number(p.x), Number(p.y)] : null)
   for (const { niveau, pieces: siennes, visitees: visiteesEtage } of etages) {
     surEtape(`Rapport : plan de l’étage ${niveau.nom || 'sans nom'}…`)
     let v = vecteurs?.get?.(niveau.id) ?? null
     if (!v && niveau.chemin_vecteurs) v = await tolerer(chargerVecteurs(niveau.chemin_vecteurs, obtenirLiens), 'plan vectoriel')
     const fond = v ? null : await tolerer(fondImage(niveau, obtenirLiens), 'plan')
-    const ids = new Set(siennes.map((p) => p.id))
+    // Par étage et non par pièce : un relevé hors des pièces reste sur le plan
     const dessin = {
       vecteurs: v, fond, pieces: siennes, visitees: vues,
-      elementsExport: elementsExport.filter((e) => ids.has(e.pieceId)),
+      elementsExport: elementsDeLEtage(elementsExport, niveau.id, pieces),
       pointsSeuls: seuls.filter((p) => p.niveau_id === niveau.id),
     }
-    const c = cadragePlan(siennes, { pxMax: PX_PLAN_ETAGE, repli: niveau.cadrage })
+    // Le cadrage s'étend aux relevés hors pièces (façade, cour) : coupés du
+    // plan, ils seraient dans le DXF sans se voir dans le rapport
+    const hors = relevesHorsPieces({ niveauId: niveau.id, pieces, elementsExport, points, photos, sansElement: seuls })
+    const reperesHors = [...hors.elements, ...hors.sansElement, ...hors.photos.map((ph) => pointsParId.get(ph.point_id))]
+      .map(position).filter(Boolean).map((pt) => ({ contour: [pt] }))
+    const c = cadragePlan([...siennes, ...reperesHors], { pxMax: PX_PLAN_ETAGE, repli: niveau.cadrage })
     if (c) {
       const plan = await tolerer(imagePlan(c, dessin), 'plan')
       if (plan) plans.set(niveau.id, plan)
@@ -133,8 +143,13 @@ export async function genererRapportEdl({
   }
 
   const ficheDe = new Map(etages.flatMap((e) => e.visitees.map((p) => [p.id, true])))
-  const pointsParId = new Map(points.map((p) => [p.id, p]))
-  const retenues = photos.filter((ph) => ficheDe.has(pointsParId.get(ph.point_id)?.piece_id))
+  const connues = new Set(pieces.map((p) => p.id))
+  // Photos d'une fiche, ou d'un point hors de toute pièce (page « Hors pièces »)
+  const retenues = photos.filter((ph) => {
+    const point = pointsParId.get(ph.point_id)
+    if (!point) return false
+    return ficheDe.has(point.piece_id) || point.piece_id == null || !connues.has(point.piece_id)
+  })
   if (retenues.length) {
     surEtape(`Rapport : ${retenues.length} photo${retenues.length > 1 ? 's' : ''}…`)
     const liens = await tolerer(obtenirLiens(retenues.map((ph) => ph.chemin)), 'lien des photos') ?? new Map()
@@ -151,7 +166,7 @@ export async function genererRapportEdl({
   images.pieces = await versDataUrls(extraits)
   plans.clear()
   extraits.clear()
-  const definition = definitionRapportEdl({ affaire, etat, niveaux, pieces, elementsExport, photos, points, elements, visitees, images, redacteur, date })
+  const definition = definitionRapportEdl({ affaire, etat, niveaux, pieces, elementsExport, photos, points, elements, visitees, images, redacteur, date, inclurePropositions })
   const blob = await pdfMake.createPdf(definition).getBlob()
   const avertissements = [...manquants].map(([quoi, n]) => {
     const [singulier, pluriel, feminin] = LIBELLES_MANQUANTS[quoi] ?? [quoi, quoi, false]

@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 1565 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans, gestion de l'application, état des lieux)
+npm test         # 1586 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans, gestion de l'application, état des lieux)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -1001,7 +1001,13 @@ lot 1 : `docs/superpowers/plans/2026-11-17-etat-des-lieux-lot1-preparer.md`.
     cadré sur les pièces (symboles et numéros), une fiche par pièce visitée
     (finitions, éléments par calque, photos « Ph n » numérotées comme le DXF
     par `numeroterPhotos`, points sans élément). Extraits de pièce limités
-    aux vecteurs de la pièce (iPad).
+    aux vecteurs de la pièce (iPad). **Mêmes règles que le DXF** : fiche
+    proposée écartée et HSP (lue sur le plan, sinon dite) par
+    `ficheExportEdl.js` ; pièce d'un point posée une fois par
+    `preparerExport` (`pieceDuPoint`, étage du point) ; décalage des symboles
+    d'un même point par `decalagesSymboles` ; relevés hors de toute pièce sur
+    une page « Hors pièces ». ZIP asynchrone (`zip` de fflate, workers) ; un
+    plan existant illisible ne retire que son `…-avec-plan.dxf` (avertissement).
 
 ## To-do list (`src/modules/etude/todo/`)
 

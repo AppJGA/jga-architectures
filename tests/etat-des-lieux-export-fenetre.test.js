@@ -12,8 +12,8 @@ import { decoderDxf, lireDxf } from '../src/modules/etude/etat-des-lieux/dxfLect
 import { encoderDxf } from '../src/modules/etude/etat-des-lieux/export/exportDxfEdl.js'
 import {
   COULEUR_PLAN_APERCU, alignementCanevas, clesAEvincer, clesAGarder, superposerAnalyse, avertissementsExport, boiteDessin, cleDxf, cleRapport, couleurCalqueApercu,
-  deplacer, dessinDxf, dxfDuNiveau, exportPossible, fabriquerZip, nomFichierZip, nomsFichiersDxf, preparerExport,
-  reglagesParDefaut, versDessin, versEcran, vueAjustee, zoomer,
+  deplacer, dessinDxf, dxfDuNiveau, exportPossible, fabriquerZip, fichiersDxf, nomFichierZip, nomsFichiersDxf, noteUniteArchicad,
+  preparerExport, reglagesParDefaut, uniteEtage, versDessin, versEcran, vueAjustee, zoomer,
 } from '../src/modules/etude/etat-des-lieux/export/exportFenetreLogique.js'
 import { COULEUR_PROPOSITION } from '../src/modules/etude/etat-des-lieux/export/rapportEdlLogique.js'
 
@@ -145,16 +145,59 @@ describe('noms des fichiers et ZIP', () => {
     assert.equal(new Set([...noms.values()].map((n) => n.edl)).size, 3)
   })
 
-  test('le ZIP rend chaque fichier à l’identique', () => {
+  test('le ZIP rend chaque fichier à l’identique', async () => {
     const d = donneesEssai()
     const etage = preparerExport(d, reglagesParDefaut(d.niveaux)).etages[0]
-    const dxf = encoderDxf(dxfDuNiveau(etage))
+    const texte = dxfDuNiveau(etage)
     const pdf = new Uint8Array([37, 80, 68, 70, 45])
-    const zip = fabriquerZip([{ nom: 'a-EDL.dxf', octets: dxf }, { nom: 'rapport.pdf', octets: pdf }])
+    // Les octets d'un DXF sont cédés au worker : on compare au texte d'origine
+    const zip = await fabriquerZip([{ nom: 'a-EDL.dxf', octets: encoderDxf(texte) }, { nom: 'rapport.pdf', octets: pdf }])
     const relu = unzipSync(zip)
     assert.deepEqual(Object.keys(relu).sort(), ['a-EDL.dxf', 'rapport.pdf'])
     assert.deepEqual([...relu['rapport.pdf']], [...pdf])
-    assert.equal(decoderDxf(relu['a-EDL.dxf']), decoderDxf(dxf))
+    assert.equal(decoderDxf(relu['a-EDL.dxf']), decoderDxf(encoderDxf(texte)))
+  })
+
+  test('un gros DXF passe par le worker (zip asynchrone) et revient intact', async () => {
+    // Au-delà de 160 000 octets, fflate compresse hors du fil principal
+    const texte = '  0\r\nLINE\r\n  8\r\nMURS\r\n'.repeat(40000)
+    const zip = await fabriquerZip([{ nom: 'gros.dxf', octets: encoderDxf(texte) }])
+    assert.equal(decoderDxf(unzipSync(zip)['gros.dxf']), texte)
+  })
+
+  test('DXF du ZIP : un plan illisible ne coûte que le DXF avec le plan de son étage', async () => {
+    const d = donneesEssai()
+    const prep = preparerExport(d, reglagesParDefaut(d.niveaux))
+    const etages = prep.etages.map((e) => ({ ...e, niveau: { ...e.niveau, chemin_vecteurs: `${e.niveau.id}.json.gz` } }))
+    const noms = nomsFichiersDxf(affaire, d.niveaux, date)
+    const etapes = []
+    const r = await fichiersDxf({
+      etages, noms, avecPlan: true, surEtape: (t) => etapes.push(t),
+      obtenirTexte: async (etage, avecPlan) => {
+        if (avecPlan && etage.niveau.id === etages[0].niveau.id) throw new Error('fichier vectoriel introuvable')
+        return dxfDuNiveau(etage)
+      },
+    })
+    assert.deepEqual(r.fichiers.map((f) => f.nom), [
+      noms.get(etages[0].niveau.id).edl, noms.get(etages[1].niveau.id).edl, noms.get(etages[1].niveau.id).avecPlan,
+    ])
+    assert.equal(r.avertissements.length, 1)
+    assert.match(r.avertissements[0], /plan existant illisible \(fichier vectoriel introuvable\), DXF avec le plan non fabriqué/)
+    assert.ok(r.fichiers.every((f) => f.octets instanceof Uint8Array && f.octets.length > 0))
+    assert.ok(etapes.length >= 3)
+    // Le DXF à fusionner, lui, reste indispensable
+    await assert.rejects(fichiersDxf({ etages, noms, obtenirTexte: async () => { throw new Error('panne') } }), /panne/)
+  })
+
+  test('unité de chaque étage pour ArchiCAD : cm, m, mm, et la note qui la dit', () => {
+    assert.deepEqual([100, 1, 1000, null].map((u) => uniteEtage({ unites_par_metre: u })), ['cm', 'm', 'mm', 'm'])
+    assert.equal(noteUniteArchicad([{ nom: 'RDC', unites_par_metre: 100 }]), 'L’unité de ce plan est le centimètre : choisissez-la si ArchiCAD la demande.')
+    assert.equal(noteUniteArchicad([{ unites_par_metre: 1000 }, { unites_par_metre: 1000 }]), 'L’unité de ces plans est le millimètre : choisissez-la si ArchiCAD la demande.')
+    assert.equal(
+      noteUniteArchicad([{ nom: 'RDC', unites_par_metre: 100 }, { nom: 'R+1', unites_par_metre: 1 }]),
+      'Unité à choisir si ArchiCAD la demande : RDC en centimètres, R+1 en mètres.',
+    )
+    assert.equal(noteUniteArchicad([]), null)
   })
 })
 
@@ -287,13 +330,13 @@ describe('correctifs (tour 1)', () => {
     assert.deepEqual(clesAEvincer(new Map(), new Set()), [])
   })
 
-  test('le PDF est rangé sans compression, les DXF compressés', () => {
+  test('le PDF est rangé sans compression, les DXF compressés', async () => {
     const pdf = new Uint8Array(20000) // des zéros : très compressibles
     const dxf = new TextEncoder().encode('  0\r\nLINE\r\n'.repeat(2000))
-    const zip = fabriquerZip([{ nom: 'r.pdf', octets: pdf }, { nom: 'a.dxf', octets: dxf }])
+    const zip = await fabriquerZip([{ nom: 'r.pdf', octets: pdf }, { nom: 'a.dxf', octets: dxf.slice() }])
     // Stocké tel quel : l'archive dépasse la taille du PDF seul
     assert.ok(zip.length > pdf.length)
-    const seulDxf = fabriquerZip([{ nom: 'a.dxf', octets: dxf }])
+    const seulDxf = await fabriquerZip([{ nom: 'a.dxf', octets: dxf.slice() }])
     assert.ok(seulDxf.length < dxf.length / 5)
     const relu = unzipSync(zip)
     assert.equal(relu['r.pdf'].length, 20000)

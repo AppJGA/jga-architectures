@@ -14,6 +14,7 @@ import { aire } from '../geometrieEdl.js'
 import { COULEUR, LARGEUR_UTILE, blocAffaire, jour, lignePhotos, tableauFin } from '../../../chantier/comptes-rendus/rapportLogique.js'
 import { COULEUR_IA } from '../../../chantier/comptes-rendus/enregistrement/styleProposition.js'
 import { numeroterPhotos } from './numerotationEdl.js'
+import { ficheEcartee, ficheExportee, hspExport } from './ficheExportEdl.js'
 
 // ─── Textes ──────────────────────────────────────────────────────────────────
 
@@ -77,26 +78,58 @@ const ficheRemplie = (fiche) => !!fiche && typeof fiche === 'object' && Object.v
 
 /**
  * Pièce visitée : entrée notée en visite, ou quelque chose relevé dedans
- * (élément, point, fiche, analyse) — une pièce décrite au bureau compte aussi.
+ * (élément exporté, point, fiche, analyse) — une pièce décrite au bureau
+ * compte aussi. Une fiche proposée laissée hors de l'export (et l'analyse qui
+ * l'a proposée) ne compte pas : la pièce aurait une fiche vide, absente du DXF.
  */
-export function pieceVisitee(piece, { visitees = null, elementsExport = [], points = [] } = {}) {
+export function pieceVisitee(piece, { visitees = null, elementsExport = [], points = [], inclurePropositions = false } = {}) {
   if (tableau(visitees).has(piece.id)) return true
-  if (piece.analyse_le || ficheRemplie(piece.fiche)) return true
+  if (!ficheEcartee(piece, { inclurePropositions }) && (piece.analyse_le || ficheRemplie(piece.fiche))) return true
   return elementsExport.some((e) => e.pieceId === piece.id) || points.some((p) => p.piece_id === piece.id)
 }
 
 const parOrdre = (a, b) => (a.ordre ?? 0) - (b.ordre ?? 0)
 
 /** Étages dans l'ordre, chacun avec ses pièces visitées (une fiche chacune) et les autres. */
-export function etagesDuRapport({ niveaux = [], pieces = [], elementsExport = [], points = [], visitees = null }) {
+export function etagesDuRapport({ niveaux = [], pieces = [], elementsExport = [], points = [], visitees = null, inclurePropositions = false }) {
   const vues = tableau(visitees)
   return [...niveaux].sort(parOrdre).map((niveau) => {
     const siennes = pieces.filter((p) => p.niveau_id === niveau.id).sort(parOrdre)
     const visitees = []
     const nonVisitees = []
-    for (const p of siennes) (pieceVisitee(p, { visitees: vues, elementsExport, points }) ? visitees : nonVisitees).push(p)
+    for (const p of siennes) (pieceVisitee(p, { visitees: vues, elementsExport, points, inclurePropositions }) ? visitees : nonVisitees).push(p)
     return { niveau, pieces: siennes, visitees, nonVisitees }
   })
+}
+
+/**
+ * Éléments d'un étage : celui de leur point, sinon celui de leur pièce
+ * (`niveauId` d'`elementsAExporter`), comme les DXF — un élément posé hors
+ * de toute pièce reste sur le plan de son étage.
+ */
+export function elementsDeLEtage(elementsExport = [], niveauId, pieces = []) {
+  const niveauDeLaPiece = new Map(pieces.map((p) => [p.id, p.niveau_id ?? null]))
+  return elementsExport.filter((e) => (e.niveauId !== undefined ? e.niveauId : niveauDeLaPiece.get(e.pieceId) ?? null) === niveauId)
+}
+
+/**
+ * Relevés d'un étage sans pièce (point hors des contours : façade, cour,
+ * palier non découpé) : présents dans le DXF, ils ont leur page « Hors
+ * pièces » dans le rapport au lieu de disparaître.
+ * @returns { elements, sansElement, photos }
+ */
+export function relevesHorsPieces({ niveauId, pieces = [], elementsExport = [], points = [], photos = [], sansElement = [] }) {
+  const connues = new Set(pieces.map((p) => p.id))
+  const pointsParId = new Map(points.map((p) => [p.id, p]))
+  const horsPiece = (pieceId) => pieceId == null || !connues.has(pieceId)
+  return {
+    elements: elementsDeLEtage(elementsExport, niveauId, pieces).filter((e) => horsPiece(e.pieceId)),
+    sansElement: sansElement.filter((p) => p.niveau_id === niveauId && horsPiece(p.piece_id)),
+    photos: photos.filter((ph) => {
+      const point = pointsParId.get(ph.point_id)
+      return !!point && point.niveau_id === niveauId && horsPiece(point.piece_id)
+    }),
+  }
 }
 
 const memePosition = (a, b) => Number.isFinite(a?.x) && Number.isFinite(b?.x) && Math.abs(a.x - b.x) < 1e-6 && Math.abs(a.y - b.y) < 1e-6
@@ -176,12 +209,9 @@ export function surfacePiece(piece) {
   return { texte: `${nombreFr(aire(contour), 1)} m²`, mesuree: true }
 }
 
-/** HSP dite en visite (fiche), sinon lue sur le plan. */
-export function hspPiece(piece) {
-  const dite = rempli(piece?.fiche?.hsp)
-  if (dite) return dite
-  const lue = Number(piece?.hsp_lue)
-  return piece?.hsp_lue != null && Number.isFinite(lue) && lue > 0 ? `${nombreFr(lue, 2, { fixe: true })} m` : null
+/** HSP lue sur le plan, sinon dite en visite si la fiche part : la règle du DXF (`hspExport`). */
+export function hspPiece(piece, { inclurePropositions = false } = {}) {
+  return rempli(hspExport(piece, { inclurePropositions })?.texte) || null
 }
 
 const FINITIONS = [['sol', 'Sol'], ['murs', 'Murs'], ['plafond', 'Plafond'], ['plinthes', 'Plinthes']]
@@ -241,9 +271,9 @@ function blocElements(titre, elements) {
   ], g.elements.length <= 12))
 }
 
-function enteteFiche(etage, piece) {
+function enteteFiche(etage, piece, inclurePropositions) {
   const surface = surfacePiece(piece)
-  const hsp = hspPiece(piece)
+  const hsp = hspPiece(piece, { inclurePropositions })
   return [
     {
       columns: [
@@ -271,41 +301,70 @@ function enteteFiche(etage, piece) {
   ]
 }
 
-function fichePiece({ etage, piece, elements, sansElement, photos, images }) {
+function blocSansElement(sansElement) {
+  if (!sansElement.length) return []
+  return [ensemble([
+    titreSection('Points sans élément'),
+    {
+      text: `${sansElement.length > 1 ? 'Points posés' : 'Point posé'} en visite sans type ni élément exporté :`,
+      fontSize: 8.5, color: COULEUR.gris,
+    },
+    {
+      fontSize: 8.5, margin: [0, 2, 0, 0],
+      text: sansElement.flatMap((p, i) => [
+        ...(i ? [', '] : []),
+        { text: `P${p.numero}`, bold: true },
+        ...(p.elementAValider ? [{ text: ' (élément à valider)', italics: true, color: COULEUR_PROPOSITION }] : []),
+      ]),
+    },
+  ])]
+}
+
+function blocPhotos(photos) {
+  if (!photos.length) return []
+  const [premiere, ...suite] = lignePhotos(photos, 'petites')
+  return [ensemble([titreSection(`Photos (${photos.length})`), premiere]), ...suite]
+}
+
+function fichePiece({ etage, piece, elements, sansElement, photos, images, inclurePropositions }) {
   const extrait = prendre(piece.id, images.pieces)
-  const remarques = rempli(piece.fiche?.remarques)
-  const vide = !elements.length && !sansElement.length && !photos.length && !ficheRemplie(piece.fiche)
+  // Fiche proposée et non retenue : la pièce se lit comme sans fiche, comme
+  // dans le DXF
+  const fiche = ficheExportee(piece, { inclurePropositions })
+  const remarques = rempli(fiche?.remarques)
+  const vide = !elements.length && !sansElement.length && !photos.length && !ficheRemplie(fiche)
   return {
     id: `fiche-${piece.id}`,
     pageBreak: 'before',
     pageOrientation: 'portrait',
     stack: [
-      ...enteteFiche(etage, piece),
-      ...(piece.fiche_a_valider ? [{ text: 'Fiche proposée par l’analyse, à valider par l’agence.', italics: true, fontSize: 8.5, color: COULEUR_PROPOSITION, margin: [0, 0, 0, 4] }] : []),
+      ...enteteFiche(etage, piece, inclurePropositions),
+      ...(piece.fiche_a_valider && fiche ? [{ text: 'Fiche proposée par l’analyse, à valider par l’agence.', italics: true, fontSize: 8.5, color: COULEUR_PROPOSITION, margin: [0, 0, 0, 4] }] : []),
       ...(extrait ? [{ image: extrait, fit: CADRE_PLAN_PIECE, alignment: 'center', margin: [0, 0, 0, 4] }] : []),
       ...(vide ? [discret('Rien n’a été relevé dans cette pièce.')] : []),
-      ensemble([titreSection('Finitions'), tableauFinitions(piece.fiche)]),
+      ensemble([titreSection('Finitions'), tableauFinitions(fiche)]),
       ...blocElements(titreSection(`Éléments relevés${elements.length ? ` (${elements.length})` : ''}`), elements),
-      ...(sansElement.length ? [ensemble([
-        titreSection('Points sans élément'),
-        {
-          text: `${sansElement.length > 1 ? 'Points posés' : 'Point posé'} en visite sans type ni élément exporté :`,
-          fontSize: 8.5, color: COULEUR.gris,
-        },
-        {
-          fontSize: 8.5, margin: [0, 2, 0, 0],
-          text: sansElement.flatMap((p, i) => [
-            ...(i ? [', '] : []),
-            { text: `P${p.numero}`, bold: true },
-            ...(p.elementAValider ? [{ text: ' (élément à valider)', italics: true, color: COULEUR_PROPOSITION }] : []),
-          ]),
-        },
-      ])] : []),
+      ...blocSansElement(sansElement),
       ...(remarques ? [ensemble([titreSection('Remarques'), { text: remarques, fontSize: 9 }], remarques.length < 1500)] : []),
-      ...(photos.length ? (() => {
-        const [premiere, ...suite] = lignePhotos(photos, 'petites')
-        return [ensemble([titreSection(`Photos (${photos.length})`), premiere]), ...suite]
-      })() : []),
+      ...blocPhotos(photos),
+    ],
+  }
+}
+
+// Page des relevés d'un étage posés hors de toute pièce
+function pageHorsPieces({ etage, niveauId, elements, sansElement, photos }) {
+  return {
+    id: `hors-pieces-${niveauId}`,
+    pageBreak: 'before',
+    pageOrientation: 'portrait',
+    stack: [
+      { text: texteLatin(etage).toUpperCase(), fontSize: 8, bold: true, color: COULEUR.orange },
+      { text: 'Hors pièces', fontSize: 17, bold: true, margin: [0, 1, 0, 0] },
+      { canvas: [{ type: 'line', x1: 0, y1: 4, x2: LARGEUR_UTILE, y2: 4, lineWidth: 1.2, lineColor: COULEUR.orange }], margin: [0, 0, 0, 6] },
+      discret('Relevés posés en dehors des pièces dessinées (façade, cour, circulation non découpée…).'),
+      ...(elements.length ? blocElements(titreSection(`Éléments relevés (${elements.length})`), elements) : []),
+      ...blocSansElement(sansElement),
+      ...blocPhotos(photos),
     ],
   }
 }
@@ -372,7 +431,7 @@ export function nomFichierRapportEdl(affaire, date = new Date()) {
   return `${[dateIso(date), code || null, 'etat-des-lieux'].filter(Boolean).join('-')}.pdf`
 }
 
-function pageDeGarde({ affaire, etages, redacteur, date, elementsExport, images }) {
+function pageDeGarde({ affaire, etages, redacteur, date, elementsExport, pieces, images }) {
   const propositions = elementsExport.filter((e) => e.aValider).length
   const affaireLatine = Object.fromEntries(Object.entries(affaire ?? {}).map(([k, v]) => [k, typeof v === 'string' ? texteLatin(v) : v]))
   const d = dateIso(date)
@@ -410,8 +469,8 @@ function pageDeGarde({ affaire, etages, redacteur, date, elementsExport, images 
           body: [
             ['Étage', 'Pièces', 'Visitées', 'Éléments'].map((t, i) => ({ text: t, bold: true, fontSize: 8, color: 'white', alignment: i ? 'right' : 'left' })),
             ...etages.map((e) => {
-              const ids = new Set(e.pieces.map((p) => p.id))
-              const n = elementsExport.filter((x) => ids.has(x.pieceId)).length
+              // Par étage et non par pièce : les relevés hors pièces comptent
+              const n = elementsDeLEtage(elementsExport, e.niveau.id, pieces).length
               return [
                 { text: rempli(e.niveau.nom) || 'Étage', fontSize: 9 },
                 ...[e.pieces.length, e.visitees.length, n].map((v) => ({ text: String(v), fontSize: 9, alignment: 'right' })),
@@ -440,14 +499,16 @@ function pageDeGarde({ affaire, etages, redacteur, date, elementsExport, images 
  * @param elements lignes `edl_elements` ({ id, point_id, a_valider }), pour les
  *   points dont la seule proposition reste hors de l'export
  * @param visitees identifiants des pièces où l'on est entré en visite (Set ou tableau)
+ * @param inclurePropositions comme le DXF : une fiche proposée (`fiche_a_valider`)
+ *   n'est imprimée que si vrai ; sinon la pièce se lit sans fiche
  * @param images { logo, photoAffaire, plans: niveauId → JPEG, pieces: pieceId → JPEG,
  *   photos: photoId → JPEG } (Map ou objet ; une image absente est omise)
  */
 export function definitionRapportEdl({
   affaire = null, etat = null, niveaux = [], pieces = [], elementsExport = [], photos = [], points = [], elements = null,
-  visitees = null, images = {}, redacteur = '', date = null,
+  visitees = null, images = {}, redacteur = '', date = null, inclurePropositions = false,
 }) {
-  const etages = etagesDuRapport({ niveaux, pieces, elementsExport, points, visitees })
+  const etages = etagesDuRapport({ niveaux, pieces, elementsExport, points, visitees, inclurePropositions })
   const sansElement = pointsSansElement({ points, elements, elementsExport })
   const pointsParId = new Map(points.map((p) => [p.id, p]))
   const exportesParId = new Map(elementsExport.map((e) => [e.id, e]))
@@ -464,24 +525,34 @@ export function definitionRapportEdl({
   // par la même règle
   const photosNumerotees = photos.every((ph) => ph.numero != null) ? photos : numeroterPhotos(photos, points, { niveaux, pieces })
 
-  const contenu = [pageDeGarde({ affaire, etages, redacteur, date: date ?? etat?.created_at ?? null, elementsExport, images })]
+  const illustrees = (liste) => liste
+    .map((ph) => ({ ph, point: pointsParId.get(ph.point_id), image: prendre(ph.id, images.photos) }))
+    .filter((x) => x.image)
+    .sort((a, b) => a.ph.numero - b.ph.numero)
+    .map(({ ph, point, image }) => ({ image, legende: legendePhoto(ph, point, elementsDuPoint(point)) }))
+  const parNumero = (a, b) => (a.numero ?? 0) - (b.numero ?? 0)
+
+  const contenu = [pageDeGarde({ affaire, etages, redacteur, date: date ?? etat?.created_at ?? null, elementsExport, pieces, images })]
   for (const etage of etages) {
-    const ids = new Set(etage.pieces.map((p) => p.id))
-    contenu.push(pagePlan({ ...etage, elements: elementsExport.filter((e) => ids.has(e.pieceId)), images }))
+    const nomEtage = rempli(etage.niveau.nom) || 'Étage'
+    contenu.push(pagePlan({ ...etage, elements: elementsDeLEtage(elementsExport, etage.niveau.id, pieces), images }))
     for (const piece of etage.visitees) {
-      const photosPiece = photosNumerotees
-        .filter((ph) => pointsParId.get(ph.point_id)?.piece_id === piece.id)
-        .map((ph) => ({ ph, point: pointsParId.get(ph.point_id), image: prendre(ph.id, images.photos) }))
-        .filter((x) => x.image)
-        .sort((a, b) => a.ph.numero - b.ph.numero)
-        .map(({ ph, point, image }) => ({ image, legende: legendePhoto(ph, point, elementsDuPoint(point)) }))
       contenu.push(fichePiece({
-        etage: rempli(etage.niveau.nom) || 'Étage',
+        etage: nomEtage,
         piece,
         elements: elementsExport.filter((e) => e.pieceId === piece.id),
-        sansElement: sansElement.filter((p) => p.piece_id === piece.id).sort((a, b) => (a.numero ?? 0) - (b.numero ?? 0)),
-        photos: photosPiece,
+        sansElement: sansElement.filter((p) => p.piece_id === piece.id).sort(parNumero),
+        photos: illustrees(photosNumerotees.filter((ph) => pointsParId.get(ph.point_id)?.piece_id === piece.id)),
         images,
+        inclurePropositions,
+      }))
+    }
+    const hors = relevesHorsPieces({ niveauId: etage.niveau.id, pieces, elementsExport, points, photos: photosNumerotees, sansElement })
+    const photosHors = illustrees(hors.photos)
+    if (hors.elements.length || hors.sansElement.length || photosHors.length) {
+      contenu.push(pageHorsPieces({
+        etage: nomEtage, niveauId: etage.niveau.id, elements: hors.elements,
+        sansElement: hors.sansElement.sort(parNumero), photos: photosHors,
       }))
     }
   }

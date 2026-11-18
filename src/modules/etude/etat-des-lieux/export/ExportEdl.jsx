@@ -9,10 +9,9 @@ import {
 } from '../../../../shared/planning/export/styleFenetreExport'
 import { lireDonneesExport, chargerPlanNiveau } from './exportDonnees'
 import { genererRapportEdl } from './genererRapportEdl'
-import { encoderDxf } from './exportDxfEdl'
 import {
   avertissementsExport, cleDxf, cleRapport, clesAEvincer, clesAGarder, dessinDxf, dxfDuNiveau, exportPossible,
-  fabriquerZip, nomFichierZip, nomsFichiersDxf, preparerExport, reglagesParDefaut,
+  fabriquerZip, fichiersDxf, nomFichierZip, nomsFichiersDxf, noteUniteArchicad, preparerExport, reglagesParDefaut, uniteEtage,
 } from './exportFenetreLogique'
 import { nomFichierRapportEdl } from './rapportEdlLogique'
 import { PlancheSymboles } from './PlancheSymboles'
@@ -333,28 +332,22 @@ export function ExportEdl({ affaireId, obtenirLiens, enAttente = 0, onFermer }) 
       ...(voulus.rapport ? [cleRapport(voulus)] : []),
     ])
     try {
-      const fichiers = []
-      for (const etage of prep.etages) {
-        const nomEtage = etage.niveau.nom || 'sans nom'
-        const n = noms.get(etage.niveau.id)
-        setExportEtat({ etape: `Étage ${nomEtage} : DXF…` })
-        fichiers.push({ nom: n.edl, octets: encoderDxf(await obtenirDxf(c, etage, voulus, false, obtenirLiens, elaguerMaintenant)) })
-        if (voulus.avecPlan && etage.niveau.chemin_vecteurs) {
-          setExportEtat({ etape: `Étage ${nomEtage} : DXF avec le plan…` })
-          fichiers.push({ nom: n.avecPlan, octets: encoderDxf(await obtenirDxf(c, etage, voulus, true, obtenirLiens, elaguerMaintenant)) })
-        }
-      }
-      let avertissements = []
+      // Un plan illisible ne coûte que le DXF avec le plan de son étage (avertissement)
+      const { fichiers, avertissements: avertissementsDxf } = await fichiersDxf({
+        etages: prep.etages, noms, avecPlan: voulus.avecPlan,
+        obtenirTexte: (etage, avecPlan) => obtenirDxf(c, etage, voulus, avecPlan, obtenirLiens, elaguerMaintenant),
+        surEtape: (etape) => setExportEtat({ etape }),
+      })
+      let avertissements = avertissementsDxf
       if (voulus.rapport) {
         setExportEtat({ etape: 'Rapport : images…', rapport: true })
         const r = await obtenirRapport(voulus)
         fichiers.push({ nom: r.nomFichier, octets: new Uint8Array(await r.blob.arrayBuffer()) })
-        avertissements = r.avertissements ?? []
+        avertissements = [...avertissements, ...(r.avertissements ?? [])]
       }
       setExportEtat({ etape: 'Compression du ZIP…' })
-      // Laisser l'écran afficher l'étape avant la compression, qui bloque
-      await new Promise((r) => setTimeout(r, 0))
-      const zip = fabriquerZip(fichiers)
+      // Compression dans des workers : l'écran reste vivant pendant ce temps
+      const zip = await fabriquerZip(fichiers)
       telechargerBlob(new Blob([zip], { type: 'application/zip' }), nomFichierZip(affaireExport, date))
       setExportEtat({ fini: true, avertissements, fichiers: fichiers.length })
     } catch (err) {
@@ -373,13 +366,15 @@ export function ExportEdl({ affaireId, obtenirLiens, enAttente = 0, onFermer }) 
   const avertissements = donnees && reglages ? avertissementsExport({ donnees, reglages, enLigne }) : []
   if (enAttente > 0) avertissements.push(`${pluriel(enAttente, 'geste')} de visite pas encore ${enAttente > 1 ? 'envoyés' : 'envoyé'} depuis cet appareil : ${enAttente > 1 ? 'ils ne seront' : 'il ne sera'} pas dans l’export.`)
 
+  // Chaque DXF avec l'unité de son étage : ArchiCAD peut la demander à la fusion
   const fichiersPrevus = donnees && reglages ? [
     ...etagesChoisis.flatMap((n) => [
-      noms.get(n.id).edl,
-      ...(reglages.avecPlan && n.chemin_vecteurs ? [noms.get(n.id).avecPlan] : []),
+      { nom: noms.get(n.id).edl, unite: uniteEtage(n) },
+      ...(reglages.avecPlan && n.chemin_vecteurs ? [{ nom: noms.get(n.id).avecPlan, unite: uniteEtage(n) }] : []),
     ]),
-    ...(reglages.rapport ? [nomFichierRapportEdl(affaireExport, date)] : []),
+    ...(reglages.rapport ? [{ nom: nomFichierRapportEdl(affaireExport, date), unite: null }] : []),
   ] : []
+  const noteUnite = noteUniteArchicad(etagesChoisis)
   const sansPlan = reglages?.avecPlan ? etagesChoisis.filter((n) => !n.chemin_vecteurs) : []
   const compteParNiveau = useMemo(() => {
     const m = new Map()
@@ -550,11 +545,17 @@ export function ExportEdl({ affaireId, obtenirLiens, enAttente = 0, onFermer }) 
         <p style={titreSection}>Dans le ZIP</p>
         {fichiersPrevus.length ? (
           <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: GRIS, display: 'flex', flexDirection: 'column', gap: 2, wordBreak: 'break-all' }}>
-            {fichiersPrevus.map((f) => <li key={f}>{f}</li>)}
+            {fichiersPrevus.map((f) => (
+              <li key={f.nom}>
+                {f.nom}
+                {f.unite && <span style={{ marginLeft: 6, fontSize: 11, color: PALE, wordBreak: 'normal', whiteSpace: 'nowrap' }}>· {f.unite}</span>}
+              </li>
+            ))}
           </ul>
         ) : <p style={{ margin: 0, fontSize: 12, color: PALE }}>Aucun fichier : cochez au moins un étage.</p>}
         <p style={{ margin: '10px 0 0', fontSize: 12, color: GRIS, lineHeight: 1.5, padding: '8px 10px', background: 'white', border: '0.5px solid rgba(0,0,0,0.1)' }}>
           Dans ArchiCAD : Fichier → Fusionner → choisir le DXF <code style={{ fontSize: 11, whiteSpace: 'nowrap' }}>…-EDL.dxf</code> (même unité et mêmes coordonnées que le plan d’origine).
+          {noteUnite && <> {noteUnite}</>}
         </p>
       </section>
 

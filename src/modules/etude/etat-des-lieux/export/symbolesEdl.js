@@ -337,8 +337,23 @@ export function orientationPiece(contour) {
   return Math.round(r * 1e6) / 1e6 || 0
 }
 
-// Primitives d'un symbole tournées de `angle` degrés (sens trigonométrique)
-// puis posées en (x, y), toujours en mètres
+// Angle ramené dans [0, 360[ : un arc tourné de -30° garde des bornes que
+// tout lecteur DXF ou canevas comprend, et deux placements égaux s'écrivent
+// pareil (le -0 et le 360 d'un arrondi deviennent 0)
+const angleNormalise = (deg) => {
+  const r = Math.round((((deg % 360) + 360) % 360) * 1e9) / 1e9
+  return r >= 360 ? 0 : r || 0
+}
+
+/**
+ * Primitives d'un symbole tournées de `angle` degrés (sens trigonométrique)
+ * puis posées en (x, y), toujours en mètres. Mêmes sortes que le catalogue,
+ * avec ce que la pose ajoute :
+ *   - arc : bornes tournées, ramenées dans [0, 360[ ;
+ *   - texte : `rotation` (degrés, sens trigonométrique, autour de `pos`) =
+ *     celle du catalogue + `angle` — le DXF l'écrit en code 50, le canevas
+ *     du rapport la retourne (y vers le bas).
+ */
 export function primitivesPlacees(code, { x = 0, y = 0, angle = 0 } = {}) {
   const symbole = SYMBOLES[code]
   if (!symbole) return []
@@ -355,10 +370,56 @@ export function primitivesPlacees(code, { x = 0, y = 0, angle = 0 } = {}) {
     }
     if (p.arc) {
       const [cx, cy, r, debut, fin] = p.arc
-      return { arc: [...t([cx, cy]), r, debut + angle, fin + angle] }
+      return { arc: [...t([cx, cy]), r, angleNormalise(debut + angle), angleNormalise(fin + angle)] }
     }
     return { texte: p.texte, pos: t(p.pos), hauteur: p.hauteur, rotation: (p.rotation ?? 0) + angle }
   })
+}
+
+// ─── Plusieurs symboles sur un même point ───────────────────────────────────
+//
+// « Un élément par chose dite » : une fenêtre et son volet sur P3. Le DXF et
+// le plan du rapport les posent côte à côte le long de la pièce, par la même
+// règle, pour que les deux se lisent pareil.
+
+// Entre deux symboles posés sur le même point (mètres)
+export const ECART_SYMBOLES = 0.05
+// Rond d'un élément sans type (désordre non classé…) : de quoi le situer
+export const RAYON_SANS_SYMBOLE = 0.05
+
+/**
+ * Décalage de chaque symbole d'un même point, le long de l'axe de la pièce :
+ * le premier sur le point, chacun des suivants à droite du précédent
+ * (`ECART_SYMBOLES` entre leurs boîtes).
+ *
+ * @param types codes de type dans l'ordre (null : élément sans symbole, un
+ *   rond de `RAYON_SANS_SYMBOLE`) ; un même type n'est compté qu'une fois
+ * @param echelle (type) → agrandissement du symbole (le rapport grossit les
+ *   symboles à taille fixe ; le DXF les garde à 1)
+ * @returns { emplacements: [{ type, dx, boite }], boite } — `dx` en mètres
+ *   dans le repère de la pièce, `boite` (non tournée) autour du point
+ */
+export function decalagesSymboles(types, { echelle = () => 1 } = {}) {
+  const emplacements = []
+  const boite = { xmin: Infinity, ymin: Infinity, xmax: -Infinity, ymax: -Infinity }
+  let bord = null
+  for (const brut of types ?? []) {
+    const type = brut && SYMBOLES[brut] ? brut : null
+    if (emplacements.some((em) => em.type === type)) continue
+    const k = echelle(type) || 1
+    const b0 = type
+      ? boiteSymbole(type)
+      : { xmin: -RAYON_SANS_SYMBOLE, ymin: -RAYON_SANS_SYMBOLE, xmax: RAYON_SANS_SYMBOLE, ymax: RAYON_SANS_SYMBOLE }
+    const b = { xmin: b0.xmin * k, ymin: b0.ymin * k, xmax: b0.xmax * k, ymax: b0.ymax * k }
+    const dx = bord === null ? 0 : bord + ECART_SYMBOLES - b.xmin
+    bord = dx + b.xmax
+    boite.xmin = Math.min(boite.xmin, dx + b.xmin)
+    boite.xmax = Math.max(boite.xmax, dx + b.xmax)
+    boite.ymin = Math.min(boite.ymin, b.ymin)
+    boite.ymax = Math.max(boite.ymax, b.ymax)
+    emplacements.push({ type, dx, boite: b })
+  }
+  return { emplacements, boite }
 }
 
 // ─── SVG ────────────────────────────────────────────────────────────────────

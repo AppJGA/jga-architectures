@@ -8,7 +8,7 @@
 
 import { boite, cadrage, centre, versPixels } from '../geometrieEdl.js'
 import { dessinerVecteurs, elementsVisibles } from '../vecteursEdlLogique.js'
-import { SYMBOLES, boitePrimitives, orientationPiece, primitivesPlacees } from './symbolesEdl.js'
+import { RAYON_SANS_SYMBOLE, SYMBOLES, boitePrimitives, decalagesSymboles, orientationPiece, primitivesPlacees } from './symbolesEdl.js'
 import { CADRE_PLAN_ETAGE, COULEUR_PROPOSITION, couleurCalque, texteLatin } from './rapportEdlLogique.js'
 
 // Plus grand côté de l'image : ~2 400 px pour une page A4 paysage (≈ 230 dpi
@@ -106,29 +106,61 @@ export function agrandir(primitives, [ox, oy], k) {
   })
 }
 
+const typeDessine = (e) => (e.type && SYMBOLES[e.type] ? e.type : null)
+
 /**
- * Ce qui se dessine pour chaque élément placé : primitives en mètres (déjà
- * agrandies), couleur, et la bulle du numéro — une seule par numéro et par
- * point (plusieurs éléments relevés au même point partagent le numéro).
+ * Ce qui se dessine pour chaque symbole placé : primitives en mètres (déjà
+ * agrandies), position (x, y), couleur, et la bulle du numéro — une seule par
+ * point (plusieurs éléments relevés au même point partagent le numéro), au
+ * coin haut droit de l'ensemble de ses symboles (`ancre`).
+ *
+ * Plusieurs éléments sur un même point : un symbole par type, côte à côte le
+ * long de la pièce, par la règle du DXF (`decalagesSymboles`, appliquée aux
+ * symboles agrandis) — une fenêtre et son volet ne se recouvrent plus. Deux
+ * éléments du même type n'ont qu'un symbole, de la couleur de l'élément
+ * validé s'il y en a un.
  */
 export function marquesElements(elementsExport, pieces, pxParMetre, pxMin = PX_SYMBOLE_MIN) {
   const angles = new Map((pieces ?? []).map((p) => [p.id, orientationPiece(p.contour)]))
-  const vues = new Set()
-  return (elementsExport ?? [])
-    .filter((e) => Number.isFinite(e.x) && Number.isFinite(e.y))
-    .map((e) => {
-      const brutes = primitivesPlacees(e.type, { x: e.x, y: e.y, angle: angles.get(e.pieceId) ?? 0 })
-      const primitives = agrandir(brutes, [e.x, e.y], echelleSymbole(e.type, pxParMetre, pxMin))
-      const cle = `${e.pointId ?? `${e.x}|${e.y}`}|${e.numero}`
-      const bulle = e.numero != null && !vues.has(cle)
-      vues.add(cle)
+  const groupes = new Map()
+  for (const e of elementsExport ?? []) {
+    if (!Number.isFinite(e.x) || !Number.isFinite(e.y)) continue
+    const cle = e.pointId ?? `${e.x}|${e.y}`
+    if (!groupes.has(cle)) groupes.set(cle, [])
+    groupes.get(cle).push(e)
+  }
+  const echelle = (type) => echelleSymbole(type, pxParMetre, pxMin)
+  const marques = []
+  for (const groupe of groupes.values()) {
+    const premier = groupe[0]
+    const angle = angles.get(premier.pieceId) ?? 0
+    const a = (angle * Math.PI) / 180
+    const { emplacements } = decalagesSymboles(groupe.map((e) => e.type), { echelle })
+    const siennes = emplacements.map((em) => {
+      const duType = groupe.filter((e) => typeDessine(e) === em.type)
+      const element = duType.find((e) => !e.aValider) ?? duType[0]
+      const x = premier.x + em.dx * Math.cos(a)
+      const y = premier.y + em.dx * Math.sin(a)
+      const primitives = agrandir(primitivesPlacees(em.type, { x, y, angle }), [x, y], echelle(em.type))
+      const r = RAYON_SANS_SYMBOLE * echelle(em.type)
       return {
-        element: e, primitives, boite: primitives.length ? boitePrimitives(primitives) : null,
-        couleur: e.aValider ? COULEUR_PROPOSITION : couleurCalque(e.calque),
-        // « P7 », comme le libellé du DXF : c'est le numéro du point de visite
-        numero: bulle ? `P${texteLatin(e.numero)}` : null,
+        element, x, y, primitives,
+        boite: primitives.length ? boitePrimitives(primitives) : { xmin: x - r, ymin: y - r, xmax: x + r, ymax: y + r },
+        couleur: element.aValider ? COULEUR_PROPOSITION : couleurCalque(element.calque),
+        numero: null, ancre: null,
       }
     })
+    const numero = groupe.find((e) => e.numero != null)?.numero
+    if (numero != null && siennes.length) {
+      // « P7 », comme le libellé du DXF : c'est le numéro du point de visite
+      siennes[0].numero = `P${texteLatin(numero)}`
+      siennes[0].ancre = [Math.max(...siennes.map((m) => m.boite.xmax)), Math.max(...siennes.map((m) => m.boite.ymax))]
+      // Losange seul (élément sans type) : la bulle s'écarte davantage pour ne pas le cacher
+      siennes[0].sansSymbole = siennes.every((m) => !m.primitives.length)
+    }
+    for (const m of siennes) marques.push(m)
+  }
+  return marques
 }
 
 // ─── Dessin (contexte 2D quelconque) ─────────────────────────────────────────
@@ -298,7 +330,7 @@ export function dessinerPlanRapport(ctx, {
     if (m.primitives.length) tracerPrimitives(ctx, c, m.primitives, m.couleur, epaisseur)
     else {
       // Élément sans type (calque seul) : un losange à sa place
-      const [x, y] = versPixels(c, [m.element.x, m.element.y])
+      const [x, y] = versPixels(c, [m.x, m.y])
       ctx.beginPath()
       ctx.moveTo(x, y - r * 0.5); ctx.lineTo(x + r * 0.5, y); ctx.lineTo(x, y + r * 0.5); ctx.lineTo(x - r * 0.5, y)
       ctx.closePath()
@@ -306,11 +338,11 @@ export function dessinerPlanRapport(ctx, {
       ctx.fill()
     }
   }
-  // Bulles par-dessus tous les symboles, au coin haut droit du sien
+  // Bulles par-dessus tous les symboles, au coin haut droit de ceux du point
   for (const m of marques) {
     if (!m.numero) continue
-    const [ax, ay] = m.boite ? versPixels(c, [m.boite.xmax, m.boite.ymax]) : versPixels(c, [m.element.x, m.element.y])
-    const decal = m.boite ? r * 0.55 : r * 0.9
+    const [ax, ay] = versPixels(c, m.ancre ?? [m.x, m.y])
+    const decal = m.sansSymbole ? r * 0.9 : r * 0.55
     bulle(ctx, ax + decal, ay - decal, r, m.numero, m.couleur)
   }
 }

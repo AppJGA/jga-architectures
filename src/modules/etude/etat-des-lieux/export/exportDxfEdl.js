@@ -27,8 +27,9 @@
 
 import { CALQUES, calqueEdl, typeEdl } from '../calquesEdl.js'
 import { aire, pointDansPolygone } from '../geometrieEdl.js'
-import { SYMBOLES, boiteSymbole, orientationPiece } from './symbolesEdl.js'
+import { RAYON_SANS_SYMBOLE, SYMBOLES, decalagesSymboles, orientationPiece } from './symbolesEdl.js'
 import { dansCp1252, encoderCp1252 } from './encodageDxf.js'
+import { ficheExportee, hspExport } from './ficheExportEdl.js'
 
 export const CALQUE_A_VALIDER = 'EDL-À valider'
 
@@ -48,9 +49,6 @@ export const HAUTEUR_TEXTE = 0.12
 const INTERLIGNE = 1.5
 const ECART_LIBELLE = 0.08
 const RAYON_PHOTO = 0.06
-const RAYON_SANS_SYMBOLE = 0.05
-// Entre deux symboles de types différents posés sur le même point
-const ECART_SYMBOLES = 0.05
 // Au-delà, une finition ou un libellé passe à la ligne : un « Murs : … » de
 // 500 caractères traversait sinon tout l'étage
 const CARACTERES_PAR_LIGNE = 60
@@ -63,20 +61,39 @@ const RUBRIQUES = [['sol', 'Sol'], ['murs', 'Murs'], ['plafond', 'Plafond'], ['p
 
 const nombreOuNull = (v) => (v === null || v === undefined || v === '' || !Number.isFinite(Number(v)) ? null : Number(v))
 
+const contourValide = (pc) => Array.isArray(pc?.contour) && pc.contour.length >= 3
+
+/**
+ * Pièce d'un point : celle notée en visite, sinon celle qui le contient.
+ * Seules les pièces de son étage sont essayées : les étages d'ArchiCAD se
+ * superposent, un point du R+1 tomberait sinon dans une pièce du RDC. Une
+ * seule règle pour le DXF et le rapport (`preparerExport` la pose sur les
+ * points qu'il leur passe).
+ */
+export function pieceDuPoint(point, pieces = []) {
+  if (!point) return null
+  if (point.piece_id) return point.piece_id
+  const x = Number(point.x)
+  const y = Number(point.y)
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null
+  const memeEtage = (pc) => !point.niveau_id || !pc.niveau_id || pc.niveau_id === point.niveau_id
+  return pieces.find((pc) => contourValide(pc) && memeEtage(pc) && pointDansPolygone([x, y], pc.contour))?.id ?? null
+}
+
 /**
  * Éléments à dessiner (décisions du plan du lot 4) : les éléments validés,
  * plus les propositions si demandé (`aValider`) ; un point typé en visite
  * qu'aucun élément exporté ne couvre devient un élément de son type
  * (libellé = type). Un point ni typé ni rattaché n'est pas dessiné.
  *
- * @returns [{ id, pieceId, pointId, x, y, calque (code), type, libelle, cotes, numero, aValider }]
- *   x, y en mètres, `null` pour un élément sans point ; trié par numéro de point.
+ * @returns [{ id, pieceId, pointId, niveauId, x, y, calque (code), type, libelle, cotes, numero, aValider }]
+ *   x, y en mètres, `null` pour un élément sans point ; `niveauId` : l'étage
+ *   du point, sinon celui de la pièce ; trié par numéro de point.
  */
 export function elementsAExporter({ pieces = [], points = [], elements = [], inclurePropositions = false } = {}) {
   const parPoint = new Map(points.map((p) => [p.id, p]))
-  const pieceDuPoint = (p) => p.piece_id
-    ?? pieces.find((pc) => Array.isArray(pc.contour) && pc.contour.length >= 3 && pointDansPolygone([Number(p.x), Number(p.y)], pc.contour))?.id
-    ?? null
+  const niveauDeLaPiece = new Map(pieces.map((pc) => [pc.id, pc.niveau_id ?? null]))
+  const niveauDe = (point, pieceId) => point?.niveau_id ?? niveauDeLaPiece.get(pieceId) ?? null
 
   const sortie = []
   const pointsCouverts = new Set()
@@ -87,10 +104,12 @@ export function elementsAExporter({ pieces = [], points = [], elements = [], inc
     if (!calque) continue
     const point = e.point_id ? parPoint.get(e.point_id) : null
     if (point) pointsCouverts.add(point.id)
+    const pieceId = e.piece_id ?? (point ? pieceDuPoint(point, pieces) : null)
     sortie.push({
       id: e.id,
-      pieceId: e.piece_id ?? (point ? pieceDuPoint(point) : null),
+      pieceId,
       pointId: point?.id ?? null,
+      niveauId: niveauDe(point, pieceId),
       x: point ? nombreOuNull(point.x) : null,
       y: point ? nombreOuNull(point.y) : null,
       calque,
@@ -104,10 +123,12 @@ export function elementsAExporter({ pieces = [], points = [], elements = [], inc
   for (const p of points) {
     const type = typeEdl(p.type)
     if (!type || pointsCouverts.has(p.id)) continue
+    const pieceId = pieceDuPoint(p, pieces)
     sortie.push({
       id: `point-${p.id}`,
-      pieceId: pieceDuPoint(p),
+      pieceId,
       pointId: p.id,
+      niveauId: niveauDe(p, pieceId),
       x: nombreOuNull(p.x),
       y: nombreOuNull(p.y),
       calque: type.calque,
@@ -209,12 +230,14 @@ export function texteSurface(piece) {
   return surface > 0 ? `${decimales(surface, 2)} m²` : null
 }
 
-/** « HSP 2,50 » : lue sur le plan, sinon dite en visite (fiche). */
-export function texteHsp(piece, { fiche = true } = {}) {
-  const lue = Number(piece?.hsp_lue)
-  if (lue > 0) return `HSP ${lue.toFixed(2).replace('.', ',')}`
-  const dite = fiche ? texteDxf(piece?.fiche?.hsp) : ''
-  return dite ? `HSP ${dite}` : null
+/**
+ * « HSP 2,50 m » : lue sur le plan, sinon dite en visite si la fiche part
+ * (règle et format communs avec le rapport, `hspExport`).
+ */
+export function texteHsp(piece, { inclurePropositions = true } = {}) {
+  const hsp = hspExport(piece, { inclurePropositions })
+  const texte = hsp ? texteDxf(hsp.texte) : ''
+  return texte ? `HSP ${texte}` : null
 }
 
 // ─── Écriture R12 ───────────────────────────────────────────────────────────
@@ -419,7 +442,7 @@ export function genererDxfEdl({
     if (!Array.isArray(piece.contour) || piece.contour.length < 3) continue
     w.polyligne(utiliser(NOM_PIECES), piece.contour.map(enUnites), true)
 
-    const ficheLisible = !piece.fiche_a_valider || inclurePropositions
+    const fiche = ficheExportee(piece, { inclurePropositions })
     const calqueFiche = piece.fiche_a_valider ? CALQUE_A_VALIDER : NOM_FINITIONS
     const lignes = []
     const ajouter = (texte, calque, hauteur = HAUTEUR_TEXTE) => {
@@ -430,12 +453,13 @@ export function genererDxfEdl({
     ajouter(numero ? `${nom || 'Pièce'} (${numero})` : nom || 'Pièce', NOM_PIECES, HAUTEUR_NOM)
     const surface = texteSurface(piece)
     if (surface) ajouter(surface, NOM_PIECES)
-    const hspLue = Number(piece.hsp_lue) > 0
-    const hsp = texteHsp(piece, { fiche: ficheLisible })
-    if (hsp) ajouter(hsp, hspLue ? NOM_PIECES : piece.fiche_a_valider ? CALQUE_A_VALIDER : NOM_PIECES)
-    if (ficheLisible) {
+    const hsp = texteHsp(piece, { inclurePropositions })
+    // Dite dans une fiche proposée : sur « À valider », comme ses finitions
+    const hspDeLaFiche = !!hsp && !hspExport(piece, { inclurePropositions })?.lue && !!piece.fiche_a_valider
+    if (hsp) ajouter(hsp, hspDeLaFiche ? CALQUE_A_VALIDER : NOM_PIECES)
+    if (fiche) {
       for (const [cle, libelle] of RUBRIQUES) {
-        const valeur = texteDxf(piece.fiche?.[cle])
+        const valeur = texteDxf(fiche[cle])
         if (valeur) ajouter(`${libelle} : ${valeur}`, calqueFiche)
       }
     }
@@ -472,28 +496,15 @@ export function genererDxfEdl({
     const angle = angleDe(premier.pieceId)
     const place = repere([Number(premier.x), Number(premier.y)], angle)
 
-    // Un emplacement par type ; le symbole va sur le calque de l'élément
-    // validé s'il y en a un, sur « À valider » si tous sont des propositions
-    const emplacements = []
-    for (const e of groupe) {
-      const type = e.type && SYMBOLES[e.type] ? e.type : null
-      const deja = emplacements.find((em) => em.type === type)
-      if (deja) { if (!e.aValider && deja.element.aValider) deja.element = e; continue }
-      emplacements.push({ type, element: e })
-    }
-    const boite = { xmin: Infinity, ymin: Infinity, xmax: -Infinity, ymax: -Infinity }
-    let bord = null
+    // Un emplacement par type (`decalagesSymboles`, même règle que le plan
+    // du rapport) ; le symbole va sur le calque de l'élément validé s'il y en
+    // a un, sur « À valider » si tous sont des propositions
+    const { emplacements, boite } = decalagesSymboles(groupe.map((e) => e.type))
     for (const em of emplacements) {
-      const b = em.type
-        ? boiteSymbole(em.type)
-        : { xmin: -RAYON_SANS_SYMBOLE, ymin: -RAYON_SANS_SYMBOLE, xmax: RAYON_SANS_SYMBOLE, ymax: RAYON_SANS_SYMBOLE }
-      const dx = bord === null ? 0 : bord + ECART_SYMBOLES - b.xmin
-      bord = dx + b.xmax
-      boite.xmin = Math.min(boite.xmin, dx + b.xmin)
-      boite.xmax = Math.max(boite.xmax, dx + b.xmax)
-      boite.ymin = Math.min(boite.ymin, b.ymin)
-      boite.ymax = Math.max(boite.ymax, b.ymax)
-      const calque = nomCalque(em.element.calque, em.element.aValider)
+      const duType = groupe.filter((e) => (e.type && SYMBOLES[e.type] ? e.type : null) === em.type)
+      const element = duType.find((e) => !e.aValider) ?? duType[0]
+      const { dx, boite: b } = em
+      const calque = nomCalque(element.calque, element.aValider)
       if (em.type) {
         typesUtilises.add(em.type)
         // L'étendue suit la boîte tournée du symbole, pas seulement son point
@@ -590,7 +601,10 @@ export function genererDxfEdl({
   g(0, 'ENDSEC')
 
   g(0, 'SECTION'); g(2, 'ENTITIES')
-  f.lignes.push(...w.lignes)
+  // Pas de `push(...w.lignes)` : étalées en arguments, les centaines de
+  // milliers de lignes d'un grand plan dépassent la pile (RangeError dès
+  // ~3 000 traits), et l'aperçu comme le ZIP tombaient
+  for (const l of w.lignes) f.lignes.push(l)
   g(0, 'ENDSEC')
   g(0, 'EOF')
   return `${f.lignes.join('\r\n')}\r\n`

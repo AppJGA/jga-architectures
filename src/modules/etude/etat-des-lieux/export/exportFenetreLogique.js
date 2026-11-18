@@ -7,11 +7,11 @@
 // (`cleDxf`, `cleRapport`) pour que le ZIP reprenne ce qui a été montré.
 // Pur, testé (tests/etat-des-lieux-export-fenetre.test.js).
 
-import { zipSync } from 'fflate'
+import { zip } from 'fflate'
 import { CALQUES } from '../calquesEdl.js'
 import { lireDxf, lireTablesDxf } from '../dxfLecture.js'
 import { piecesVisitees } from '../visite/visiteLogique.js'
-import { CALQUE_A_VALIDER, elementsAExporter, genererDxfEdl, uniteDxf } from './exportDxfEdl.js'
+import { CALQUE_A_VALIDER, elementsAExporter, encoderDxf, genererDxfEdl, pieceDuPoint, uniteDxf } from './exportDxfEdl.js'
 import { numeroterPhotos } from './numerotationEdl.js'
 import { COULEURS_CALQUES, COULEUR_PROPOSITION, nomFichierRapportEdl } from './rapportEdlLogique.js'
 
@@ -47,22 +47,28 @@ export const exportPossible = (reglages) => (reglages?.niveaux?.length ?? 0) > 0
  * l'affaire (« Ph 12 » du DXF = « Ph 12 » du rapport), même quand une partie
  * des étages seulement est exportée.
  *
+ * La pièce de chaque point est décidée ici, une fois (`pieceDuPoint` : celle
+ * notée en visite, sinon celle qui le contient) et posée sur les points
+ * passés au DXF comme au rapport : un point sans `piece_id` n'est plus dans
+ * l'un et absent de l'autre.
+ *
  * @returns { etages: [{ niveau, pieces, points, photos, elementsExport, unite }],
- *            rapport: { niveaux, pieces, points, elements, elementsExport, photos, visitees } }
+ *            rapport: { niveaux, pieces, points, elements, elementsExport, photos, visitees, inclurePropositions } }
  */
 export function preparerExport(donnees, reglages) {
   const niveaux = donnees?.niveaux ?? []
   const pieces = donnees?.pieces ?? []
-  const points = donnees?.points ?? []
+  const points = (donnees?.points ?? []).map((p) => {
+    const pieceId = pieceDuPoint(p, pieces)
+    return pieceId === (p.piece_id ?? null) ? p : { ...p, piece_id: pieceId }
+  })
   const elements = donnees?.elements ?? []
   const inclurePropositions = !!reglages?.inclurePropositions
 
   const photos = numeroterPhotos(donnees?.photos ?? [], points, { niveaux, pieces })
   const elementsExport = elementsAExporter({ pieces, points, elements, inclurePropositions })
-  const pointsParId = new Map(points.map((p) => [p.id, p]))
-  const piecesParId = new Map(pieces.map((p) => [p.id, p]))
   // Un élément suit l'étage de son point, à défaut celui de sa pièce
-  const niveauDeLElement = (e) => pointsParId.get(e.pointId)?.niveau_id ?? piecesParId.get(e.pieceId)?.niveau_id ?? null
+  const niveauDeLElement = (e) => e.niveauId ?? null
 
   const etages = niveauxChoisis(niveaux, reglages).map((niveau) => {
     const siennes = pieces.filter((p) => p.niveau_id === niveau.id)
@@ -91,6 +97,8 @@ export function preparerExport(donnees, reglages) {
       elementsExport: etages.flatMap((e) => e.elementsExport),
       photos: photos.filter((ph) => idsPoints.has(ph.point_id)),
       visitees: piecesVisitees(donnees?.entrees),
+      // Comme les DXF : une fiche proposée n'est imprimée que si demandé
+      inclurePropositions,
     },
   }
 }
@@ -107,6 +115,55 @@ export function dxfDuNiveau(etage, { plan = null, inclurePropositions = false } 
     plan,
     inclurePropositions,
   })
+}
+
+/**
+ * Les DXF du ZIP, étage par étage, en octets. Un plan existant illisible ne
+ * fait perdre que le `…-avec-plan.dxf` de son étage, signalé, comme le
+ * rapport qui se passe d'un plan manquant (`tolerer`) : le DXF à fusionner et
+ * les autres étages partent quand même. Un `…-EDL.dxf` raté arrête l'export.
+ *
+ * @param obtenirTexte (etage, avecPlan) → promesse du texte DXF (le cache de la fenêtre)
+ * @param noms Map niveauId → { edl, avecPlan } (`nomsFichiersDxf`)
+ * @returns { fichiers: [{ nom, octets }], avertissements: [texte] }
+ */
+export async function fichiersDxf({ etages = [], noms, avecPlan = false, obtenirTexte, surEtape = () => {} }) {
+  const fichiers = []
+  const avertissements = []
+  for (const etage of etages) {
+    const nomEtage = etage.niveau.nom || 'sans nom'
+    const n = noms.get(etage.niveau.id)
+    surEtape(`Étage ${nomEtage} : DXF…`)
+    fichiers.push({ nom: n.edl, octets: encoderDxf(await obtenirTexte(etage, false)) })
+    if (!avecPlan || !etage.niveau.chemin_vecteurs) continue
+    surEtape(`Étage ${nomEtage} : DXF avec le plan…`)
+    try {
+      fichiers.push({ nom: n.avecPlan, octets: encoderDxf(await obtenirTexte(etage, true)) })
+    } catch (err) {
+      avertissements.push(`Étage ${nomEtage} : plan existant illisible (${err?.message ?? err}), DXF avec le plan non fabriqué.`)
+    }
+  }
+  return { fichiers, avertissements }
+}
+
+// ─── Unités, pour ArchiCAD ──────────────────────────────────────────────────
+
+const UNITES_LONGUES = { m: ['le mètre', 'mètres'], dm: ['le décimètre', 'décimètres'], cm: ['le centimètre', 'centimètres'], mm: ['le millimètre', 'millimètres'] }
+
+/** « cm » : unité des DXF d'un étage (celle du plan d'origine), montrée à côté de ses fichiers. */
+export const uniteEtage = (niveau) => uniteDxf(niveau?.unites_par_metre).nom
+
+/**
+ * Note pour ArchiCAD, qui demande parfois l'unité d'un DXF à la fusion : se
+ * tromper met le plan cent fois trop grand ou trop petit.
+ */
+export function noteUniteArchicad(niveaux = []) {
+  if (!niveaux.length) return null
+  const unites = niveaux.map(uniteEtage)
+  if (new Set(unites).size === 1) {
+    return `L’unité ${niveaux.length > 1 ? 'de ces plans' : 'de ce plan'} est ${UNITES_LONGUES[unites[0]][0]} : choisissez-la si ArchiCAD la demande.`
+  }
+  return `Unité à choisir si ArchiCAD la demande : ${niveaux.map((n, i) => `${n.nom || 'sans nom'} en ${UNITES_LONGUES[unites[i]][1]}`).join(', ')}.`
 }
 
 // ─── Noms des fichiers ──────────────────────────────────────────────────────
@@ -141,15 +198,21 @@ export function nomsFichiersDxf(affaire, niveaux = [], date = new Date()) {
 }
 
 /**
- * Le ZIP : `fichiers` = [{ nom, octets (Uint8Array) }]. Les DXF (texte) se
- * compressent bien : niveau 6, le défaut de fflate. Le PDF est déjà
- * compressé (images JPEG, flux dégonflés) : rangé tel quel (niveau 0),
- * sans passer des secondes à le recompresser pour rien sur un iPad.
+ * Le ZIP : `fichiers` = [{ nom, octets (Uint8Array) }] → promesse des octets.
+ * Les DXF (texte) se compressent bien : niveau 6, le défaut de fflate. Le PDF
+ * est déjà compressé (images JPEG, flux dégonflés) : rangé tel quel (niveau
+ * 0), sans passer des secondes à le recompresser pour rien sur un iPad.
+ * `zip` (et non `zipSync`) compresse chaque gros fichier dans un worker :
+ * plusieurs DXF avec le plan figeaient l'écran le temps de la compression.
+ * Les octets d'un DXF sont cédés au worker (`consume`) plutôt que copiés :
+ * ils ne servent plus après, et l'iPad n'a pas la mémoire de les doubler.
  */
 export function fabriquerZip(fichiers = []) {
   const contenu = {}
-  for (const f of fichiers) contenu[f.nom] = /\.pdf$/i.test(f.nom) ? [f.octets, { level: 0 }] : [f.octets, { level: 6 }]
-  return zipSync(contenu)
+  for (const f of fichiers) contenu[f.nom] = /\.pdf$/i.test(f.nom) ? [f.octets, { level: 0 }] : [f.octets, { level: 6, consume: true }]
+  return new Promise((resolve, reject) => {
+    zip(contenu, (err, octets) => (err ? reject(err) : resolve(octets)))
+  })
 }
 
 // ─── Données fraîches de l'analyse ──────────────────────────────────────────

@@ -75,6 +75,12 @@ describe('Windows-1252', () => {
     assert.equal(octetCp1252('’'), 0x92)
     assert.equal(octetCp1252('ı'), null)
   })
+  test('un octet par caractère, paire de substitution comprise (un seul « ? »)', () => {
+    const octets = encoderCp1252('a😀é')
+    assert.ok(octets instanceof Uint8Array)
+    assert.deepEqual([...octets], [0x61, 0x3f, 0xe9])
+    assert.equal(encoderCp1252('').length, 0)
+  })
   test('table conforme au décodeur du navigateur sur les 256 octets', () => {
     const trous = new Set([0x81, 0x8d, 0x8f, 0x90, 0x9d])
     const decodeur = new TextDecoder('windows-1252')
@@ -141,9 +147,14 @@ describe('unités, noms et textes', () => {
   test('surface et HSP', () => {
     assert.equal(texteSurface(sejour), '19,85 m²')
     assert.equal(texteSurface({ contour: rectangle(0, 0, 3, 2) }), '6 m²')
-    assert.equal(texteHsp(sejour), 'HSP 2,50')
+    assert.equal(texteHsp(sejour), 'HSP 2,50 m')
     assert.equal(texteHsp(salleDeBain), 'HSP 2,40 m')
     assert.equal(texteHsp({ fiche: {} }), null)
+    // Lue sur le plan d'abord, comme le rapport (`hspExport`)
+    assert.equal(texteHsp({ hsp_lue: 2.5, fiche: { hsp: '2,70' } }), 'HSP 2,50 m')
+    assert.equal(texteHsp({ fiche: { hsp: '2,7' } }), 'HSP 2,70 m')
+    // Fiche proposée écartée : sa HSP dite ne part pas
+    assert.equal(texteHsp({ fiche_a_valider: true, fiche: { hsp: '2,70' } }, { inclurePropositions: false }), null)
   })
   test('lignes coupées aux espaces, retours à la ligne retirés', () => {
     const lignes = couperLignes(`Peinture ${'très '.repeat(20)}abîmée\nau-dessus`, 30)
@@ -189,7 +200,7 @@ describe('fichier DXF', () => {
     assert.ok(l.calques.every((c) => c.couleur > 0 && c.typeLigne === 'CONTINUOUS'))
     // Le compte de la table est celui des entrées
     assert.match(l.brut, new RegExp(`LAYER\\r\\n 70\\r\\n {5}${noms.length}\\r\\n`))
-    assert.deepEqual(textesDe(l, 'EDL-Pièces').slice(0, 3), ['Séjour (1.04)', '19,85 m²', 'HSP 2,50'])
+    assert.deepEqual(textesDe(l, 'EDL-Pièces').slice(0, 3), ['Séjour (1.04)', '19,85 m²', 'HSP 2,50 m'])
     assert.ok(textesDe(l, 'EDL-Pièces').includes('Salle d’eau'))
   })
 
@@ -434,5 +445,37 @@ describe('fichier DXF', () => {
       const libelle = l.textes.find((t) => t.texte === 'P4 · Lavabo')
       assert.ok(pointDansPolygone([libelle.pos[0] / u, libelle.pos[1] / u], piece.contour))
     }
+  })
+})
+
+describe('grands plans', () => {
+  // 5 000 traits de 3 sommets : `push(...lignes)` dépassait la pile vers
+  // 3 000 traits et bloquait l'aperçu comme le ZIP (relecture de l'essai)
+  const traits = Array.from({ length: 5000 }, (_, i) => ({ calque: 'MURS', pts: [[i * 0.1, 0], [i * 0.1, 1], [i * 0.1 + 0.1, 1]], ferme: false }))
+  for (const [u, insunits] of [[1, 6], [1000, 4]]) {
+    test(`plan existant de 5 000 traits relu en entier (${u === 1 ? 'm' : 'mm'})`, () => {
+      const l = relire(genererDxfEdl({ pieces: [sejour], unitesParMetre: u, plan: { traits, masses: [], textes: [] } }))
+      assert.equal(l.unites, insunits)
+      const murs = l.traits.filter((t) => t.calque === 'MURS')
+      assert.equal(murs.length, 5000)
+      assert.ok(murs.every((t) => t.pts.length === 3))
+      prochePoint(murs[4999].pts[2], [500 * u, 1 * u], 1e-6 * u)
+      assert.ok(l.traits.some((t) => t.calque === 'EDL-Pièces'))
+    })
+  }
+})
+
+describe('fiche proposée et HSP : la règle du rapport', () => {
+  // Cas de la relecture : fiche proposée par l'analyse, HSP lue sur le plan
+  const chambre = { id: 'pc-9', nom: 'Chambre', contour: rectangle(0, 0, 4, 4), fiche_a_valider: true, fiche: { sol: 'Moquette proposée', hsp: '2,70' }, hsp_lue: 2.5 }
+  test('écartée : ni finitions ni HSP dite ; la HSP lue reste', () => {
+    const l = relire(genererDxfEdl({ pieces: [chambre], unitesParMetre: 100 }))
+    assert.equal(l.textes.some((t) => t.texte.includes('Moquette')), false)
+    assert.deepEqual(textesDe(l, 'EDL-Pièces').filter((t) => t.startsWith('HSP')), ['HSP 2,50 m'])
+  })
+  test('incluse : finitions sur EDL-À valider, la HSP lue l’emporte toujours', () => {
+    const l = relire(genererDxfEdl({ pieces: [chambre], unitesParMetre: 100, inclurePropositions: true }))
+    assert.deepEqual(textesDe(l, CALQUE_A_VALIDER), ['Sol : Moquette proposée'])
+    assert.deepEqual(textesDe(l, 'EDL-Pièces').filter((t) => t.startsWith('HSP')), ['HSP 2,50 m'])
   })
 })

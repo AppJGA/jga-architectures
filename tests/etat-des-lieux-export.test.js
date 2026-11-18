@@ -6,8 +6,8 @@ import { test, describe } from 'node:test'
 
 import { CALQUES } from '../src/modules/etude/etat-des-lieux/calquesEdl.js'
 import {
-  SYMBOLES, boiteSymbole, boitePrimitives, libelleTailleSymbole, orientationPiece, primitivesPlacees,
-  symboleSvg, typesSansSymbole,
+  ECART_SYMBOLES, RAYON_SANS_SYMBOLE, SYMBOLES, boiteSymbole, boitePrimitives, decalagesSymboles, libelleTailleSymbole,
+  orientationPiece, primitivesPlacees, symboleSvg, typesSansSymbole,
 } from '../src/modules/etude/etat-des-lieux/export/symbolesEdl.js'
 
 const proche = (a, b, ecart = 1e-9) => assert.ok(Math.abs(a - b) < ecart, `${a} ≠ ${b}`)
@@ -149,6 +149,47 @@ describe('symboles usuels : placement', () => {
     assert.equal(texte.rotation, 30)
   })
 
+  test('texte décalé tourné de 90° : sa position tourne autour du point, sa rotation suit', () => {
+    // « EX » de l'extincteur, posé en (0 ; -0,025) dans le catalogue
+    const texte = primitivesPlacees('extincteur', { x: 1, y: 2, angle: 90 }).find((p) => 'texte' in p)
+    assert.equal(texte.texte, 'EX')
+    proche(texte.pos[0], 1.025)
+    proche(texte.pos[1], 2)
+    assert.equal(texte.rotation, 90)
+  })
+
+  test('cercle décentré tourné : seul son centre bouge', () => {
+    // Bonde de la baignoire en (0,64 ; 0), rayon 0,03
+    const bonde = primitivesPlacees('baignoire', { x: 5, y: 5, angle: 90 }).find((p) => p.cercle)
+    proche(bonde.cercle[0], 5)
+    proche(bonde.cercle[1], 5.64)
+    assert.equal(bonde.cercle[2], 0.03)
+  })
+
+  test('polyligne tournée : chaque sommet tourne, la fermeture reste', () => {
+    const origine = SYMBOLES.douche.primitives.find((p) => p.polyligne)
+    const i = SYMBOLES.douche.primitives.indexOf(origine)
+    const placee = primitivesPlacees('douche', { x: 1, y: 1, angle: 30 })[i]
+    const a = (30 * Math.PI) / 180
+    assert.equal(placee.ferme, origine.ferme)
+    origine.polyligne.forEach(([u, v], k) => {
+      proche(placee.polyligne[k][0], 1 + u * Math.cos(a) - v * Math.sin(a))
+      proche(placee.polyligne[k][1], 1 + u * Math.sin(a) + v * Math.cos(a))
+    })
+  })
+
+  test('bornes d’un arc posé ramenées dans [0, 360[', () => {
+    // Prise : arc de 180° à 360°
+    for (const angle of [0, -30, 300, 45]) {
+      const [, , , debut, fin] = primitivesPlacees('prise', { angle }).find((p) => p.arc).arc
+      for (const b of [debut, fin]) assert.ok(b >= 0 && b < 360, `${angle} : ${b}`)
+      // Toujours un demi-cercle, dans le sens trigonométrique
+      proche((((fin - debut) % 360) + 360) % 360, 180)
+    }
+    const [, , , d, f] = primitivesPlacees('prise', { angle: -30 }).find((p) => p.arc).arc
+    assert.deepEqual([d, f], [150, 330])
+  })
+
   test('la boîte suit la rotation : un radiateur tourné de 90° est vertical', () => {
     const b = boitePrimitives(primitivesPlacees('radiateur', { angle: 90 }))
     proche(b.largeur, 0.10, 1e-9)
@@ -199,7 +240,37 @@ describe('symboles usuels : SVG', () => {
     assert.deepEqual([texte.x, texte.y, texte.texte, texte.rotation], [0, 0.025, 'EX', 0])
   })
 
+  test('texte tourné de 30° : rotation SVG inversée (y retourné)', () => {
+    // Le catalogue n'a pas (encore) de texte tourné : un symbole d'essai, retiré après
+    SYMBOLES['essai-texte-tourne'] = { taille: 'fixe', primitives: [{ texte: 'A', pos: [0.1, 0.2], hauteur: 0.05, rotation: 30 }] }
+    try {
+      const [texte] = symboleSvg('essai-texte-tourne').elements
+      assert.deepEqual([texte.type, texte.x, texte.y, texte.rotation], ['text', 0.1, -0.2, -30])
+    } finally {
+      delete SYMBOLES['essai-texte-tourne']
+    }
+  })
+
   test('type inconnu : null', () => {
     assert.equal(symboleSvg('inconnu'), null)
+  })
+})
+
+describe('symboles usuels : plusieurs sur un même point', () => {
+  test('côte à côte, ECART_SYMBOLES entre deux boîtes ; un type compté une fois', () => {
+    const { emplacements, boite } = decalagesSymboles(['fenetre', 'volet', 'fenetre'])
+    assert.deepEqual(emplacements.map((e) => e.type), ['fenetre', 'volet'])
+    assert.equal(emplacements[0].dx, 0)
+    const f = boiteSymbole('fenetre')
+    const v = boiteSymbole('volet')
+    proche(emplacements[1].dx + v.xmin - f.xmax, ECART_SYMBOLES)
+    proche(boite.xmax, emplacements[1].dx + v.xmax)
+  })
+
+  test('sans type : un rond ; agrandissement pris en compte (rapport)', () => {
+    const { emplacements } = decalagesSymboles([null, 'prise'], { echelle: (t) => (t ? 2 : 1) })
+    const p = boiteSymbole('prise')
+    proche(emplacements[1].dx, RAYON_SANS_SYMBOLE + ECART_SYMBOLES - 2 * p.xmin)
+    assert.deepEqual(decalagesSymboles([]).emplacements, [])
   })
 })

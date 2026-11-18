@@ -4,7 +4,8 @@
 // (`preparerVisite`) : étages, pièces, visites, points, photos, entrées dans
 // les pièces. Étages et pièces en colonnes nommées : ni les textes du plan
 // ni la relecture (lourds, inutiles en visite) ; toutes existent depuis la
-// 077, la visite ne dépend donc d'aucune colonne plus récente. Lectures
+// 077, sauf `chemin_vecteurs` (081, plan vectoriel), relu sans elle quand la
+// base ne l'a pas : la visite affiche alors l'image. Lectures
 // fraîches seulement : l'alias `synchro_id` les exclut de la mémoire du
 // service worker (vite.config.js), sans quoi un réseau lent ferait garder un
 // état ancien. Pagination par identifiant (1 000 lignes par page) : un grand
@@ -15,7 +16,7 @@
 // ligne, rien ne répond) tenait le verrou de l'envoi près d'une minute.
 
 import { supabase } from '../../../../core/supabase/client'
-import { edlIndisponible } from '../edlConstantes'
+import { edlIndisponible, colonnesVecteursManquantes } from '../edlConstantes'
 import { MAGASINS_EDL, ecrire } from './baseEdl'
 import { sousVerrouEdl } from './synchroEdl'
 import { bornerDelai, DELAI_LECTURE_MS } from './visiteLogique'
@@ -47,6 +48,15 @@ async function toutes(table, colonnes, filtrer, delaiMs) {
   }
 }
 
+async function lireNiveaux(filtrer, delaiMs) {
+  try {
+    return await toutes('edl_niveaux', `${COLONNES_NIVEAUX}, chemin_vecteurs`, filtrer, delaiMs)
+  } catch (err) {
+    if (!colonnesVecteursManquantes(err)) throw err
+    return toutes('edl_niveaux', COLONNES_NIVEAUX, filtrer, delaiMs)
+  }
+}
+
 export async function lireToutEdl(affaireId, { delaiMs = DELAI_LECTURE_MS } = {}) {
   const deLAffaire = (q) => q.eq('affaire_id', affaireId)
   let visites
@@ -62,7 +72,7 @@ export async function lireToutEdl(affaireId, { delaiMs = DELAI_LECTURE_MS } = {}
   )
   if (error) throw error
   const [niveaux, pieces, points, photos, entrees] = await Promise.all([
-    toutes('edl_niveaux', COLONNES_NIVEAUX, deLAffaire, delaiMs),
+    lireNiveaux(deLAffaire, delaiMs),
     toutes('edl_pieces', COLONNES_PIECES, deLAffaire, delaiMs),
     toutes('edl_points', FRAIS, deLAffaire, delaiMs),
     toutes('edl_photos', FRAIS, deLAffaire, delaiMs),

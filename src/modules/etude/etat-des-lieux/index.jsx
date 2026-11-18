@@ -91,7 +91,9 @@ export default function EtatDesLieuxModule({ lectureSeule = false }) {
 
   useEffect(() => {
     if (!edl.charge || !navigator.onLine || !edl.niveaux.length) return
-    garderImages(edl.niveaux.flatMap((n) => [n.chemin_apercu, n.chemin]), obtenirLiens).catch(() => {})
+    // Le fichier vectoriel avant l'image pleine : quelques centaines de Ko,
+    // c'est lui que la visite affiche, et le budget de l'appareil est fini
+    garderImages(edl.niveaux.flatMap((n) => [n.chemin_apercu, n.chemin_vecteurs, n.chemin]), obtenirLiens).catch(() => {})
   }, [edl.charge, edl.niveaux, obtenirLiens])
 
   // La visite s'ouvre même si la lecture du lot 1 échoue sans réseau : elle

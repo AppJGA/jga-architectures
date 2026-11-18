@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef, useLayoutEffect } from 'react'
+import { useState, useEffect, useRef, useLayoutEffect, useCallback } from 'react'
 import { Plus, Minus, Maximize } from 'lucide-react'
-import { zoomAutour, limiterVue, pointSurPlan, vueSurCadre, cleDeCadre, recadrerVue } from './plansLogique'
+import { zoomAutour, limiterVue, pointSurPlan, vueSurCadre, cleDeCadre, recadrerVue, tailleCanevas } from './plansLogique'
 
 // ─── Visionneuse de plan ─────────────────────────────────────────────────────
 //
@@ -11,10 +11,60 @@ import { zoomAutour, limiterVue, pointSurPlan, vueSurCadre, cleDeCadre, recadrer
 // `cadre` (fractions de l'image) : la vue s'y ajuste à chaque changement —
 // une pièce de l'état des lieux remplit l'écran ; le pincement reste libre
 // jusqu'à `zoomMax`.
+// `dessinFond(ctx, { largeurImage, hauteurImage, versEcran, echelle, ecran })`
+// (facultatif, plan vectoriel de l'état des lieux) : un canevas sous le plan,
+// redessiné à chaque vue, garde le dessin net à tous les zooms là où l'image
+// devient floue. L'image reste, invisible, pour la mesure des appuis.
 
 const SEUIL_APPUI = 6 // px de déplacement au-delà desquels ce n'est plus un appui
 
-export function VisionneusePlan({ version, obtenirLiens, pastilles = [], idActive, onToucher, onPastille, calque, cadre = null, zoomMax = 12 }) {
+// Ombre de la feuille, à peu près celle de l'image (`box-shadow`) : le
+// canevas ne connaît pas d'étalement négatif
+const OMBRE_FEUILLE = { couleur: 'rgba(0,0,0,0.2)', flou: 14, y: 6 }
+
+// Peint la feuille blanche du plan puis le dessin, rogné à la feuille : rien
+// ne déborde sur le fond gris. `e` : dernières valeurs de la vue.
+function peindreFond(canvas, e) {
+  if (!canvas || !e?.dessinFond || !(e.echelle > 0) || !(e.taille.largeur > 0)) return
+  const { largeur, hauteur } = e.taille
+  const t = tailleCanevas(largeur, hauteur, window.devicePixelRatio || 1)
+  // Réaffecter la taille réalloue le canevas : seulement quand elle change
+  if (canvas.width !== t.largeur) canvas.width = t.largeur
+  if (canvas.height !== t.hauteur) canvas.height = t.hauteur
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
+  ctx.clearRect(0, 0, canvas.width, canvas.height)
+  ctx.setTransform(canvas.width / largeur, 0, 0, canvas.height / hauteur, 0, 0)
+  const k = e.echelle * e.vue.zoom
+  const x0 = e.ox + e.vue.dx
+  const y0 = e.oy + e.vue.dy
+  const lf = e.largeurImage * k
+  const hf = e.hauteurImage * k
+  ctx.save()
+  ctx.shadowColor = OMBRE_FEUILLE.couleur
+  ctx.shadowBlur = OMBRE_FEUILLE.flou
+  ctx.shadowOffsetY = OMBRE_FEUILLE.y
+  ctx.fillStyle = '#FFFFFF'
+  ctx.fillRect(x0, y0, lf, hf)
+  ctx.restore()
+  ctx.save()
+  ctx.beginPath()
+  ctx.rect(x0, y0, lf, hf)
+  ctx.clip()
+  try {
+    e.dessinFond(ctx, {
+      largeurImage: e.largeurImage, hauteurImage: e.hauteurImage,
+      versEcran: (x, y) => [x0 + x * k, y0 + y * k],
+      echelle: k, ecran: { largeur, hauteur },
+    })
+  } catch (err) {
+    console.warn('Plan vectoriel :', err)
+  }
+  ctx.restore()
+}
+
+export function VisionneusePlan({ version, obtenirLiens, pastilles = [], idActive, onToucher, onPastille, calque, cadre = null, zoomMax = 12, dessinFond = null }) {
   const conteneur = useRef(null)
   const image = useRef(null)
   const [taille, setTaille] = useState({ largeur: 0, hauteur: 0 })
@@ -24,6 +74,8 @@ export function VisionneusePlan({ version, obtenirLiens, pastilles = [], idActiv
   const [urlPleine, setUrlPleine] = useState(null)
   const pointeurs = useRef(new Map())
   const geste = useRef(null)
+  const canevas = useRef(null)
+  const fond = useRef({ attente: 0, etat: null }) // image demandée, dernières valeurs
 
   useEffect(() => {
     if (!version) return
@@ -67,6 +119,35 @@ export function VisionneusePlan({ version, obtenirLiens, pastilles = [], idActiv
     setCadreVu(cleCadre)
     setVue(vueDuCadre())
   }
+
+  // Un seul dessin par image affichée : un pincement change la vue à chaque
+  // événement pointeur, souvent plusieurs fois entre deux images. Le dessin
+  // lit les dernières valeurs au moment de l'image, pas celles de la demande.
+  const largeurImage = version?.largeur
+  const hauteurImage = version?.hauteur
+  useEffect(() => {
+    const f = fond.current
+    f.etat = { dessinFond, vue, taille, echelle, ox, oy, largeurImage, hauteurImage }
+    if (!dessinFond || f.attente) return
+    f.attente = requestAnimationFrame(() => {
+      f.attente = 0
+      peindreFond(canevas.current, f.etat)
+    })
+  }, [dessinFond, vue, taille, echelle, ox, oy, largeurImage, hauteurImage])
+  useEffect(() => {
+    const f = fond.current
+    return () => { cancelAnimationFrame(f.attente); f.attente = 0 }
+  }, [])
+  // Le canevas est libéré au démontage (plafond de mémoire de l'iPad)
+  const refCanevas = useCallback((el) => {
+    canevas.current = el
+    if (!el) return undefined
+    return () => {
+      el.width = 0
+      el.height = 0
+      if (canevas.current === el) canevas.current = null
+    }
+  }, [])
 
   const appliquer = (v) => setVue(limiterVue(v, bw, bh))
   const zoomer = (facteur, px = taille.largeur / 2, py = taille.hauteur / 2) => {
@@ -149,12 +230,22 @@ export function VisionneusePlan({ version, obtenirLiens, pastilles = [], idActiv
       onPointerDown={debut} onPointerMove={deplacement} onPointerUp={fin} onPointerCancel={fin}
       style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden', background: '#E9E6E0', touchAction: 'none', cursor: onToucher ? 'crosshair' : 'grab', userSelect: 'none' }}
     >
+      {dessinFond && (
+        // Exactement la taille du conteneur (inset 0) : n'ajoute rien à la
+        // zone défilable ; sans pointeur, les gestes vont au conteneur
+        <canvas ref={refCanevas} aria-hidden="true" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', display: 'block', pointerEvents: 'none' }} />
+      )}
       {version && echelle > 0 && (
         <div style={{ position: 'absolute', left: ox, top: oy, width: bw, height: bh, transform: `translate(${vue.dx}px, ${vue.dy}px) scale(${vue.zoom})`, transformOrigin: '0 0' }}>
-          {(urlPleine || urlApercu) && (
+          {/* Avec un dessin de fond, l'image garde sa place et sert à la mesure
+              des appuis (pointSurPlan), sans se voir — même avant d'être lue,
+              ou absente de l'appareil : le plan vectoriel suffit. */}
+          {(urlPleine || urlApercu || dessinFond) && (
             <img
-              ref={image} src={urlPleine ?? urlApercu} alt="Plan" draggable={false}
-              style={{ width: bw, height: bh, display: 'block', background: 'white', boxShadow: '0 6px 24px -12px rgba(0,0,0,0.4)' }}
+              ref={image} src={urlPleine ?? urlApercu ?? undefined} alt="Plan" draggable={false}
+              style={dessinFond
+                ? { width: bw, height: bh, display: 'block', opacity: 0 }
+                : { width: bw, height: bh, display: 'block', background: 'white', boxShadow: '0 6px 24px -12px rgba(0,0,0,0.4)' }}
             />
           )}
           {calque?.({ largeur: bw, hauteur: bh, zoom: vue.zoom })}
@@ -183,7 +274,7 @@ export function VisionneusePlan({ version, obtenirLiens, pastilles = [], idActiv
           })}
         </div>
       )}
-      {!urlApercu && version && (
+      {!urlApercu && !dessinFond && version && (
         <p style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, color: '#5E5854' }}>Chargement du plan…</p>
       )}
       <div onPointerDown={e => e.stopPropagation()} style={{ position: 'absolute', right: 12, bottom: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>

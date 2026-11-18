@@ -160,3 +160,20 @@ export function cleDeCadre(cadre, taille) {
  * ne défait pas le zoom de l'utilisateur.
  */
 export const recadrerVue = (retenue, cle) => cle !== null && cle !== retenue
+
+/**
+ * Canevas de fond de la visionneuse (plan vectoriel) : la taille du conteneur
+ * en pixels physiques (`devicePixelRatio`), sans dépasser `PIXELS_MAX_PLAN` —
+ * au-delà, Safari sur iPad n'affiche plus rien. Rend le rapport pixels
+ * physiques / pixels CSS et la taille du canevas.
+ */
+export function tailleCanevas(largeur, hauteur, ratioEcran = 1, pixelsMax = PIXELS_MAX_PLAN) {
+  if (!(largeur > 0 && hauteur > 0)) return { ratio: 1, largeur: 1, hauteur: 1 }
+  const voulu = ratioEcran > 0 ? ratioEcran : 1
+  const ratio = Math.min(voulu, Math.sqrt(pixelsMax / (largeur * hauteur)))
+  return {
+    ratio,
+    largeur: Math.max(1, Math.floor(largeur * ratio)),
+    hauteur: Math.max(1, Math.floor(hauteur * ratio)),
+  }
+}

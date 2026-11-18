@@ -11,6 +11,7 @@ import { versPiecesEdl } from './piecesIaLogique'
 import { controlesAutomatiques, signalementsVisibles } from './relectureLogique'
 import { relireNiveau } from './relectureIa'
 import { PanneauRelecture } from './PanneauRelecture'
+import { useVecteursEdl } from './useVecteursEdl'
 
 // ─── Corriger les pièces d'un étage ──────────────────────────────────────────
 //
@@ -57,6 +58,8 @@ export function EditeurPieces({ niveau, pieces, obtenirLiens, lectureSeule, onMo
   const annulation = useRef(false)
   const c = niveau.cadrage
 
+  // Plan vectoriel s'il existe (migration 081) : net au zoom sur une pièce
+  const dessinFond = useVecteursEdl(niveau, obtenirLiens)
   const version = useMemo(() => ({ id: niveau.id, chemin: niveau.chemin, chemin_apercu: niveau.chemin_apercu, largeur: niveau.largeur, hauteur: niveau.hauteur }), [niveau])
   const tries = useMemo(() => [...pieces].sort((a, b) => (a.nom || '').localeCompare(b.nom || '', 'fr', { numeric: true })), [pieces])
   const piece = pieces.find((p) => p.id === choisie)
@@ -325,7 +328,7 @@ export function EditeurPieces({ niveau, pieces, obtenirLiens, lectureSeule, onMo
   return (
     <div style={{ display: 'flex', gap: 16, height: '100%', minHeight: 0 }}>
       <div style={{ flex: '1 1 520px', minWidth: 0, minHeight: 420, border: '0.5px solid rgba(0,0,0,0.1)', overflow: 'hidden', position: 'relative' }}>
-        <VisionneusePlan version={version} obtenirLiens={obtenirLiens} onToucher={toucher} calque={calque} />
+        <VisionneusePlan version={version} obtenirLiens={obtenirLiens} onToucher={toucher} calque={calque} dessinFond={dessinFond} />
         {trace && (
           <div style={{ position: 'absolute', top: 12, left: 12, right: 12, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', background: 'white', padding: '8px 10px', borderTop: `3px solid ${COULEUR}`, boxShadow: '0 8px 24px -12px rgba(31,27,23,0.45)' }}>
             <span style={{ flex: 1, fontSize: 13, color: '#1F1B17' }}>Touchez les angles de la pièce, un à un <span style={{ color: '#9C9591' }}>({trace.length})</span></span>

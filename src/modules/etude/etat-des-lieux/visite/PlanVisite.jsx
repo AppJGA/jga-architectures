@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { VisionneusePlan } from '../../../chantier/comptes-rendus/VisionneusePlan'
 import { versPixels, versMetres } from '../geometrieEdl'
 import { cadrePiece, COULEURS_PIECE, etatPiece, pointProche, ZOOM_MAX_VISITE } from './visiteLogique'
+import { useVecteursEdl } from '../useVecteursEdl'
 
 // ─── Plan de la visite ───────────────────────────────────────────────────────
 //
@@ -28,6 +29,9 @@ export function PlanVisite({ niveau, pieces, points, nbPhotos, visitees, piece, 
   const version = useMemo(() => ({
     id: niveau.id, chemin: niveau.chemin, chemin_apercu: niveau.chemin_apercu, largeur: niveau.largeur, hauteur: niveau.hauteur,
   }), [niveau])
+  // Plan vectoriel s'il existe (migration 081) : une pièce ouverte remplit
+  // l'écran, l'image y serait floue
+  const dessinFond = useVecteursEdl(niveau, obtenirLiens)
   const cadre = useMemo(() => (piece ? cadrePiece(piece, niveau) : null), [piece, niveau])
   // Pièce ouverte : ses points. Plan de l'étage : tous (ceux d'une pièce
   // sont pâlis, mais un appui dessus les choisit au lieu d'en poser un autre
@@ -161,7 +165,7 @@ export function PlanVisite({ niveau, pieces, points, nbPhotos, visitees, piece, 
     >
       <VisionneusePlan
         version={version} obtenirLiens={obtenirLiens} onToucher={toucher} calque={calque}
-        cadre={cadre} zoomMax={ZOOM_MAX_VISITE}
+        cadre={cadre} zoomMax={ZOOM_MAX_VISITE} dessinFond={dessinFond}
       />
     </div>
   )

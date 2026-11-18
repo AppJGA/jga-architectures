@@ -38,6 +38,19 @@ describe('intervallesPiece', () => {
     ])
   })
 
+  test('sortie et entrée à la même milliseconde, dans les deux ordres', () => {
+    for (const ordre of ['sortie-entree', 'entree-sortie']) {
+      const sortie = ev('sortie', '09:04:00', { piece_id: 'cuisine' })
+      const entree = dans('entree', '09:04:00')
+      const paire = ordre === 'sortie-entree' ? [sortie, entree] : [entree, sortie]
+      const evts = [ev('entree', '09:01:00', { piece_id: 'cuisine' }), ...paire, dans('sortie', '09:08:00')]
+      const salon = intervallesPiece(evts, 'salon')
+      assert.deepEqual(salon.map((i) => [i.debut, i.fin, i.motif]), [[ms('09:04:00'), ms('09:08:00'), 'sortie']], ordre)
+      const cuisine = intervallesPiece(evts, 'cuisine')
+      assert.deepEqual(cuisine.map((i) => [i.debut, i.fin, i.motif]), [[ms('09:01:00'), ms('09:04:00'), 'sortie']], ordre)
+    }
+  })
+
   test('sortie manquante : l’entrée dans une autre pièce ferme le passage', () => {
     const iv = intervallesPiece([dans('entree', '09:01:00'), ev('entree', '09:04:00', { piece_id: 'cuisine' })], 'salon')
     assert.deepEqual([iv[0].fin, iv[0].clos, iv[0].motif], [ms('09:04:00'), true, 'ailleurs'])
@@ -156,6 +169,7 @@ describe('friseDePiece', () => {
 
   test('gestes et phrases dans l’ordre des heures', () => {
     assert.deepEqual(frise.lignes, [
+      '— visite du 18/11/2026 —',
       '[10:00:58] « nous voilà dans le salon »',
       '[10:01:00] entrée dans la pièce',
       '[10:01:10] point P7 posé (type choisi : Interrupteur)',
@@ -190,7 +204,43 @@ describe('friseDePiece', () => {
       piece: { id: 'salon' }, intervalles, evenements: [],
       enregistrements: [{ visite_id: 'v1', debut: H('09:02:00'), duree_s: 60, segments: [], texte: 'parquet chêne' }],
     })
-    assert.deepEqual(f.lignes, ['[10:02:00] « parquet chêne »'])
+    assert.deepEqual(f.lignes, ['— visite du 18/11/2026 —', '[10:02:00] « parquet chêne »'])
+  })
+
+  test('une ligne sépare les visites et les jours', () => {
+    const evts = [
+      dans('entree', '09:01:00'), dans('sortie', '09:05:00'),
+      // Le lendemain, plus tôt dans la journée : l'heure recule
+      dans('entree', '07:00:00', { visite_id: 'v2', le: '2026-11-19T07:00:00.000Z' }),
+      dans('sortie', '07:02:00', { visite_id: 'v2', le: '2026-11-19T07:02:00.000Z' }),
+      // Même jour, autre visite
+      dans('entree', '15:00:00', { visite_id: 'v3', le: '2026-11-19T15:00:00.000Z' }),
+    ]
+    const f = friseDePiece({ piece: { id: 'salon' }, intervalles: intervallesPiece(evts, 'salon'), evenements: evts })
+    assert.deepEqual(f.lignes, [
+      '— visite du 18/11/2026 —', '[10:01:00] entrée dans la pièce', '[10:05:00] sortie de la pièce',
+      '— visite du 19/11/2026 —', '[08:00:00] entrée dans la pièce', '[08:02:00] sortie de la pièce',
+      '— visite du 19/11/2026 —', '[16:00:00] entrée dans la pièce',
+    ])
+  })
+
+  test('annulation notée depuis une autre pièce : gardée avec son point', () => {
+    const evts = [
+      dans('entree', '09:01:00'),
+      dans('point', '09:01:10', { point_id: 'pt7', detail: { numero: 7 } }),
+      dans('sortie', '09:02:00'),
+      ev('entree', '09:02:00', { piece_id: 'cuisine' }),
+      ev('point-supprime', '09:02:30', { piece_id: 'cuisine', point_id: 'pt7', detail: { annulation: true } }),
+      ev('point', '09:02:40', { piece_id: 'cuisine', point_id: 'pt9', detail: { numero: 9 } }),
+    ]
+    const f = friseDePiece({ piece: { id: 'salon' }, intervalles: intervallesPiece(evts, 'salon'), evenements: evts, points: [] })
+    assert.deepEqual(f.lignes, [
+      '— visite du 18/11/2026 —',
+      '[10:01:00] entrée dans la pièce',
+      '[10:01:10] point P7 posé',
+      '[10:02:00] sortie de la pièce',
+      '[10:02:30] point P7 retiré (annulation de la pose)',
+    ])
   })
 })
 
@@ -230,10 +280,28 @@ describe('demande à Claude', () => {
     assert.match(texte, /Pièce : Salon, n° 12 \(lu sur le plan : surface 18,46 m², hauteur sous plafond 2,6 m\)/)
     assert.match(texte, /déjà relevé : P7 · Interrupteur/)
     assert.match(texte, /\[10:01:00\] entrée dans la pièce/)
+    assert.doesNotMatch(texte, /Fiche actuelle/)
     assert.deepEqual(d.output_config, { effort: 'medium', format: { type: 'json_schema', schema: SCHEMA_ANALYSE } })
   })
 
+  test('fiche actuelle envoyée, rubriques vides omises', () => {
+    const d = construireDemandeAnalyse({
+      piece: { nom: 'Salon' }, lignes: [],
+      ficheActuelle: { sol: 'parquet chêne', murs: '', plafond: 'plâtre peint', remarques: null },
+    })
+    const texte = d.messages[0].content[0].text
+    assert.match(texte, /Fiche actuelle \(déjà relevée ou corrigée par l’agence\) :\n- sol : parquet chêne\n- plafond : plâtre peint\n/)
+    assert.doesNotMatch(texte, /- murs/)
+    assert.equal(construireDemandeAnalyse({ piece: {}, lignes: [], ficheActuelle: { sol: ' ' } }).messages[0].content[0].text.includes('Fiche actuelle'), false)
+    assert.match(CONSIGNES_ANALYSE, /fiche actuelle/)
+    assert.match(CONSIGNES_ANALYSE, /jamais un point supprimé/)
+    assert.match(CONSIGNES_ANALYSE, /n'en force pas un/)
+  })
+
   test('contrôle de la demande reçue', () => {
+    assert.equal(erreurDemandeAnalyse({ piece: {}, lignes: [], ficheActuelle: { sol: 'parquet' } }), null)
+    assert.equal(erreurDemandeAnalyse({ piece: {}, lignes: [], ficheActuelle: ['parquet'] }), 'fiche')
+    assert.equal(erreurDemandeAnalyse({ piece: {}, lignes: [], ficheActuelle: { sol: 3 } }), 'fiche')
     assert.equal(erreurDemandeAnalyse({ piece: { nom: 'Salon' }, lignes: [] }), null)
     assert.equal(erreurDemandeAnalyse({ lignes: [] }), 'piece')
     assert.equal(erreurDemandeAnalyse({ piece: {}, lignes: 'texte' }), 'lignes')
@@ -250,6 +318,7 @@ describe('lireAnalyse', () => {
     fiche: { sol: ' parquet  chêne ', murs: 'papier peint', plafond: '', plinthes: 'bois', hsp: '2,60', remarques: 'x'.repeat(5000) },
     elements: [
       { point: 'P7', calque: 'electricite', type: 'interrupteur', libelle: 'interrupteur simple', cotes: '', extrait: 'interrupteur simple', a_verifier: false },
+      { point: '7', calque: 'electricite', type: 'prise', libelle: 'prise', cotes: '', extrait: '', a_verifier: false },
       { point: 'p 7', calque: 'plomberie', type: 'radiateur', libelle: 'radiateur fonte', cotes: '80 de large', extrait: 'radiateur', a_verifier: true },
       { point: 'P99', calque: 'menuiseries', type: 'hublot', libelle: 'fenêtre ronde', cotes: '', extrait: '', a_verifier: false },
       { point: null, calque: 'inconnu', type: 'inconnu', libelle: 'rien', cotes: '', extrait: '', a_verifier: false },
@@ -263,22 +332,21 @@ describe('lireAnalyse', () => {
     assert.equal(lu.fiche.remarques.length, 2000)
   })
 
-  test('point rattaché, écrit autrement', () => {
-    assert.equal(lu.elements[0].point_id, 'pt7')
-    assert.equal(lu.elements[1].point_id, 'pt7')
+  test('point rattaché, écrit autrement (« 7 », « p 7 »)', () => {
+    assert.deepEqual(lu.elements.slice(0, 3).map((e) => e.point_id), ['pt7', 'pt7', 'pt7'])
   })
 
   test('le type décide du calque', () => {
-    assert.equal(lu.elements[1].calque, 'chauffage')
-    assert.equal(lu.elements[1].a_verifier, true)
+    assert.equal(lu.elements[2].calque, 'chauffage')
+    assert.equal(lu.elements[2].a_verifier, true)
   })
 
   test('type inconnu → null, point inconnu → null', () => {
-    assert.deepEqual([lu.elements[2].type, lu.elements[2].calque, lu.elements[2].point_id], [null, 'menuiseries', null])
+    assert.deepEqual([lu.elements[3].type, lu.elements[3].calque, lu.elements[3].point_id], [null, 'menuiseries', null])
   })
 
   test('élément sans calque valable écarté', () => {
-    assert.equal(lu.elements.length, 3)
+    assert.equal(lu.elements.length, 4)
   })
 
   test('réponse vide', () => {

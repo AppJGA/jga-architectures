@@ -1,8 +1,9 @@
 /* global process -- fonction serveur Vercel (Node), pas du code navigateur */
 // ─── Analyser une pièce de l'état des lieux ──────────────────────────────────
 //
-// Le navigateur envoie une pièce (nom, numéro, surface, HSP lue) et sa frise
-// — gestes du journal et phrases transcrites, intercalés par leur heure — ;
+// Le navigateur envoie une pièce (nom, numéro, surface, HSP lue), sa fiche
+// actuelle et sa frise — gestes du journal et phrases transcrites,
+// intercalés par leur heure — ;
 // Claude rend la fiche de la pièce et les éléments relevés en JSON (schéma
 // imposé). La clé Anthropic ne vit qu'ici (variable Vercel ANTHROPIC_API_KEY,
 // organisation « JGA's Individual Org » : crédits mensuels du forfait Max).
@@ -46,12 +47,21 @@ export default async function handler(req, res) {
         piece: corps.piece,
         lignes: corps.lignes,
         dejaReleves: Array.isArray(corps.dejaReleves) ? corps.dejaReleves : [],
+        ficheActuelle: corps.ficheActuelle ?? null,
       }),
     }).finalMessage()
     if (message.stop_reason === 'refusal') { res.status(422).json({ erreur: 'refus' }); return }
     if (message.stop_reason === 'max_tokens') { res.status(502).json({ erreur: 'reponse-tronquee' }); return }
     const texte = message.content.filter((b) => b.type === 'text').map((b) => b.text).join('')
-    res.status(200).json({ resultat: JSON.parse(texte) })
+    let resultat
+    try {
+      resultat = JSON.parse(texte)
+    } catch {
+      // Distinct d'une panne de réseau : relancer ne sert sans doute à rien
+      res.status(502).json({ erreur: 'reponse-illisible', detail: texte.slice(0, 300) })
+      return
+    }
+    res.status(200).json({ resultat })
   } catch (e) {
     if (e instanceof Anthropic.APIError) {
       res.status(502).json({ erreur: 'anthropic', statut: e.status, detail: String(e.message).slice(0, 300) })

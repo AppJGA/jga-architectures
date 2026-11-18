@@ -40,13 +40,15 @@ const temps = (iso) => {
 }
 
 const ARRETS = ['pause', 'coupure']
+const priorite = (e) => (e.type === 'sortie' ? 0 : 1)
 
 // ─── Intervalles passés dans une pièce ──────────────────────────────────────
 
 /**
  * Chaque passage dans la pièce : d'une `entree` jusqu'à la `sortie` de la
  * pièce, sinon jusqu'au premier événement qui montre qu'on n'y est plus
- * (entrée dans une pièce, événement d'une autre pièce ou de l'étage, `fin`),
+ * (entrée dans une pièce, événement d'une autre pièce — sauf sa sortie — ou
+ * de l'étage, `fin`),
  * ou jusqu'à une pause / coupure jamais reprise, ou enfin jusqu'au dernier
  * événement de la visite (le bouton Retour ne note rien).
  *
@@ -69,8 +71,10 @@ export function intervallesPiece(evenements, pieceId) {
 
   const intervalles = []
   for (const [visiteId, liste] of parVisite) {
-    // À heure égale, l'ordre reçu (celui de la file) départage
-    liste.sort((a, b) => a.t - b.t || a.rang - b.rang)
+    // Passer d'une pièce à l'autre note « sortie A » puis « entrée B » à la
+    // même milliseconde, et le journal relu de la base n'a pas d'ordre sûr à
+    // heure égale : la sortie passe toujours avant l'entrée, puis l'ordre reçu
+    liste.sort((a, b) => a.t - b.t || priorite(a.e) - priorite(b.e) || a.rang - b.rang)
     const dernier = liste[liste.length - 1].t
     for (let i = 0; i < liste.length; i++) {
       const { e, t } = liste[i]
@@ -82,6 +86,9 @@ export function intervallesPiece(evenements, pieceId) {
         const s = liste[j]
         const ev = s.e
         if (ev.type === 'sortie' && ev.piece_id === pieceId) motif = 'sortie'
+        // La sortie d'une autre pièce ne dit rien de celle-ci (sortie notée
+        // juste avant l'entrée, mais rangée après elle)
+        else if (ev.type === 'sortie') continue
         else if (ev.type === 'fin') motif = 'fin'
         else if (ev.type === 'entree' || ev.piece_id !== pieceId) motif = 'ailleurs'
         else if (ARRETS.includes(ev.type)) { arret ??= s.t; continue }
@@ -111,7 +118,11 @@ const fini = (iv, maintenant) => iv.clos || (maintenant != null && maintenant - 
  * pièce) est ainsi réanalysé au lieu d'être perdu.
  *
  * @param piece { id, analyse_le }
- * @param options.maintenant ms ; sans lui, pas de délai d'abandon
+ * @param options.maintenant ms. **Tout appelant de l'application doit passer
+ *   `maintenant: Date.now()`** : sans lui, pas de délai d'abandon, et une
+ *   pièce d'une visite quittée par le bouton Retour (ni sortie ni fin notée)
+ *   n'est jamais analysée. Facultatif seulement pour garder la fonction pure
+ *   dans les tests.
  */
 export function aAnalyser(piece, evenements, { maintenant = null } = {}) {
   if (!piece?.id) return false
@@ -128,6 +139,11 @@ const FORMAT_HEURE = new Intl.DateTimeFormat('fr-FR', {
 
 /** « 10:32:14 », heure de l'agence. */
 export const heureFrise = (ms) => FORMAT_HEURE.format(new Date(ms))
+
+const FORMAT_JOUR = new Intl.DateTimeFormat('fr-FR', { timeZone: FUSEAU_FRISE, day: '2-digit', month: '2-digit', year: 'numeric' })
+
+/** « 18/11/2026 », jour de l'agence. */
+export const jourFrise = (ms) => FORMAT_JOUR.format(new Date(ms))
 
 const nettoyer = (v, max) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, max)
 
@@ -159,7 +175,10 @@ function phrasesDuMorceau(enr) {
  * `references` rend chaque désignation à l'identifiant du point, pour les
  * seuls points encore dans la pièce (un point supprimé ne se rattache plus).
  * Les éléments déjà validés sont listés à part (`dejaReleves`) pour que
- * Claude ne les propose pas une seconde fois.
+ * Claude ne les propose pas une seconde fois. Une ligne « — visite du
+ * JJ/MM/AAAA — » ouvre la frise et chaque changement de visite ou de jour :
+ * sans elle, une heure qui recule (pièce revue un autre jour) ferait croire
+ * à Claude qu'une phrase suit de près un geste d'une autre visite.
  *
  * @returns { lignes: string[], references: Map<string, string>, dejaReleves: string[] }
  */
@@ -182,13 +201,24 @@ export function friseDePiece({ piece, intervalles, evenements = [], points = [],
     return n != null ? `P${n}` : 'P?'
   }
 
+  // Points de la pièce, supprimés compris (posés dans la pièce d'après le
+  // journal) : une annulation notée depuis le plan de l'étage porte la pièce
+  // du moment, pas celle du point
+  const pointsDeLaPiece = new Set((points ?? []).filter((p) => p?.id && p.piece_id === pieceId).map((p) => p.id))
+  for (const e of evenements ?? []) {
+    if (e?.point_id && e.piece_id === pieceId && e.type === 'point') pointsDeLaPiece.add(e.point_id)
+  }
+
   const entrees = []
   for (const e of evenements ?? []) {
-    if (e?.piece_id !== pieceId) continue
+    const sienne = e?.piece_id === pieceId
+    if (!sienne && !(e?.point_id && pointsDeLaPiece.has(e.point_id))) continue
+    // Entrées et sorties d'une autre pièce ne la concernent pas
+    if (!sienne && (e.type === 'entree' || e.type === 'sortie')) continue
     const t = temps(e.le)
     if (t == null) continue
     const texte = texteGeste(e, nom, duPoint)
-    if (texte) entrees.push({ t, ordre: 0, texte })
+    if (texte) entrees.push({ t, ordre: 0, texte, visite: e.visite_id ?? null })
   }
 
   const passages = intervalles ?? []
@@ -197,13 +227,22 @@ export function friseDePiece({ piece, intervalles, evenements = [], points = [],
       const milieu = (p.a + p.b) / 2
       const dedans = passages.some((iv) => (!iv.visiteId || !enr.visite_id || iv.visiteId === enr.visite_id)
         && milieu >= iv.debut && milieu < iv.fin)
-      if (dedans) entrees.push({ t: p.a, ordre: 1, texte: `« ${p.texte} »` })
+      if (dedans) entrees.push({ t: p.a, ordre: 1, texte: `« ${p.texte} »`, visite: enr.visite_id ?? null })
     }
   }
 
   // À la même seconde, le geste avant la phrase : on touche, puis on parle
   entrees.sort((a, b) => a.t - b.t || a.ordre - b.ordre)
-  const lignes = entrees.map((x) => `[${heureFrise(x.t)}] ${x.texte}`)
+  const lignes = []
+  let avant = null
+  for (const x of entrees) {
+    const jour = jourFrise(x.t)
+    if (!avant || avant.jour !== jour || (x.visite && avant.visite && x.visite !== avant.visite)) {
+      lignes.push(`— visite du ${jour} —`)
+    }
+    avant = { jour, visite: x.visite ?? avant?.visite ?? null }
+    lignes.push(`[${heureFrise(x.t)}] ${x.texte}`)
+  }
 
   const dejaReleves = (elementsValides ?? []).map((el) => {
     const quoi = libelleType(el.type) ?? calqueEdl(el.calque)?.libelle ?? 'Élément'
@@ -254,6 +293,7 @@ const chaine = { type: 'string' }
 const ouNul = (schema) => ({ anyOf: [schema, { type: 'null' }] })
 
 export const RUBRIQUES_FICHE = ['sol', 'murs', 'plafond', 'plinthes', 'hsp', 'remarques']
+const BORNES_FICHE = { sol: 500, murs: 500, plafond: 500, plinthes: 500, hsp: 100, remarques: 2000 }
 
 export const SCHEMA_ANALYSE = {
   type: 'object',
@@ -296,34 +336,49 @@ Tu reçois une pièce et sa frise : les gestes et les phrases entendues, dans l'
 
 Éléments :
 - Un élément par chose dite et localisée dans la pièce (un radiateur, une prise, une fenêtre, une fissure…). Deux prises dites ensemble sur deux points font deux éléments.
-- « point » : rattache l'élément à un point (« P7 ») si la phrase suit de près la pose du point (quelques secondes) ou si elle le désigne ; sinon null. N'utilise que des points présents dans la frise.
-- « calque » et « type » : choisis-les dans la liste ci-dessous. Si l'architecte a choisi un type au geste, garde-le, sauf contradiction claire avec ce qu'il dit. « type » vaut null si aucun type de la liste ne convient ; le calque reste celui de la chose décrite.
+- « point » : rattache l'élément à un point (« P7 ») si la phrase suit de près la pose du point (quelques secondes) ou si elle le désigne ; sinon null. N'utilise que des points présents dans la frise, et jamais un point supprimé (ligne « point … supprimé » sans « rétabli » ensuite) : l'élément prend alors null.
+- Les lignes « — visite du JJ/MM/AAAA — » séparent les visites et les jours : une phrase et un geste séparés par une de ces lignes ne se suivent pas, même si leurs heures sont proches.
+- « calque » et « type » : choisis-les dans la liste ci-dessous. Si l'architecte a choisi un type au geste, garde-le, sauf contradiction claire avec ce qu'il dit. « type » vaut null si aucun type de la liste ne convient ; le calque reste celui de la chose décrite. Si la chose décrite ne relève d'aucun calque de la liste, n'en force pas un : dis-la dans les « remarques » de la fiche.
 - « libelle » : une description courte en français, telle qu'un architecte l'écrirait (« radiateur fonte sous la fenêtre »).
 - « cotes » : les dimensions telles que dites (« allège 90, largeur 120 »), sinon "".
 - « extrait » : les mots entendus qui décrivent l'élément, recopiés de la frise.
 - « a_verifier » : true si l'architecte hésite, se reprend, ou si la transcription est douteuse.
 - Ne répète pas les éléments listés comme « déjà relevés ».
 
-Fiche de la pièce (sol, murs, plafond, plinthes, hsp = hauteur sous plafond, remarques = état général et ce qui ne rentre pas ailleurs) : seulement d'après ce qui est dit dans la frise, en phrases courtes ; "" pour une rubrique dont rien n'est dit.
+Fiche de la pièce (sol, murs, plafond, plinthes, hsp = hauteur sous plafond, remarques = état général et ce qui ne rentre pas ailleurs) : seulement d'après ce qui est dit dans la frise, en phrases courtes ; "" pour une rubrique dont rien n'est dit. Si une « fiche actuelle » est donnée (déjà relevée ou corrigée par l'agence), rends la fiche complète : garde le contenu de chaque rubrique, sauf si ce qui est dit dans la frise le remplace ou le complète clairement.
 
 Ne rien inventer : ce qui n'est pas dit n'existe pas. Réponds uniquement par le JSON demandé.
 
 Calques et types possibles :
 ${catalogue}`
 
+function lignesFicheActuelle(fiche) {
+  if (!fiche || typeof fiche !== 'object') return []
+  const remplies = RUBRIQUES_FICHE
+    .map((r) => [r, nettoyer(fiche[r], BORNES_FICHE[r])])
+    .filter(([, v]) => v)
+  if (!remplies.length) return []
+  return ['Fiche actuelle (déjà relevée ou corrigée par l’agence) :', ...remplies.map(([r, v]) => `- ${r} : ${v}`)]
+}
+
 const surface = (v) => (Number(v) > 0 ? `${String(Math.round(Number(v) * 100) / 100).replace('.', ',')} m²` : null)
 
 /**
  * @param piece { nom, numero, surface, hsp } — surface et HSP lues sur le plan
  * @param lignes lignes de la frise ; dejaReleves : lignes « déjà relevé : … »
+ * @param ficheActuelle fiche de la pièce telle qu'enregistrée (analyse
+ *   précédente, peut-être corrigée par l'agence) : une réanalyse repart de
+ *   tout ce qui a été dit, mais ne doit pas défaire une correction faite au
+ *   bureau (conception § 6, « ce que la pièce avait déjà »)
  */
-export function construireDemandeAnalyse({ piece = {}, lignes = [], dejaReleves = [] }) {
+export function construireDemandeAnalyse({ piece = {}, lignes = [], dejaReleves = [], ficheActuelle = null }) {
   const designation = [nettoyer(piece.nom, 200) || 'Pièce sans nom', piece.numero ? `n° ${nettoyer(piece.numero, 50)}` : null]
     .filter(Boolean).join(', ')
   const plan = [surface(piece.surface) && `surface ${surface(piece.surface)}`, Number(piece.hsp) > 0 && `hauteur sous plafond ${String(piece.hsp).replace('.', ',')} m`]
     .filter(Boolean)
   const texte = [
     `Pièce : ${designation}${plan.length ? ` (lu sur le plan : ${plan.join(', ')})` : ''}.`,
+    ...lignesFicheActuelle(ficheActuelle),
     dejaReleves.length ? `Éléments déjà relevés et validés (${dejaReleves.length}) :` : 'Aucun élément déjà relevé.',
     ...dejaReleves,
     `Frise de la pièce (${lignes.length} lignes) :`,
@@ -349,6 +404,9 @@ export function erreurDemandeAnalyse(corps) {
   if (lignes.length > LIGNES_MAX) return 'trop-de-lignes'
   if (!Array.isArray(dejaReleves) || dejaReleves.some((l) => typeof l !== 'string')) return 'deja-releves'
   if (dejaReleves.length > DEJA_RELEVES_MAX) return 'trop-de-releves'
+  const fiche = corps.ficheActuelle
+  if (fiche != null && (typeof fiche !== 'object' || Array.isArray(fiche)
+    || Object.values(fiche).some((v) => v != null && typeof v !== 'string'))) return 'fiche'
   const longueur = [...lignes, ...dejaReleves].reduce((n, l) => n + l.length, 0)
   if (longueur > LONGUEUR_TOTALE_MAX) return 'trop-long'
   return null
@@ -356,7 +414,6 @@ export function erreurDemandeAnalyse(corps) {
 
 // ─── Lecture de la réponse ──────────────────────────────────────────────────
 
-const BORNES_FICHE = { sol: 500, murs: 500, plafond: 500, plinthes: 500, hsp: 100, remarques: 2000 }
 const CALQUES_VALIDES = new Set(CALQUES.map((c) => c.code))
 
 /**
@@ -377,8 +434,9 @@ export function lireAnalyse(resultat, references = new Map()) {
     const type = typeEdl(typeof el.type === 'string' ? el.type : null)
     const calque = type?.calque ?? (CALQUES_VALIDES.has(el.calque) ? el.calque : null)
     if (!calque) continue
-    // « p7 », « P 7 » : même point
-    const cle = typeof el.point === 'string' ? el.point.replace(/\s+/g, '').toUpperCase() : null
+    // « p7 », « P 7 », « 7 » : même point
+    let cle = typeof el.point === 'string' ? el.point.replace(/\s+/g, '').toUpperCase() : null
+    if (cle && /^\d+$/.test(cle)) cle = `P${cle}`
     elements.push({
       point_id: (cle && references.get(cle)) ?? null,
       calque,

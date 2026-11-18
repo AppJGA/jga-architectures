@@ -253,3 +253,18 @@ describe('mémoire des étages décodés', () => {
     assert.deepEqual(cheminsAEcarter(new Map([['vu', 900], ['x', 900]]), 'vu', 1000), ['x'])
   })
 })
+
+describe('zoom maximal d’un plan vectoriel', async () => {
+  const { zoomMaxVectoriel, PX_ECRAN_PAR_METRE_MAX } = await import('../src/modules/etude/etat-des-lieux/vecteursEdlLogique.js')
+  test('une grande feuille va jusqu’au centimètre lisible', () => {
+    // Feuille de 214 m en 6 000 px (28 px/m) affichée à 0,1 px d'écran par px d'image
+    const z = zoomMaxVectoriel(0.1, 28, 12)
+    assert.ok(Math.abs(z * 0.1 * 28 - PX_ECRAN_PAR_METRE_MAX) < 1e-6)
+    assert.ok(z > 600)
+  })
+  test('jamais sous le plafond des images, ni sans cadrage', () => {
+    assert.equal(zoomMaxVectoriel(5, 1000, 12), 12)
+    assert.equal(zoomMaxVectoriel(0, 28, 60), 60)
+    assert.equal(zoomMaxVectoriel(0.1, undefined, 60), 60)
+  })
+})

@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 1260 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans, gestion de l'application, état des lieux)
+npm test         # 1262 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans, gestion de l'application, état des lieux)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -813,7 +813,9 @@ lot 1 : `docs/superpowers/plans/2026-11-17-etat-des-lieux-lot1-preparer.md`.
   les éléments visibles), et `sansPleine` : l'image de 6 000 px n'est plus
   chargée quand l'étage a son fichier vectoriel (≈ 96 Mo de mémoire sur
   iPad), sauf si sa lecture échoue ; appuis mesurés sur un bloc de la taille
-  du plan. `useVecteursEdl` (cache par chemin, plafonné au poids décodé :
+  du plan. Zoom maximal **selon l'échelle** (`zoomMaxVectoriel` : 1 cm = 20 px
+  d'écran ; `zoomMax` de la visionneuse accepte une fonction de l'échelle),
+  au lieu du plafond des images (12, 60 en visite). `useVecteursEdl` (cache par chemin, plafonné au poids décodé :
   ~1,5 M points, l'étage affiché toujours gardé). Hors ligne : aperçus, puis
   fichiers vectoriels, puis images pleines des étages qui n'en ont pas
   (`garderImages`). Sans la 081 : import et affichage comme avant (repli par

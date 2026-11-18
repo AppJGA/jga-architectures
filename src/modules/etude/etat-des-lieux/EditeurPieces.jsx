@@ -12,6 +12,10 @@ import { controlesAutomatiques, signalementsVisibles } from './relectureLogique'
 import { relireNiveau } from './relectureIa'
 import { PanneauRelecture } from './PanneauRelecture'
 import { useVecteursEdl } from './useVecteursEdl'
+import { zoomMaxVectoriel } from './vecteursEdlLogique'
+
+// Plafond de zoom de l'image d'un étage (sans fichier vectoriel), celui de la visionneuse
+const ZOOM_MAX_IMAGE = 12
 
 // ─── Corriger les pièces d'un étage ──────────────────────────────────────────
 //
@@ -328,7 +332,7 @@ export function EditeurPieces({ niveau, pieces, obtenirLiens, lectureSeule, onMo
   return (
     <div style={{ display: 'flex', gap: 16, height: '100%', minHeight: 0 }}>
       <div style={{ flex: '1 1 520px', minWidth: 0, minHeight: 420, border: '0.5px solid rgba(0,0,0,0.1)', overflow: 'hidden', position: 'relative' }}>
-        <VisionneusePlan version={version} obtenirLiens={obtenirLiens} onToucher={toucher} calque={calque} dessinFond={dessinFond} sansPleine={sansPleine} />
+        <VisionneusePlan version={version} obtenirLiens={obtenirLiens} onToucher={toucher} calque={calque} dessinFond={dessinFond} sansPleine={sansPleine} zoomMax={dessinFond ? (e) => zoomMaxVectoriel(e, niveau.cadrage?.pxParMetre, ZOOM_MAX_IMAGE) : ZOOM_MAX_IMAGE} />
         {trace && (
           <div style={{ position: 'absolute', top: 12, left: 12, right: 12, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', background: 'white', padding: '8px 10px', borderTop: `3px solid ${COULEUR}`, boxShadow: '0 8px 24px -12px rgba(31,27,23,0.45)' }}>
             <span style={{ flex: 1, fontSize: 13, color: '#1F1B17' }}>Touchez les angles de la pièce, un à un <span style={{ color: '#9C9591' }}>({trace.length})</span></span>

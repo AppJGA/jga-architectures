@@ -3,6 +3,7 @@ import { VisionneusePlan } from '../../../chantier/comptes-rendus/VisionneusePla
 import { versPixels, versMetres } from '../geometrieEdl'
 import { cadrePiece, COULEURS_PIECE, etatPiece, pointProche, ZOOM_MAX_VISITE } from './visiteLogique'
 import { useVecteursEdl } from '../useVecteursEdl'
+import { zoomMaxVectoriel } from '../vecteursEdlLogique'
 
 // ─── Plan de la visite ───────────────────────────────────────────────────────
 //
@@ -165,7 +166,7 @@ export function PlanVisite({ niveau, pieces, points, nbPhotos, visitees, piece, 
     >
       <VisionneusePlan
         version={version} obtenirLiens={obtenirLiens} onToucher={toucher} calque={calque}
-        cadre={cadre} zoomMax={ZOOM_MAX_VISITE} dessinFond={dessinFond} sansPleine={sansPleine}
+        cadre={cadre} zoomMax={dessinFond ? (e) => zoomMaxVectoriel(e, niveau.cadrage?.pxParMetre, ZOOM_MAX_VISITE) : ZOOM_MAX_VISITE} dessinFond={dessinFond} sansPleine={sansPleine}
       />
     </div>
   )

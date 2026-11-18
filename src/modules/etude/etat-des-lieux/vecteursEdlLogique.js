@@ -21,6 +21,17 @@ export const COULEUR_MASSE = '#1F1B17'
 // Sous cette hauteur à l'écran, un texte n'est plus qu'une tache grise : il
 // coûte du temps de dessin sans rien apprendre
 export const HAUTEUR_TEXTE_MIN = 6
+
+// Zoom maximal d'un plan vectoriel : de quoi lire au centimètre (1 cm =
+// 20 px à l'écran). Le plafond fixe des images (12, 60 en visite) venait de
+// leur flou ; une feuille de 200 m de haut restait alors illisible.
+export const PX_ECRAN_PAR_METRE_MAX = 2000
+
+/** `echelle` : px d'écran par px d'image au zoom 1 ; jamais sous `plancher`. */
+export function zoomMaxVectoriel(echelle, pxParMetre, plancher) {
+  if (!(echelle > 0) || !(pxParMetre > 0)) return plancher
+  return Math.max(plancher, PX_ECRAN_PAR_METRE_MAX / (echelle * pxParMetre))
+}
 // Marge autour de l'écran, en pixels : un trait posé juste au bord garde la
 // moitié de son épaisseur visible
 const MARGE_ECRAN = 3

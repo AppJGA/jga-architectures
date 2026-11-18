@@ -119,8 +119,11 @@ export function VisionneusePlan({ version, obtenirLiens, pastilles = [], idActiv
   const bh = version ? version.hauteur * echelle : 0
   const ox = (taille.largeur - bw) / 2
   const oy = (taille.hauteur - bh) / 2
+  // `zoomMax` peut dépendre de l'échelle d'affichage (plan vectoriel de
+  // l'état des lieux) ; un nombre pour tous les autres plans
+  const zMax = typeof zoomMax === 'function' ? (echelle > 0 ? zoomMax(echelle) : 12) : zoomMax
 
-  const vueDuCadre = () => (cadre ? limiterVue(vueSurCadre(cadre, taille, { bw, bh, ox, oy }, { zoomMax }), bw, bh) : { zoom: 1, dx: 0, dy: 0 })
+  const vueDuCadre = () => (cadre ? limiterVue(vueSurCadre(cadre, taille, { bw, bh, ox, oy }, { zoomMax: zMax }), bw, bh) : { zoom: 1, dx: 0, dy: 0 })
   // Nouveau cadre (pièce ouverte, refermée), ou conteneur redimensionné alors
   // qu'un cadre est posé : la vue s'y ajuste (cleDeCadre, testé). Le pincement
   // qui suit reste libre. Conteneur masqué un instant : la clé retenue reste
@@ -165,7 +168,7 @@ export function VisionneusePlan({ version, obtenirLiens, pastilles = [], idActiv
 
   const appliquer = (v) => setVue(limiterVue(v, bw, bh))
   const zoomer = (facteur, px = taille.largeur / 2, py = taille.hauteur / 2) => {
-    setVue(v => limiterVue(zoomAutour(v, facteur, px - ox, py - oy, 1, zoomMax), bw, bh))
+    setVue(v => limiterVue(zoomAutour(v, facteur, px - ox, py - oy, 1, zMax), bw, bh))
   }
 
   useEffect(() => {
@@ -207,7 +210,7 @@ export function VisionneusePlan({ version, obtenirLiens, pastilles = [], idActiv
       geste.current.pincement = { distance, milieu }
       if (!precedent) return
       setVue(v => {
-        const zoomee = zoomAutour(v, distance / precedent.distance, milieu.x - ox, milieu.y - oy, 1, zoomMax)
+        const zoomee = zoomAutour(v, distance / precedent.distance, milieu.x - ox, milieu.y - oy, 1, zMax)
         return limiterVue({ ...zoomee, dx: zoomee.dx + milieu.x - precedent.milieu.x, dy: zoomee.dy + milieu.y - precedent.milieu.y }, bw, bh)
       })
       return

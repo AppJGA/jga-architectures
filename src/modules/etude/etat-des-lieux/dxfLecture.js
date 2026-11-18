@@ -186,7 +186,14 @@ function deployer(entites, blocs) {
           const pos = aligne ? [nombre(e, 11), nombre(e, 21)] : [nombre(e, 10), nombre(e, 20)]
           // Rotation (degrés) : celle du texte et celle des blocs qui le portent
           const rotation = nombre(e, 50) + (Math.atan2(m[1], m[0]) * 180) / Math.PI
-          if (t) textes.push({ calque, bloc: blocRacine, texte: t, pos: appliquer(m, pos), hauteur: nombre(e, 40) * echelleDe(m), rotation })
+          // Alignement (72 / 73) gardé pour l'aperçu de l'export : un libellé
+          // centré dessiné calé à gauche paraîtrait décalé de sa pièce
+          if (t) {
+            textes.push({
+              calque, bloc: blocRacine, texte: t, pos: appliquer(m, pos), hauteur: nombre(e, 40) * echelleDe(m), rotation,
+              ...(aligne ? { alignH: entier(e, 72), alignV: entier(e, 73) } : {}),
+            })
+          }
           break
         }
         case 'MTEXT': {

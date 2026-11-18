@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
+import { Suspense, lazy, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useParams, useSearchParams } from 'react-router-dom'
-import { Upload, RefreshCw, X, Mic } from 'lucide-react'
+import { Upload, RefreshCw, X, Mic, FileDown } from 'lucide-react'
 import { useLiensSignes } from '../../chantier/comptes-rendus/useLiensSignes'
 import { garderImages } from '../../chantier/comptes-rendus/horsLigne/images'
 import { useEtatDesLieux } from './useEtatDesLieux'
@@ -17,6 +17,10 @@ import { RelectureEdl } from './analyse/RelectureEdl'
 import { resumePieceRelecture } from './analyse/relectureAnalyseLogique'
 import { COULEUR_IA } from '../../chantier/comptes-rendus/enregistrement/styleProposition'
 import { morceauxEtatsDesLieux } from '../../chantier/comptes-rendus/enregistrement/audioLocal'
+
+// Lot 4 : la fenêtre d'export (aperçu, DXF, rapport, ZIP) n'est chargée qu'à
+// son ouverture — pdf.js et pdfmake n'ont rien à faire dans la visite
+const ExportEdl = lazy(() => import('./export/ExportEdl'))
 
 // ─── État des lieux d'un bâtiment existant ───────────────────────────────────
 //
@@ -35,6 +39,8 @@ import { morceauxEtatsDesLieux } from '../../chantier/comptes-rendus/enregistrem
 // relire au bureau ce que Claude a tiré de chaque pièce. La vue et la pièce
 // ouverte sont dans l'adresse (?vue=relecture&piece=…) : un rechargement y
 // ramène.
+// Lot 4 : « Exporter » (dès qu'il y a des étages, lecture seule comprise :
+// l'export ne modifie rien) ouvre la fenêtre d'export avec son aperçu.
 
 const texteDiscret = { margin: 0, fontSize: 12, color: '#9C9591' }
 const boutonPrincipal = { display: 'inline-flex', alignItems: 'center', gap: 8, minHeight: 40, padding: '0 16px', border: 'none', borderRadius: 3, background: 'var(--affaire-accent, #E8602C)', color: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer' }
@@ -84,6 +90,7 @@ export default function EtatDesLieuxModule({ lectureSeule = false }) {
   const [niveauId, setNiveauId] = useState(null)
   const [importOuvert, setImportOuvert] = useState(false)
   const [confirmer, setConfirmer] = useState(false)
+  const [exportOuvert, setExportOuvert] = useState(false)
   const [params, setParams] = useSearchParams()
   const visite = useVisiteEdl(affaireId)
   // Lot 3 : à l'ouverture avec du réseau, les pièces visitées partent à l'analyse
@@ -260,6 +267,7 @@ export default function EtatDesLieuxModule({ lectureSeule = false }) {
             <Mic size={15} /> {visiteEnCours(visite.donnees.visites) ? 'Reprendre la visite' : 'Démarrer la visite'}
           </button>
         )}
+        <button type="button" onClick={() => setExportOuvert(true)} style={boutonSecondaire}><FileDown size={14} /> Exporter</button>
         {!lectureSeule && (
           <button type="button" onClick={() => setConfirmer(true)} style={boutonSecondaire}><RefreshCw size={14} /> Remplacer les plans</button>
         )}
@@ -332,6 +340,11 @@ export default function EtatDesLieuxModule({ lectureSeule = false }) {
             onRelecture={(relecture) => edl.enregistrerRelecture(niveau.id, relecture)}
           />
         </div>
+      )}
+      {exportOuvert && (
+        <Suspense fallback={null}>
+          <ExportEdl affaireId={affaireId} obtenirLiens={obtenirLiens} enAttente={visite.resume?.enAttente ?? 0} onFermer={() => setExportOuvert(false)} />
+        </Suspense>
       )}
       {confirmer && <ConfirmerRemplacement perte={perte} enCours={suppression} onConfirmer={remplacer} onAnnuler={() => setConfirmer(false)} />}
       {fenetreImport}

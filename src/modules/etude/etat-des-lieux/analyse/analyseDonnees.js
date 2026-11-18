@@ -71,7 +71,7 @@ export async function lireAnalyse(affaireId, { delaiMs = DELAI_LECTURE_MS } = {}
 
 // Ce que la visite et le tableau des pièces affichent : fiche, état de
 // l'analyse, HSP lue (la complétude en dépend)
-const COLONNES_ETAT_PIECES = 'synchro_id:id, id, niveau_id, fiche, hsp_lue, analyse_le, analyse_erreur, fiche_a_valider'
+const COLONNES_ETAT_PIECES = 'synchro_id:id, id, niveau_id, fiche, hsp_lue, analyse_le, analyse_erreur, fiche_a_valider, updated_at'
 
 /** État de l'analyse d'une affaire, léger (ni transcriptions ni journal) : pièces et éléments. */
 export async function lireEtatAnalyse(affaireId, { delaiMs = DELAI_LECTURE_MS } = {}) {
@@ -88,17 +88,21 @@ export async function lireEtatAnalyse(affaireId, { delaiMs = DELAI_LECTURE_MS } 
   }
 }
 
-/** Choix des pièces à analyser : leur état et les entrées / sorties du journal. */
+/**
+ * Choix des pièces à analyser : leur état, les entrées / sorties du journal,
+ * et jusqu'où va le son transcrit de chaque visite (sans le texte).
+ */
 export async function lireSuiviAnalyse(affaireId, { delaiMs = DELAI_LECTURE_MS } = {}) {
   const deLAffaire = (q) => q.eq('affaire_id', affaireId)
   try {
-    const [pieces, evenements] = await Promise.all([
+    const [pieces, evenements, enregistrements] = await Promise.all([
       toutes('edl_pieces', COLONNES_ETAT_PIECES, deLAffaire, delaiMs),
       toutes('edl_evenements', 'synchro_id:id, id, visite_id, niveau_id, piece_id, point_id, type, le', deLAffaire, delaiMs),
+      toutes('edl_enregistrements', 'synchro_id:id, id, visite_id, debut, duree_s', deLAffaire, delaiMs),
     ])
-    return { indisponible: false, pieces, evenements }
+    return { indisponible: false, pieces, evenements, enregistrements }
   } catch (err) {
-    if (analyseIndisponible(err)) return { ...INDISPONIBLE, pieces: [], evenements: [] }
+    if (analyseIndisponible(err)) return { ...INDISPONIBLE, pieces: [], evenements: [], enregistrements: [] }
     throw err
   }
 }
@@ -138,22 +142,27 @@ export async function lireFriseAnalyse(affaireId, pieceId, { delaiMs = DELAI_LEC
  * bougé depuis la lecture. Aucune ligne touchée : soit la pièce vient d'être
  * analysée ailleurs ('deja'), soit la base refuse d'y écrire ('refus' — un
  * refus RLS ne rend pas d'erreur), et le résultat ne pourrait pas s'écrire.
+ * Ce n'est pas un bail : deux appareils qui réservent dans la même seconde
+ * paient chacun un appel (il faudrait une colonne de bail dans la base).
+ * @returns { etat: 'ok' | 'deja' | 'refus' | 'indisponible', updatedAt }
  */
 export async function reserverAnalyse(piece) {
   let requete = supabase.from('edl_pieces').update({ analyse_erreur: piece.analyse_erreur ?? null }).eq('id', piece.id)
   requete = piece.analyse_le ? requete.eq('analyse_le', piece.analyse_le) : requete.is('analyse_le', null)
-  const { data, error } = await requete.select('id')
+  // `updated_at` après l'écriture (le déclencheur edl_pieces_touche l'a
+  // avancé) : l'écriture finale du résultat se conditionne dessus
+  const { data, error } = await requete.select('id, updated_at')
   if (error) {
-    if (analyseIndisponible(error)) return 'indisponible'
+    if (analyseIndisponible(error)) return { etat: 'indisponible' }
     throw error
   }
-  if (data?.length) return 'ok'
+  if (data?.length) return { etat: 'ok', updatedAt: data[0].updated_at ?? null }
   const { data: relue, error: erreurRelue } = await bornerDelai((signal) => supabase
     .from('edl_pieces').select('synchro_id:id, analyse_le').eq('id', piece.id).abortSignal(signal).maybeSingle())
   if (erreurRelue) throw erreurRelue
-  if (!relue) return 'deja'
+  if (!relue) return { etat: 'deja' }
   const heure = (v) => (v ? Date.parse(v) : null)
-  return heure(relue.analyse_le) === heure(piece.analyse_le) ? 'refus' : 'deja'
+  return { etat: heure(relue.analyse_le) === heure(piece.analyse_le) ? 'refus' : 'deja' }
 }
 
 /** Upsert par identifiant du morceau : une transcription rejouée réécrit la même ligne. */
@@ -175,7 +184,18 @@ export async function enregistrerTranscription(ligne) {
  * transaction : un arrêt en route laisse `analyse_le` inchangé, la pièce
  * reste à analyser et la passe suivante refait tout.
  */
-export async function ecrireResultatAnalyse({ affaireId, piece, fiche, elements, analyseLe = new Date() }) {
+export async function ecrireResultatAnalyse({
+  affaireId, piece, fiche, elements, analyseLe = new Date(), siMisAJour = undefined, garderFiche = false, elementsEcrits = false,
+}) {
+  const champs = champsPieceAnalysee(fiche, analyseLe)
+  // Fiche modifiée au bureau pendant l'appel : elle reste, et sa marque aussi
+  if (garderFiche) {
+    delete champs.fiche
+    delete champs.fiche_a_valider
+  }
+  // Seconde écriture après un conflit : les éléments sont déjà en place
+  if (elementsEcrits) return ecrirePieceAnalysee(piece.id, champs, siMisAJour, { remplaces: 0, ajoutes: 0 })
+
   const propositions = (q) => q.eq('piece_id', piece.id).eq('origine', 'ia').eq('a_valider', true)
 
   const supprime = await propositions(supabase.from('edl_elements').delete()).select('id')
@@ -204,25 +224,56 @@ export async function ecrireResultatAnalyse({ affaireId, piece, fiche, elements,
     }
   }
 
-  const { data, error } = await supabase
-    .from('edl_pieces').update(champsPieceAnalysee(fiche, analyseLe)).eq('id', piece.id).select('id')
-  if (error) {
-    if (analyseIndisponible(error)) return INDISPONIBLE
-    throw error
-  }
-  if (!data?.length) throw new Error(LECTURE_SEULE)
-  return { indisponible: false, remplaces: supprime.data?.length ?? 0, ajoutes: lignes.length }
+  return ecrirePieceAnalysee(piece.id, champs, siMisAJour, { remplaces: supprime.data?.length ?? 0, ajoutes: lignes.length })
 }
 
-/** Le motif d'un échec, montré à la relecture avec « Réessayer ». */
-export async function noterErreurAnalyse(pieceId, message) {
-  const { data, error } = await supabase
-    .from('edl_pieces').update({ analyse_erreur: messageErreurAnalyse(message) }).eq('id', pieceId).select('id')
+// `siMisAJour` (updated_at rendu par la réservation) : l'écriture ne passe
+// que si la pièce n'a pas bougé depuis. Aucune ligne touchée → `conflit`,
+// et l'appelant relit la pièce pour savoir pourquoi (suiteConflitEcriture).
+// Sans condition, aucune ligne touchée = refus silencieux de la base.
+async function ecrirePieceAnalysee(pieceId, champs, siMisAJour, compte) {
+  let requete = supabase.from('edl_pieces').update(champs).eq('id', pieceId)
+  if (siMisAJour !== undefined) requete = siMisAJour ? requete.eq('updated_at', siMisAJour) : requete.is('updated_at', null)
+  const { data, error } = await requete.select('id')
   if (error) {
     if (analyseIndisponible(error)) return INDISPONIBLE
     throw error
   }
-  if (!data?.length) throw new Error(LECTURE_SEULE)
+  if (!data?.length) {
+    if (siMisAJour !== undefined) return { indisponible: false, conflit: true }
+    throw new Error(LECTURE_SEULE)
+  }
+  return { indisponible: false, ...compte }
+}
+
+/** La pièce relue après un conflit d'écriture (lecture fraîche). */
+export async function relirePieceAnalyse(pieceId) {
+  const { data, error } = await bornerDelai((signal) => supabase
+    .from('edl_pieces').select('synchro_id:id, id, fiche, analyse_le, analyse_erreur, updated_at').eq('id', pieceId)
+    .abortSignal(signal).maybeSingle())
+  if (error) throw error
+  return data ? propre(data) : null
+}
+
+/**
+ * Le motif d'un échec, montré à la relecture avec « Réessayer ». Avec
+ * `analyseLe` (l'`analyse_le` lu avant l'essai), l'écriture ne passe que si
+ * la pièce n'a pas été analysée depuis : une analyse faite ailleurs
+ * entre-temps ne passe pas en échec (`ignoree`, sans erreur).
+ */
+export async function noterErreurAnalyse(pieceId, message, options = {}) {
+  let requete = supabase.from('edl_pieces').update({ analyse_erreur: messageErreurAnalyse(message) }).eq('id', pieceId)
+  const conditionnee = 'analyseLe' in options
+  if (conditionnee) requete = options.analyseLe ? requete.eq('analyse_le', options.analyseLe) : requete.is('analyse_le', null)
+  const { data, error } = await requete.select('id')
+  if (error) {
+    if (analyseIndisponible(error)) return INDISPONIBLE
+    throw error
+  }
+  if (!data?.length) {
+    if (conditionnee) return { indisponible: false, ignoree: true }
+    throw new Error(LECTURE_SEULE)
+  }
   return { indisponible: false }
 }
 

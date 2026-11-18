@@ -28,6 +28,17 @@ export function operationEdl(type, charge, { affaireId, id = null, creeLe = Date
   return { id: id ?? crypto.randomUUID(), affaireId, type, charge, creeLe, essais: 0, erreur: null }
 }
 
+/**
+ * Le geste ferme-t-il un passage dans une pièce ? Une sortie, la fin de la
+ * visite. Seuls ceux-là, une fois envoyés, peuvent rendre une pièce prête à
+ * analyser : le moteur de synchro ne relit l'analyse que pour eux, pas pour
+ * chaque point posé.
+ */
+export function fermePassage(op) {
+  if (op?.type === TYPES_EDL.visiteTerminer) return true
+  return op?.type === TYPES_EDL.evenement && ['sortie', 'fin'].includes(op.charge?.evenement?.type)
+}
+
 export const horodatageSuivant = (dernier, maintenant) => Math.max(maintenant, (dernier ?? 0) + 1)
 
 export function evenementEdl(type, { visiteId, affaireId, niveauId = null, pieceId = null, pointId = null, detail = {} }, le = new Date()) {

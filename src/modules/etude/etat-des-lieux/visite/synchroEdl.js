@@ -8,7 +8,7 @@
 // pendant un envoi ne peut pas effacer de l'écran ce qui vient de partir.
 
 import { MAGASINS_EDL, lire, ecrire, effacer, tout, operationsDeLAffaire, disponible, oublierAffaire } from './baseEdl'
-import { aEnvoyer, ESSAIS_MAX, appliquerOperationEdl, photosDesOperations } from './fileEdlLogique'
+import { aEnvoyer, ESSAIS_MAX, appliquerOperationEdl, photosDesOperations, fermePassage } from './fileEdlLogique'
 import { envoyerOperationEdl } from './envoiEdl'
 import { erreurReseau } from '../../../chantier/comptes-rendus/horsLigne/envoi'
 
@@ -41,6 +41,7 @@ async function reporterDansInstantane(affaireId, op) {
 export function envoyerFileEdl(affaireId) {
   return sousVerrouEdl(async () => {
     let envoyees = 0
+    let fermetures = 0
     let coupure = false
     const ops = aEnvoyer(await operationsDeLAffaire(affaireId).catch(() => []))
     for (const op of ops) {
@@ -49,6 +50,7 @@ export function envoyerFileEdl(affaireId) {
         await reporterDansInstantane(affaireId, op)
         await effacer(MAGASINS_EDL.operations, op.id)
         envoyees++
+        if (fermePassage(op)) fermetures++
       } catch (err) {
         if (erreurReseau(err)) { coupure = true; break }
         const essais = (op.essais ?? 0) + 1
@@ -57,7 +59,7 @@ export function envoyerFileEdl(affaireId) {
       }
     }
     if (ops.length > 0) signalerFileEdl()
-    return { envoyees, coupure }
+    return { envoyees, coupure, fermetures }
   })
 }
 
@@ -65,9 +67,9 @@ export function envoyerFileEdl(affaireId) {
  * Toutes les affaires qui ont des gestes en attente (moteur de synchro de
  * l'app), puis l'audio des visites : après les gestes, pour qu'une visite
  * créée hors ligne soit dans la base avant ses morceaux. Enfin l'analyse,
- * pour les seules affaires dont des gestes ou des morceaux viennent de
- * partir (ou dont une relance est due) : appelé toutes les minutes, il ne
- * doit rien lire d'autre.
+ * pour les seules affaires dont une sortie ou une fin de visite vient de
+ * partir, dont un morceau vient d'être transcrit, ou dont une relance est
+ * due : appelé toutes les minutes, il ne doit rien lire d'autre.
  */
 export async function envoyerToutEdl() {
   if (!disponible()) return { envoyees: 0 }
@@ -78,7 +80,8 @@ export async function envoyerToutEdl() {
   for (const affaireId of [...new Set(ops.map((o) => o.affaireId))]) {
     const r = await envoyerFileEdl(affaireId)
     envoyees += r.envoyees
-    if (r.envoyees > 0) affairesEnvoyees.push(affaireId)
+    // Une sortie ou une fin partie : une pièce est peut-être prête
+    if (r.fermetures > 0) affairesEnvoyees.push(affaireId)
     if (r.coupure) { coupure = true; break }
   }
   if (!coupure) lancerTranscriptions(affairesEnvoyees)

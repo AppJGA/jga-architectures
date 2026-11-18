@@ -192,6 +192,14 @@ const MESSAGES_LANCEMENT = {
   refus: 'Lecture seule : rien n’a été modifié.',
   lecture: 'La pièce n’a pas pu être relue avant l’analyse. Réessayez.',
   appareil: 'Les données de cet appareil sont illisibles : l’analyse n’est pas partie.',
+  // Raisons précises rendues par analyserPiece (analyseEdlPasse.js)
+  son: 'L’analyse attend le son de la visite : il est encore sur la tablette ou pas encore transcrit.',
+  passage: 'L’analyse attend la fin du passage dans la pièce (sortie, ou fin de la visite).',
+  gestes: 'L’analyse attend les gestes de la visite encore sur la tablette (points, photos, sorties).',
+  'echec-definitif': 'L’analyse de cette pièce a échoué plusieurs fois : elle ne repart que sur « Réessayer ».',
+  'deja-fait': 'Cette pièce vient d’être analysée : rien de nouveau à analyser.',
+  'non-visitee': 'Cette pièce n’a pas été visitée : rien à analyser.',
+  'attente-echec': 'L’analyse a échoué il y a peu : elle repartira d’elle-même dans un moment.',
 }
 
 /**

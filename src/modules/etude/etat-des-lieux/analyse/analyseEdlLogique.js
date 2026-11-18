@@ -543,6 +543,43 @@ export const gestesQuiBloquent = (intervalle, gestes = []) =>
 
 const memeHeure = (a, b) => temps(a) === temps(b)
 
+// Tolérance entre la fin du dernier morceau transcrit et la fin du passage :
+// le morceau est coupé à la sortie, à quelques centaines de ms près
+export const MARGE_SON_MS = 30 * 1000
+
+/**
+ * Le son d'un passage est-il dans la base ? Oui si les transcriptions de sa
+ * visite vont jusqu'à sa fin (dernier `debut + duree_s`, à 30 s près). Une
+ * pause ferme le passage et coupe le morceau : elle est couverte aussi.
+ */
+export function sonTranscritJusquA(intervalle, enregistrements = []) {
+  const fins = (enregistrements ?? [])
+    .filter((e) => e?.visite_id === intervalle?.visiteId)
+    .map((e) => temps(e.debut) + (Number(e.duree_s) || 0) * 1000)
+    .filter(Number.isFinite)
+  return fins.length > 0 && Math.max(...fins) >= intervalle.fin - MARGE_SON_MS
+}
+
+/**
+ * Tout ce qui a été dit pendant le passage est-il transcrit ?
+ * - Appareil qui tient des morceaux ou des tranches de la visite (la
+ *   tablette) : aucun d'eux ne doit bloquer (`morceauxQuiBloquent`).
+ * - Appareil qui n'en tient aucun (le bureau) : il ne voit pas ce qui attend
+ *   encore sur la tablette. Il faut que les transcriptions de la base
+ *   couvrent le passage, ou que le passage soit fini depuis plus de
+ *   DELAI_ABANDON_MS (le son ne viendra sans doute plus). Sans cette règle,
+ *   le bureau payait une analyse sans la parole, puis `analyse_le` couvrait
+ *   le passage et la transcription arrivée ensuite n'était jamais analysée.
+ */
+export function sonPret(intervalle, { morceaux = [], tranches = [], enregistrements = [], maintenant = null, echecsMax = 3 } = {}) {
+  const deLaVisite = (x) => x?.edlVisiteId != null && x.edlVisiteId === intervalle?.visiteId
+  if ((morceaux ?? []).some(deLaVisite) || (tranches ?? []).some(deLaVisite)) {
+    return morceauxQuiBloquent(intervalle, { morceaux, tranches, maintenant, echecsMax }).length === 0
+  }
+  if (maintenant != null && maintenant - intervalle.fin > DELAI_ABANDON_MS) return true
+  return sonTranscritJusquA(intervalle, enregistrements)
+}
+
 /**
  * Le suivi local d'une pièce (essai fait sur cet appareil) vaut tant que la
  * pièce n'a pas été analysée depuis : même `analyse_le` qu'avant l'essai.
@@ -557,66 +594,118 @@ export function suiviValable(suivi, piece) {
 const couverture = (maintenant, intervalles) =>
   Math.max(maintenant, ...intervalles.map((iv) => iv.fin).filter(Number.isFinite))
 
+const couvertDe = (suivi) => (Number.isFinite(suivi?.couvert) ? suivi.couvert : suivi?.dernier)
+
+// Essais automatiques pour une même couverture : au-delà, l'échec est
+// définitif. L'attente plafonne le rythme, ce plafond le nombre : chaque
+// essai se paie, et un échec qui se répète trois fois se répétera.
+export const ESSAIS_AUTO_MAX = 3
+
+const non = (raison, suivi) => (suivi ? { tenter: false, raison, suivi } : { tenter: false, raison })
+
 /**
  * Faut-il envoyer la pièce chez Claude maintenant ?
  *
  * Dans l'ordre : il faut un passage nouveau et fini (`aAnalyser`, ou tous les
- * passages finis pour `relancer`, réanalyse demandée) ; aucun geste ni son de
- * ces passages ne doit attendre sur l'appareil ; enfin une pièce en échec ne
- * repart que sur demande (`forcer`, « Réessayer »), quand une nouvelle visite
- * de la pièce s'est terminée après l'essai, ou après l'attente (10 min, puis
- * 1 h). Un échec « définitif » (frise trop longue) ne repart que sur demande.
- * Une pièce en échec dans la base sans suivi sur cet appareil (essai fait
- * ailleurs, mémoire effacée) commence par une attente : `suivi` est alors le
- * suivi à garder.
+ * passages finis pour `relancer`, réanalyse demandée) ; aucun geste de ces
+ * passages ne doit attendre sur l'appareil, et leur son doit être transcrit
+ * (`sonPret`) ; enfin une pièce en échec ne repart que sur demande (`forcer`,
+ * « Réessayer »), quand une nouvelle visite de la pièce s'est terminée après
+ * l'échec, ou après l'attente (10 min, puis 1 h) tant qu'elle n'a pas échoué
+ * ESSAIS_AUTO_MAX fois ou d'un échec définitif (frise trop longue, refus de
+ * Claude). Une pièce en échec dans la base sans suivi sur cet appareil (essai
+ * fait ailleurs, mémoire effacée) repart si une visite s'est terminée après
+ * l'échec (`updated_at`, touché par l'écriture du motif), sinon commence par
+ * une attente : `suivi` est alors le suivi à garder.
+ *
+ * Raisons d'un refus : 'non-visitee', 'deja-fait', 'passage' (pas fini),
+ * 'gestes', 'son', 'echec-definitif', 'attente-echec'.
  *
  * @param maintenant ms — `Date.now()` de l'appareil, obligatoire (abandon, attentes)
+ * @param enregistrements transcriptions de la base (visite_id, debut, duree_s)
  * @returns { tenter, raison, suivi? }
  */
 export function decisionAnalyse({
-  piece, evenements, morceaux = [], tranches = [], gestes = [], suivi = null, maintenant,
+  piece, evenements, morceaux = [], tranches = [], enregistrements = [], gestes = [], suivi = null, maintenant,
   forcer = false, relancer = false, echecsMax = 3,
 }) {
-  if (!piece?.id) return { tenter: false, raison: 'rien' }
+  if (!piece?.id) return non('non-visitee')
   const intervalles = intervallesPiece(evenements, piece.id)
-  if (!intervalles.length) return { tenter: false, raison: 'rien' }
+  if (!intervalles.length) return non('non-visitee')
+  const analyse = temps(piece.analyse_le)
+  let concernes
   if (relancer) {
-    if (!intervalles.every((iv) => fini(iv, maintenant))) return { tenter: false, raison: 'en-cours' }
-  } else if (!aAnalyser(piece, evenements, { maintenant })) {
-    return { tenter: false, raison: 'rien' }
+    concernes = intervalles
+  } else {
+    concernes = intervalles.filter((iv) => analyse == null || iv.fin > analyse)
+    if (!concernes.length) return non('deja-fait')
   }
-  if (intervalles.some((iv) => gestesQuiBloquent(iv, gestes).length)) return { tenter: false, raison: 'gestes' }
-  if (intervalles.some((iv) => morceauxQuiBloquent(iv, { morceaux, tranches, maintenant, echecsMax }).length)) {
-    return { tenter: false, raison: 'audio' }
-  }
+  if (!concernes.every((iv) => fini(iv, maintenant))) return non('passage')
+  if (concernes.some((iv) => gestesQuiBloquent(iv, gestes).length)) return non('gestes')
+  if (!concernes.every((iv) => sonPret(iv, { morceaux, tranches, enregistrements, maintenant, echecsMax }))) return non('son')
   if (forcer || relancer) return { tenter: true, raison: 'demande' }
 
   const valable = suiviValable(suivi, piece)
   if (!piece.analyse_erreur && !valable) return { tenter: true, raison: 'a-analyser' }
   if (!valable) {
-    return {
-      tenter: false,
-      raison: 'attente-echec',
-      suivi: { essais: 1, dernier: maintenant, couvert: couverture(maintenant, intervalles), analyseLe: piece.analyse_le ?? null, definitif: false },
-    }
+    const echecLe = temps(piece.updated_at)
+    if (echecLe != null && intervalles.some((iv) => iv.fin > echecLe)) return { tenter: true, raison: 'nouvelle-visite' }
+    return non('attente-echec', {
+      essais: 1, dernier: maintenant, couvert: couverture(maintenant, intervalles), analyseLe: piece.analyse_le ?? null, definitif: false,
+    })
   }
-  if (suivi.definitif) return { tenter: false, raison: 'definitif' }
-  const couvert = Number.isFinite(suivi.couvert) ? suivi.couvert : suivi.dernier
-  if (intervalles.some((iv) => iv.fin > couvert)) return { tenter: true, raison: 'nouvelle-visite' }
+  if (intervalles.some((iv) => iv.fin > couvertDe(suivi))) return { tenter: true, raison: 'nouvelle-visite' }
+  if (suivi.definitif || (suivi.essais ?? 0) >= ESSAIS_AUTO_MAX) return non('echec-definitif')
   if (maintenant - suivi.dernier >= attenteApresEchecs(suivi.essais)) return { tenter: true, raison: 'relance' }
-  return { tenter: false, raison: 'attente-echec' }
+  return non('attente-echec')
 }
 
-/** Suivi noté juste avant l'appel : un onglet fermé pendant l'appel compte comme un échec. */
+/**
+ * Suivi noté juste avant l'appel : un onglet fermé pendant l'appel compte
+ * comme un échec. Les essais se comptent par couverture : une nouvelle visite
+ * de la pièce terminée après le dernier essai les remet à zéro.
+ */
 export function suiviTentative(suivi, piece, { maintenant, intervalles = [] }) {
-  const essais = suiviValable(suivi, piece) ? (suivi.essais ?? 0) : 0
+  const valable = suiviValable(suivi, piece)
+  const memeCouverture = valable && !intervalles.some((iv) => iv.fin > couvertDe(suivi))
   return {
-    essais: essais + 1,
+    essais: (memeCouverture ? (suivi.essais ?? 0) : 0) + 1,
     dernier: maintenant,
     couvert: couverture(maintenant, intervalles),
     analyseLe: piece?.analyse_le ?? null,
     definitif: false,
   }
+}
+
+/**
+ * Suivi après un échec noté : définitif pour une demande trop longue, un
+ * refus de Claude (il refusera encore) ou le dernier essai automatique.
+ */
+export function suiviApresEchec(suivi, err) {
+  const definitif = suivi?.definitif === true || err?.code === 'demande' || err?.code === 'refus'
+    || (suivi?.essais ?? 0) >= ESSAIS_AUTO_MAX
+  return { ...suivi, definitif }
+}
+
+const ficheComparable = (f) => JSON.stringify(RUBRIQUES_FICHE.map((r) => String(f?.[r] ?? '').trim()))
+
+/**
+ * L'écriture finale, conditionnée sur l'`updated_at` de la réservation, n'a
+ * touché aucune ligne : que s'est-il passé pendant l'appel ? D'après la
+ * pièce relue :
+ * - 'disparue' : supprimée ;
+ * - 'deja-fait' : analysée ailleurs entre-temps (son résultat reste) ;
+ * - 'lecture-seule' : rien n'a bougé, c'est la base qui refuse ;
+ * - 'fiche-agence' : la fiche a été modifiée au bureau, elle est gardée ;
+ * - 'reessayer' : autre écriture sans toucher à la fiche (motif, réservation
+ *   d'un autre appareil) : le résultat s'écrit sur la nouvelle version.
+ */
+export function suiteConflitEcriture({ piece, reserve, relue }) {
+  if (!relue) return 'disparue'
+  if (!memeHeure(relue.analyse_le ?? null, piece?.analyse_le ?? null)) return 'deja-fait'
+  if (memeHeure(relue.updated_at ?? null, reserve ?? null)) return 'lecture-seule'
+  if (ficheComparable(relue.fiche) !== ficheComparable(piece?.fiche)) return 'fiche-agence'
+  return 'reessayer'
 }
 
 /**
@@ -634,7 +723,7 @@ export function analyseLeApres(luLe, intervalles = []) {
  * passage resté ouvert (visite quittée par le bouton Retour). `null` : rien
  * à relancer à heure fixe (le reste repart sur un envoi ou une transcription).
  */
-export function prochaineRelance({ pieces = [], evenements = [], suivis = {}, maintenant }) {
+export function prochaineRelance({ pieces = [], evenements = [], suivis = {}, maintenant, morceaux = [], tranches = [], enregistrements = [], echecsMax = 3 }) {
   let prochaine = null
   const garder = (t) => {
     if (Number.isFinite(t) && t > maintenant && (prochaine == null || t < prochaine)) prochaine = t
@@ -643,9 +732,13 @@ export function prochaineRelance({ pieces = [], evenements = [], suivis = {}, ma
     const analyse = temps(piece?.analyse_le)
     const nouveaux = intervallesPiece(evenements, piece?.id).filter((iv) => analyse == null || iv.fin > analyse)
     if (!nouveaux.length) continue
-    for (const iv of nouveaux) if (!iv.clos) garder(iv.dernier + DELAI_ABANDON_MS)
+    for (const iv of nouveaux) {
+      if (!iv.clos) garder(iv.dernier + DELAI_ABANDON_MS)
+      // Son attendu d'un autre appareil : au-delà du délai, on n'attend plus
+      else if (!sonPret(iv, { morceaux, tranches, enregistrements, maintenant, echecsMax })) garder(iv.fin + DELAI_ABANDON_MS + 1000)
+    }
     const s = suivis?.[piece.id]
-    if (suiviValable(s, piece) && !s.definitif) garder(s.dernier + attenteApresEchecs(s.essais))
+    if (suiviValable(s, piece) && !s.definitif && (s.essais ?? 0) < ESSAIS_AUTO_MAX) garder(s.dernier + attenteApresEchecs(s.essais))
   }
   return prochaine
 }
@@ -659,7 +752,7 @@ const MOTIFS_TROP_LONG = ['trop-de-lignes', 'trop-long', 'trop-de-releves']
 export const MESSAGE_FRISE_TROP_LONGUE = 'Trop de gestes et de paroles dans cette pièce pour une seule analyse (plus de 2 000 lignes). Elle ne repartira que sur « Réessayer ».'
 
 const MESSAGES_ECHEC = {
-  refus: 'Claude n’a pas accepté d’analyser cette pièce.',
+  refus: 'Claude n’a pas accepté d’analyser cette pièce. Elle ne repartira que sur « Réessayer ».',
   'reponse-tronquee': 'La réponse de Claude était trop longue pour cette pièce.',
   'reponse-illisible': 'La réponse de Claude était illisible.',
   anthropic: 'Le service de Claude n’a pas répondu.',

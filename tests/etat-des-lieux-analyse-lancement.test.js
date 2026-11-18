@@ -9,10 +9,12 @@ import { test, describe } from 'node:test'
 import {
   morceauxQuiBloquent, gestesQuiBloquent, decisionAnalyse, suiviTentative, suiviValable, analyseLeApres,
   prochaineRelance, attenteApresEchecs, messageEchecAnalyse, pieceDemandee, DELAI_TRANCHE_VIVANTE_MS,
-  DELAI_ABANDON_MS, MESSAGE_FRISE_TROP_LONGUE, LIGNES_MAX,
+  DELAI_ABANDON_MS, MESSAGE_FRISE_TROP_LONGUE, LIGNES_MAX, sonTranscritJusquA, sonPret, suiviApresEchec,
+  suiteConflitEcriture, ESSAIS_AUTO_MAX, MARGE_SON_MS,
 } from '../src/modules/etude/etat-des-lieux/analyse/analyseEdlLogique.js'
 import { passeAnalyseEdl, RELANCE_APRES_ARRET_MS } from '../src/modules/etude/etat-des-lieux/analyse/analyseEdlPasse.js'
 import { etatPieceVisite, COULEURS_PIECE } from '../src/modules/etude/etat-des-lieux/visite/visiteLogique.js'
+import { fermePassage, TYPES_EDL } from '../src/modules/etude/etat-des-lieux/visite/fileEdlLogique.js'
 
 const H = (hms) => `2026-11-18T${hms}.000Z`
 const ms = (hms) => Date.parse(H(hms))
@@ -32,6 +34,8 @@ const journal = () => [
 ]
 const salon = (champs = {}) => ({ id: 'salon', niveau_id: 'n1', nom: 'Salon', numero: '1', fiche: {}, hsp_lue: null, analyse_le: null, analyse_erreur: null, ...champs })
 const morceau = (debut, champs = {}) => ({ id: `m${++n}`, edlVisiteId: 'v1', affaireId: 'a1', debut, ...champs })
+// Son de la visite v1 transcrit jusqu'à la fin (09:59 → 10:30)
+const transcrit = () => [{ id: 'r1', visite_id: 'v1', debut: H('09:59:00'), duree_s: 31 * 60 }]
 
 describe('morceauxQuiBloquent', () => {
   const iv = { debut: ms('10:00:00'), fin: ms('10:10:00'), visiteId: 'v1' }
@@ -77,15 +81,15 @@ test('attenteApresEchecs : 10 minutes, puis 1 heure', () => {
 })
 
 describe('decisionAnalyse', () => {
-  const base = (champs = {}) => ({ piece: salon(), evenements: journal(), maintenant: ms('10:31:00'), ...champs })
+  const base = (champs = {}) => ({ piece: salon(), evenements: journal(), enregistrements: transcrit(), maintenant: ms('10:31:00'), ...champs })
   test('pièce visitée, passage fini, rien qui attend : on tente', () => {
     assert.deepEqual(decisionAnalyse(base()), { tenter: true, raison: 'a-analyser' })
   })
-  test('jamais visitée, déjà analysée, ou passage en cours : rien', () => {
-    assert.equal(decisionAnalyse(base({ piece: salon({ id: 'chambre' }) })).raison, 'rien')
-    assert.equal(decisionAnalyse(base({ piece: salon({ analyse_le: H('10:11:00') }) })).raison, 'rien')
+  test('jamais visitée, déjà analysée, ou passage en cours : chacun sa raison', () => {
+    assert.equal(decisionAnalyse(base({ piece: salon({ id: 'chambre' }) })).raison, 'non-visitee')
+    assert.equal(decisionAnalyse(base({ piece: salon({ analyse_le: H('10:11:00') }) })).raison, 'deja-fait')
     const enCours = journal().slice(0, 3)
-    assert.equal(decisionAnalyse(base({ evenements: enCours })).tenter, false)
+    assert.equal(decisionAnalyse(base({ evenements: enCours })).raison, 'passage')
   })
   test('visite quittée par Retour : partie seulement après le délai d’abandon', () => {
     const quittee = journal().slice(0, 3) // dernier événement à 10:01
@@ -93,7 +97,7 @@ describe('decisionAnalyse', () => {
     assert.equal(decisionAnalyse(base({ evenements: quittee, maintenant: ms('10:01:00') + DELAI_ABANDON_MS })).tenter, true)
   })
   test('son ou geste qui attend sur l’appareil : la pièce attend', () => {
-    assert.equal(decisionAnalyse(base({ morceaux: [morceau(ms('10:05:00'))] })).raison, 'audio')
+    assert.equal(decisionAnalyse(base({ morceaux: [morceau(ms('10:05:00'))] })).raison, 'son')
     assert.equal(decisionAnalyse(base({ gestes: [{ creeLe: ms('10:05:00') }] })).raison, 'gestes')
     // Gestes notés après la sortie (dans une autre pièce) : rien n'attend pour celle-ci
     assert.equal(decisionAnalyse(base({ gestes: [{ creeLe: ms('10:12:00') }] })).raison, 'a-analyser')
@@ -122,7 +126,13 @@ describe('decisionAnalyse', () => {
     const piece = salon({ analyse_erreur: 'x' })
     const suivi = { essais: 2, dernier: ms('10:31:00'), couvert: ms('10:31:00'), analyseLe: null, definitif: false }
     const revue = [...journal(), ev('entree', '10:35:00', { visite_id: 'v2', piece_id: 'salon' }), ev('fin', '10:40:00', { visite_id: 'v2' })]
-    assert.equal(decisionAnalyse(base({ piece, suivi, evenements: revue, maintenant: ms('10:41:00') })).raison, 'nouvelle-visite')
+    const sons = [...transcrit(), { id: 'r2', visite_id: 'v2', debut: H('10:35:00'), duree_s: 300 }]
+    assert.equal(decisionAnalyse(base({ piece, suivi, evenements: revue, enregistrements: sons, maintenant: ms('10:41:00') })).raison, 'nouvelle-visite')
+    // Même après un échec définitif : une nouvelle visite, c'est une autre couverture
+    const definitif = { ...suivi, essais: ESSAIS_AUTO_MAX, definitif: true }
+    assert.equal(decisionAnalyse(base({ piece, suivi: definitif, evenements: revue, enregistrements: sons, maintenant: ms('10:41:00') })).raison, 'nouvelle-visite')
+    // Les essais repartent de zéro pour cette couverture
+    assert.equal(suiviTentative(definitif, piece, { maintenant: ms('10:41:00'), intervalles: [{ fin: ms('10:40:00') }] }).essais, 1)
   })
   test('horloge de la tablette en avance : la visite analysée ne passe pas pour nouvelle', () => {
     // Fin du passage à 10:10 (tablette), essai à 10:05 (bureau, en retard)
@@ -134,16 +144,16 @@ describe('decisionAnalyse', () => {
   test('échec définitif (frise trop longue) : seulement sur demande', () => {
     const piece = salon({ analyse_erreur: MESSAGE_FRISE_TROP_LONGUE })
     const suivi = { essais: 1, dernier: ms('10:31:00'), couvert: ms('10:31:00'), analyseLe: null, definitif: true }
-    assert.equal(decisionAnalyse(base({ piece, suivi, maintenant: ms('23:00:00') })).raison, 'definitif')
+    assert.equal(decisionAnalyse(base({ piece, suivi, maintenant: ms('23:00:00') })).raison, 'echec-definitif')
     assert.equal(decisionAnalyse(base({ piece, suivi, maintenant: ms('10:32:00'), forcer: true })).raison, 'demande')
   })
   test('forcer n’envoie pas une pièce dont le son attend encore', () => {
-    assert.equal(decisionAnalyse(base({ forcer: true, morceaux: [morceau(ms('10:05:00'))] })).raison, 'audio')
+    assert.equal(decisionAnalyse(base({ forcer: true, morceaux: [morceau(ms('10:05:00'))] })).raison, 'son')
   })
   test('relancer : pièce déjà analysée, tous ses passages finis', () => {
     const faite = salon({ analyse_le: H('10:31:00') })
     assert.equal(decisionAnalyse(base({ piece: faite, relancer: true })).raison, 'demande')
-    assert.equal(decisionAnalyse(base({ piece: faite, relancer: true, evenements: journal().slice(0, 3), maintenant: ms('10:05:00') })).raison, 'en-cours')
+    assert.equal(decisionAnalyse(base({ piece: faite, relancer: true, evenements: journal().slice(0, 3), maintenant: ms('10:05:00') })).raison, 'passage')
   })
   test('un suivi d’avant une analyse réussie ne vaut plus', () => {
     const suivi = { essais: 2, dernier: ms('10:31:00'), analyseLe: null }
@@ -177,11 +187,18 @@ describe('prochaineRelance', () => {
     assert.equal(prochaineRelance({ pieces: [salon()], evenements: quittee, maintenant: ms('10:05:00') }), ms('10:01:00') + DELAI_ABANDON_MS)
   })
   test('rien à heure fixe : pièce analysée, échec définitif, échéance passée', () => {
-    assert.equal(prochaineRelance({ pieces: [salon({ analyse_le: H('10:31:00') })], evenements: journal(), maintenant: ms('10:32:00') }), null)
+    const enregistrements = transcrit()
+    assert.equal(prochaineRelance({ pieces: [salon({ analyse_le: H('10:31:00') })], evenements: journal(), enregistrements, maintenant: ms('10:32:00') }), null)
     const definitif = { salon: { essais: 1, dernier: ms('10:31:00'), analyseLe: null, definitif: true } }
-    assert.equal(prochaineRelance({ pieces: [salon()], evenements: journal(), suivis: definitif, maintenant: ms('10:32:00') }), null)
+    assert.equal(prochaineRelance({ pieces: [salon()], evenements: journal(), suivis: definitif, enregistrements, maintenant: ms('10:32:00') }), null)
+    const plafond = { salon: { essais: ESSAIS_AUTO_MAX, dernier: ms('10:31:00'), analyseLe: null } }
+    assert.equal(prochaineRelance({ pieces: [salon()], evenements: journal(), suivis: plafond, enregistrements, maintenant: ms('10:32:00') }), null)
     const passe = { salon: { essais: 1, dernier: ms('10:31:00'), analyseLe: null } }
-    assert.equal(prochaineRelance({ pieces: [salon()], evenements: journal(), suivis: passe, maintenant: ms('11:00:00') }), null)
+    assert.equal(prochaineRelance({ pieces: [salon()], evenements: journal(), suivis: passe, enregistrements, maintenant: ms('11:00:00') }), null)
+  })
+  test('son attendu d’un autre appareil : revue passé le délai d’abandon', () => {
+    // Salon fini à 10:10 (cuisine à 10:20), rien de transcrit dans la base
+    assert.equal(prochaineRelance({ pieces: [salon()], evenements: journal(), maintenant: ms('10:32:00') }), ms('10:10:00') + DELAI_ABANDON_MS + 1000)
   })
 })
 
@@ -231,7 +248,7 @@ function monde({ pieces = [salon()], evenements = journal(), maintenant = ms('10
     session: true,
     indisponible: false,
     maintenant,
-    base: { pieces: pieces.map((p) => ({ ...p })), evenements, points: [{ id: 'p1', piece_id: 'salon', numero: 1 }], enregistrements: [], elements: [] },
+    base: { pieces: pieces.map((p) => ({ updated_at: H('09:00:00'), ...p })), evenements, points: [{ id: 'p1', piece_id: 'salon', numero: 1 }], enregistrements: transcrit(), elements: [] },
     audio: { morceaux: [], tranches: [] },
     gestes: [],
     suivis: {},
@@ -250,14 +267,24 @@ function monde({ pieces = [salon()], evenements = journal(), maintenant = ms('10
   m.d = {
     enLigne: () => m.enLigne,
     aSession: async () => m.session,
-    lireSuivi: async () => (m.indisponible ? { indisponible: true } : { indisponible: false, pieces: m.base.pieces.map((p) => ({ ...p })), evenements: m.base.evenements }),
+    lireSuivi: async () => (m.indisponible ? { indisponible: true } : {
+      indisponible: false, pieces: m.base.pieces.map((p) => ({ ...p })), evenements: m.base.evenements, enregistrements: m.base.enregistrements,
+    }),
     lireFrise: async (_a, id) => ({
       indisponible: m.indisponible, piece: piece(id) ? { ...piece(id) } : null, evenements: m.base.evenements,
       points: m.base.points, enregistrements: m.base.enregistrements, elementsValides: [],
     }),
     audioLocal: async () => m.audio,
     gestesEnAttente: async () => m.gestes,
-    reserver: async (p) => m.reservation(p),
+    // Écriture « à blanc » : comme le déclencheur, elle avance updated_at
+    reserver: async (p) => {
+      const etat = m.reservation(p)
+      if (etat !== 'ok') return { etat }
+      const ligne = piece(p.id)
+      ligne.updated_at = new Date(Date.parse(ligne.updated_at) + 1000).toISOString()
+      return { etat, updatedAt: ligne.updated_at }
+    },
+    relirePiece: async (id) => (piece(id) ? { ...piece(id) } : null),
     appeler: async (corps) => {
       m.appels.push(corps)
       m.enVol += 1
@@ -266,12 +293,24 @@ function monde({ pieces = [salon()], evenements = journal(), maintenant = ms('10
       m.enVol -= 1
       return m.reponse(corps)
     },
+    // Écriture conditionnée sur updated_at, comme ecrireResultatAnalyse
     ecrire: async (x) => {
       m.ecritures.push(x)
-      if (m.ecrireMarche) Object.assign(piece(x.piece.id), { fiche: x.fiche, analyse_le: x.analyseLe, analyse_erreur: null })
+      const ligne = piece(x.piece.id)
+      if (m.ecritureRefusee || (x.siMisAJour !== undefined && ligne.updated_at !== x.siMisAJour)) return { indisponible: false, conflit: true }
+      if (m.ecrireMarche) {
+        Object.assign(ligne, { analyse_le: x.analyseLe, analyse_erreur: null, updated_at: new Date(Date.parse(ligne.updated_at) + 1000).toISOString() })
+        if (!x.garderFiche) ligne.fiche = x.fiche
+      }
       return { indisponible: false }
     },
-    noterErreur: async (id, message) => { m.erreursNotees.push({ id, message }); piece(id).analyse_erreur = message },
+    noterErreur: async (id, message, { analyseLe } = {}) => {
+      const ligne = piece(id)
+      if ((ligne.analyse_le ?? null) !== (analyseLe ?? null)) return { ignoree: true }
+      m.erreursNotees.push({ id, message })
+      ligne.analyse_erreur = message
+      return {}
+    },
     lireSuivis: () => m.suivis,
     ecrireSuivi: (id, s) => { if (s) m.suivis[id] = s; else delete m.suivis[id] },
     noterRelance: (a, t) => { if (t == null) delete m.relances[a]; else m.relances[a] = t },
@@ -321,10 +360,10 @@ describe('passeAnalyseEdl', () => {
 
   test('échec : motif noté, pas de nouvel essai avant 10 minutes, puis 1 heure', async () => {
     const m = monde()
-    m.reponse = () => { throw erreur('refus') }
+    m.reponse = () => { throw erreur('anthropic') }
     await m.passe()
     assert.equal(m.appels.length, 1)
-    assert.match(m.erreursNotees[0].message, /pas accepté/)
+    assert.match(m.erreursNotees[0].message, /pas répondu/)
     assert.equal(m.relances.a1, ms('10:41:00'))
     m.maintenant = ms('10:35:00')
     await m.passe()
@@ -466,5 +505,186 @@ describe('passeAnalyseEdl', () => {
     await m.passe({ seulement: 'cuisine' })
     assert.equal(m.appels.length, 1)
     assert.equal(m.appels[0].piece.nom, 'Cuisine')
+  })
+})
+
+describe('Correctifs (tour 1)', () => {
+  test('sonTranscritJusquA : dernier debut + duree_s, à 30 s près', () => {
+    const iv = { fin: ms('10:10:00'), visiteId: 'v1' }
+    const enr = (debut, duree_s, visite_id = 'v1') => ({ visite_id, debut: H(debut), duree_s })
+    assert.equal(sonTranscritJusquA(iv, [enr('10:00:00', 600)]), true)
+    assert.equal(sonTranscritJusquA(iv, [enr('10:00:00', 600 - MARGE_SON_MS / 1000)]), true)
+    assert.equal(sonTranscritJusquA(iv, [enr('10:00:00', 560)]), false)
+    assert.equal(sonTranscritJusquA(iv, [enr('10:00:00', 900, 'v2')]), false)
+    assert.equal(sonTranscritJusquA(iv, [enr('10:00:00', null)]), false)
+    assert.equal(sonTranscritJusquA(iv, []), false)
+  })
+
+  test('sonPret : sans morceau de la visite, il faut la transcription ou le délai d’abandon', () => {
+    const iv = { fin: ms('10:10:00'), visiteId: 'v1' }
+    // Bureau : rien sur l'appareil, rien dans la base
+    assert.equal(sonPret(iv, { maintenant: ms('10:31:00') }), false)
+    assert.equal(sonPret(iv, { enregistrements: transcrit(), maintenant: ms('10:31:00') }), true)
+    assert.equal(sonPret(iv, { maintenant: ms('10:10:00') + DELAI_ABANDON_MS + 1 }), true)
+    // Tablette qui tient un morceau de la visite (autre pièce, après) : règle locale
+    assert.equal(sonPret(iv, { morceaux: [morceau(ms('10:15:00'))], maintenant: ms('10:31:00') }), true)
+    assert.equal(sonPret(iv, { morceaux: [morceau(ms('10:05:00'))], enregistrements: transcrit(), maintenant: ms('10:31:00') }), false)
+  })
+
+  test('decisionAnalyse : un autre appareil n’analyse pas avant la transcription', () => {
+    const d = decisionAnalyse({ piece: salon(), evenements: journal(), enregistrements: [], maintenant: ms('10:31:00') })
+    assert.equal(d.raison, 'son')
+  })
+
+  test('échec vu dans la base, visite terminée après lui : essai tout de suite', () => {
+    const piece = salon({ analyse_erreur: 'x', updated_at: H('10:05:00') }) // échec noté avant la fin de la cuisine…
+    const salonApres = [...journal(), ev('entree', '10:21:00', { piece_id: 'salon' }), ev('sortie', '10:25:00', { piece_id: 'salon' })]
+    const d = decisionAnalyse({ piece, evenements: salonApres, enregistrements: transcrit(), maintenant: ms('10:31:00') })
+    assert.equal(d.raison, 'nouvelle-visite')
+    // Échec noté après la dernière visite : attente
+    const tard = salon({ analyse_erreur: 'x', updated_at: H('10:30:30') })
+    assert.equal(decisionAnalyse({ piece: tard, evenements: salonApres, enregistrements: transcrit(), maintenant: ms('10:31:00') }).raison, 'attente-echec')
+  })
+
+  test('suiviApresEchec : refus, demande trop longue, dernier essai → définitif', () => {
+    assert.equal(suiviApresEchec({ essais: 1 }, { code: 'refus' }).definitif, true)
+    assert.equal(suiviApresEchec({ essais: 1 }, { code: 'demande' }).definitif, true)
+    assert.equal(suiviApresEchec({ essais: ESSAIS_AUTO_MAX }, { code: 'anthropic' }).definitif, true)
+    assert.equal(suiviApresEchec({ essais: 1 }, { code: 'anthropic' }).definitif, false)
+  })
+
+  test('suiteConflitEcriture', () => {
+    const piece = salon({ fiche: { sol: 'parquet' }, analyse_le: null })
+    const reserve = H('10:31:01')
+    assert.equal(suiteConflitEcriture({ piece, reserve, relue: null }), 'disparue')
+    assert.equal(suiteConflitEcriture({ piece, reserve, relue: { ...piece, analyse_le: H('10:31:30'), updated_at: H('10:31:30') } }), 'deja-fait')
+    assert.equal(suiteConflitEcriture({ piece, reserve, relue: { ...piece, updated_at: '2026-11-18T10:31:01+00:00' } }), 'lecture-seule')
+    assert.equal(suiteConflitEcriture({ piece, reserve, relue: { ...piece, fiche: { sol: 'carrelage' }, updated_at: H('10:31:20') } }), 'fiche-agence')
+    assert.equal(suiteConflitEcriture({ piece, reserve, relue: { ...piece, analyse_erreur: 'x', updated_at: H('10:31:20') } }), 'reessayer')
+  })
+
+  test('fermePassage : sortie, fin, visite terminée ; pas un point posé', () => {
+    const op = (type, evenement) => ({ type, charge: evenement ? { evenement: { type: evenement } } : {} })
+    assert.equal(fermePassage(op(TYPES_EDL.evenement, 'sortie')), true)
+    assert.equal(fermePassage(op(TYPES_EDL.evenement, 'fin')), true)
+    assert.equal(fermePassage(op(TYPES_EDL.visiteTerminer)), true)
+    assert.equal(fermePassage(op(TYPES_EDL.evenement, 'point')), false)
+    assert.equal(fermePassage(op(TYPES_EDL.pointPoser)), false)
+  })
+
+  test('trois essais automatiques ratés : plus jamais d’elle-même, sauf « Réessayer »', async () => {
+    const m = monde()
+    m.reponse = () => { throw erreur('anthropic') }
+    for (const t of ['10:31:00', '10:41:00', '11:41:00']) {
+      m.maintenant = ms(t)
+      await m.passe()
+    }
+    assert.equal(m.appels.length, ESSAIS_AUTO_MAX)
+    assert.equal(m.suivis.salon.definitif, true)
+    for (const t of ['13:00:00', '18:00:00', '23:59:00']) {
+      m.maintenant = ms(t)
+      await m.passe()
+    }
+    assert.equal(m.appels.length, ESSAIS_AUTO_MAX)
+    assert.equal(m.relances.a1, undefined)
+    const r = await m.passe({ seulement: 'salon' })
+    assert.equal(r.raison, 'echec-definitif')
+    m.reponse = () => ({ fiche: {}, elements: [] })
+    await m.passe({ seulement: 'salon', forcer: true })
+    assert.equal(m.appels.length, ESSAIS_AUTO_MAX + 1)
+  })
+
+  test('refus de Claude : définitif tout de suite', async () => {
+    const m = monde()
+    m.reponse = () => { throw erreur('refus') }
+    await m.passe()
+    assert.match(m.erreursNotees[0].message, /pas accepté/)
+    assert.equal(m.suivis.salon.definitif, true)
+    m.maintenant = ms('23:00:00')
+    await m.passe()
+    assert.equal(m.appels.length, 1)
+  })
+
+  test('autre appareil : pas d’analyse tant que le son de la tablette n’est pas transcrit', async () => {
+    const m = monde()
+    m.base.enregistrements = []
+    const r = await m.passe({ seulement: 'salon' })
+    assert.equal(r.raison, 'son')
+    assert.equal(m.appels.length, 0)
+    m.base.enregistrements = transcrit()
+    await m.passe()
+    assert.equal(m.appels.length, 1)
+  })
+
+  test('raisons précises de « seulement » : passage, gestes, deja-fait', async () => {
+    const ouvert = monde({ evenements: journal().slice(0, 3), maintenant: ms('10:05:00') })
+    assert.equal((await ouvert.passe({ seulement: 'salon' })).raison, 'passage')
+    const gestes = monde()
+    gestes.gestes = [{ creeLe: ms('10:05:00') }]
+    assert.equal((await gestes.passe({ seulement: 'salon' })).raison, 'gestes')
+    const fait = monde({ pieces: [salon({ analyse_le: H('10:31:00') })] })
+    assert.equal((await fait.passe({ seulement: 'salon' })).raison, 'deja-fait')
+  })
+
+  test('fiche modifiée au bureau pendant l’appel : la fiche de l’agence reste, l’analyse est notée', async () => {
+    const m = monde({ pieces: [salon({ fiche: { sol: 'parquet' } })] })
+    m.reponse = () => {
+      const ligne = m.base.pieces[0]
+      ligne.fiche = { sol: 'parquet chêne (corrigé)' }
+      ligne.updated_at = H('10:31:30')
+      return { fiche: { sol: 'parquet', murs: 'peints' }, elements: [] }
+    }
+    const r = await m.passe()
+    assert.equal(r.analysees, 1)
+    assert.deepEqual(m.base.pieces[0].fiche, { sol: 'parquet chêne (corrigé)' })
+    assert.equal(m.base.pieces[0].analyse_le, H('10:31:00'))
+    assert.equal(m.ecritures.length, 2)
+    assert.equal(m.ecritures[1].garderFiche, true)
+    assert.equal(m.ecritures[1].elementsEcrits, true)
+  })
+
+  test('autre écriture sans toucher la fiche : le résultat s’écrit sur la version relue', async () => {
+    const m = monde()
+    m.reponse = () => {
+      m.base.pieces[0].updated_at = H('10:31:30')
+      return { fiche: { sol: 'parquet' }, elements: [] }
+    }
+    await m.passe()
+    assert.equal(m.base.pieces[0].fiche.sol, 'parquet')
+    assert.equal(m.ecritures[1].garderFiche, false)
+  })
+
+  test('base qui refuse l’écriture finale : « Lecture seule », pas de boucle', async () => {
+    const m = monde()
+    m.ecritureRefusee = true
+    const r = await m.passe()
+    assert.equal(r.raison, 'refus')
+    assert.equal(m.ecritures.length, 1)
+    m.maintenant = ms('10:32:00')
+    await m.passe()
+    assert.equal(m.appels.length, 1)
+  })
+
+  test('analysée ailleurs pendant l’appel : son résultat reste, aucun échec noté', async () => {
+    const m = monde()
+    m.reponse = () => {
+      Object.assign(m.base.pieces[0], { analyse_le: H('10:31:20'), updated_at: H('10:31:20'), fiche: { sol: 'tomettes' } })
+      return { fiche: { sol: 'parquet' }, elements: [] }
+    }
+    await m.passe()
+    assert.deepEqual(m.base.pieces[0].fiche, { sol: 'tomettes' })
+    assert.equal(m.erreursNotees.length, 0)
+    assert.deepEqual(m.suivis, {})
+  })
+
+  test('échec noté seulement si la pièce n’a pas été analysée ailleurs', async () => {
+    const m = monde()
+    m.reponse = () => {
+      m.base.pieces[0].analyse_le = H('10:31:20')
+      throw erreur('anthropic')
+    }
+    await m.passe()
+    assert.equal(m.erreursNotees.length, 0)
+    assert.equal(m.base.pieces[0].analyse_erreur, null)
   })
 })

@@ -96,13 +96,16 @@ export function etatPieceVisite(piece, { visitees, entrees = [], enCours = null 
   return etatAnalysePiece(piece, { visitee: true, attente: enCours === piece.id || revisitee })
 }
 
-// Charte : alertes rouge #B8412C, ambre #F59E0B / #92400E ; vert du pense-bête
+// Charte : vert du pense-bête, ambre #FFFBEB / #92400E, rouge #B8412C.
+// L'attente ne suit pas l'accent de la phase (vert au chantier, elle se
+// confondrait avec « complète ») : gris chaud, avec le sablier. `opacite` :
+// un fond clair mais plein (l'ambre de la charte) laisse voir le plan dessous.
 export const COULEURS_PIECE = {
   'non-visitee': { fond: 'rgba(156,149,145,0.16)', trait: '#9C9591' },
   visitee: { fond: 'var(--affaire-accent-clair, rgba(232,96,44,0.10))', trait: 'var(--affaire-accent, #E8602C)' },
-  attente: { fond: 'var(--affaire-accent-clair, rgba(232,96,44,0.10))', trait: 'var(--affaire-accent, #E8602C)' },
+  attente: { fond: 'rgba(122,106,90,0.14)', trait: '#7A6A5A' },
   complete: { fond: 'rgba(42,138,78,0.16)', trait: '#2A8A4E' },
-  incomplete: { fond: 'rgba(245,158,11,0.22)', trait: '#D97706' },
+  incomplete: { fond: '#FFFBEB', trait: '#92400E', opacite: 0.75 },
   echec: { fond: 'rgba(184,65,44,0.12)', trait: '#B8412C' },
 }
 

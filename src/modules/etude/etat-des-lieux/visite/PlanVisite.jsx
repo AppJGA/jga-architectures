@@ -129,7 +129,7 @@ export function PlanVisite({ niveau, pieces, points, nbPhotos, visitees, etats =
             <polygon
               key={p.id} points={p.contour.map(enCalque).map((q) => q.join(',')).join(' ')}
               style={{
-                fill: ouverte ? 'transparent' : couleurs.fond, stroke: ouverte ? ACCENT : couleurs.trait,
+                fill: ouverte ? 'transparent' : couleurs.fond, fillOpacity: couleurs.opacite ?? 1, stroke: ouverte ? ACCENT : couleurs.trait,
                 strokeWidth: (ouverte ? 3 : 1.2) / zoom, opacity: piece && !ouverte ? 0.35 : 1,
               }}
             />
@@ -187,15 +187,17 @@ export function PlanVisite({ niveau, pieces, points, nbPhotos, visitees, etats =
   )
 }
 
-// Sablier dessiné (pas de police : il doit rester net à tout zoom)
+// Sablier dessiné (pas de police : il doit rester net à tout zoom), du gris
+// de l'attente : l'accent de la phase passe au vert au chantier
+const TRAIT_ATTENTE = COULEURS_PIECE.attente.trait
 function Sablier({ x, y, taille, attenue }) {
   const d = taille / 2
   return (
     <g aria-hidden="true" style={{ pointerEvents: 'none', opacity: attenue ? 0.35 : 0.85 }}>
-      <circle cx={x} cy={y} r={d * 1.15} style={{ fill: 'white', stroke: ACCENT, strokeWidth: taille / 14 }} />
+      <circle cx={x} cy={y} r={d * 1.15} style={{ fill: 'white', stroke: TRAIT_ATTENTE, strokeWidth: taille / 14 }} />
       <path
         d={`M ${x - d * 0.5} ${y - d * 0.65} H ${x + d * 0.5} L ${x} ${y} L ${x + d * 0.5} ${y + d * 0.65} H ${x - d * 0.5} L ${x} ${y} Z`}
-        style={{ fill: ACCENT, fillOpacity: 0.35, stroke: ACCENT, strokeWidth: taille / 12, strokeLinejoin: 'round' }}
+        style={{ fill: TRAIT_ATTENTE, fillOpacity: 0.35, stroke: TRAIT_ATTENTE, strokeWidth: taille / 12, strokeLinejoin: 'round' }}
       />
     </g>
   )

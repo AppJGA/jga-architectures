@@ -7,14 +7,15 @@
 // `genererRapportEdl.js` qui fournit le canevas et en fait un JPEG.
 
 import { boite, cadrage, centre, versPixels } from '../geometrieEdl.js'
-import { dessinerVecteurs } from '../vecteursEdlLogique.js'
+import { dessinerVecteurs, elementsVisibles } from '../vecteursEdlLogique.js'
 import { SYMBOLES, boitePrimitives, orientationPiece, primitivesPlacees } from './symbolesEdl.js'
 import { CADRE_PLAN_ETAGE, COULEUR_PROPOSITION, couleurCalque, texteLatin } from './rapportEdlLogique.js'
 
 // Plus grand côté de l'image : ~2 400 px pour une page A4 paysage (≈ 230 dpi
-// sur 27 cm), ~1 400 px pour l'extrait d'une pièce en tête de sa fiche
+// sur 27 cm), ~1 000 px pour l'extrait d'une pièce en tête de sa fiche (un
+// rapport en compte autant que de pièces visitées : 200 sur un grand étage)
+export const PX_PLAN_PIECE = 1000
 export const PX_PLAN_ETAGE = 2400
-export const PX_PLAN_PIECE = 1400
 // Marge autour des pièces : de quoi voir la façade et une fenêtre posée dessus
 export const MARGE_PLAN_M = 1.5
 const MARGE_PIECE_M = 1
@@ -56,6 +57,17 @@ export function cadragePlan(pieces, { pxMax = PX_PLAN_ETAGE, marge = MARGE_PLAN_
 }
 
 export const cadragePiece = (piece, pxMax = PX_PLAN_PIECE) => cadragePlan([piece], { pxMax, marge: MARGE_PIECE_M })
+
+/**
+ * Plan réduit à ce qui croise le cadrage (traits, masses, textes) : l'extrait
+ * d'une pièce ne reparcourt pas, à chaque dessin, les milliers de traits de
+ * l'étage. Le tri se fait une fois par pièce, sur les boîtes déjà calculées
+ * au décodage.
+ */
+export function vecteursDuCadrage(vecteurs, c) {
+  if (!vecteurs || !c) return null
+  return { ...elementsVisibles(vecteurs, [c.x0, c.y0, c.x1, c.y1]), calques: vecteurs.calques, boite: vecteurs.boite }
+}
 
 /** Agrandissement d'un symbole : 1 pour un appareil, au moins `PX_SYMBOLE_MIN` px pour les autres. */
 export function echelleSymbole(code, pxParMetre, pxMin = PX_SYMBOLE_MIN) {
@@ -107,13 +119,14 @@ export function marquesElements(elementsExport, pieces, pxParMetre, pxMin = PX_S
     .map((e) => {
       const brutes = primitivesPlacees(e.type, { x: e.x, y: e.y, angle: angles.get(e.pieceId) ?? 0 })
       const primitives = agrandir(brutes, [e.x, e.y], echelleSymbole(e.type, pxParMetre, pxMin))
-      const cle = `${e.x}|${e.y}|${e.numero}`
+      const cle = `${e.pointId ?? `${e.x}|${e.y}`}|${e.numero}`
       const bulle = e.numero != null && !vues.has(cle)
       vues.add(cle)
       return {
         element: e, primitives, boite: primitives.length ? boitePrimitives(primitives) : null,
         couleur: e.aValider ? COULEUR_PROPOSITION : couleurCalque(e.calque),
-        numero: bulle ? texteLatin(e.numero) : null,
+        // « P7 », comme le libellé du DXF : c'est le numéro du point de visite
+        numero: bulle ? `P${texteLatin(e.numero)}` : null,
       }
     })
 }
@@ -177,7 +190,7 @@ function bulle(ctx, x, y, r, texte, couleur) {
   ctx.strokeStyle = '#FFFFFF'
   ctx.stroke()
   ctx.fillStyle = '#FFFFFF'
-  ctx.font = `bold ${Math.round(r * (texte.length > 2 ? 0.85 : 1.05))}px Arial, sans-serif`
+  ctx.font = `bold ${Math.round(r * (texte.length > 3 ? 0.72 : texte.length > 2 ? 0.85 : 1.05))}px Arial, sans-serif`
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
   ctx.fillText(texte, x, y + r * 0.05)

@@ -10,9 +10,10 @@ import { chargerImage } from '../../../chantier/comptes-rendus/compressionPhoto'
 import { canevasBlanc, libererCanevas } from '../renduNiveau'
 import { chargerVecteurs } from '../vecteursEdl'
 import { CADRE_PLAN_PIECE, definitionRapportEdl, etagesDuRapport, nomFichierRapportEdl, pointsSansElement } from './rapportEdlLogique'
-import { cadragePiece, cadragePlan, dessinerPlanRapport, PX_PLAN_ETAGE } from './planRapportEdl'
+import { cadragePiece, cadragePlan, dessinerPlanRapport, vecteursDuCadrage, PX_PLAN_ETAGE } from './planRapportEdl'
 
 const QUALITE_PLAN = 0.82
+const QUALITE_EXTRAIT = 0.7
 const TAILLE_PHOTO = 800
 
 // « 2 photos non chargées », « 1 plan vectoriel non chargé »
@@ -26,15 +27,34 @@ const LIBELLES_MANQUANTS = {
 }
 
 // Un canevas par image, libéré dès l'encodage : l'iPad plafonne la mémoire
-// de canevas, et un rapport en dessine un par pièce
-function imagePlan(c, options) {
+// de canevas, et un rapport en dessine un par pièce. Gardé en Blob (octets
+// JPEG) et non en data URL tant que le dessin continue : une data URL pèse
+// 4/3 en base64, le double en mémoire de chaîne ; elles ne sont faites qu'au
+// moment de la mise en page.
+async function imagePlan(c, options, qualite = QUALITE_PLAN) {
   const { canvas, ctx } = canevasBlanc(c.largeur, c.hauteur)
   try {
     dessinerPlanRapport(ctx, { cadrage: c, ...options })
-    return canvas.toDataURL('image/jpeg', QUALITE_PLAN)
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', qualite))
+    if (!blob) throw new Error('Image du plan non encodée')
+    return blob
   } finally {
     libererCanevas(canvas)
   }
+}
+
+const enDataUrl = (blob) => new Promise((resolve, reject) => {
+  const lecteur = new FileReader()
+  lecteur.onload = () => resolve(lecteur.result)
+  lecteur.onerror = () => reject(lecteur.error)
+  lecteur.readAsDataURL(blob)
+})
+
+// Map de Blobs → Map de data URL, au dernier moment (pdfmake les veut ainsi)
+async function versDataUrls(blobs) {
+  const sortie = new Map()
+  for (const [cle, blob] of blobs) sortie.set(cle, await enDataUrl(blob))
+  return sortie
 }
 
 // Fond d'un étage sans fichier vectoriel : son aperçu enregistré
@@ -68,7 +88,9 @@ export async function genererRapportEdl({
 
   surEtape('Rapport : chargement de pdfmake…')
   const pdfMake = await chargerPdfMake()
-  const images = { plans: new Map(), pieces: new Map(), photos: new Map() }
+  const images = { photos: new Map() }
+  const plans = new Map() // niveauId → Blob
+  const extraits = new Map() // pieceId → Blob
   images.logo = await tolerer(imagePourPdf(`${window.location.origin}/Logo_JGA_Archi.jpg`, 400, 0.85), 'logo')
   if (affaire?.photo_url) images.photoAffaire = await tolerer(bandeauPourPdf(affaire.photo_url), 'photo de l’affaire')
 
@@ -87,10 +109,19 @@ export async function genererRapportEdl({
       pointsSeuls: seuls.filter((p) => p.niveau_id === niveau.id),
     }
     const c = cadragePlan(siennes, { pxMax: PX_PLAN_ETAGE, repli: niveau.cadrage })
-    if (c) images.plans.set(niveau.id, imagePlan(c, dessin))
+    if (c) {
+      const plan = await tolerer(imagePlan(c, dessin), 'plan')
+      if (plan) plans.set(niveau.id, plan)
+    }
     for (const piece of visiteesEtage) {
       const cp = cadragePiece(piece)
-      if (cp) images.pieces.set(piece.id, imagePlan(cp, { ...dessin, pieceMiseEnAvant: piece, cadre: CADRE_PLAN_PIECE }))
+      if (!cp) continue
+      // Seulement les traits autour de la pièce, et ses seuls éléments
+      const extrait = await tolerer(imagePlan(cp, {
+        ...dessin, vecteurs: vecteursDuCadrage(v, cp), pieceMiseEnAvant: piece, cadre: CADRE_PLAN_PIECE,
+        elementsExport: dessin.elementsExport.filter((e) => e.pieceId === piece.id),
+      }, QUALITE_EXTRAIT), 'plan')
+      if (extrait) extraits.set(piece.id, extrait)
       // Laisser respirer l'écran entre deux pièces : un étage de 200 pièces
       // figerait sinon la page le temps du dessin
       await new Promise((r) => setTimeout(r, 0))
@@ -111,6 +142,10 @@ export async function genererRapportEdl({
   }
 
   surEtape('Rapport : mise en page…')
+  images.plans = await versDataUrls(plans)
+  images.pieces = await versDataUrls(extraits)
+  plans.clear()
+  extraits.clear()
   const definition = definitionRapportEdl({ affaire, etat, niveaux, pieces, elementsExport, photos, points, elements, visitees, images, redacteur, date })
   const blob = await pdfMake.createPdf(definition).getBlob()
   const avertissements = [...manquants].map(([quoi, n]) => {

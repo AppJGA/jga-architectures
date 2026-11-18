@@ -13,6 +13,7 @@ import { CALQUES, calqueEdl, typeEdl } from '../calquesEdl.js'
 import { aire } from '../geometrieEdl.js'
 import { COULEUR, LARGEUR_UTILE, blocAffaire, jour, lignePhotos, tableauFin } from '../../../chantier/comptes-rendus/rapportLogique.js'
 import { COULEUR_IA } from '../../../chantier/comptes-rendus/enregistrement/styleProposition.js'
+import { numeroterPhotos } from './numerotationEdl.js'
 
 // ─── Textes ──────────────────────────────────────────────────────────────────
 
@@ -101,17 +102,21 @@ export function etagesDuRapport({ niveaux = [], pieces = [], elementsExport = []
 const memePosition = (a, b) => Number.isFinite(a?.x) && Number.isFinite(b?.x) && Math.abs(a.x - b.x) < 1e-6 && Math.abs(a.y - b.y) < 1e-6
 
 /**
- * Points ni typés ni rattachés à un élément (décisions du lot 4) : absents du
- * DXF, listés dans le rapport. `elements` : les lignes `edl_elements` (leur
- * `point_id`) ; sans elles, un élément exporté à la même place vaut rattachement.
+ * Points ni typés ni rattachés à un élément exporté (décisions du lot 4) :
+ * absents du DXF, listés dans le rapport. Un élément exporté couvre son
+ * `pointId` (`elementsAExporter`) ; à défaut de `pointId`, sa position.
+ * Un point dont le seul élément est une proposition laissée hors de l'export
+ * reste listé, marqué `elementAValider` : il ne doit pas disparaître.
+ *
+ * @param elements lignes `edl_elements` ({ point_id, a_valider }), facultatif
  */
 export function pointsSansElement({ points = [], elements = null, elementsExport = [] }) {
-  const rattaches = new Set((elements ?? []).map((e) => e.point_id).filter(Boolean))
-  return points.filter((p) => {
-    if (p.type) return false
-    if (elements) return !rattaches.has(p.id)
-    return !elementsExport.some((e) => memePosition(e, p))
-  })
+  const couverts = new Set(elementsExport.map((e) => e.pointId).filter(Boolean))
+  const sansPointId = elementsExport.filter((e) => e.pointId === undefined)
+  const enAttente = new Set((elements ?? []).filter((e) => e.a_valider && e.point_id).map((e) => e.point_id))
+  return points
+    .filter((p) => !p.type && !couverts.has(p.id) && !sansPointId.some((e) => memePosition(e, p)))
+    .map((p) => (enAttente.has(p.id) ? { ...p, elementAValider: true } : p))
 }
 
 const libelleElement = (e) => rempli(e.libelle) || texteLatin(typeEdl(e.type)?.libelle) || texteLatin(calqueEdl(e.calque)?.libelle) || 'Élément'
@@ -142,11 +147,11 @@ export function groupesElements(elementsExport = []) {
  * Légende d'une photo : l'élément relevé au même point, sinon le point. Le
  * point relie la photo à sa pièce (`edl_photos.point_id`).
  */
-function legendePhoto(point, elementsDuPoint) {
-  if (elementsDuPoint.length) {
-    return elementsDuPoint.map((e) => [e.numero != null ? `n° ${e.numero}` : null, libelleElement(e)].filter(Boolean).join(' · ')).join(', ')
-  }
-  return `Point P${point?.numero ?? '?'}`
+function legendePhoto(photo, point, elementsDuPoint) {
+  const sujet = elementsDuPoint.length
+    ? elementsDuPoint.map((e) => [e.numero != null ? `P${e.numero}` : null, libelleElement(e)].filter(Boolean).join(' · ')).join(', ')
+    : `P${point?.numero ?? '?'}`
+  return photo.numero != null ? `Ph ${photo.numero} · ${sujet}` : sujet
 }
 
 // ─── Mise en page ────────────────────────────────────────────────────────────
@@ -218,7 +223,7 @@ function blocElements(titre, elements) {
           const type = texteLatin(typeEdl(e.type)?.libelle)
           const libelle = libelleElement(e)
           return [
-            { text: e.numero != null ? String(e.numero) : '—', bold: true, fontSize: 9, color: e.aValider ? COULEUR_PROPOSITION : couleurCalque(g.calque) },
+            { text: e.numero != null ? `P${e.numero}` : '—', bold: true, fontSize: 9, color: e.aValider ? COULEUR_PROPOSITION : couleurCalque(g.calque) },
             {
               fontSize: 9,
               text: [
@@ -284,8 +289,16 @@ function fichePiece({ etage, piece, elements, sansElement, photos, images }) {
       ...(sansElement.length ? [ensemble([
         titreSection('Points sans élément'),
         {
-          text: `${sansElement.map((p) => `P${p.numero}`).join(', ')} : ${sansElement.length > 1 ? 'points posés' : 'point posé'} en visite sans type ni élément relevé.`,
+          text: `${sansElement.length > 1 ? 'Points posés' : 'Point posé'} en visite sans type ni élément exporté :`,
           fontSize: 8.5, color: COULEUR.gris,
+        },
+        {
+          fontSize: 8.5, margin: [0, 2, 0, 0],
+          text: sansElement.flatMap((p, i) => [
+            ...(i ? [', '] : []),
+            { text: `P${p.numero}`, bold: true },
+            ...(p.elementAValider ? [{ text: ' (élément à valider)', italics: true, color: COULEUR_PROPOSITION }] : []),
+          ]),
         },
       ])] : []),
       ...(remarques ? [ensemble([titreSection('Remarques'), { text: remarques, fontSize: 9 }], remarques.length < 1500)] : []),
@@ -419,11 +432,13 @@ function pageDeGarde({ affaire, etages, redacteur, date, elementsExport, images 
  * Description pdfmake du rapport.
  *
  * @param elementsExport sortie d'`elementsAExporter` (export DXF) :
- *   [{ id, pieceId, x, y, calque, type, libelle, cotes, numero, aValider }]
- * @param photos lignes `edl_photos` ({ id, point_id }) ; une photo se range
- *   dans la pièce de son point
+ *   [{ id, pieceId, pointId, x, y, calque, type, libelle, cotes, numero, aValider }]
+ * @param photos lignes `edl_photos` ({ id, point_id, prise_le, numero? }) ; une
+ *   photo se range dans la pièce de son point. `numero` : celui donné au DXF
+ *   (`numeroterPhotos`) ; calculé par la même règle s'il manque
  * @param points lignes `edl_points` ({ id, piece_id, numero, type, x, y })
- * @param elements lignes `edl_elements` ({ point_id }), pour les points sans élément
+ * @param elements lignes `edl_elements` ({ id, point_id, a_valider }), pour les
+ *   points dont la seule proposition reste hors de l'export
  * @param visitees identifiants des pièces où l'on est entré en visite (Set ou tableau)
  * @param images { logo, photoAffaire, plans: niveauId → JPEG, pieces: pieceId → JPEG,
  *   photos: photoId → JPEG } (Map ou objet ; une image absente est omise)
@@ -436,22 +451,30 @@ export function definitionRapportEdl({
   const sansElement = pointsSansElement({ points, elements, elementsExport })
   const pointsParId = new Map(points.map((p) => [p.id, p]))
   const exportesParId = new Map(elementsExport.map((e) => [e.id, e]))
+  // Par le point (`pointId` d'`elementsAExporter`), puis par les lignes
+  // `edl_elements`, puis, en dernier recours, par la position
   const elementsDuPoint = (point) => {
+    const parPoint = elementsExport.filter((e) => e.pointId === point.id)
+    if (parPoint.length) return parPoint
     const parLigne = (elements ?? []).filter((e) => e.point_id === point.id).map((e) => exportesParId.get(e.id)).filter(Boolean)
-    return parLigne.length ? parLigne : elementsExport.filter((e) => memePosition(e, point))
+    if (parLigne.length) return parLigne
+    return elementsExport.filter((e) => e.pointId === undefined && memePosition(e, point))
   }
+  // Mêmes numéros que le DXF (« Ph n ») : ceux reçus, sinon calculés ici
+  // par la même règle
+  const photosNumerotees = photos.every((ph) => ph.numero != null) ? photos : numeroterPhotos(photos, points, { niveaux, pieces })
 
   const contenu = [pageDeGarde({ affaire, etages, redacteur, date: date ?? etat?.created_at ?? null, elementsExport, images })]
   for (const etage of etages) {
     const ids = new Set(etage.pieces.map((p) => p.id))
     contenu.push(pagePlan({ ...etage, elements: elementsExport.filter((e) => ids.has(e.pieceId)), images }))
     for (const piece of etage.visitees) {
-      const photosPiece = photos
+      const photosPiece = photosNumerotees
         .filter((ph) => pointsParId.get(ph.point_id)?.piece_id === piece.id)
         .map((ph) => ({ ph, point: pointsParId.get(ph.point_id), image: prendre(ph.id, images.photos) }))
         .filter((x) => x.image)
-        .sort((a, b) => (a.point.numero ?? 0) - (b.point.numero ?? 0) || String(a.ph.prise_le ?? '').localeCompare(String(b.ph.prise_le ?? '')))
-        .map(({ point, image }) => ({ image, legende: legendePhoto(point, elementsDuPoint(point)) }))
+        .sort((a, b) => a.ph.numero - b.ph.numero)
+        .map(({ ph, point, image }) => ({ image, legende: legendePhoto(ph, point, elementsDuPoint(point)) }))
       contenu.push(fichePiece({
         etage: rempli(etage.niveau.nom) || 'Étage',
         piece,

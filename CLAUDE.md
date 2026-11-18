@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 1172 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans, gestion de l'application, état des lieux)
+npm test         # 1250 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans, gestion de l'application, état des lieux)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -191,7 +191,7 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
   Toujours lire par `referencesCadastre` (repli sur les anciennes colonnes) ;
   l'enregistrement (`colonnesCadastre`) tient aussi à jour `cadastre_section`
   / `cadastre_parcelle` (première ligne) et `cadastre_superficie` (total).
-- **Base** : `supabase/migrations/`, numérotées, 80 fichiers, **passées à la
+- **Base** : `supabase/migrations/`, numérotées, 81 fichiers, **passées à la
   main** dans le SQL Editor de Supabase : un code qui dépend d'une nouvelle
   colonne doit tolérer son absence tant que la migration n'est pas faite.
   **Toute table créée depuis le 2026-10-30 doit recevoir ses droits d'API
@@ -787,6 +787,37 @@ lot 1 : `docs/superpowers/plans/2026-11-17-etat-des-lieux-lot1-preparer.md`.
   presque droits (2–3 px), bordures 0,5 px, alertes rouge `#B8412C`, ambre
   `#FFFBEB` / `#92400E`. Pas de `flex-wrap` autour du plan : la liste de
   200 pièces étirait la rangée et le plan sortait de l'écran.
+- **Plans allégés et vectoriels** (2026-11-18, migration 081, plan
+  `docs/superpowers/plans/2026-11-18-etat-des-lieux-plans-vectoriels.md`) :
+  un plan ArchiCAD exporte le noir des murs et les motifs (tuiles, gravier)
+  en centaines de milliers de petits traits — 540 000 sur un R+1, dont
+  ~7 000 utiles. À l'import, chaque **calque** reçoit un traitement
+  (`simplificationPlan.js`, pur, testé) : `garder`, `masse` (traits de
+  moins de 10 cm → masses au pochage blanc et contour épais, grille creuse
+  au centimètre, fermeture de 2 cm, anneaux tracés et adoucis), `masquer-motif`
+  (petits traits retirés, contours gardés) ou `masquer`. **Claude propose**
+  (`api/edl-calques.js`, `calquesIaLogique.js` : statistiques et un extrait
+  dessiné par calque, « dans le doute, garder ») ; sans lui, défauts
+  (`decisionsParDefaut` : ≥ 90 % de petits traits et ≥ 500 traits → `masse`
+  si MUR / CLOISON, sinon `masquer-motif`). La fenêtre d'import montre un
+  menu par calque et un **aperçu** (400 ms après le dernier choix) ; un choix
+  à la main n'est jamais écrasé par une réponse tardive de Claude, et un
+  changement d'unité ne garde que les choix de Claude et de la main
+  (`reprendreDecisions`). Chaque étage reçoit un fichier
+  `<affaire>/edl/vecteurs/<uuid>.json.gz` (`encoderVecteurs`, au mm ;
+  50–150 Ko) et `edl_niveaux.calques` (`{ decisions, raisons, source }`) ;
+  l'image est dessinée depuis le plan allégé. **Affichage** : prop
+  `dessinFond` de `VisionneusePlan` (canevas sous le bloc transformé,
+  redessiné dans le même `requestAnimationFrame` que la vue — planifié par
+  `useLayoutEffect`, sinon décalé d'une image pendant un glisser — seuls
+  les éléments visibles), et `sansPleine` : l'image de 6 000 px n'est plus
+  chargée quand l'étage a son fichier vectoriel (≈ 96 Mo de mémoire sur
+  iPad), sauf si sa lecture échoue ; appuis mesurés sur un bloc de la taille
+  du plan. `useVecteursEdl` (cache par chemin). Hors ligne : aperçus, puis
+  fichiers vectoriels, puis images pleines des étages qui n'en ont pas
+  (`garderImages`). Sans la 081 : import et affichage comme avant (repli par
+  `colonnesVecteursManquantes`). Les comptes rendus ne passent aucune de ces
+  props : leur visionneuse est inchangée.
 - **Écran** : `EditeurPieces` sur `VisionneusePlan` (nouvelle prop `calque`,
   SVG au-dessus de l'image) : sommets déplacés au doigt, rond de milieu =
   nouveau sommet (zone sensible de 44 px sous chaque rond), **« Annuler »**

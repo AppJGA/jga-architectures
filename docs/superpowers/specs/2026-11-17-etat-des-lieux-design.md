@@ -109,6 +109,12 @@ D'où, dans l'ordre (`piecesLogique.js` de l'état des lieux, pur) :
    Claude reçoit l'image de l'étage **et** la liste des textes avec leur
    position exacte, et propose le contour de chaque pièce nommée. Moins
    précis : c'est l'étape de correction qui le rattrape.
+   **Plan allégé** (ajout du 2026-11-18) : Claude choisit pour chaque calque
+   garder / pocher les murs / masquer le motif / masquer ; l'application
+   applique ces choix (géométrie exacte) et garde un fichier vectoriel par
+   étage, affiché net à tous les zooms. Le mode « comme sur desktop »
+   (Claude qui exécute du code sur le DXF, ~10 fois plus cher) reste
+   envisageable si un plan résiste à cette méthode.
 3. **Correction** à l'écran, quelle que soit l'origine : chaque pièce en
    couleur sur le plan ; on déplace les coins, on renomme, on dessine une
    pièce oubliée (touchers successifs aux angles), on en supprime. Une

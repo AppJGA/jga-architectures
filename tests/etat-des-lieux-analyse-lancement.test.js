@@ -617,6 +617,11 @@ describe('Correctifs (tour 1)', () => {
     assert.equal(suiteConflitEcriture({ piece, reserve, relue: { ...piece, analyse_le: H('10:31:30'), updated_at: H('10:31:30') } }), 'deja-fait')
     assert.equal(suiteConflitEcriture({ piece, reserve, relue: { ...piece, updated_at: '2026-11-18T10:31:01+00:00' } }), 'lecture-seule')
     assert.equal(suiteConflitEcriture({ piece, reserve, relue: { ...piece, fiche: { sol: 'carrelage' }, updated_at: H('10:31:20') } }), 'fiche-agence')
+    // Seul un statut ou la porte changés au bureau : c'est aussi une fiche de l'agence
+    assert.equal(suiteConflitEcriture({ piece, reserve, relue: { ...piece, fiche: { sol: 'parquet', statuts: { sol: 'deposer' } }, updated_at: H('10:31:20') } }), 'fiche-agence')
+    assert.equal(suiteConflitEcriture({ piece, reserve, relue: { ...piece, fiche: { sol: 'parquet', porte: { vantail: 'bois' } }, updated_at: H('10:31:20') } }), 'fiche-agence')
+    // Clés vides ajoutées par un enregistrement : même fiche
+    assert.equal(suiteConflitEcriture({ piece, reserve, relue: { ...piece, fiche: { sol: 'parquet', porte: { huisserie: '' }, statuts: { sol: null } }, analyse_erreur: 'x', updated_at: H('10:31:20') } }), 'reessayer')
     assert.equal(suiteConflitEcriture({ piece, reserve, relue: { ...piece, analyse_erreur: 'x', updated_at: H('10:31:20') } }), 'reessayer')
   })
 

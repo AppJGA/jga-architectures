@@ -12,6 +12,7 @@
 // Pur, testé (tests/etat-des-lieux-analyse-ia.test.js).
 
 import { CALQUES, CALQUES_DE_POINT, calqueEdl, typeEdl } from '../calquesEdl.js'
+import { CHAMPS_PORTE, CODES_STATUTS_ENREGISTRES, RUBRIQUES_STATUT, codeStatut, porteDe, rubriqueRenseignee } from '../statutsEdl.js'
 
 export const MODELE_ANALYSE = 'claude-opus-5-5'
 
@@ -299,8 +300,11 @@ const CODES_TYPES = CALQUES_DE_POINT.flatMap((c) => c.types.map((t) => t.code))
 const chaine = { type: 'string' }
 const ouNul = (schema) => ({ anyOf: [schema, { type: 'null' }] })
 
+// Rubriques en texte. S'y ajoutent le bloc porte (`porte`, trois parties) et
+// les statuts des matériaux (`statuts`) : voir statutsEdl.js.
 export const RUBRIQUES_FICHE = ['sol', 'murs', 'plafond', 'plinthes', 'hsp', 'remarques']
 const BORNES_FICHE = { sol: 500, murs: 500, plafond: 500, plinthes: 500, hsp: 100, remarques: 2000 }
+const BORNE_PORTE = 200
 
 export const SCHEMA_ANALYSE = {
   type: 'object',
@@ -310,8 +314,23 @@ export const SCHEMA_ANALYSE = {
     fiche: {
       type: 'object',
       additionalProperties: false,
-      required: RUBRIQUES_FICHE,
-      properties: Object.fromEntries(RUBRIQUES_FICHE.map((r) => [r, chaine])),
+      required: [...RUBRIQUES_FICHE, 'porte', 'statuts'],
+      properties: {
+        ...Object.fromEntries(RUBRIQUES_FICHE.map((r) => [r, chaine])),
+        porte: {
+          type: 'object',
+          additionalProperties: false,
+          required: CHAMPS_PORTE,
+          properties: Object.fromEntries(CHAMPS_PORTE.map((c) => [c, chaine])),
+        },
+        // « À préciser » n'est pas un choix de Claude : rien de dit → null
+        statuts: {
+          type: 'object',
+          additionalProperties: false,
+          required: RUBRIQUES_STATUT,
+          properties: Object.fromEntries(RUBRIQUES_STATUT.map((r) => [r, ouNul({ type: 'string', enum: CODES_STATUTS_ENREGISTRES })])),
+        },
+      },
     },
     elements: {
       type: 'array',
@@ -354,6 +373,15 @@ Tu reçois une pièce et sa frise : les gestes et les phrases entendues, dans l'
 
 Fiche de la pièce (sol, murs, plafond, plinthes, hsp = hauteur sous plafond, remarques = état général et ce qui ne rentre pas ailleurs) : seulement d'après ce qui est dit dans la frise, en phrases courtes ; "" pour une rubrique dont rien n'est dit. Si une « fiche actuelle » est donnée (déjà relevée ou corrigée par l'agence), rends la fiche complète : garde le contenu de chaque rubrique, sauf si ce qui est dit dans la frise le remplace ou le complète clairement.
 
+Bloc porte de la pièce (« porte ») : « huisserie », « vantail », « quincaillerie », chacun en quelques mots, le matériau ou l'état sans répéter le nom de la partie (« bois », « métallique », « béquille laiton ») ; "" pour une partie dont rien n'est dit. Un bloc porte dit « bois » : huisserie bois et vantail bois. Un bloc porte dit « métallique » : huisserie métallique, vantail bois.
+
+Statuts (« statuts ») : un par rubrique (sol, murs, plafond, plinthes, porte), d'après ce qui est dit de son état :
+- "rafraichir" : remise en état sans dépose (« à repeindre », « à reprendre », « reboucher ») ;
+- "deposer" : dépose, remplacement ou suppression (« à remplacer », « à déposer », « à supprimer », « hors service ») ;
+- "conserver" : gardé tel quel (« bon état », « à garder ») ;
+- null si rien n'est dit sur l'état, et toujours null pour une rubrique vide.
+Si la fiche actuelle donne des statuts, garde-les, sauf si la frise les contredit clairement.
+
 Ne rien inventer : ce qui n'est pas dit n'existe pas. Réponds uniquement par le JSON demandé.
 
 Calques et types possibles :
@@ -364,7 +392,16 @@ function lignesFicheActuelle(fiche) {
   const remplies = RUBRIQUES_FICHE
     .map((r) => [r, nettoyer(fiche[r], BORNES_FICHE[r])])
     .filter(([, v]) => v)
+  const porte = porteDe(fiche)
+  const partiesPorte = CHAMPS_PORTE.filter((c) => porte[c]).map((c) => `${c} = ${nettoyer(porte[c], BORNE_PORTE)}`)
+  if (partiesPorte.length) remplies.push(['porte', partiesPorte.join(', ')])
   if (!remplies.length) return []
+  // Statuts des seules rubriques renseignées (ailleurs, ils ne disent rien)
+  const statuts = RUBRIQUES_STATUT
+    .map((r) => [r, rubriqueRenseignee(fiche, r) ? codeStatut(fiche.statuts?.[r]) : null])
+    .filter(([, s]) => s)
+    .map(([r, s]) => `${r} = ${s}`)
+  if (statuts.length) remplies.push(['statuts', statuts.join(', ')])
   return ['Fiche actuelle (déjà relevée ou corrigée par l’agence) :', ...remplies.map(([r, v]) => `- ${r} : ${v}`)]
 }
 
@@ -398,6 +435,17 @@ export function construireDemandeAnalyse({ piece = {}, lignes = [], dejaReleves 
   }
 }
 
+const objetDeTextes = (o) => o != null && typeof o === 'object' && !Array.isArray(o)
+  && Object.values(o).every((v) => v == null || typeof v === 'string')
+
+// Rubriques en texte ; `porte` et `statuts` : objets de textes (ou null)
+function ficheRecevable(fiche) {
+  if (fiche == null) return true
+  if (typeof fiche !== 'object' || Array.isArray(fiche)) return false
+  return Object.entries(fiche).every(([k, v]) => v == null || typeof v === 'string'
+    || ((k === 'porte' || k === 'statuts') && objetDeTextes(v)))
+}
+
 /**
  * Contrôle de la demande reçue par la fonction serveur : `null` si elle est
  * recevable, sinon le motif du refus.
@@ -411,9 +459,7 @@ export function erreurDemandeAnalyse(corps) {
   if (lignes.length > LIGNES_MAX) return 'trop-de-lignes'
   if (!Array.isArray(dejaReleves) || dejaReleves.some((l) => typeof l !== 'string')) return 'deja-releves'
   if (dejaReleves.length > DEJA_RELEVES_MAX) return 'trop-de-releves'
-  const fiche = corps.ficheActuelle
-  if (fiche != null && (typeof fiche !== 'object' || Array.isArray(fiche)
-    || Object.values(fiche).some((v) => v != null && typeof v !== 'string'))) return 'fiche'
+  if (!ficheRecevable(corps.ficheActuelle)) return 'fiche'
   const longueur = [...lignes, ...dejaReleves].reduce((n, l) => n + l.length, 0)
   if (longueur > LONGUEUR_TOTALE_MAX) return 'trop-long'
   return null
@@ -430,11 +476,17 @@ const CALQUES_VALIDES = new Set(CALQUES.map((c) => c.code))
  * valable écarté, point inconnu de la pièce → null, textes bornés.
  *
  * @param references Map('P7' → point_id) de `friseDePiece`
- * @returns { fiche: { sol, murs, plafond, plinthes, hsp, remarques }, elements: [{ point_id, calque, type, libelle, cotes, extrait, a_verifier }] }
+ * Statut inconnu (ou « a-preciser ») → null, et null pour une rubrique vide.
+ *
+ * @returns { fiche: { sol, murs, plafond, plinthes, hsp, remarques, porte, statuts }, elements: [{ point_id, calque, type, libelle, cotes, extrait, a_verifier }] }
  */
 export function lireAnalyse(resultat, references = new Map()) {
   const f = resultat?.fiche ?? {}
   const fiche = Object.fromEntries(RUBRIQUES_FICHE.map((r) => [r, nettoyer(f[r], BORNES_FICHE[r])]))
+  const porte = f.porte && typeof f.porte === 'object' ? f.porte : {}
+  fiche.porte = Object.fromEntries(CHAMPS_PORTE.map((c) => [c, nettoyer(porte[c], BORNE_PORTE)]))
+  const statuts = f.statuts && typeof f.statuts === 'object' ? f.statuts : {}
+  fiche.statuts = Object.fromEntries(RUBRIQUES_STATUT.map((r) => [r, rubriqueRenseignee(fiche, r) ? codeStatut(statuts[r]) : null]))
   const elements = []
   for (const el of Array.isArray(resultat?.elements) ? resultat.elements : []) {
     if (!el || typeof el !== 'object') continue
@@ -762,9 +814,15 @@ export function suiviApresEchec(suivi, err) {
   return { ...suivi, definitif }
 }
 
-const ficheComparable = (f) => JSON.stringify(RUBRIQUES_FICHE.map((r) => String(f?.[r] ?? '').trim()))
+// Statut et porte comptent : une fiche dont l'agence n'a changé qu'un statut
+// est une fiche corrigée, qu'une analyse en cours ne doit pas écraser
+const ficheComparable = (f) => JSON.stringify([
+  ...RUBRIQUES_FICHE.map((r) => String(f?.[r] ?? '').trim()),
+  ...CHAMPS_PORTE.map((c) => porteDe(f)[c]),
+  ...RUBRIQUES_STATUT.map((r) => codeStatut(f?.statuts?.[r])),
+])
 
-/** Même contenu de fiche (rubriques connues, espaces autour ignorés). */
+/** Même contenu de fiche (rubriques connues, porte, statuts ; espaces autour ignorés). */
 export const memeFiche = (a, b) => ficheComparable(a) === ficheComparable(b)
 
 /**

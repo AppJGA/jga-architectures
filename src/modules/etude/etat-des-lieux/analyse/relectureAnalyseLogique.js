@@ -7,6 +7,7 @@
 
 import { CALQUES, CALQUES_DE_POINT, calqueEdl, typeEdl } from '../calquesEdl.js'
 import { completudeFiche, RUBRIQUES_FICHE } from './analyseEdlLogique.js'
+import { CHAMPS_PORTE, RUBRIQUES_STATUT, codeStatut, porteDe } from '../statutsEdl.js'
 
 export const LIBELLES_FICHE = {
   sol: 'Sol', murs: 'Murs', plafond: 'Plafond', plinthes: 'Plinthes', hsp: 'HSP', remarques: 'Remarques',
@@ -157,19 +158,49 @@ export function titreElement(e) {
 
 // ─── Fiche de la pièce ───────────────────────────────────────────────────────
 
-/** Brouillon de la fiche : toutes les rubriques, en texte. */
-export const brouillonFiche = (fiche) =>
-  Object.fromEntries(RUBRIQUES_FICHE.map((r) => [r, fiche?.[r] == null ? '' : String(fiche[r])]))
+/**
+ * Brouillon de la fiche : toutes les rubriques en texte, le bloc porte
+ * (`porte`, trois parties) et les statuts (`statuts`, code ou "" pour
+ * « À préciser »). Une ancienne fiche sans porte ni statuts se lit vide.
+ */
+export function brouillonFiche(fiche) {
+  const statuts = fiche?.statuts && typeof fiche.statuts === 'object' ? fiche.statuts : {}
+  return {
+    ...Object.fromEntries(RUBRIQUES_FICHE.map((r) => [r, fiche?.[r] == null ? '' : String(fiche[r])])),
+    porte: porteDe(fiche),
+    statuts: Object.fromEntries(RUBRIQUES_STATUT.map((r) => [r, codeStatut(statuts[r]) ?? ''])),
+  }
+}
 
-/** Fiche à enregistrer : rubriques nettoyées, les autres clés gardées telles quelles. */
+const objet = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : {})
+
+/**
+ * Fiche à enregistrer : rubriques nettoyées, statut « À préciser » → null ;
+ * les autres clés (de la fiche, de sa porte, de ses statuts) gardées telles
+ * quelles.
+ */
 export function ficheDepuisBrouillon(fiche, brouillon) {
   const base = fiche && typeof fiche === 'object' ? { ...fiche } : {}
   for (const r of RUBRIQUES_FICHE) base[r] = texte(brouillon?.[r])
+  const porte = { ...objet(base.porte) }
+  for (const c of CHAMPS_PORTE) porte[c] = texte(objet(brouillon?.porte)[c])
+  base.porte = porte
+  const statuts = { ...objet(base.statuts) }
+  for (const r of RUBRIQUES_STATUT) statuts[r] = codeStatut(objet(brouillon?.statuts)[r])
+  base.statuts = statuts
   return base
 }
 
+// Ce que l'écran compare : textes nettoyés, parties de la porte, statuts
+const cleBrouillon = (b) => JSON.stringify([
+  ...RUBRIQUES_FICHE.map((r) => texte(b?.[r])),
+  ...CHAMPS_PORTE.map((c) => texte(objet(b?.porte)[c])),
+  ...RUBRIQUES_STATUT.map((r) => codeStatut(objet(b?.statuts)[r])),
+])
+
+/** Une rubrique, une partie de la porte ou un statut a changé (espaces autour ignorés). */
 export function ficheModifiee(fiche, brouillon) {
-  return RUBRIQUES_FICHE.some((r) => texte(fiche?.[r] == null ? '' : String(fiche[r])) !== texte(brouillon?.[r]))
+  return cleBrouillon(brouillonFiche(fiche)) !== cleBrouillon(brouillon)
 }
 
 /**

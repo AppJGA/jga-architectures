@@ -17,6 +17,7 @@ import { COULEUR, LARGEUR_UTILE, blocAffaire, jour, lignePhotos, tableauFin } fr
 import { COULEUR_IA } from '../../../chantier/comptes-rendus/enregistrement/styleProposition.js'
 import { numeroterPhotos } from './numerotationEdl.js'
 import { ficheEcartee, ficheExportee, hspExport } from './ficheExportEdl.js'
+import { textePorte } from '../statutsEdl.js'
 
 // ─── Textes ──────────────────────────────────────────────────────────────────
 
@@ -80,7 +81,9 @@ export const couleurCalque = (code) => COULEURS_CALQUES[code] ?? COULEUR.gris
 const tableau = (v) => (v instanceof Set ? v : new Set(v ?? []))
 const prendre = (cle, collection) => (collection instanceof Map ? collection.get(cle) : collection?.[cle]) ?? null
 
-const ficheRemplie = (fiche) => !!fiche && typeof fiche === 'object' && Object.values(fiche).some((v) => typeof v === 'string' && v.trim())
+// Le bloc porte compte : une pièce dont seule la porte est décrite n'est pas vide
+const ficheRemplie = (fiche) => !!fiche && typeof fiche === 'object'
+  && (Object.values(fiche).some((v) => typeof v === 'string' && v.trim()) || !!textePorte(fiche))
 
 /**
  * Pièce visitée : entrée notée en visite, ou quelque chose relevé dedans

@@ -34,7 +34,8 @@ import { aire, pointDansPolygone } from '../geometrieEdl.js'
 import { RAYON_SANS_SYMBOLE, SYMBOLES, emplacementsDuPoint, orientationPiece } from './symbolesEdl.js'
 import { placerEtiquettes, pointInterieur, repere } from './placementEtiquettes.js'
 import { dansCp1252, encoderCp1252 } from './encodageDxf.js'
-import { ficheExportee, hspExport } from './ficheExportEdl.js'
+import { ficheExportee, hspExport, porteExport, statutExport } from './ficheExportEdl.js'
+import { STATUT_A_PRECISER, libelleStatut } from '../statutsEdl.js'
 
 export const CALQUE_A_VALIDER = 'EDL-À valider'
 
@@ -394,10 +395,18 @@ export function etiquettesEtage({ pieces = [], elementsExport = [], photos = [],
     const hspDeLaFiche = !!hsp && !hspExport(piece, { inclurePropositions })?.lue && !!piece.fiche_a_valider
     if (hsp) ajouter(hsp, hspDeLaFiche ? CALQUE_A_VALIDER : NOM_PIECES)
     if (fiche) {
+      // Statut écrit seulement s'il est dit : « À préciser » partout serait du bruit
+      const suffixe = (rubrique) => {
+        const statut = statutExport(piece, rubrique, { inclurePropositions })
+        return statut === STATUT_A_PRECISER ? '' : ` (${libelleStatut(statut)})`
+      }
       for (const [cle, libelle] of RUBRIQUES) {
         const valeur = texteDxf(fiche[cle])
-        if (valeur) ajouter(`${libelle} : ${valeur}`, calqueFiche)
+        if (valeur) ajouter(`${libelle} : ${valeur}${suffixe(cle)}`, calqueFiche)
       }
+      const porte = porteExport(piece, { inclurePropositions })
+      const textePorte = porte ? texteDxf(porte.texte) : ''
+      if (textePorte) ajouter(`Porte : ${textePorte}${suffixe('porte')}`, calqueFiche)
     }
     for (const e of sansPoint.get(piece.id) ?? []) {
       ajouter(libelleElement(e), calqueElement(e.calque, e.aValider))

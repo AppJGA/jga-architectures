@@ -320,6 +320,35 @@ describe('fichier DXF', () => {
     assert.equal(l.textes.some((t) => t.texte.includes('Bon état')), false)
   })
 
+  test('statut écrit après la finition (sauf « À préciser »), bloc porte si renseigné', () => {
+    const piece = {
+      ...sejour,
+      fiche: {
+        ...sejour.fiche,
+        porte: { huisserie: 'bois', vantail: 'bois', quincaillerie: '' },
+        statuts: { sol: 'conserver', murs: 'rafraichir', plinthes: 'a-preciser', porte: 'deposer', plafond: 'deposer' },
+      },
+    }
+    const l = relire(genererDxfEdl({ pieces: [piece], unitesParMetre: 1 }))
+    const lignes = textesDe(l, 'EDL-Finitions')
+    // Les lignes restent coupées à 32 caractères, statut compris
+    assert.ok(lignes.every((t) => t.length <= 32))
+    assert.equal(lignes.join(' '), 'Sol : Parquet chêne (Conserver) Murs : Peinture blanche (Rafraîchir) Plinthes : Bois peint Porte : huisserie bois, vantail bois (Déposer)')
+  })
+
+  test('ancienne fiche sans porte ni statuts : finitions comme avant, pas de ligne Porte', () => {
+    const l = relire(genererDxfEdl({ pieces: [sejour], unitesParMetre: 1 }))
+    assert.deepEqual(textesDe(l, 'EDL-Finitions'), ['Sol : Parquet chêne', 'Murs : Peinture blanche', 'Plinthes : Bois peint'])
+  })
+
+  test('fiche proposée écartée : ni statut ni porte ; incluse, sur EDL-À valider', () => {
+    const piece = { ...salleDeBain, fiche_a_valider: true, fiche: { ...salleDeBain.fiche, porte: { huisserie: 'métallique' }, statuts: { sol: 'deposer' } } }
+    const sans = relire(genererDxfEdl({ pieces: [piece], unitesParMetre: 1 }))
+    assert.equal(sans.textes.some((t) => t.texte.includes('Déposer') || t.texte.startsWith('Porte')), false)
+    const avec = relire(genererDxfEdl({ pieces: [piece], unitesParMetre: 1, inclurePropositions: true }))
+    assert.deepEqual(textesDe(avec, CALQUE_A_VALIDER), ['HSP 2,40 m', 'Sol : Carrelage (Déposer)', 'Porte : huisserie métallique'])
+  })
+
   test('finition longue coupée en lignes', () => {
     const piece = { ...sejour, fiche: { murs: `Enduit ${'fissuré '.repeat(30)}à reprendre` } }
     const l = relire(genererDxfEdl({ pieces: [piece], unitesParMetre: 1 }))

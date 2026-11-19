@@ -162,14 +162,45 @@ describe('saisie d’un élément', () => {
 
 describe('fiche de la pièce', () => {
   test('brouillon : toutes les rubriques, en texte', () => {
-    assert.deepEqual(brouillonFiche({ sol: 'parquet', hsp: 2.5 }), { sol: 'parquet', murs: '', plafond: '', plinthes: '', hsp: '2.5', remarques: '' })
+    assert.deepEqual(brouillonFiche({ sol: 'parquet', hsp: 2.5 }), {
+      sol: 'parquet', murs: '', plafond: '', plinthes: '', hsp: '2.5', remarques: '',
+      porte: { huisserie: '', vantail: '', quincaillerie: '' },
+      statuts: { sol: '', murs: '', plafond: '', plinthes: '', porte: '' },
+    })
+  })
+
+  test('brouillon : porte et statuts de la fiche, statut inconnu ou « a-preciser » → vide', () => {
+    const b = brouillonFiche({ sol: 'parquet', porte: { huisserie: 'bois', vantail: 3 }, statuts: { sol: 'conserver', murs: 'a-preciser', porte: 'zzz' } })
+    assert.deepEqual(b.porte, { huisserie: 'bois', vantail: '', quincaillerie: '' })
+    assert.deepEqual(b.statuts, { sol: 'conserver', murs: '', plafond: '', plinthes: '', porte: '' })
   })
 
   test('enregistrement : rubriques nettoyées, autres clés gardées', () => {
     const fiche = { sol: 'parquet', autre: 'gardé' }
     assert.deepEqual(ficheDepuisBrouillon(fiche, { ...brouillonFiche(fiche), murs: ' toile de verre ' }), {
       sol: 'parquet', autre: 'gardé', murs: 'toile de verre', plafond: '', plinthes: '', hsp: '', remarques: '',
+      porte: { huisserie: '', vantail: '', quincaillerie: '' },
+      statuts: { sol: null, murs: null, plafond: null, plinthes: null, porte: null },
     })
+  })
+
+  test('enregistrement : porte et statuts, « À préciser » → null, clés inconnues gardées', () => {
+    const fiche = { sol: 'parquet', porte: { huisserie: 'bois', ferme_porte: 'oui' }, statuts: { sol: 'conserver', fenetres: 'deposer' } }
+    const b = brouillonFiche(fiche)
+    const saisi = { ...b, porte: { ...b.porte, vantail: ' bois  ' }, statuts: { ...b.statuts, sol: '', porte: 'rafraichir' } }
+    const f = ficheDepuisBrouillon(fiche, saisi)
+    assert.deepEqual(f.porte, { huisserie: 'bois', ferme_porte: 'oui', vantail: 'bois', quincaillerie: '' })
+    assert.deepEqual(f.statuts, { sol: null, fenetres: 'deposer', murs: null, plafond: null, plinthes: null, porte: 'rafraichir' })
+  })
+
+  test('changer un statut ou la porte modifie la fiche (l’enregistrement la valide)', () => {
+    const fiche = { sol: 'parquet', statuts: { sol: 'conserver' } }
+    const b = brouillonFiche(fiche)
+    assert.equal(ficheModifiee(fiche, b), false)
+    assert.equal(ficheModifiee(fiche, { ...b, statuts: { ...b.statuts, sol: 'deposer' } }), true)
+    assert.equal(ficheModifiee(fiche, { ...b, porte: { ...b.porte, quincaillerie: 'laiton' } }), true)
+    // Ancienne fiche sans porte ni statuts : rien de changé tant qu'on n'y touche pas
+    assert.equal(ficheModifiee({ sol: 'parquet' }, brouillonFiche({ sol: 'parquet' })), false)
   })
 
   test('modifiée seulement si une rubrique change (espaces ignorés)', () => {
@@ -189,6 +220,9 @@ describe('fiche de la pièce', () => {
     assert.equal(suiteFicheRecue({ precedente: avant, brouillon: saisi, recue }), 'garder')
     // Notre propre enregistrement relu : identique au brouillon, rien à garder
     assert.equal(suiteFicheRecue({ precedente: avant, brouillon: saisi, recue: ficheDepuisBrouillon(avant, saisi) }), 'remplacer')
+    // Un statut choisi en cours de relecture n'est pas perdu non plus
+    const statutSaisi = { ...brouillonFiche(avant), statuts: { ...brouillonFiche(avant).statuts, sol: 'rafraichir' } }
+    assert.equal(suiteFicheRecue({ precedente: avant, brouillon: statutSaisi, recue }), 'garder')
   })
 
   test('rubriques manquantes signalées une fois la pièce analysée', () => {

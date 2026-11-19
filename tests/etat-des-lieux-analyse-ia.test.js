@@ -258,7 +258,22 @@ describe('demande à Claude', () => {
     }
     parcourir(SCHEMA_ANALYSE, '$')
     assert.deepEqual(ouverts, [])
-    assert.deepEqual(Object.keys(SCHEMA_ANALYSE.properties.fiche.properties), RUBRIQUES_FICHE)
+    assert.deepEqual(Object.keys(SCHEMA_ANALYSE.properties.fiche.properties), [...RUBRIQUES_FICHE, 'porte', 'statuts'])
+  })
+
+  test('fiche : bloc porte et statuts (null permis, jamais « a-preciser »)', () => {
+    const fiche = SCHEMA_ANALYSE.properties.fiche.properties
+    assert.deepEqual(fiche.porte.required, ['huisserie', 'vantail', 'quincaillerie'])
+    assert.deepEqual(fiche.statuts.required, ['sol', 'murs', 'plafond', 'plinthes', 'porte'])
+    for (const r of fiche.statuts.required) {
+      assert.deepEqual(fiche.statuts.properties[r], { anyOf: [{ type: 'string', enum: ['conserver', 'rafraichir', 'deposer'] }, { type: 'null' }] })
+    }
+    assert.match(CONSIGNES_ANALYSE, /« à repeindre », « à reprendre », « reboucher »/)
+    assert.match(CONSIGNES_ANALYSE, /"deposer" .*« hors service »/)
+    assert.match(CONSIGNES_ANALYSE, /"conserver" .*« bon état », « à garder »/)
+    assert.match(CONSIGNES_ANALYSE, /null si rien n'est dit sur l'état/)
+    assert.match(CONSIGNES_ANALYSE, /« métallique » : huisserie métallique, vantail bois/)
+    assert.match(CONSIGNES_ANALYSE, /garde-les, sauf si la frise les contredit clairement/)
   })
 
   test('calques et types du schéma = ceux de calquesEdl.js', () => {
@@ -295,6 +310,12 @@ describe('demande à Claude', () => {
     assert.equal(construireDemandeAnalyse({ piece: {}, lignes: [], ficheActuelle: { sol: ' ' } }).messages[0].content[0].text.includes('Fiche actuelle'), false)
     assert.match(CONSIGNES_ANALYSE, /fiche actuelle/)
     assert.match(CONSIGNES_ANALYSE, /jamais un point supprimé/)
+    // Porte et statuts de la fiche corrigée repartent chez Claude (statut d'une rubrique vide omis)
+    const avecStatuts = construireDemandeAnalyse({
+      piece: {}, lignes: [],
+      ficheActuelle: { sol: 'carrelage', murs: '', porte: { huisserie: 'bois', vantail: '', quincaillerie: 'laiton' }, statuts: { sol: 'conserver', murs: 'deposer', porte: 'rafraichir', plafond: 'n-importe' } },
+    }).messages[0].content[0].text
+    assert.match(avecStatuts, /- sol : carrelage\n- porte : huisserie = bois, quincaillerie = laiton\n- statuts : sol = conserver, porte = rafraichir\n/)
     assert.match(CONSIGNES_ANALYSE, /n'en force pas un/)
   })
 
@@ -302,6 +323,11 @@ describe('demande à Claude', () => {
     assert.equal(erreurDemandeAnalyse({ piece: {}, lignes: [], ficheActuelle: { sol: 'parquet' } }), null)
     assert.equal(erreurDemandeAnalyse({ piece: {}, lignes: [], ficheActuelle: ['parquet'] }), 'fiche')
     assert.equal(erreurDemandeAnalyse({ piece: {}, lignes: [], ficheActuelle: { sol: 3 } }), 'fiche')
+    // Une fiche relue en relecture porte sa porte et ses statuts : recevable
+    assert.equal(erreurDemandeAnalyse({ piece: {}, lignes: [], ficheActuelle: { sol: 'parquet', porte: { huisserie: 'bois' }, statuts: { sol: 'conserver', murs: null } } }), null)
+    assert.equal(erreurDemandeAnalyse({ piece: {}, lignes: [], ficheActuelle: { statuts: { sol: 3 } } }), 'fiche')
+    assert.equal(erreurDemandeAnalyse({ piece: {}, lignes: [], ficheActuelle: { porte: ['bois'] } }), 'fiche')
+    assert.equal(erreurDemandeAnalyse({ piece: {}, lignes: [], ficheActuelle: { sol: { a: 'b' } } }), 'fiche')
     assert.equal(erreurDemandeAnalyse({ piece: { nom: 'Salon' }, lignes: [] }), null)
     assert.equal(erreurDemandeAnalyse({ lignes: [] }), 'piece')
     assert.equal(erreurDemandeAnalyse({ piece: {}, lignes: 'texte' }), 'lignes')
@@ -315,7 +341,11 @@ describe('demande à Claude', () => {
 describe('lireAnalyse', () => {
   const references = new Map([['P7', 'pt7']])
   const resultat = {
-    fiche: { sol: ' parquet  chêne ', murs: 'papier peint', plafond: '', plinthes: 'bois', hsp: '2,60', remarques: 'x'.repeat(5000) },
+    fiche: {
+      sol: ' parquet  chêne ', murs: 'papier peint', plafond: '', plinthes: 'bois', hsp: '2,60', remarques: 'x'.repeat(5000),
+      porte: { huisserie: ' métallique ', vantail: 'bois', quincaillerie: 'y'.repeat(500) },
+      statuts: { sol: 'conserver', murs: 'a-preciser', plafond: 'deposer', plinthes: 'inconnu', porte: 'rafraichir' },
+    },
     elements: [
       { point: 'P7', calque: 'electricite', type: 'interrupteur', libelle: 'interrupteur simple', cotes: '', extrait: 'interrupteur simple', a_verifier: false },
       { point: '7', calque: 'electricite', type: 'prise', libelle: 'prise', cotes: '', extrait: '', a_verifier: false },
@@ -330,6 +360,11 @@ describe('lireAnalyse', () => {
     assert.equal(lu.fiche.sol, 'parquet chêne')
     assert.equal(lu.fiche.plafond, '')
     assert.equal(lu.fiche.remarques.length, 2000)
+  })
+
+  test('porte nettoyée et bornée ; statut inconnu, « a-preciser » ou d’une rubrique vide → null', () => {
+    assert.deepEqual([lu.fiche.porte.huisserie, lu.fiche.porte.vantail, lu.fiche.porte.quincaillerie.length], ['métallique', 'bois', 200])
+    assert.deepEqual(lu.fiche.statuts, { sol: 'conserver', murs: null, plafond: null, plinthes: null, porte: 'rafraichir' })
   })
 
   test('point rattaché, écrit autrement (« 7 », « p 7 »)', () => {
@@ -350,7 +385,14 @@ describe('lireAnalyse', () => {
   })
 
   test('réponse vide', () => {
-    assert.deepEqual(lireAnalyse(null), { fiche: { sol: '', murs: '', plafond: '', plinthes: '', hsp: '', remarques: '' }, elements: [] })
+    assert.deepEqual(lireAnalyse(null), {
+      fiche: {
+        sol: '', murs: '', plafond: '', plinthes: '', hsp: '', remarques: '',
+        porte: { huisserie: '', vantail: '', quincaillerie: '' },
+        statuts: { sol: null, murs: null, plafond: null, plinthes: null, porte: null },
+      },
+      elements: [],
+    })
   })
 })
 

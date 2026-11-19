@@ -3,8 +3,12 @@
 // Le DXF et le PDF lisaient la fiche chacun à leur façon : le PDF imprimait
 // une fiche proposée par l'analyse que le DXF laissait de côté, et donnait la
 // HSP dite en visite avant celle du plan quand le DXF faisait l'inverse. Les
-// deux exports passent désormais par ici. Pur, testé
-// (tests/etat-des-lieux-export-pdf.test.js et …-export-dxf.test.js).
+// deux exports passent désormais par ici. Statuts des matériaux et bloc
+// porte suivent la même règle : une fiche écartée n'en exporte aucun. Pur,
+// testé (tests/etat-des-lieux-export-pdf.test.js, …-export-dxf.test.js,
+// …-statuts.test.js).
+
+import { porteDe, statutDe, textePorte } from '../statutsEdl.js'
 
 /** Fiche proposée par l'analyse, pas encore relue, et laissée hors de l'export. */
 export const ficheEcartee = (piece, { inclurePropositions = false } = {}) => !!piece?.fiche_a_valider && !inclurePropositions
@@ -33,4 +37,21 @@ export function hspExport(piece, options = {}) {
   if (!dite) return null
   if (/^\d+(?:[.,]\d+)?$/.test(dite)) return { texte: `${virgule(Number(dite.replace(',', '.')))} m`, lue: false }
   return { texte: dite, lue: false }
+}
+
+/**
+ * Statut d'une rubrique tel qu'il part dans l'export : 'a-preciser' si la
+ * fiche est écartée (ou ne dit rien de la rubrique), comme partout ailleurs.
+ */
+export const statutExport = (piece, rubrique, options = {}) => statutDe(ficheExportee(piece, options), rubrique)
+
+/**
+ * Bloc porte exporté : { huisserie, vantail, quincaillerie, texte, statut },
+ * ou null si la fiche est écartée ou ne dit rien de la porte.
+ */
+export function porteExport(piece, options = {}) {
+  const fiche = ficheExportee(piece, options)
+  const texte = textePorte(fiche)
+  if (!texte) return null
+  return { ...porteDe(fiche), texte, statut: statutDe(fiche, 'porte') }
 }

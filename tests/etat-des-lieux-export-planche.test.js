@@ -12,6 +12,9 @@ import {
   DPI_PLANCHE, ECHELLES, FORMAT_A3, HAUTEUR_CARTOUCHE, MARGE_PLANCHE, TAILLE_SYMBOLE_MM,
   dateCartouche, echellePlanche, misePlanche, versMmPlanche,
 } from '../src/modules/etude/etat-des-lieux/export/plancheEdl.js'
+import {
+  POLICE_MULTIPLE_MM, PX_PAR_MM, dessinerLegende, dessinerPlanche, dessinerSymbole, taillePlanchePx, tailleImageSymbole,
+} from '../src/modules/etude/etat-des-lieux/export/dessinPlancheEdl.js'
 
 const proche = (a, b, ecart = 1e-6) => assert.ok(Math.abs(a - b) < ecart, `${a} ≠ ${b}`)
 const rect = (x, y, l, h) => [[x, y], [x + l, y], [x + l, y + h], [x, y + h]]
@@ -328,4 +331,290 @@ test('même entrée → même sortie, données simples', () => {
   const b = mise(args)
   assert.deepEqual(a, b)
   assert.deepEqual(JSON.parse(JSON.stringify(a)), a)
+})
+
+// ─── Dessin (contexte enregistreur) ─────────────────────────────────────────
+
+// Contexte 2D qui note chaque appel avec les styles du moment et ses
+// coordonnées ramenées au canevas (translate et scale suivis ; rotate ne sert
+// qu'autour d'un texte écrit en (0, 0))
+function enregistreur() {
+  const appels = []
+  let t = { k: 1, dx: 0, dy: 0 }
+  const pile = []
+  const abs = (x, y) => [t.dx + x * t.k, t.dy + y * t.k]
+  const cible = {}
+  const ctx = new Proxy(cible, {
+    get: (c, nom) => {
+      if (nom in c) return c[nom]
+      return (...args) => {
+        if (nom === 'save') pile.push({ ...t })
+        else if (nom === 'restore') t = pile.pop() ?? { k: 1, dx: 0, dy: 0 }
+        else if (nom === 'translate') t = { ...t, dx: t.dx + args[0] * t.k, dy: t.dy + args[1] * t.k }
+        else if (nom === 'scale') t = { ...t, k: t.k * args[0] }
+        const pts = []
+        if (['moveTo', 'lineTo', 'arc'].includes(nom)) pts.push(abs(args[0], args[1]))
+        if (nom === 'arc') pts.push(abs(args[0] - args[2], args[1] - args[2]), abs(args[0] + args[2], args[1] + args[2]))
+        if (['fillRect', 'strokeRect', 'rect'].includes(nom)) pts.push(abs(args[0], args[1]), abs(args[0] + args[2], args[1] + args[3]))
+        if (nom === 'fillText') pts.push(abs(args[1], args[2]))
+        if (nom === 'drawImage') pts.push(abs(args[1], args[2]), abs(args[1] + args[3], args[2] + args[4]))
+        appels.push({ nom, args, pts, strokeStyle: c.strokeStyle, fillStyle: c.fillStyle, font: c.font, lineWidth: c.lineWidth })
+        return nom === 'measureText' ? { width: 10 } : undefined
+      }
+    },
+    set: (c, nom, valeur) => { c[nom] = valeur; return true },
+  })
+  return { ctx, appels }
+}
+
+const textes = (appels) => appels.filter((a) => a.nom === 'fillText').map((a) => a.args[0])
+const boiteDes = (appels) => {
+  const pts = appels.flatMap((a) => a.pts)
+  return { x0: Math.min(...pts.map((p) => p[0])), y0: Math.min(...pts.map((p) => p[1])), x1: Math.max(...pts.map((p) => p[0])), y1: Math.max(...pts.map((p) => p[1])) }
+}
+
+describe('planche : dessin', () => {
+  const salle = piece('p1', rect(0, 0, 30, 20))
+  const pts = [point('a', 'p1', 1, 15, 10), point('b', 'p1', 2, 29.7, 10), point('c', 'p1', 3, 5, 5)]
+  const els = [
+    element('e1', 'p1', 'a', 'electricite', 'luminaire', 'Plafonnier'),
+    element('e2', 'p1', 'b', 'electricite', 'prise', 'Prise triple'),
+    element('e3', 'p1', 'c', 'desordres', 'fissure', 'Fissure', true),
+  ]
+  const vecteurs = {
+    traits: [{ pts: [[0, 0], [30, 0], [30, 20], [0, 20]], ferme: true, boite: [0, 0, 30, 20] }],
+    masses: [{ calque: 'MUR', anneaux: [[[0, 0], [0.2, 0], [0.2, 20], [0, 20]]], boite: [0, 0, 0.2, 20] }],
+    textes: [{ texte: 'SÉJOUR', pos: [10, 10], hauteur: 0.3, calque: 'TXT' }],
+  }
+
+  test('symboles à leur position, absents sur demande', () => {
+    const m = mise({ pieces: [salle], points: pts, elements: els, inclurePropositions: true })
+    const p = PX_PAR_MM
+    const { ctx, appels } = enregistreur()
+    dessinerPlanche(ctx, m, { vecteurs, avecLegende: false })
+    const bleu = couleurCalque('electricite')
+    for (const code of ['luminaire', 'prise']) {
+      const s = m.symboles.find((x) => x.code === code)
+      // Les traits de ce symbole : ceux de sa couleur près de son point
+      const siens = appels.filter((a) => ['moveTo', 'lineTo', 'arc'].includes(a.nom) && a.strokeStyle === bleu
+        && Math.hypot(a.pts[0][0] - s.xMm * p, a.pts[0][1] - s.yMm * p) < 10 * p)
+      assert.ok(siens.length, `${code} non dessiné`)
+      const b = boiteDes(siens)
+      // La boîte tracée est celle de la mise, posée par son ancre
+      proche(b.x0, (s.xMm - s.tailleMm.ancre[0]) * p, 1)
+      proche(b.y0, (s.yMm - s.tailleMm.ancre[1]) * p, 1)
+      proche(b.x1 - b.x0, s.tailleMm.largeur * p, 1)
+      proche(b.y1 - b.y0, s.tailleMm.hauteur * p, 1)
+      // Centre attendu ± 1 px
+      proche((b.x0 + b.x1) / 2, (s.xMm - s.tailleMm.ancre[0] + s.tailleMm.largeur / 2) * p, 1)
+      proche((b.y0 + b.y1) / 2, (s.yMm - s.tailleMm.ancre[1] + s.tailleMm.hauteur / 2) * p, 1)
+    }
+    assert.ok(textes(appels).includes('×3'), '« ×3 » non écrit pour la prise triple')
+    // Proposition : sa famille, et un cercle pointillé de la couleur des propositions
+    assert.ok(appels.some((a) => a.strokeStyle === couleurCalque('desordres') && a.nom === 'stroke'))
+    assert.ok(appels.some((a) => a.nom === 'arc' && a.strokeStyle === COULEUR_PROPOSITION))
+    assert.ok(appels.some((a) => a.nom === 'setLineDash' && a.args[0].length === 2))
+
+    const sans = enregistreur()
+    dessinerPlanche(sans.ctx, m, { vecteurs, avecSymboles: false, avecLegende: false })
+    assert.ok(!sans.appels.some((a) => a.strokeStyle === bleu && ['moveTo', 'lineTo', 'arc'].includes(a.nom)))
+    assert.ok(!textes(sans.appels).includes('×3'))
+  })
+
+  test('plan existant sans contour de pièce ni désignation, coupé à sa zone', () => {
+    const m = mise({ pieces: [salle], points: pts, elements: els })
+    const { ctx, appels } = enregistreur()
+    dessinerPlanche(ctx, m, { vecteurs })
+    // Le texte du plan d'origine, pas la désignation de la pièce
+    assert.ok(textes(appels).includes('SÉJOUR'))
+    assert.ok(!textes(appels).some((t) => String(t).includes('Pièce p1')))
+    // Aucun contour de pièce en couleur (l'orange du plan du rapport)
+    assert.ok(!appels.some((a) => a.nom === 'stroke' && a.strokeStyle === '#E8602C'))
+    assert.ok(appels.some((a) => a.nom === 'clip'))
+    // Le plan au 1/100 : le trait du contour du bâtiment fait 300 mm de large
+    const traits = appels.filter((a) => a.nom === 'lineTo' && a.strokeStyle === '#3A3633')
+    const b = boiteDes(traits)
+    proche(b.x1 - b.x0, 300 * PX_PAR_MM, 1)
+    const [gauche, haut] = versMmPlanche(m.transform, [0, 20])
+    const premier = appels.find((a) => a.nom === 'moveTo' && a.strokeStyle === '#3A3633')
+    // Premier point du contour (0, 0) : en bas à gauche du bâtiment
+    proche(premier.pts[0][0], gauche * PX_PAR_MM, 1)
+    proche(premier.pts[0][1], (haut + 200) * PX_PAR_MM, 1)
+  })
+
+  test('sans vecteurs : l’image de l’étage placée par son cadrage', () => {
+    const m = mise({ pieces: [salle] })
+    const { ctx, appels } = enregistreur()
+    const image = { width: 300, height: 200 }
+    dessinerPlanche(ctx, m, { fond: { image, niveauCadrage: { x0: 0, y0: 0, x1: 30, y1: 20 } } })
+    const d = appels.find((a) => a.nom === 'drawImage' && a.args[0] === image)
+    assert.ok(d)
+    const [x, y] = versMmPlanche(m.transform, [0, 20])
+    proche(d.args[1], x * PX_PAR_MM, 1)
+    proche(d.args[2], y * PX_PAR_MM, 1)
+    proche(d.args[3], 300 * PX_PAR_MM, 1)
+  })
+
+  test('légende et cartouche écrits ; légende absente sur demande', () => {
+    const m = mise({ pieces: [salle], points: pts, elements: els, inclurePropositions: true })
+    const { ctx, appels } = enregistreur()
+    dessinerPlanche(ctx, m, { vecteurs })
+    const ecrits = textes(appels)
+    assert.ok(ecrits.includes('LÉGENDE – ÉTAT DES LIEUX RDC'))
+    assert.ok(ecrits.includes('Électricité'))
+    assert.ok(ecrits.includes('Prise de courant (×n : nb de prises)'))
+    assert.ok(ecrits.includes(m.legende.note))
+    assert.ok(ecrits.includes('EXISTANT - Plan RDC'))
+    for (const t of ['Bureaux de l’essai', '9902', '1:100', 'A3', 'EDL', '18/11/2026', '10-1', 'JGA']) assert.ok(ecrits.includes(t), `« ${t} » absent du cartouche`)
+    // Titre de la légende en blanc gras sur le bandeau noir
+    const titre = appels.find((a) => a.nom === 'fillText' && a.args[0] === m.legende.titre)
+    assert.equal(titre.fillStyle, '#FFFFFF')
+    assert.match(titre.font, /^bold [\d.]+px Arial, Helvetica, sans-serif$/)
+    const c = m.legende.cadreMm
+    assert.ok(appels.some((a) => a.nom === 'strokeRect' && Math.abs(a.args[0] - c.x * PX_PAR_MM) < 1e-6 && Math.abs(a.args[2] - c.largeur * PX_PAR_MM) < 1e-6))
+    // L'entrée « à valider » : le cercle pointillé des propositions
+    assert.ok(ecrits.includes('Proposition de l’analyse, à valider'))
+
+    const sans = enregistreur()
+    dessinerPlanche(sans.ctx, m, { vecteurs, avecLegende: false })
+    assert.ok(!textes(sans.appels).includes(m.legende.titre))
+    assert.ok(textes(sans.appels).includes('EXISTANT - Plan RDC'))
+  })
+
+  test('logo fourni : posé dans sa case, sans « JGA »', () => {
+    const m = mise({ pieces: [salle] })
+    const { ctx, appels } = enregistreur()
+    const logo = { width: 400, height: 200 }
+    dessinerPlanche(ctx, m, { logo })
+    const d = appels.find((a) => a.nom === 'drawImage' && a.args[0] === logo)
+    const k = m.cartouche.cases.find((x) => x.cle === 'logo')
+    assert.ok(d)
+    assert.ok(d.args[1] >= k.x * PX_PAR_MM && d.args[1] + d.args[3] <= (k.x + k.largeur) * PX_PAR_MM + 1e-6)
+    proche(d.args[3] / d.args[4], 2)
+    assert.ok(!textes(appels).includes('JGA'))
+  })
+
+  test('aucun appel hors du canevas', () => {
+    const m = mise({ pieces: [salle], points: pts, elements: els, inclurePropositions: true })
+    const { largeur, hauteur } = taillePlanchePx(m)
+    assert.equal(largeur, Math.round(420 * PX_PAR_MM))
+    assert.equal(hauteur, Math.round(297 * PX_PAR_MM))
+    // Moins de 16 Mpx (iPad)
+    assert.ok(largeur * hauteur <= 16_000_000)
+    const { ctx, appels } = enregistreur()
+    dessinerPlanche(ctx, m, { vecteurs })
+    const pts2 = appels.flatMap((a) => a.pts)
+    assert.ok(pts2.length > 50)
+    for (const [x, y] of pts2) {
+      assert.ok(x >= -1e-6 && x <= largeur + 1e-6 && y >= -1e-6 && y <= hauteur + 1e-6, `(${x}, ${y}) hors du canevas`)
+    }
+  })
+
+  test('symbole seul : losange sans type, « ×n », police Arial', () => {
+    const { ctx, appels } = enregistreur()
+    const s = { code: null, angle: 0, quantite: 1, aValider: false, couleur: '#8E44AD', tailleMm: { largeur: 3, hauteur: 3, ancre: [1.5, 1.5] } }
+    dessinerSymbole(ctx, s, { centrePx: [100, 100], pxParMm: 10 })
+    const b = boiteDes(appels.filter((a) => ['moveTo', 'lineTo'].includes(a.nom)))
+    assert.deepEqual(b, { x0: 85, y0: 85, x1: 115, y1: 115 })
+    assert.ok(appels.some((a) => a.nom === 'fill' && a.fillStyle === '#8E44AD'))
+
+    const prise = mise({ pieces: [salle], points: [point('a', 'p1', 1, 15, 10)], elements: [element('e1', 'p1', 'a', 'electricite', 'prise', 'Prise x4')] }).symboles[0]
+    const r = enregistreur()
+    dessinerSymbole(r.ctx, prise, { centrePx: [200, 200], pxParMm: 10 })
+    const ecrit = r.appels.find((a) => a.nom === 'fillText')
+    assert.equal(ecrit.args[0], '×4')
+    assert.equal(ecrit.font, `bold ${POLICE_MULTIPLE_MM * 10}px Arial, Helvetica, sans-serif`)
+    assert.equal(ecrit.fillStyle, prise.couleur)
+    // À droite du symbole, non tourné
+    assert.ok(ecrit.args[1] > 200 + (prise.tailleMm.largeur - prise.tailleMm.ancre[0]) * 10)
+    assert.ok(!r.appels.some((a) => a.nom === 'rotate'))
+    // Trait de 0,35 mm
+    assert.ok(r.appels.some((a) => a.nom === 'stroke' && Math.abs(a.lineWidth - 3.5) < 1e-9 && a.strokeStyle === prise.couleur))
+  })
+
+  test('texte d’un symbole tourné : toujours lisible', () => {
+    // RJ45 contre le mur du haut : tourné de 180°, son « RJ » reste à l'endroit
+    const m = mise({ pieces: [salle], points: [point('a', 'p1', 1, 15, 19.7)], elements: [element('e1', 'p1', 'a', 'electricite', 'rj45', 'RJ45')] })
+    const [s] = m.symboles
+    assert.equal(Math.abs(s.angle), 180)
+    const { ctx, appels } = enregistreur()
+    dessinerSymbole(ctx, s, { centrePx: [500, 500] })
+    const rot = appels.find((a) => a.nom === 'rotate')
+    assert.ok(Math.abs(rot.args[0]) < 1e-9)
+    assert.ok(textes(appels).includes('RJ'))
+  })
+
+  describe('ancre de la mise pour un symbole non carré tourné (image du Word)', () => {
+    // Goulotte et radiateur (muraux) contre le mur de droite : un quart de
+    // tour ; réglette (non murale) dans une pièce tournée de 30°
+    const tournee = (deg) => {
+      const a = (deg * Math.PI) / 180
+      return rect(0, 0, 30, 20).map(([x, y]) => [x * Math.cos(a) - y * Math.sin(a), x * Math.sin(a) + y * Math.cos(a)])
+    }
+    const cas = [
+      ['goulotte', 'electricite', salle, [29.8, 10], 90],
+      ['radiateur', 'chauffage', salle, [29.8, 10], 90],
+      ['reglette', 'electricite', piece('p1', tournee(30)), [5, 12], 30],
+    ]
+    for (const [code, calque, pc, [x, y], angle] of cas) {
+      test(`${code} tourné de ${angle}° : le point d’insertion tombe sur (xMm, yMm)`, () => {
+        const m = mise({ pieces: [pc], points: [point('a', 'p1', 1, x, y)], elements: [element('e1', 'p1', 'a', calque, code, code)] })
+        const [s] = m.symboles
+        proche(s.angle, angle, 1e-6)
+        if (angle === 90) assert.ok(s.tailleMm.hauteur > s.tailleMm.largeur, 'tourné : plus haut que large')
+        const p = 10
+        const { ctx, appels } = enregistreur()
+        dessinerSymbole(ctx, s, { centrePx: [s.xMm * p, s.yMm * p], pxParMm: p })
+        const b = boiteDes(appels.filter((a) => ['moveTo', 'lineTo'].includes(a.nom)))
+        // La boîte de la mise posée en (xMm − ancre[0], yMm − ancre[1]) recouvre le dessin
+        proche(b.x0, (s.xMm - s.tailleMm.ancre[0]) * p, 1)
+        proche(b.y0, (s.yMm - s.tailleMm.ancre[1]) * p, 1)
+        proche(b.x1, (s.xMm - s.tailleMm.ancre[0] + s.tailleMm.largeur) * p, 1)
+        proche(b.y1, (s.yMm - s.tailleMm.ancre[1] + s.tailleMm.hauteur) * p, 1)
+
+        // Même chose dans l'image seule : dessinée à `centre`, posée par lui
+        const img = tailleImageSymbole(s, p)
+        const r = enregistreur()
+        dessinerSymbole(r.ctx, s, { centrePx: img.centre, pxParMm: p })
+        const bi = boiteDes(r.appels.filter((a) => ['moveTo', 'lineTo'].includes(a.nom)))
+        assert.ok(bi.x0 >= 0 && bi.y0 >= 0 && bi.x1 <= img.largeur && bi.y1 <= img.hauteur)
+        proche(bi.x0 - img.centre[0], -s.tailleMm.ancre[0] * p, 1)
+        proche(bi.y0 - img.centre[1], -s.tailleMm.ancre[1] * p, 1)
+      })
+    }
+  })
+
+  test('tailleImageSymbole : « ×n » et cercle de proposition compris', () => {
+    const p = 10
+    const base = mise({ pieces: [salle], points: [point('a', 'p1', 1, 15, 10)], elements: [element('e1', 'p1', 'a', 'electricite', 'prise', 'Prise')] }).symboles[0]
+    const simple = tailleImageSymbole(base, p)
+    // La boîte du symbole et un peu d'air pour le trait
+    assert.ok(simple.largeur >= base.tailleMm.largeur * p && simple.largeur <= (base.tailleMm.largeur + 1.5) * p)
+    assert.ok(simple.centre[0] >= base.tailleMm.ancre[0] * p && simple.centre[1] >= base.tailleMm.ancre[1] * p)
+    const triple = tailleImageSymbole({ ...base, quantite: 3 }, p)
+    assert.ok(triple.largeur > simple.largeur + 2 * p)
+    assert.deepEqual(triple.centre, simple.centre)
+    // Le « ×3 » dessiné tient dans l'image
+    const r = enregistreur()
+    dessinerSymbole(r.ctx, { ...base, quantite: 3 }, { centrePx: triple.centre, pxParMm: p })
+    const ecrit = r.appels.find((a) => a.nom === 'fillText')
+    assert.ok(ecrit.args[1] + 2 * 0.65 * POLICE_MULTIPLE_MM * p <= triple.largeur)
+    // Proposition : le cercle pointillé tient dans l'image
+    const prop = tailleImageSymbole({ ...base, aValider: true }, p)
+    const rp = enregistreur()
+    dessinerSymbole(rp.ctx, { ...base, aValider: true }, { centrePx: prop.centre, pxParMm: p })
+    const bp = boiteDes(rp.appels.filter((a) => a.nom === 'arc' && a.strokeStyle === COULEUR_PROPOSITION))
+    assert.ok(bp.x0 >= 0 && bp.y0 >= 0 && bp.x1 <= prop.largeur && bp.y1 <= prop.hauteur)
+    assert.ok(Number.isInteger(prop.largeur) && Number.isInteger(prop.hauteur))
+  })
+
+  test('dessinerLegende à une autre origine', () => {
+    const m = mise({ pieces: [salle], points: pts, elements: els })
+    const { ctx, appels } = enregistreur()
+    dessinerLegende(ctx, m.legende, { origineMm: [0, 0], pxParMm: 10 })
+    const cadre = appels.filter((a) => a.nom === 'strokeRect').at(-1)
+    assert.deepEqual(cadre.args, [0, 0, m.legende.cadreMm.largeur * 10, m.legende.cadreMm.hauteur * 10])
+    const b = boiteDes(appels)
+    assert.ok(b.x0 >= -1e-6 && b.y0 >= -1e-6 && b.x1 <= m.legende.cadreMm.largeur * 10 + 1e-6 && b.y1 <= m.legende.cadreMm.hauteur * 10 + 1e-6)
+  })
 })

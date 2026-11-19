@@ -99,6 +99,25 @@ describe('assemblage du rapport : garde A4, planches A3, fiches A4', () => {
     assert.equal(textes[4], '9901 Maison de l’essai · État des lieux · page 5 / 5')
   })
 
+  test('numéros physiques : garde 1 p, 2 planches, tableaux 2 p, photos 1 p ⇒ « 1 / 6 », « 4 / 6 », « 5 / 6 », « 6 / 6 »', async () => {
+    const A3 = [1190.55, 841.89]
+    const tableaux = await PDFDocument.create()
+    tableaux.addPage(A3)
+    tableaux.addPage(A3)
+    const planche = { jpeg: JPEG, largeurMm: 420, hauteurMm: 297 }
+    const doc = await PDFDocument.load(await assemblerRapport({
+      documents: [
+        { octets: await pdfA4(1), pied: true },
+        { planches: [planche, planche] },
+        { octets: await tableaux.save(), pied: true },
+        { octets: await pdfA4(1), pied: true },
+      ],
+      pied: piedRapportEdl(affaire),
+    }))
+    const pieds = doc.getPages().map(texteDePage).map((t) => t.replace(/^.* · page /, ''))
+    assert.deepEqual(pieds, ['1 / 6', '', '', '4 / 6', '5 / 6', '6 / 6'])
+  })
+
   test('un document marqué sans pied n’en reçoit pas', async () => {
     const doc = await PDFDocument.load(await assemblerRapport({ documents: [{ octets: await pdfA4(1), pied: false }], pied: 'X' }))
     assert.equal(texteDePage(doc.getPages()[0]), '')

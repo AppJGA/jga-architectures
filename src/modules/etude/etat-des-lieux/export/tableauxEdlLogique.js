@@ -29,41 +29,6 @@ export const libellePiece = (piece) => rempli([piece?.numero, piece?.nom].filter
 
 export const LIBELLE_HORS_PIECES = 'Hors pièces'
 
-// ─── Pluriels des libellés de type (« 3 prises de courant ») ─────────────────
-
-// Libellés que la règle générale accorderait mal (« plafond » n'est pas un adjectif)
-const PLURIELS = {
-  dalle: 'luminaires plafond carrés (dalles)',
-  reglette: 'luminaires linéaires (réglettes)',
-}
-
-const LIENS = new Set(['de', 'du', 'des', 'en', 'à', 'a', 'au', 'sous', 'sur', 'pour', 'avec'])
-
-function plurielMot(mot) {
-  if (/[sxz]$/i.test(mot)) return mot
-  if (/(?:eau|au|eu)$/i.test(mot)) return `${mot}x`
-  if (/al$/i.test(mot)) return `${mot.slice(0, -2)}aux`
-  return `${mot}s`
-}
-
-const sigle = (mot) => /^[A-Z0-9]{2,}$/.test(mot)
-
-/**
- * « Prise de courant » → « prises de courant » : on accorde les mots jusqu'au
- * premier mot de liaison ou parenthèse ; un sigle (WC, RJ45) reste tel quel.
- */
-export function plurielLibelle(libelle, code = null) {
-  if (code && PLURIELS[code]) return PLURIELS[code]
-  let arret = false
-  return String(libelle ?? '').split(' ').map((mot, i) => {
-    if (arret || !mot) return mot
-    const bas = mot.toLowerCase()
-    if (LIENS.has(bas) || /^[dl][’']/.test(bas) || mot.startsWith('(')) { arret = true; return mot }
-    const accorde = sigle(mot) ? mot : plurielMot(mot)
-    return i === 0 && !sigle(mot) ? accorde.charAt(0).toLowerCase() + accorde.slice(1) : accorde
-  }).join(' ')
-}
-
 // Comparaison sans casse ni accents (« Prise de courant » ≡ « prise de courant »)
 const cle = (t) => String(t ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim()
 
@@ -104,34 +69,25 @@ function contenuReleves({ elements = [], sansElement = [], photos = [], remarque
       }
       continue
     }
-    // Un type, et à part ses propositions ; un élément sans type se range par son libellé
+    // Mêmes type, libellé et cotes (propositions à part) : une ligne, son
+    // nombre, ses photos. Un libellé vide ou qui n'apprend rien sur le type
+    // (« Prise » pour « Prise de courant ») vaut le libellé du type
     const paquets = new Map()
     for (const e of groupe.elements) {
-      const k = `${e.aValider ? 'v' : 'r'}|${e.type ? `t:${e.type}` : `l:${cle(ligneElement(e).libelle)}`}`
-      if (!paquets.has(k)) paquets.set(k, [])
-      paquets.get(k).push(e)
+      const l = ligneElement(e)
+      const base = texteLatin(typeEdl(e.type)?.libelle)
+      const libelle = base && cle(base).startsWith(cle(l.libelle)) ? base : l.libelle
+      const k = [e.aValider ? 'v' : 'r', e.type ?? '', cle(libelle), cle(l.cotes)].join('|')
+      if (!paquets.has(k)) paquets.set(k, { libelle, cotes: l.cotes, aValider: !!e.aValider, elements: [] })
+      paquets.get(k).elements.push(e)
     }
     for (const paquet of paquets.values()) {
-      const [premier] = paquet
-      const type = typeEdl(premier.type)
-      const n = paquet.reduce((s, e) => s + quantiteElement(e), 0)
-      let titre
-      if (type) {
-        const base = texteLatin(type.libelle)
-        // Ce que le libellé dit de plus que le type (« Sèche-serviettes ») ;
-        // « Prise » n'apprend rien sur « Prise de courant »
-        const precis = [...new Set(paquet.map((e) => ligneElement(e).libelle).filter((t) => !cle(base).startsWith(cle(t))))]
-        if (n === 1 && precis.length === 1) titre = precis[0]
-        else {
-          titre = n > 1 ? `${n} ${texteLatin(plurielLibelle(type.libelle, type.code))}` : base
-          if (precis.length) titre += ` (${precis.join(', ')})`
-        }
-      } else {
-        titre = ligneElement(premier).libelle + (n > 1 ? ` ×${n}` : '')
-      }
-      const cotes = [...new Set(paquet.map((e) => ligneElement(e).cotes).filter(Boolean))].join(' ; ')
-      const ph = photosTexte(paquet.flatMap((e) => photosDuPoint(e.pointId)))
-      equipements.push({ texte: assembler([titre, cotes, ph]), aValider: !!premier.aValider, sorte: 'equipement' })
+      const n = paquet.elements.reduce((total, e) => total + quantiteElement(e), 0)
+      const ph = photosTexte(paquet.elements.flatMap((e) => photosDuPoint(e.pointId)))
+      equipements.push({
+        texte: assembler([n > 1 ? `${paquet.libelle} ×${n}` : paquet.libelle, paquet.cotes, ph]),
+        aValider: paquet.aValider, sorte: 'equipement',
+      })
     }
   }
 

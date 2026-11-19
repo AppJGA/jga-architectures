@@ -237,9 +237,9 @@ describe('rapport PDF : structure', () => {
     assert.ok(lignesDuNiveau(def, 'n2')[0][0].includes('HSP 2,45 m'), 'HSP dite en visite')
   })
 
-  test('équipements regroupés par calque puis par type, cotes et « Ph n » à la suite', () => {
+  test('équipements par calque, une ligne par libellé et cotes, « ×n », « Ph n » à la suite', () => {
     const sejour = lignesDuNiveau(def, 'n1')[0][5]
-    assert.match(sejour, /Arrivée d’eau en attente.*2 prises de courant \(Prise double\) · h 0,30 · Ph 1.*Interrupteur.*Fenêtre · 1,20 × 1,35/)
+    assert.match(sejour, /Arrivée d’eau en attente.*Prise double ×2 · h 0,30 · Ph 1.*Interrupteur.*Fenêtre · 1,20 × 1,35/)
   })
 
   test('propositions marquées « à valider »', () => {

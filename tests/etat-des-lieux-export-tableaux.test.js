@@ -8,9 +8,11 @@ import { test, describe } from 'node:test'
 
 import { elementsAExporter } from '../src/modules/etude/etat-des-lieux/export/exportDxfEdl.js'
 import { numeroterPhotos } from '../src/modules/etude/etat-des-lieux/export/numerotationEdl.js'
-import { etiquetteStatut } from '../src/modules/etude/etat-des-lieux/export/rapportEdlLogique.js'
+import pdfmake from 'pdfmake'
+import { PDFDocument } from 'pdf-lib'
+import { LIGNES_PAR_RANGEE, definitionTableauxEdl, etiquetteStatut, rangeesDeLigne } from '../src/modules/etude/etat-des-lieux/export/rapportEdlLogique.js'
 import {
-  comptesLignes, ligneHorsPieces, lignesTableau, plurielLibelle, syntheseRapport, tableauxDuRapport, texteComptes, tronquer,
+  comptesLignes, ligneHorsPieces, lignesTableau, syntheseRapport, tableauxDuRapport, texteComptes, tronquer,
 } from '../src/modules/etude/etat-des-lieux/export/tableauxEdlLogique.js'
 
 const carre = (x, y, c) => [[x, y], [x + c, y], [x + c, y + c], [x, y + c]]
@@ -64,18 +66,6 @@ const photos = numeroterPhotos([
 
 const donnees = (plus = {}) => ({ niveaux, pieces, elementsExport: exporter(true), photos, points, elements, visitees: new Set(), ...plus })
 
-describe('pluriels des libellés de type', () => {
-  test('mots accordés jusqu’au premier mot de liaison ; sigles intacts', () => {
-    assert.equal(plurielLibelle('Prise de courant'), 'prises de courant')
-    assert.equal(plurielLibelle('Tableau électrique'), 'tableaux électriques')
-    assert.equal(plurielLibelle('Point lumineux en applique'), 'points lumineux en applique')
-    assert.equal(plurielLibelle('Prise informatique RJ45'), 'prises informatiques RJ45')
-    assert.equal(plurielLibelle('Ballon d’eau chaude'), 'ballons d’eau chaude')
-    assert.equal(plurielLibelle('WC'), 'WC')
-    assert.equal(plurielLibelle('Luminaire plafond carré (dalle)', 'dalle'), 'luminaires plafond carrés (dalles)')
-  })
-})
-
 describe('lignes du tableau d’un niveau', () => {
   const { etages } = tableauxDuRapport(donnees({ inclurePropositions: true }))
   const [rdc, r1] = etages
@@ -103,9 +93,10 @@ describe('lignes du tableau d’un niveau', () => {
     assert.equal(cuisine.porte, null)
   })
 
-  test('équipements groupés par type avec leur nombre, cotes et « Ph n » ; désordres et remarques à part', () => {
+  test('équipements : une ligne par type, libellé et cotes, « ×n », cotes et « Ph n » ; désordres et remarques à part', () => {
     assert.deepEqual(sejour.equipements.map((e) => e.texte), [
-      '4 prises de courant (Prise triple) · h 0,30 · Ph 1',
+      'Prise de courant · Ph 1',
+      'Prise triple ×3 · h 0,30',
       'Sèche-serviettes',
     ])
     assert.deepEqual(sejour.particuliers.map((p) => [p.sorte, p.texte]), [
@@ -114,6 +105,21 @@ describe('lignes du tableau d’un niveau', () => {
       ['point', 'P5 (point sans élément) · Ph 3'],
     ])
     assert.deepEqual(cuisine.equipements, [{ texte: 'Arrivée d’eau en attente', aValider: true, sorte: 'equipement' }])
+  })
+
+  test('regroupement : même type, même libellé (vide ou générique = celui du type), mêmes cotes', () => {
+    const el = (id, type, libelle, cotes = null) => ({ id, pieceId: 'p2', pointId: null, calque: 'electricite', type, libelle, cotes, x: 6, y: 1 })
+    const [l] = lignesTableau({
+      pieces: [pieces[1]], points: [], photos: [], sansElement: [],
+      elementsExport: [
+        el('a', 'prise', ''), el('b', 'prise', 'Prise'), el('c', 'prise', 'prise de courant'),
+        el('d', 'prise', 'Prise double', 'h 0,30'), el('e', 'prise', 'Prise double', 'h 0,30'), el('f', 'prise', 'Prise double', 'h 1,10'),
+        el('g', 'interrupteur', 'Interrupteur'),
+      ],
+    })
+    assert.deepEqual(l.equipements.map((e) => e.texte), [
+      'Prise de courant ×3', 'Prise double ×4 · h 0,30', 'Prise double ×2 · h 1,10', 'Interrupteur',
+    ])
   })
 
   test('ligne « Hors pièces » : équipements et points particuliers seulement', () => {
@@ -206,5 +212,60 @@ describe('étiquettes de statut (PDF)', () => {
     assert.equal(cellule('conserver').fillColor, undefined)
     assert.equal(cellule('inconnu').text, 'À PRÉCISER')
     assert.equal(etiquetteStatut('rafraichir').layout.hLineColor(), '#B7700A')
+  })
+})
+
+describe('pièce aux très nombreux relevés : rangées « (suite) »', () => {
+  const beaucoup = () => {
+    const piece = { id: 'pg', niveau_id: 'n1', ordre: 0, numero: '01', nom: 'Grand hall', contour: carre(0, 0, 20), fiche: { sol: 'Carrelage', remarques: 'Remarque '.repeat(40) } }
+    const pts = Array.from({ length: 80 }, (_, i) => ({ id: `q${i}`, niveau_id: 'n1', piece_id: 'pg', numero: i + 1, x: 1 + (i % 15), y: 1 + Math.floor(i / 15), type: null }))
+    const els = pts.map((p, i) => ({
+      id: `f${i}`, piece_id: 'pg', point_id: p.id, a_valider: false,
+      ...(i < 60
+        ? { calque: 'electricite', type: 'prise', libelle: `Prise de courant repérée ${i}`, cotes: `h 0,${10 + i}` }
+        : { calque: 'desordres', type: 'fissure', libelle: `Fissure relevée en partie ${i} du mur, ouverte de quelques millimètres` }),
+    }))
+    return { niveaux: [niveaux[0]], pieces: [piece], points: pts, elements: els, elementsExport: elementsAExporter({ pieces: [piece], points: pts, elements: els }), photos: [], visitees: null }
+  }
+
+  test('la ligne se découpe, chaque rangée tient dans le budget, la première porte la pièce', () => {
+    const { etages } = tableauxDuRapport(beaucoup())
+    const [ligne] = etages[0].lignes
+    assert.equal(ligne.equipements.length, 60)
+    assert.equal(ligne.particuliers.length, 21)
+    const rangees = rangeesDeLigne(ligne)
+    assert.ok(rangees.length >= 2, `${rangees.length} rangées`)
+    assert.equal(rangees[0].suite, undefined)
+    assert.ok(rangees.slice(1).every((r) => r.suite && r.porte === null && r.sol.length === 0))
+    // Rien de perdu, dans l'ordre
+    assert.deepEqual(rangees.flatMap((r) => r.equipements), ligne.equipements)
+    assert.deepEqual(rangees.flatMap((r) => r.particuliers), ligne.particuliers)
+    for (const r of rangees) {
+      const lignes = (items, car) => items.reduce((n, it) => n + Math.ceil(it.texte.length / car) + 0.3, 0)
+      assert.ok(lignes(r.equipements, 42) <= LIGNES_PAR_RANGEE && lignes(r.particuliers, 40) <= LIGNES_PAR_RANGEE)
+    }
+    // Une ligne ordinaire reste entière
+    assert.equal(rangeesDeLigne(tableauxDuRapport(donnees()).etages[0].lignes[0]).length, 1)
+  })
+
+  test('un texte seul plus long que la rangée est coupé entre deux mots', () => {
+    const texte = 'mot '.repeat(1200).trim()
+    const rangees = rangeesDeLigne({ piece: {}, sol: [], mur: [], plafond: [], porte: null, equipements: [], particuliers: [{ texte, sorte: 'remarque' }] })
+    assert.ok(rangees.length >= 2)
+    assert.equal(rangees.flatMap((r) => r.particuliers.map((p) => p.texte)).join(' '), texte)
+  })
+
+  test('rendu réel par pdfmake (Node) : le PDF se construit, en peu de pages A3', async () => {
+    const f = new URL('../node_modules/pdfmake/fonts/Roboto/', import.meta.url).pathname
+    pdfmake.setFonts({ Roboto: { normal: `${f}Roboto-Regular.ttf`, bold: `${f}Roboto-Medium.ttf`, italics: `${f}Roboto-Italic.ttf`, bolditalics: `${f}Roboto-MediumItalic.ttf` } })
+    pdfmake.setUrlAccessPolicy?.(() => false)
+    pdfmake.setLocalAccessPolicy?.(() => true)
+    const def = definitionTableauxEdl({ ...beaucoup(), affaire: { nom: 'Essai' }, date: '2026-11-19' })
+    const corps = def.content.find((n) => n.id === 'niveau-n1').stack.find((n) => n.table).table.body
+    assert.ok(corps.length >= 3, 'en-tête + au moins deux rangées')
+    assert.ok(JSON.stringify(corps[2][0]).includes('(suite)'))
+    const doc = await PDFDocument.load(await pdfmake.createPdf(def).getBuffer())
+    assert.ok(doc.getPageCount() >= 1 && doc.getPageCount() <= 4, `${doc.getPageCount()} pages`)
+    for (const page of doc.getPages()) assert.deepEqual(Object.values(page.getSize()).map(Math.round), [1191, 842])
   })
 })

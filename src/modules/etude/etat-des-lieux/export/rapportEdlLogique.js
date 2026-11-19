@@ -339,22 +339,83 @@ function celluleListe(items) {
   }
 }
 
-function cellulePiece({ piece, ficheAValider, hors }) {
+function cellulePiece({ piece, ficheAValider, hors, suite }) {
   return {
     stack: [
       {
         text: [
           ...(piece.numero ? [{ text: `${piece.numero}  `, fontSize: 7.5, bold: true, color: CHARTE.orangeFonce }] : []),
           { text: piece.designation, fontSize: 11, bold: true, color: hors ? CHARTE.discret : CHARTE.encre },
+          ...(suite ? [{ text: ' (suite)', fontSize: 9, bold: false, color: CHARTE.discret }] : []),
         ],
       },
-      ...(piece.surface || piece.hsp
+      ...(suite ? [] : piece.surface || piece.hsp
         ? [{ text: [piece.surface, piece.hsp ? `HSP ${piece.hsp}` : null].filter(Boolean).join(' · '), fontSize: 7, color: CHARTE.discret, margin: [0, 1, 0, 0] }]
         : []),
-      ...(hors ? [{ text: 'Relevés posés en dehors des pièces dessinées', fontSize: 6.5, italics: true, color: CHARTE.discret, margin: [0, 1, 0, 0] }] : []),
-      ...(ficheAValider ? [{ text: 'Fiche proposée, à valider', italics: true, fontSize: 6.5, color: COULEUR_PROPOSITION, margin: [0, 1, 0, 0] }] : []),
+      ...(hors && !suite ? [{ text: 'Relevés posés en dehors des pièces dessinées', fontSize: 6.5, italics: true, color: CHARTE.discret, margin: [0, 1, 0, 0] }] : []),
+      ...(ficheAValider && !suite ? [{ text: 'Fiche proposée, à valider', italics: true, fontSize: 6.5, color: COULEUR_PROPOSITION, margin: [0, 1, 0, 0] }] : []),
     ],
   }
+}
+
+// Une rangée de tableau reste insécable (`dontBreakRows`, réglé pour tout le
+// tableau) ; une pièce aux très nombreux relevés ferait une rangée plus haute
+// que la page, que pdfmake ne sait plus placer. Ses textes continuent alors
+// sur des rangées « (suite) », chacune insécable : on estime les lignes de
+// texte de chaque colonne (caractères par ligne, prudents, d'après la largeur
+// de la colonne à 8 pt) et on coupe au-delà de `LIGNES_PAR_RANGEE` — environ
+// 450 pt, la moitié d'une page A3 paysage utile.
+export const LIGNES_PAR_RANGEE = 45
+const CARACTERES_PAR_LIGNE = { sol: 22, mur: 20, plafond: 18, equipements: 42, particuliers: 40 }
+
+const lignesEstimees = (texte, car) => Math.max(1, Math.ceil(String(texte ?? '').length / car)) + 0.3
+
+// Un texte seul plus long que la rangée est coupé entre deux mots
+function morceauxItem(item, car) {
+  const max = Math.floor((LIGNES_PAR_RANGEE - 1) * car)
+  const texte = String(item.texte ?? '')
+  if (texte.length <= max) return [item]
+  const morceaux = []
+  let reste = texte
+  while (reste.length > max) {
+    const espace = reste.lastIndexOf(' ', max)
+    const coupe = espace > max * 0.5 ? espace : max
+    morceaux.push(reste.slice(0, coupe).trim())
+    reste = reste.slice(coupe).trim()
+  }
+  if (reste) morceaux.push(reste)
+  return morceaux.map((t) => ({ ...item, texte: t }))
+}
+
+function paquetsColonne(items = [], car) {
+  const paquets = [[]]
+  let lignes = 0
+  for (const item of items.flatMap((it) => morceauxItem(it, car))) {
+    const n = lignesEstimees(item.texte, car)
+    if (lignes + n > LIGNES_PAR_RANGEE && paquets.at(-1).length) {
+      paquets.push([])
+      lignes = 0
+    }
+    paquets.at(-1).push(item)
+    lignes += n
+  }
+  return paquets
+}
+
+/**
+ * Rangées d'une ligne du tableau : la ligne elle-même, ou, si elle déborde,
+ * la ligne puis ses rangées « (suite) » (`suite: true`, sans porte).
+ */
+export function rangeesDeLigne(ligne) {
+  const colonnes = Object.keys(CARACTERES_PAR_LIGNE)
+  const decoupe = Object.fromEntries(colonnes.map((c) => [c, paquetsColonne(ligne[c], CARACTERES_PAR_LIGNE[c])]))
+  const n = Math.max(...colonnes.map((c) => decoupe[c].length))
+  if (n === 1) return [ligne]
+  return Array.from({ length: n }, (_, i) => ({
+    ...ligne,
+    ...Object.fromEntries(colonnes.map((c) => [c, decoupe[c][i] ?? []])),
+    ...(i ? { suite: true, porte: null } : {}),
+  }))
 }
 
 const enteteColonne = (t) => ({ text: t.toUpperCase(), fontSize: 6.5, bold: true, color: CHARTE.discret, characterSpacing: 0.6 })
@@ -377,17 +438,21 @@ function tableauNiveau(lignes) {
       widths: LARGEURS,
       body: [
         COLONNES.map(enteteColonne),
-        ...lignes.map((l) => [
-          cellulePiece(l),
-          ...(l.hors ? [sansObjet(), sansObjet(), sansObjet(), sansObjet()] : [
-            celluleMateriaux(l.sol, l.ficheAValider),
-            celluleMateriaux(l.mur, l.ficheAValider),
-            celluleMateriaux(l.plafond, l.ficheAValider),
-            cellulePorte(l.porte, l.ficheAValider),
-          ]),
-          l.hors && !l.equipements.length ? sansObjet() : celluleListe(l.equipements),
-          l.hors && !l.particuliers.length ? sansObjet() : celluleListe(l.particuliers),
-        ]),
+        ...lignes.flatMap(rangeesDeLigne).map((l) => {
+          // Ligne « Hors pièces » ou suite d'une pièce : une case vide est sans objet
+          const vide = (items, cellule) => ((l.hors || l.suite) && !items?.length ? sansObjet() : cellule())
+          return [
+            cellulePiece(l),
+            ...(l.hors ? [sansObjet(), sansObjet(), sansObjet(), sansObjet()] : [
+              vide(l.sol, () => celluleMateriaux(l.sol, l.ficheAValider)),
+              vide(l.mur, () => celluleMateriaux(l.mur, l.ficheAValider)),
+              vide(l.plafond, () => celluleMateriaux(l.plafond, l.ficheAValider)),
+              l.suite ? sansObjet() : cellulePorte(l.porte, l.ficheAValider),
+            ]),
+            vide(l.equipements, () => celluleListe(l.equipements)),
+            vide(l.particuliers, () => celluleListe(l.particuliers)),
+          ]
+        }),
       ],
     },
   }
@@ -438,7 +503,7 @@ function legendeTableau() {
       })),
     },
     {
-      text: '« Non décrit » : rien n’a été relevé pour cette rubrique. Équipements et points particuliers n’ont pas de statut ; cotes et « Ph n » renvoient aux planches et à l’annexe photos.',
+      text: '« Non décrit » : rien n’a été relevé pour cette rubrique ; « — » : sans objet. Équipements et points particuliers n’ont pas de statut ; cotes et « Ph n » renvoient aux planches et à l’annexe photos.',
       fontSize: 7, color: CHARTE.discret, margin: [0, 5, 0, 14],
     },
   ])

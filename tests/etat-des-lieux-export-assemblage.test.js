@@ -1,5 +1,5 @@
 // État des lieux, planches A3 : assemblage du rapport par pdf-lib (garde A4,
-// une planche A3 paysage par étage, fiches A4 en annexe, pied de page).
+// une planche A3 paysage par étage, tableaux A3 paysage, photos A4, pied de page).
 // Les PDF « garde » et « fiches » sont fabriqués ici par pdf-lib (pdfmake ne
 // tourne pas dans Node) ; la planche est un vrai JPEG de 4 × 3 pixels inventé.
 
@@ -69,6 +69,39 @@ describe('assemblage du rapport : garde A4, planches A3, fiches A4', () => {
     assert.equal(textes[2], '')
     assert.equal(textes[3], '9901 Maison de l’essai · État des lieux · page 4 / 5')
     assert.equal(textes[4], '9901 Maison de l’essai · État des lieux · page 5 / 5')
+  })
+
+  test('suite de documents : garde A4, planches A3, tableaux A3 paysage, photos A4 ; pied partout sauf sur les planches', async () => {
+    const A3 = [1190.55, 841.89]
+    const tableaux = await PDFDocument.create()
+    tableaux.addPage(A3)
+    tableaux.addPage(A3)
+    const octets = await assemblerRapport({
+      documents: [
+        { octets: await pdfA4(1), pied: true },
+        { planches: [{ jpeg: JPEG, largeurMm: 420, hauteurMm: 297 }] },
+        { octets: await tableaux.save(), pied: true },
+        { octets: null, pied: true }, // annexe absente : rien
+        { octets: await pdfA4(1), pied: true },
+      ],
+      pied: piedRapportEdl(affaire),
+    })
+    const doc = await PDFDocument.load(octets)
+    const tailles = doc.getPages().map((p) => {
+      const { width, height } = p.getSize()
+      return [Math.round(width), Math.round(height)]
+    })
+    assert.deepEqual(tailles, [[595, 842], [1191, 842], [1191, 842], [1191, 842], [595, 842]])
+    const textes = doc.getPages().map(texteDePage)
+    assert.equal(textes[1], '', 'la planche a son cartouche')
+    assert.equal(textes[2], '9901 Maison de l’essai · État des lieux · page 3 / 5')
+    assert.equal(textes[3], '9901 Maison de l’essai · État des lieux · page 4 / 5')
+    assert.equal(textes[4], '9901 Maison de l’essai · État des lieux · page 5 / 5')
+  })
+
+  test('un document marqué sans pied n’en reçoit pas', async () => {
+    const doc = await PDFDocument.load(await assemblerRapport({ documents: [{ octets: await pdfA4(1), pied: false }], pied: 'X' }))
+    assert.equal(texteDePage(doc.getPages()[0]), '')
   })
 
   test('sans fiches ni planches : la garde seule, « page 1 / 1 »', async () => {

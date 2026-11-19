@@ -1,4 +1,4 @@
-// État des lieux, lot 4 (export) : rapport PDF pièce par pièce.
+// État des lieux, lot 4 (export) : rapport PDF (garde, tableaux par niveau, annexe photos).
 // Affaire, pièces et relevés inventés : aucun plan ni nom réel dans le dépôt (public).
 // Les éléments exportés sont fabriqués par le vrai `elementsAExporter` (export
 // DXF) : le contrat entre les deux exports est exercé, pas imité.
@@ -6,14 +6,13 @@
 import assert from 'node:assert/strict'
 import { test, describe } from 'node:test'
 
-import { CALQUES } from '../src/modules/etude/etat-des-lieux/calquesEdl.js'
 import { elementsAExporter } from '../src/modules/etude/etat-des-lieux/export/exportDxfEdl.js'
 import { dxfDuNiveau, preparerExport } from '../src/modules/etude/etat-des-lieux/export/exportFenetreLogique.js'
 import { lireDxf } from '../src/modules/etude/etat-des-lieux/dxfLecture.js'
 import { decalagesSymboles } from '../src/modules/etude/etat-des-lieux/export/symbolesEdl.js'
 import { numeroterPhotos } from '../src/modules/etude/etat-des-lieux/export/numerotationEdl.js'
 import {
-  definitionFichesEdl, definitionGardeEdl, etagesDuRapport, groupesElements, hspPiece, HORS_LATIN, nombreFr, nomFichierRapportEdl,
+  definitionGardeEdl, definitionPhotosEdl, definitionTableauxEdl, etagesDuRapport, groupesElements, hspPiece, HORS_LATIN, nombreFr, nomFichierRapportEdl,
   pieceVisitee, piedRapportEdl, pointsSansElement, relevesHorsPieces, surfacePiece, texteLatin,
 } from '../src/modules/etude/etat-des-lieux/export/rapportEdlLogique.js'
 import {
@@ -73,12 +72,13 @@ const images = {
   photos: new Map([['ph1', IMG], ['ph2', IMG], ['ph3', IMG]]),
 }
 
-// Le PDF hors planches : la garde, puis les fiches en annexe (les planches A3
-// sont dessinées et posées par l'assemblage)
+// Le PDF hors planches : la garde, les tableaux par niveau (A3 paysage), puis
+// l'annexe des photos (les planches A3 sont dessinées et posées par l'assemblage)
 function rapportPdf(d) {
   const garde = definitionGardeEdl(d)
-  const fiches = definitionFichesEdl(d)
-  return { garde, fiches, content: [...garde.content, ...(fiches?.content ?? [])] }
+  const tableaux = definitionTableauxEdl(d)
+  const photos = definitionPhotosEdl(d)
+  return { garde, tableaux, photos, content: [...garde.content, ...(tableaux?.content ?? []), ...(photos?.content ?? [])] }
 }
 
 const donnees = (plus = {}) => ({
@@ -99,17 +99,11 @@ function textes(noeud, acc = []) {
 }
 const texteDe = (n) => textes(n).join(' ')
 
-// Intertitres de calque (gras, corps 9), à toute profondeur des blocs
-function intertitres(noeud) {
-  const vus = []
-  const parcourir = (n) => {
-    if (Array.isArray(n)) return n.forEach(parcourir)
-    if (!n || typeof n !== 'object') return
-    if (typeof n.text === 'string' && n.bold && n.fontSize === 9) vus.push(n.text)
-    if (n.stack) parcourir(n.stack)
-  }
-  parcourir(noeud.stack)
-  return vus
+// Lignes du tableau d'un niveau (sans l'en-tête), chacune en texte par cellule
+function lignesDuNiveau(def, niveauId) {
+  const bloc = def.tableaux.content.find((n) => n.id === `niveau-${niveauId}`)
+  const tableau = bloc.stack.find((n) => n.table?.headerRows === 1)
+  return tableau ? tableau.table.body.slice(1).map((cellules) => cellules.map(texteDe)) : []
 }
 
 describe('rapport PDF et DXF : mêmes fiches, même HSP, mêmes photos', () => {
@@ -142,13 +136,16 @@ describe('rapport PDF et DXF : mêmes fiches, même HSP, mêmes photos', () => {
   test('fiche proposée incluse : imprimée des deux côtés, HSP lue toujours en tête', () => {
     const { pdf, dxf } = exporterLesDeux(donneesFenetre(), true)
     assert.ok(pdf.includes('Moquette proposée') && dxf.includes('Moquette proposée'))
+    assert.ok(pdf.includes('Fiche proposée, à valider'))
     assert.ok(pdf.includes('2,50 m') && dxf.includes('HSP 2,50 m'))
   })
 
-  test('pièce dont la seule trace est une fiche proposée écartée : pas de fiche', () => {
+  test('pièce dont la seule trace est une fiche proposée écartée : pas de ligne, citée non visitée', () => {
     const prep = preparerExport(donneesFenetre({ points: [], photos: [], elements: [] }), { niveaux: ['n1'], rapport: true })
     const r = rapportPdf({ ...prep.rapport, images: {} })
-    assert.equal(r.fiches, null)
+    assert.deepEqual(lignesDuNiveau(r, 'n1'), [])
+    assert.ok(texteDe(r.tableaux.content).includes('Pièces non visitées (1) :  Chambre'), texteDe(r.tableaux.content))
+    assert.equal(r.photos, null)
     const garde = r.garde.content[0].stack.find((n) => n.table?.headerRows === 1)
     assert.deepEqual(garde.table.body[1].slice(1).map((c) => c.text), ['1', '0', '0'])
   })
@@ -161,14 +158,16 @@ describe('rapport PDF et DXF : mêmes fiches, même HSP, mêmes photos', () => {
     assert.ok(dxf.includes('Ph 1'), dxf)
   })
 
-  test('point hors de toute pièce : page « Hors pièces », « Ph 1 » des deux côtés, compté sur la garde', () => {
+  test('point hors de toute pièce : ligne « Hors pièces », « Ph 1 » des deux côtés, compté sur la garde', () => {
     const d = donneesFenetre({ points: [{ id: 'pt1', niveau_id: 'n1', piece_id: null, numero: 3, x: 6, y: 1, type: null }] })
     const prep = preparerExport(d, { niveaux: ['n1'], rapport: true })
     assert.equal(prep.rapport.points[0].piece_id, null)
     const def = rapportPdf({ ...prep.rapport, images: { photos: new Map([['ph1', IMG]]) } })
-    const hors = def.content.find((n) => n.id === 'hors-pieces-n1')
-    assert.ok(hors, def.content.map((n) => n.id).join(', '))
-    assert.ok(texteDe(hors).includes('Hors pièces') && texteDe(hors).includes('Ph 1') && texteDe(hors).includes('Prise'))
+    const lignes = lignesDuNiveau(def, 'n1')
+    const hors = lignes.at(-1)
+    assert.ok(hors[0].includes('Hors pièces'), hors.join(' | '))
+    assert.ok(hors[5].includes('Prise de courant · Ph 1'), hors[5])
+    assert.ok(texteDe(def.photos.content).includes('Ph 1 · Hors pièces · P3 · Prise'))
     // La garde compte l'élément posé hors pièce
     const garde = def.content[0].stack.find((n) => n.table?.headerRows === 1)
     assert.equal(garde.table.body[1][3].text, '1')
@@ -180,7 +179,6 @@ describe('rapport PDF et DXF : mêmes fiches, même HSP, mêmes photos', () => {
 
 describe('rapport PDF : structure', () => {
   const def = rapportPdf(donnees())
-  const ids = def.content.map((n) => n.id)
 
   test('les éléments viennent bien d’elementsAExporter (pointId, numéro du point)', () => {
     assert.ok(elementsExport.every((e) => 'pointId' in e))
@@ -188,96 +186,96 @@ describe('rapport PDF : structure', () => {
     assert.ok(!elementsExport.some((e) => e.id === 'e6'), 'calque inconnu écarté par l’export')
   })
 
-  test('page de garde, puis en annexe les fiches des pièces visitées, étage par étage (dans l’ordre)', () => {
-    // Plus de page « plan » : la planche A3 de chaque étage la remplace
-    assert.deepEqual(ids, ['garde', 'fiche-p1', 'fiche-p2', 'fiche-p4'])
+  test('garde, puis un tableau par niveau (dans l’ordre), puis l’annexe des photos', () => {
     assert.deepEqual(def.garde.content.map((n) => n.id), ['garde'])
+    assert.deepEqual(def.tableaux.content.map((n) => n.id).filter(Boolean), ['tableaux', 'niveau-n1', 'niveau-n2'])
+    assert.equal(def.photos.content[0].id, 'photos')
     const garde = texteDe(def.content[0])
     for (const attendu of ['État des lieux', 'Maison de l’essai', '9901', '1 rue Imaginaire Villefictive', 'Rédacteur Inventé', '18 novembre 2026', 'RDC', 'R+1']) {
       assert.ok(garde.includes(attendu), `garde sans « ${attendu} »`)
     }
   })
 
-  test('garde et fiches : deux documents A4 portrait, sans pied pdfmake ; une fiche par page', () => {
-    for (const d of [def.garde, def.fiches]) {
-      assert.equal(d.pageSize, 'A4')
-      assert.equal(d.pageOrientation, 'portrait')
+  test('formats : garde et photos A4 portrait, tableaux A3 paysage, sans pied pdfmake ; un niveau par page', () => {
+    for (const [d, taille, sens] of [[def.garde, 'A4', 'portrait'], [def.tableaux, 'A3', 'landscape'], [def.photos, 'A4', 'portrait']]) {
+      assert.equal(d.pageSize, taille)
+      assert.equal(d.pageOrientation, sens)
       assert.equal(d.footer, undefined, 'le pied est écrit par l’assemblage')
       assert.ok(d.info.title.includes('Maison de l’essai'))
     }
-    const [premiere, ...suite] = def.fiches.content
-    assert.equal(premiere.pageBreak, undefined, 'pas de page blanche en tête des fiches')
-    for (const n of suite) assert.equal(n.pageBreak, 'before')
-    for (const n of def.fiches.content) assert.equal(n.pageOrientation, 'portrait')
+    const niveaux = def.tableaux.content.filter((n) => n.id?.startsWith('niveau-'))
+    assert.equal(niveaux[0].pageBreak, undefined, 'le premier niveau suit la légende')
+    assert.equal(niveaux[1].pageBreak, 'before')
+    const tableau = niveaux[0].stack.find((n) => n.table?.headerRows === 1)
+    assert.equal(tableau.table.dontBreakRows, true, 'une ligne par pièce, insécable')
+    assert.deepEqual(tableau.table.body[0].map((c) => c.text), ['PIÈCE', 'SOL', 'MUR', 'PLAFOND', 'BLOC PORTE', 'ÉQUIPEMENTS', 'POINTS PARTICULIERS'])
   })
 
-  test('pièce non visitée : pas de fiche, décomptée sur la garde', () => {
-    assert.ok(!ids.includes('fiche-p3'))
+  test('légende « Lecture du tableau » une fois, note « Sources » à la fin', () => {
+    const t = texteDe(def.tableaux.content)
+    assert.equal(t.split('LECTURE DU TABLEAU').length, 2)
+    for (const s of ['CONSERVER', 'RAFRAÎCHIR', 'DÉPOSER', 'À PRÉCISER']) assert.ok(t.includes(s), s)
+    assert.ok(texteDe(def.tableaux.content.at(-1)).startsWith('Sources.'))
+  })
+
+  test('pièce non visitée : pas de ligne, citée sous le tableau, décomptée sur la garde', () => {
+    const lignes = lignesDuNiveau(def, 'n1')
+    assert.ok(!lignes.some((l) => l[0].includes('Cellier')))
+    assert.ok(texteDe(def.tableaux.content.find((n) => n.id === 'niveau-n1')).includes('Pièces non visitées (1) :  03 Cellier'))
     const garde = def.content[0].stack.find((n) => n.table?.headerRows === 1)
     assert.deepEqual(garde.table.body[1].map((c) => c.text), ['RDC', '3', '2', '7'])
   })
 
-  test('fiche : nom, surface, HSP, finitions, remarques', () => {
-    const f1 = texteDe(def.content[1])
-    for (const attendu of ['01 · Séjour', '25 m²', '2,50 m', 'Parquet chêne', 'Peinture blanche', 'Non relevé', 'Fissure au droit de la fenêtre -> à surveiller']) {
-      assert.ok(f1.includes(attendu), `fiche sans « ${attendu} »`)
-    }
-    assert.ok(def.content[1].stack.some((x) => x.image === IMG), 'extrait de la pièce absent')
-    const f2 = texteDe(def.content[2])
-    assert.ok(f2.includes('9 m²') && f2.includes('(mesurée)'), f2)
-    assert.ok(f2.includes('HSP non relevée'))
-    assert.ok(texteDe(def.content[3]).includes('2,45 m'), 'HSP dite en visite')
+  test('ligne : nom, surface, HSP, finitions avec statut, « Non décrit », remarques', () => {
+    const [sejour, salleDEau] = lignesDuNiveau(def, 'n1')
+    assert.match(sejour[0], /01 +Séjour 25 m² · HSP 2,50 m/)
+    assert.ok(sejour[1].includes('À PRÉCISER Parquet chêne') && sejour[1].includes('Plinthes : Bois'), sejour[1])
+    assert.ok(sejour[2].includes('Peinture blanche'))
+    assert.equal(sejour[3], 'Non décrit')
+    assert.ok(sejour[6].includes('Fissure au droit de la fenêtre -> à surveiller'), sejour[6])
+    assert.ok(salleDEau[0].includes('9 m²'), salleDEau[0])
+    assert.ok(lignesDuNiveau(def, 'n2')[0][0].includes('HSP 2,45 m'), 'HSP dite en visite')
   })
 
-  test('éléments numérotés « P n » et groupés par calque, dans l’ordre de calquesEdl.js', () => {
-    const vus = intertitres(def.content[1])
-    assert.deepEqual(vus, ['Plomberie', 'Électricité', 'Menuiseries'])
-    const ordre = CALQUES.map((c) => c.libelle)
-    const rangs = vus.map((t) => ordre.indexOf(t))
-    assert.deepEqual(rangs, [...rangs].sort((a, b) => a - b))
-    const t = texteDe(def.content[1])
-    assert.match(t, /P1 Prise double .*h 0,30/)
-    assert.match(t, /P7 Interrupteur/, 'point typé sans élément, exporté de son type')
-    // Fenêtre sans libellé : le type sert de libellé
-    assert.match(t, /P2 Fenêtre .*1,20 × 1,35/)
+  test('équipements regroupés par calque puis par type, cotes et « Ph n » à la suite', () => {
+    const sejour = lignesDuNiveau(def, 'n1')[0][5]
+    assert.match(sejour, /Arrivée d’eau en attente.*2 prises de courant \(Prise double\) · h 0,30 · Ph 1.*Interrupteur.*Fenêtre · 1,20 × 1,35/)
   })
 
-  test('propositions marquées « à valider », élément sans point signalé', () => {
-    assert.match(texteDe(def.content[1]), /Arrivée d’eau en attente\s+\(à valider\)/)
+  test('propositions marquées « à valider »', () => {
+    assert.match(lignesDuNiveau(def, 'n1')[0][5], /Arrivée d’eau en attente\s+\(à valider\)/)
     assert.ok(texteDe(def.content[0]).includes('2 éléments marqués « à valider »'))
-    const t2 = texteDe(def.content[2])
-    assert.ok(t2.includes('Sèche-serviettes') && t2.includes('(sans point sur le plan)'))
+    assert.ok(lignesDuNiveau(def, 'n1')[1][5].includes('Sèche-serviettes'))
+    assert.match(lignesDuNiveau(def, 'n1')[1][6], /Trace d’humidité\s+\(à valider\)/)
   })
 
-  test('points sans élément : par pointId, calque écarté compris', () => {
-    const t1 = texteDe(def.content[1])
-    assert.ok(t1.includes('POINTS SANS ÉLÉMENT'), t1)
-    assert.match(t1, /exporté : P4 ,\s+P6/)
-    assert.ok(!/P[1237] \(élément/.test(t1))
-    assert.ok(!texteDe(def.content[2]).includes('POINTS SANS ÉLÉMENT'), 'P5 porte le lavabo, P8 sa proposition')
+  test('points sans élément : par pointId, calque écarté compris, dans les points particuliers', () => {
+    const [sejour, salleDEau] = lignesDuNiveau(def, 'n1')
+    assert.ok(sejour[6].includes('P4 (point sans élément) · Ph 2'), sejour[6])
+    assert.ok(sejour[6].includes('P6 (point sans élément)'))
+    assert.ok(!salleDEau[6].includes('point sans élément'), 'P5 porte le lavabo, P8 sa proposition')
   })
 
-  test('propositions exclues : le point reste listé, « (élément à valider) »', () => {
+  test('propositions exclues : le point reste cité, « (élément à valider) »', () => {
     const sans = rapportPdf(donnees({ elementsExport: exporter(false) }))
-    const t1 = texteDe(sans.content[1])
-    assert.match(t1, /P3\s+\(élément à valider\)/)
-    assert.ok(!t1.includes('Arrivée d’eau en attente'))
-    assert.match(texteDe(sans.content[2]), /P8\s+\(élément à valider\)/)
+    const [sejour, salleDEau] = lignesDuNiveau(sans, 'n1')
+    assert.ok(sejour[6].includes('P3 (élément à valider)'))
+    assert.ok(!sejour[5].includes('Arrivée d’eau en attente'))
+    assert.ok(salleDEau[6].includes('P8 (élément à valider)'))
     assert.ok(!texteDe(sans.content[0]).includes('à valider »'))
     const seuls = pointsSansElement({ points, elements, elementsExport: exporter(false) })
     assert.deepEqual(seuls.map((p) => [p.id, !!p.elementAValider]), [['pt3', true], ['pt4', false], ['pt6', false], ['pt8', true]])
   })
 
-  test('photos « Ph n » numérotées comme le DXF, rangées dans la pièce de leur point', () => {
-    const t1 = texteDe(def.content[1])
-    assert.ok(t1.includes('PHOTOS (2)'))
-    assert.ok(t1.includes('Ph 1 · P1 · Prise double'), t1)
-    assert.ok(t1.includes('Ph 2 · P4'))
-    assert.ok(texteDe(def.content[2]).includes('Ph 3 · P5 · Lavabo'))
-    // Numéros reçus (ceux donnés au DXF) : repris tels quels
+  test('photos en annexe « Ph n · pièce · élément », numérotées comme le DXF, par niveau puis pièce', () => {
+    const t = texteDe(def.photos.content)
+    assert.ok(t.includes('Annexe — Photos'))
+    assert.match(t, /RDC.*01 Séjour.*Ph 1 · 01 Séjour · P1 · Prise double.*Ph 2 · 01 Séjour · P4.*02 Salle d’eau.*Ph 3 · 02 Salle d’eau · P5 · Lavabo/)
+    // Numéros reçus (ceux donnés au DXF) : repris tels quels, dans le tableau aussi
     const recues = photos.map((ph, i) => ({ ...ph, numero: 10 + i }))
     const d = rapportPdf(donnees({ photos: recues }))
-    assert.ok(texteDe(d.content[2]).includes('Ph 11 · P5 · Lavabo'))
+    assert.ok(texteDe(d.photos.content).includes('Ph 11 · 02 Salle d’eau · P5 · Lavabo'))
+    assert.ok(lignesDuNiveau(d, 'n1')[1][5].includes('Lavabo · Ph 11'))
   })
 
   test('pied de page « Affaire · État des lieux » (complété par l’assemblage de « · page n / N »)', () => {
@@ -288,7 +286,7 @@ describe('rapport PDF : structure', () => {
   test('aucun caractère hors latin courant dans les textes produits', () => {
     const sale = donnees({
       affaire: { ...affaire, nom: 'Essai ▶ 🏠' },
-      pieces: pieces.map((p) => (p.id === 'p1' ? { ...p, nom: 'Séjour ✓', fiche: { ...p.fiche, murs: 'Enduit ≈ 2 cm, e\u0301caille\u0301' } } : p)),
+      pieces: pieces.map((p) => (p.id === 'p1' ? { ...p, nom: 'Séjour ✓', fiche: { ...p.fiche, murs: 'Enduit ≈ 2 cm, écaillé' } } : p)),
       elementsExport: elementsExport.map((e) => (e.id === 'e1' ? { ...e, libelle: 'Prise ⚡ 16 A', cotes: '≥ 0,30 m' } : e)),
     })
     const tout = textes(rapportPdf(sale).content)
@@ -297,15 +295,20 @@ describe('rapport PDF : structure', () => {
     assert.ok(tout.some((t) => t.includes('>= 0,30 m')))
   })
 
-  test('image absente : texte de remplacement, pas d’erreur', () => {
-    const d = rapportPdf(donnees({ images: {} }))
-    assert.ok(!d.content[1].stack.some((x) => x.image), 'extrait absent : pas d’image')
-    assert.ok(!texteDe(d.content[1]).includes('PHOTOS'))
+  test('image absente : pas d’annexe photos, pas d’erreur', () => {
+    assert.equal(rapportPdf(donnees({ images: {} })).photos, null)
   })
 
   test('éléments sans pointId (ancienne forme) : la position rattache encore', () => {
     const anciens = elementsExport.map((e) => { const copie = { ...e }; delete copie.pointId; return copie })
     assert.deepEqual(pointsSansElement({ points, elementsExport: anciens }).map((p) => p.id), ['pt4', 'pt6'])
+  })
+
+  test('garde : chiffres clés et points d’attention', () => {
+    const t = texteDe(def.content[0])
+    assert.ok(t.includes('POINTS D’ATTENTION'))
+    assert.ok(t.includes('pièces relevées'), t)
+    assert.ok(t.includes('Désordres') && t.includes('02 Salle d’eau : Trace d’humidité'), t)
   })
 })
 

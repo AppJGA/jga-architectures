@@ -1,12 +1,16 @@
 // ─── Rapport PDF de l'état des lieux : logique pure ──────────────────────────
 //
-// Page de garde, puis une planche A3 par étage (`plancheEdl.js`, dessinée par
-// `genererRapportEdl.js`), puis en annexe une fiche par pièce visitée. Garde et
-// fiches sont deux documents pdfmake A4 décrits ici ; les planches et le pied
-// de page sont posés par l'assemblage (`assemblageRapportEdl.js`, pdf-lib).
-// Tout ce qui se lit dans le PDF se décide ici, sans navigateur : les images
-// arrivent prêtes (data URL JPEG, pdfmake ne lit pas le WebP), rangées par
-// clé. Testé par tests/etat-des-lieux-export-pdf.test.js.
+// Page de garde (A4 : affaire, étages, chiffres clés, points d'attention),
+// puis une planche A3 par étage (`plancheEdl.js`, dessinée par
+// `genererRapportEdl.js`), puis un tableau A3 paysage par niveau (une ligne
+// par pièce, matériaux et statuts : `tableauxEdlLogique.js`), enfin l'annexe
+// des photos (A4). Garde, tableaux et photos sont trois documents pdfmake
+// décrits ici (pdfmake ne change pas de format en cours de document) ; les
+// planches et le pied de page sont posés par l'assemblage
+// (`assemblageRapportEdl.js`, pdf-lib). Tout ce qui se lit dans le PDF se
+// décide ici, sans navigateur : les images arrivent prêtes (data URL JPEG,
+// pdfmake ne lit pas le WebP), rangées par clé. Testé par
+// tests/etat-des-lieux-export-pdf.test.js et …-export-tableaux.test.js.
 //
 // Roboto, la police de pdfmake, n'a que le latin courant : tout texte venu de
 // la base (dicté, transcrit, proposé par Claude) passe par `texteLatin`.
@@ -17,7 +21,8 @@ import { COULEUR, LARGEUR_UTILE, blocAffaire, jour, lignePhotos, tableauFin } fr
 import { COULEUR_IA } from '../../../chantier/comptes-rendus/enregistrement/styleProposition.js'
 import { numeroterPhotos } from './numerotationEdl.js'
 import { ficheEcartee, ficheExportee, hspExport } from './ficheExportEdl.js'
-import { textePorte } from '../statutsEdl.js'
+import { CHAMPS_PORTE, LIBELLES_PORTE, STATUTS, infosStatut, textePorte } from '../statutsEdl.js'
+import { libellePiece, syntheseRapport, tableauxDuRapport, texteComptes } from './tableauxEdlLogique.js'
 
 // ─── Textes ──────────────────────────────────────────────────────────────────
 
@@ -187,13 +192,31 @@ export function groupesElements(elementsExport = []) {
 
 /**
  * Légende d'une photo : l'élément relevé au même point, sinon le point. Le
- * point relie la photo à sa pièce (`edl_photos.point_id`).
+ * point relie la photo à sa pièce (`edl_photos.point_id`). Avec `piece`
+ * (annexe des photos) : « Ph n · pièce · élément ».
  */
-function legendePhoto(photo, point, elementsDuPoint) {
+function legendePhoto(photo, point, elementsDuPoint, piece = null) {
   const sujet = elementsDuPoint.length
     ? elementsDuPoint.map((e) => [e.numero != null ? `P${e.numero}` : null, libelleElement(e)].filter(Boolean).join(' · ')).join(', ')
     : `P${point?.numero ?? '?'}`
-  return photo.numero != null ? `Ph ${photo.numero} · ${sujet}` : sujet
+  const texte = piece ? `${piece} · ${sujet}` : sujet
+  return photo.numero != null ? `Ph ${photo.numero} · ${texte}` : texte
+}
+
+/**
+ * Éléments exportés d'un point : par le point (`pointId` d'`elementsAExporter`),
+ * puis par les lignes `edl_elements`, puis, en dernier recours, par la position.
+ */
+function elementsDuPointDe({ elementsExport = [], elements = null }) {
+  const exportesParId = new Map(elementsExport.map((e) => [e.id, e]))
+  return (point) => {
+    if (!point) return []
+    const parPoint = elementsExport.filter((e) => e.pointId === point.id)
+    if (parPoint.length) return parPoint
+    const parLigne = (elements ?? []).filter((e) => e.point_id === point.id).map((e) => exportesParId.get(e.id)).filter(Boolean)
+    if (parLigne.length) return parLigne
+    return elementsExport.filter((e) => e.pointId === undefined && memePosition(e, point))
+  }
 }
 
 // ─── Mise en page ────────────────────────────────────────────────────────────
@@ -207,7 +230,6 @@ export const CADRE_PLAN_ETAGE = [A4_PAYSAGE.largeur, A4_PAYSAGE.hauteur - 70]
 export const CADRE_PLAN_PIECE = [LARGEUR_UTILE, 250]
 
 const titreSection = (texte, couleur = COULEUR.orange) => ({ text: texte.toUpperCase(), bold: true, fontSize: 9.5, color: couleur, margin: [0, 12, 0, 4] })
-const discret = (texte) => ({ text: texte, italics: true, fontSize: 8.5, color: COULEUR.grisClair, margin: [0, 2, 0, 4] })
 
 /** « 12,5 m² », écrite sur le plan d'origine ou, à défaut, mesurée sur le contour. */
 export function surfacePiece(piece) {
@@ -225,150 +247,252 @@ export function hspPiece(piece, { inclurePropositions = false } = {}) {
 
 const FINITIONS = [['sol', 'Sol'], ['murs', 'Murs'], ['plafond', 'Plafond'], ['plinthes', 'Plinthes']]
 
-function tableauFinitions(finitions) {
-  return {
-    layout: tableauFin,
-    margin: [0, 0, 0, 2],
-    table: {
-      widths: [70, '*'],
-      body: finitions.map(({ libelle, valeur }) => {
-        return [
-          { text: libelle, bold: true, fontSize: 8.5, color: COULEUR.gris },
-          valeur ? { text: valeur, fontSize: 9 } : { text: 'Non relevé', italics: true, fontSize: 8.5, color: COULEUR.grisClair },
-        ]
-      }),
-    },
-  }
-}
-
 // Un intertitre ne reste jamais seul en bas de page : il voyage avec ce qui
 // le suit (tout le bloc s'il est court)
 const ensemble = (noeuds, court = true) => ({ stack: noeuds, unbreakable: court })
 
-function blocElements(titre, elements) {
-  if (!elements.length) return [ensemble([titre, discret('Aucun élément relevé.')])]
-  return groupesElements(elements).map((g, i) => ensemble([
-    ...(i === 0 ? [titre] : []),
-    { text: g.libelle, bold: true, fontSize: 9, color: couleurCalque(g.calque), margin: [0, 4, 0, 2] },
-    {
-      layout: tableauFin,
-      margin: [0, 0, 0, 4],
-      table: {
-        headerRows: 0,
-        dontBreakRows: true,
-        widths: [30, '*', 150],
-        body: g.elements.map((e) => {
-          const l = ligneElement(e)
-          return [
-            { text: l.numero, bold: true, fontSize: 9, color: l.aValider ? COULEUR_PROPOSITION : couleurCalque(g.calque) },
-            {
-              fontSize: 9,
-              text: [
-                l.libelle,
-                ...(l.type ? [{ text: `  ${l.type}`, fontSize: 7.5, color: COULEUR.gris }] : []),
-                ...(l.aValider ? [{ text: '  (à valider)', italics: true, color: COULEUR_PROPOSITION }] : []),
-                ...(l.sansPoint ? [{ text: '  (sans point sur le plan)', fontSize: 7.5, italics: true, color: COULEUR.grisClair }] : []),
-              ],
-            },
-            { text: l.cotes, fontSize: 8.5, color: COULEUR.texte },
-          ]
-        }),
-      },
-    },
-  ], g.elements.length <= 12))
+// ─── Tableaux par niveau (A3 paysage) ────────────────────────────────────────
+
+// Charte de la synthèse montrée par l'agence (2026-11-19) : encre, texte
+// discret, filets, orange JGA et orange foncé, fond des points d'attention
+export const CHARTE = {
+  encre: '#2B2826', discret: '#5A554F', filet: '#DDD7D1',
+  orange: '#EF6524', orangeFonce: '#B9481B', fondAttention: '#F4F1EE',
 }
 
-function enteteFiche(etage, piece, { surface, hsp }) {
-  return [
-    {
-      columns: [
-        {
-          width: '*',
-          stack: [
-            { text: texteLatin(etage).toUpperCase(), fontSize: 8, bold: true, color: COULEUR.orange },
-            { text: designation(piece), fontSize: 17, bold: true, margin: [0, 1, 0, 0] },
-          ],
-        },
-        {
-          width: 150, alignment: 'right', fontSize: 9,
-          stack: [
-            surface
-              ? { text: [{ text: 'Surface  ', color: COULEUR.gris, fontSize: 8 }, { text: surface.texte, bold: true }, ...(surface.mesuree ? [{ text: ' (mesurée)', fontSize: 7, color: COULEUR.grisClair }] : [])] }
-              : { text: 'Surface inconnue', color: COULEUR.grisClair, fontSize: 8 },
-            hsp
-              ? { text: [{ text: 'HSP  ', color: COULEUR.gris, fontSize: 8 }, { text: hsp, bold: true }] }
-              : { text: 'HSP non relevée', color: COULEUR.grisClair, fontSize: 8 },
-          ],
-        },
+// A3 paysage moins les marges (points PDF)
+const LARGEUR_A3 = 1190.55 - MARGES[0] - MARGES[2]
+// Pièce, Sol, Mur, Plafond, Bloc porte, Équipements, Points particuliers ;
+// la dernière colonne prend le reste
+const COLONNES = ['Pièce', 'Sol', 'Mur', 'Plafond', 'Bloc porte', 'Équipements', 'Points particuliers']
+const LARGEURS = [120, 150, 140, 130, 140, 190, '*']
+const LARGEUR_ETIQUETTE = 46
+const PAS_POINTILLE = { pointille: { length: 1, space: 1.2 }, tirete: { length: 2.6, space: 1.4 } }
+
+/**
+ * Étiquette de statut dessinée comme la synthèse de l'agence : une case
+ * cernée (plein, pointillé ou tireté, par le style de trait des tableaux
+ * pdfmake) ou pleine pour « Déposer ».
+ */
+export function etiquetteStatut(code) {
+  const st = infosStatut(code)
+  const style = PAS_POINTILLE[st.cerne] ? () => ({ dash: PAS_POINTILLE[st.cerne] }) : () => null
+  return {
+    margin: [0, 1, 0, 0],
+    table: {
+      widths: ['auto'],
+      body: [[{
+        text: texteLatin(st.libelle).toUpperCase(), fontSize: 5.5, bold: true, color: st.texte, characterSpacing: 0.3,
+        noWrap: true, ...(st.fond ? { fillColor: st.fond } : {}),
+      }]],
+    },
+    layout: {
+      hLineWidth: () => 0.6, vLineWidth: () => 0.6, hLineColor: () => st.trait, vLineColor: () => st.trait,
+      hLineStyle: style, vLineStyle: style,
+      paddingLeft: () => 2.5, paddingRight: () => 2.5, paddingTop: () => 0.8, paddingBottom: () => 0.2,
+    },
+  }
+}
+
+const nonDecrit = () => ({ text: 'Non décrit', italics: true, fontSize: 7.5, color: CHARTE.discret })
+const sansObjet = () => ({ text: '—', fontSize: 8, color: CHARTE.filet })
+const marqueAValider = { text: ' (à valider)', italics: true, color: COULEUR_PROPOSITION }
+
+const avecEtiquette = (code, contenu) => ({
+  columnGap: 3,
+  columns: [{ width: LARGEUR_ETIQUETTE, stack: [etiquetteStatut(code)] }, { width: '*', ...contenu }],
+})
+
+function celluleMateriaux(items, aValider) {
+  if (!items.length) return nonDecrit()
+  return {
+    stack: items.map((it, i) => ({
+      ...avecEtiquette(it.statut, { text: [it.texte, ...(aValider ? [marqueAValider] : [])], fontSize: 8, color: CHARTE.encre }),
+      margin: [0, i ? 3 : 0, 0, 0],
+    })),
+  }
+}
+
+function cellulePorte(porte, aValider) {
+  if (!porte) return nonDecrit()
+  const parties = CHAMPS_PORTE.filter((c) => porte[c]).map((c) => ({
+    text: [
+      { text: `${LIBELLES_PORTE[c].toUpperCase()}  `, fontSize: 5.5, color: CHARTE.discret, characterSpacing: 0.4 },
+      { text: porte[c], fontSize: 8, color: CHARTE.encre },
+    ],
+    margin: [0, 0, 0, 1],
+  }))
+  return {
+    stack: [
+      avecEtiquette(porte.statut, { stack: parties }),
+      ...(aValider ? [{ text: 'à valider', italics: true, fontSize: 7, color: COULEUR_PROPOSITION }] : []),
+    ],
+  }
+}
+
+function celluleListe(items) {
+  if (!items.length) return nonDecrit()
+  return {
+    stack: items.map((it, i) => ({
+      text: [it.texte, ...(it.aValider ? [marqueAValider] : [])], fontSize: 8, color: CHARTE.encre, margin: [0, i ? 2.5 : 0, 0, 0],
+    })),
+  }
+}
+
+function cellulePiece({ piece, ficheAValider, hors }) {
+  return {
+    stack: [
+      {
+        text: [
+          ...(piece.numero ? [{ text: `${piece.numero}  `, fontSize: 7.5, bold: true, color: CHARTE.orangeFonce }] : []),
+          { text: piece.designation, fontSize: 11, bold: true, color: hors ? CHARTE.discret : CHARTE.encre },
+        ],
+      },
+      ...(piece.surface || piece.hsp
+        ? [{ text: [piece.surface, piece.hsp ? `HSP ${piece.hsp}` : null].filter(Boolean).join(' · '), fontSize: 7, color: CHARTE.discret, margin: [0, 1, 0, 0] }]
+        : []),
+      ...(hors ? [{ text: 'Relevés posés en dehors des pièces dessinées', fontSize: 6.5, italics: true, color: CHARTE.discret, margin: [0, 1, 0, 0] }] : []),
+      ...(ficheAValider ? [{ text: 'Fiche proposée, à valider', italics: true, fontSize: 6.5, color: COULEUR_PROPOSITION, margin: [0, 1, 0, 0] }] : []),
+    ],
+  }
+}
+
+const enteteColonne = (t) => ({ text: t.toUpperCase(), fontSize: 6.5, bold: true, color: CHARTE.discret, characterSpacing: 0.6 })
+
+const layoutTableau = {
+  hLineWidth: (i) => (i === 0 ? 0 : i === 1 ? 1 : 0.5),
+  hLineColor: (i) => (i === 1 ? CHARTE.encre : CHARTE.filet),
+  vLineWidth: () => 0,
+  paddingLeft: (i) => (i === 0 ? 0 : 5), paddingRight: () => 5,
+  paddingTop: (i) => (i === 0 ? 2 : 6), paddingBottom: (i) => (i === 0 ? 4 : 6),
+}
+
+/** Tableau d'un niveau : en-tête répété à chaque page, une ligne par pièce, insécable. */
+function tableauNiveau(lignes) {
+  return {
+    layout: layoutTableau,
+    table: {
+      headerRows: 1,
+      dontBreakRows: true,
+      widths: LARGEURS,
+      body: [
+        COLONNES.map(enteteColonne),
+        ...lignes.map((l) => [
+          cellulePiece(l),
+          ...(l.hors ? [sansObjet(), sansObjet(), sansObjet(), sansObjet()] : [
+            celluleMateriaux(l.sol, l.ficheAValider),
+            celluleMateriaux(l.mur, l.ficheAValider),
+            celluleMateriaux(l.plafond, l.ficheAValider),
+            cellulePorte(l.porte, l.ficheAValider),
+          ]),
+          l.hors && !l.equipements.length ? sansObjet() : celluleListe(l.equipements),
+          l.hors && !l.particuliers.length ? sansObjet() : celluleListe(l.particuliers),
+        ]),
       ],
     },
-    { canvas: [{ type: 'line', x1: 0, y1: 4, x2: LARGEUR_UTILE, y2: 4, lineWidth: 1.2, lineColor: COULEUR.orange }], margin: [0, 0, 0, 6] },
+  }
+}
+
+function titreNiveau(nom) {
+  return [
+    {
+      columnGap: 6,
+      columns: [
+        { width: 8, canvas: [{ type: 'rect', x: 0, y: 3, w: 7.5, h: 7.5, color: CHARTE.orange }] },
+        { width: '*', text: texteLatin(nom).toUpperCase(), fontSize: 12, bold: true, color: CHARTE.encre, characterSpacing: 0.8 },
+      ],
+    },
+    { canvas: [{ type: 'line', x1: 0, y1: 3, x2: LARGEUR_A3, y2: 3, lineWidth: 1, lineColor: CHARTE.encre }], margin: [0, 0, 0, 4] },
   ]
 }
 
-function blocSansElement(sansElement) {
-  if (!sansElement.length) return []
-  return [ensemble([
-    titreSection('Points sans élément'),
-    {
-      text: `${sansElement.length > 1 ? 'Points posés' : 'Point posé'} en visite sans type ni élément exporté :`,
-      fontSize: 8.5, color: COULEUR.gris,
-    },
-    {
-      fontSize: 8.5, margin: [0, 2, 0, 0],
-      text: sansElement.flatMap((p, i) => [
-        ...(i ? [', '] : []),
-        { text: `P${p.numero}`, bold: true },
-        ...(p.elementAValider ? [{ text: ' (élément à valider)', italics: true, color: COULEUR_PROPOSITION }] : []),
+function blocNiveau(etage, rang) {
+  const lignes = etage.lignes
+  const nonVisitees = etage.nonVisitees ?? []
+  const titre = titreNiveau(etage.nom)
+  return {
+    id: `niveau-${etage.niveau.id}`,
+    ...(rang > 0 ? { pageBreak: 'before' } : {}),
+    stack: [
+      ensemble([
+        ...titre,
+        { text: texteComptes(lignes), fontSize: 8, color: CHARTE.discret, margin: [0, 0, 0, 8] },
       ]),
+      lignes.length ? tableauNiveau(lignes) : { text: 'Aucune pièce visitée à ce niveau.', italics: true, fontSize: 8.5, color: CHARTE.discret },
+      ...(nonVisitees.length ? [{
+        margin: [0, 8, 0, 0], fontSize: 7.5, color: CHARTE.discret,
+        text: [{ text: `Pièces non visitées (${nonVisitees.length}) : `, bold: true }, nonVisitees.map(libellePiece).join(', ')],
+      }] : []),
+    ],
+  }
+}
+
+function legendeTableau() {
+  return ensemble([
+    { text: 'LECTURE DU TABLEAU', fontSize: 7, bold: true, color: CHARTE.discret, characterSpacing: 0.8, margin: [0, 0, 0, 4] },
+    {
+      columnGap: 18,
+      columns: STATUTS.map((st) => ({
+        width: '*',
+        ...avecEtiquette(st.code, { text: texteLatin(st.sens), fontSize: 7.5, color: CHARTE.discret }),
+      })),
     },
-  ])]
+    {
+      text: '« Non décrit » : rien n’a été relevé pour cette rubrique. Équipements et points particuliers n’ont pas de statut ; cotes et « Ph n » renvoient aux planches et à l’annexe photos.',
+      fontSize: 7, color: CHARTE.discret, margin: [0, 5, 0, 14],
+    },
+  ])
 }
 
-function blocPhotos(photos) {
-  if (!photos.length) return []
-  const [premiere, ...suite] = lignePhotos(photos, 'petites')
-  return [ensemble([titreSection(`Photos (${photos.length})`), premiere]), ...suite]
-}
-
-function fichePiece({ etage, piece, elements, sansElement, photos, images, inclurePropositions }) {
-  const extrait = prendre(piece.id, images.pieces)
-  const resume = resumeFiche({ piece, elements, sansElement, photos, inclurePropositions })
-  const { remarques, vide } = resume
+function noteSources({ date, redacteur, propositions }) {
+  const d = dateIso(date)
+  const visite = d ? `Relevé sur site du ${jour(d, { day: 'numeric', month: 'long', year: 'numeric' })}${rempli(redacteur) ? ` (${rempli(redacteur)})` : ''}` : 'Relevé sur site'
   return {
-    id: `fiche-${piece.id}`,
-    pageBreak: 'before',
-    pageOrientation: 'portrait',
-    stack: [
-      ...enteteFiche(etage, piece, resume),
-      ...(resume.ficheProposee ? [{ text: 'Fiche proposée par l’analyse, à valider par l’agence.', italics: true, fontSize: 8.5, color: COULEUR_PROPOSITION, margin: [0, 0, 0, 4] }] : []),
-      ...(extrait ? [{ image: extrait, fit: CADRE_PLAN_PIECE, alignment: 'center', margin: [0, 0, 0, 4] }] : []),
-      ...(vide ? [discret('Rien n’a été relevé dans cette pièce.')] : []),
-      ensemble([titreSection('Finitions'), tableauFinitions(resume.finitions)]),
-      ...blocElements(titreSection(`Éléments relevés${elements.length ? ` (${elements.length})` : ''}`), elements),
-      ...blocSansElement(sansElement),
-      ...(remarques ? [ensemble([titreSection('Remarques'), { text: remarques, fontSize: 9 }], remarques.length < 1500)] : []),
-      ...blocPhotos(photos),
+    margin: [0, 16, 0, 0], fontSize: 7, color: CHARTE.discret,
+    text: [
+      { text: 'Sources. ', bold: true },
+      `${visite} : points, photos et descriptions dictées pièce par pièce, transcrites puis analysées et relues par l’agence ; plans de l’existant importés. Surfaces et HSP lues sur le plan d’origine, sinon mesurées sur le contour ou dites en visite. `,
+      'Statut « À préciser » : rien n’a été dit sur l’état pendant la visite.',
+      ...(propositions ? [' Les mentions « à valider » sont des propositions de l’analyse pas encore relues par l’agence.'] : []),
     ],
   }
 }
 
-// Page des relevés d'un étage posés hors de toute pièce
-function pageHorsPieces({ etage, niveauId, elements, sansElement, photos }) {
-  return {
-    id: `hors-pieces-${niveauId}`,
-    pageBreak: 'before',
-    pageOrientation: 'portrait',
-    stack: [
-      { text: texteLatin(etage).toUpperCase(), fontSize: 8, bold: true, color: COULEUR.orange },
-      { text: 'Hors pièces', fontSize: 17, bold: true, margin: [0, 1, 0, 0] },
-      { canvas: [{ type: 'line', x1: 0, y1: 4, x2: LARGEUR_UTILE, y2: 4, lineWidth: 1.2, lineColor: COULEUR.orange }], margin: [0, 0, 0, 6] },
-      discret('Relevés posés en dehors des pièces dessinées (façade, cour, circulation non découpée…).'),
-      ...(elements.length ? blocElements(titreSection(`Éléments relevés (${elements.length})`), elements) : []),
-      ...blocSansElement(sansElement),
-      ...blocPhotos(photos),
-    ],
-  }
+// ─── Garde : chiffres clés et points d'attention ─────────────────────────────
+
+function blocChiffres(chiffres) {
+  if (!chiffres.length) return []
+  const ecart = 12
+  const largeur = (LARGEUR_UTILE - ecart * (chiffres.length - 1)) / chiffres.length
+  return [{
+    columnGap: ecart,
+    margin: [0, 16, 0, 0],
+    columns: chiffres.map((c) => ({
+      width: largeur,
+      stack: [
+        { canvas: [{ type: 'line', x1: 0, y1: 0, x2: largeur, y2: 0, lineWidth: 3, lineColor: CHARTE.orange }] },
+        { text: c.valeur, fontSize: 22, bold: true, color: CHARTE.encre, margin: [0, 5, 0, 0] },
+        { text: c.libelle, fontSize: 7.5, color: CHARTE.discret },
+        ...(c.detail ? [{ text: c.detail, fontSize: 6.5, color: CHARTE.discret, margin: [0, 1, 0, 0] }] : []),
+      ],
+    })),
+  }]
+}
+
+function blocAttention(attention) {
+  const titre = { text: 'POINTS D’ATTENTION', bold: true, fontSize: 9.5, color: CHARTE.encre, margin: [0, 16, 0, 4] }
+  const lignes = attention.length
+    ? attention.map((a) => [{ fontSize: 8.5, color: CHARTE.encre, text: [{ text: `${a.titre}  `, bold: true }, a.texte] }])
+    : [[{ fontSize: 8.5, color: CHARTE.discret, text: 'Aucun désordre, aucune rubrique à déposer ni à vérifier.' }]]
+  return [ensemble([titre, {
+    table: { widths: ['*'], body: lignes },
+    layout: {
+      fillColor: () => CHARTE.fondAttention,
+      hLineWidth: () => 0, vLineWidth: (i) => (i === 0 ? 3 : 0), vLineColor: () => CHARTE.orange,
+      paddingLeft: () => 10, paddingRight: () => 10,
+      paddingTop: (i) => (i === 0 ? 8 : 3), paddingBottom: (i, node) => (i === node.table.body.length - 1 ? 8 : 3),
+    },
+  }])]
 }
 
 /**
@@ -397,7 +521,7 @@ export function nomFichierRapportEdl(affaire, date = new Date()) {
 /** « 2026-11-18-2618-etat-des-lieux.docx » : le rapport Word, à côté du PDF */
 export const nomFichierWordEdl = (affaire, date = new Date()) => nomFichierRapportEdl(affaire, date).replace(/\.pdf$/, '.docx')
 
-function pageDeGarde({ affaire, etages, redacteur, date, elementsExport, pieces, images }) {
+function pageDeGarde({ affaire, etages, redacteur, date, elementsExport, pieces, images, synthese }) {
   const propositions = elementsExport.filter((e) => e.aValider).length
   const affaireLatine = Object.fromEntries(Object.entries(affaire ?? {}).map(([k, v]) => [k, typeof v === 'string' ? texteLatin(v) : v]))
   const d = dateIso(date)
@@ -406,7 +530,7 @@ function pageDeGarde({ affaire, etages, redacteur, date, elementsExport, pieces,
     id: 'garde',
     stack: [
       images.logo ? { image: images.logo, fit: [90, 44] } : { text: '' },
-      { text: 'État des lieux', fontSize: 28, bold: true, margin: [0, 40, 0, 2] },
+      { text: 'État des lieux', fontSize: 28, bold: true, margin: [0, 28, 0, 2] },
       { text: rempli(affaire?.nom) || 'Affaire', fontSize: 16, color: COULEUR.texte },
       ...(rempli(affaire?.code_affaire) ? [{ text: rempli(affaire.code_affaire), fontSize: 12, color: COULEUR.orange, margin: [0, 2, 0, 0] }] : []),
       { canvas: [{ type: 'line', x1: 0, y1: 8, x2: LARGEUR_UTILE, y2: 8, lineWidth: 1.5, lineColor: COULEUR.orange }], margin: [0, 0, 0, 14] },
@@ -449,14 +573,16 @@ function pageDeGarde({ affaire, etages, redacteur, date, elementsExport, pieces,
         text: `${propositions} élément${propositions > 1 ? 's' : ''} marqué${propositions > 1 ? 's' : ''} « à valider » : proposition${propositions > 1 ? 's' : ''} de l’analyse pas encore relue${propositions > 1 ? 's' : ''} par l’agence.`,
         fontSize: 8.5, italics: true, color: COULEUR_PROPOSITION, margin: [0, 8, 0, 0],
       }] : []),
+      ...blocChiffres(synthese?.chiffres ?? []),
+      ...(synthese ? blocAttention(synthese.attention) : []),
     ],
   }
 }
 
 /**
- * Ce que contient le rapport, page par page, sans mise en page : la même
- * suite sert au PDF (`definitionFichesEdl`, planches par étage) et au Word
- * (`rapportWordEdl.js`), pour qu'ils disent la même chose.
+ * Ce que contient le rapport, page par page, sans mise en page : la suite
+ * que lit le Word (`rapportWordEdl.js`). Le PDF lit les mêmes étages, pièces
+ * et photos par `tableauxDuRapport` (tableaux par niveau, annexe photos).
  *
  * @param elementsExport sortie d'`elementsAExporter` (export DXF) :
  *   [{ id, pieceId, pointId, x, y, calque, type, libelle, cotes, numero, aValider }]
@@ -483,16 +609,7 @@ export function suiteRapportEdl({
   const etages = etagesDuRapport({ niveaux, pieces, elementsExport, points, visitees, inclurePropositions })
   const sansElement = pointsSansElement({ points, elements, elementsExport })
   const pointsParId = new Map(points.map((p) => [p.id, p]))
-  const exportesParId = new Map(elementsExport.map((e) => [e.id, e]))
-  // Par le point (`pointId` d'`elementsAExporter`), puis par les lignes
-  // `edl_elements`, puis, en dernier recours, par la position
-  const elementsDuPoint = (point) => {
-    const parPoint = elementsExport.filter((e) => e.pointId === point.id)
-    if (parPoint.length) return parPoint
-    const parLigne = (elements ?? []).filter((e) => e.point_id === point.id).map((e) => exportesParId.get(e.id)).filter(Boolean)
-    if (parLigne.length) return parLigne
-    return elementsExport.filter((e) => e.pointId === undefined && memePosition(e, point))
-  }
+  const elementsDuPoint = elementsDuPointDe({ elementsExport, elements })
   // Mêmes numéros que le DXF (« Ph n ») : ceux reçus, sinon calculés ici
   // par la même règle
   const photosNumerotees = photos.every((ph) => ph.numero != null) ? photos : numeroterPhotos(photos, points, { niveaux, pieces })
@@ -594,11 +711,11 @@ export function comptesEtage({ pieces, visitees, elements }) {
 
 export const designationPiece = designation
 
-// Réglages communs aux deux documents pdfmake (A4 portrait) ; pas de pied :
-// l'assemblage l'écrit, une fois le nombre total de pages connu
-const documentA4 = (affaire, contenu) => ({
-  pageSize: 'A4',
-  pageOrientation: 'portrait',
+// Réglages communs aux documents pdfmake ; pas de pied : l'assemblage
+// l'écrit, une fois le nombre total de pages connu
+const documentPdf = (affaire, contenu, { taille = 'A4', orientation = 'portrait' } = {}) => ({
+  pageSize: taille,
+  pageOrientation: orientation,
   pageMargins: MARGES,
   info: { title: titreRapportEdl(affaire), author: 'JGA Architectes' },
   defaultStyle: { font: 'Roboto', fontSize: 9, color: COULEUR.texte, lineHeight: 1.15 },
@@ -609,38 +726,97 @@ const documentA4 = (affaire, contenu) => ({
 export const titreRapportEdl = (affaire) => texteLatin(`État des lieux${affaire?.nom ? ` — ${affaire.nom}` : ''}`)
 
 /**
- * Description pdfmake de la page de garde (A4). Paramètres de
- * `suiteRapportEdl`, plus `affaire`, `etat`, `redacteur`, `date` et
+ * Description pdfmake de la page de garde (A4), chiffres clés et points
+ * d'attention compris (`syntheseRapport`). Paramètres de `suiteRapportEdl`,
+ * plus `affaire`, `etat`, `redacteur`, `date` et
  * @param images { logo, photoAffaire } (data URL ; une image absente est omise)
  */
 export function definitionGardeEdl({
-  affaire = null, etat = null, niveaux = [], pieces = [], elementsExport = [], points = [],
+  affaire = null, etat = null, niveaux = [], pieces = [], elementsExport = [], photos = [], points = [], elements = null,
   visitees = null, images = {}, redacteur = '', date = null, inclurePropositions = false,
 }) {
-  const etages = etagesDuRapport({ niveaux, pieces, elementsExport, points, visitees, inclurePropositions })
-  return documentA4(affaire, [pageDeGarde({ affaire, etages, redacteur, date: date ?? etat?.created_at ?? null, elementsExport, pieces, images })])
+  const { etages } = tableauxDuRapport({ niveaux, pieces, elementsExport, photos, points, elements, visitees, inclurePropositions })
+  const synthese = syntheseRapport({ etages })
+  return documentPdf(affaire, [pageDeGarde({ affaire, etages, redacteur, date: date ?? etat?.created_at ?? null, elementsExport, pieces, images, synthese })])
 }
 
 /**
- * Description pdfmake des fiches (A4), annexe du rapport après les planches :
- * les pages « pièce » et « hors pièces » de `suiteRapportEdl`, dans son ordre.
- * Les pages « plan » n'y sont pas : la planche A3 de l'étage les remplace.
- * Paramètres de `suiteRapportEdl`, plus `affaire` et
- * @param images { pieces: pieceId → JPEG, photos: photoId → JPEG } (data URL,
- *   Map ou objet ; une image absente est omise)
- * @returns la description, ou null s'il n'y a aucune fiche
+ * Description pdfmake des tableaux par niveau (A3 paysage), après les
+ * planches : en tête la légende des statuts, puis un tableau par niveau
+ * (titre, comptes, une ligne par pièce, ligne « Hors pièces », pièces non
+ * visitées), enfin la note des sources. Paramètres de `suiteRapportEdl`,
+ * plus `affaire`, `etat`, `redacteur`, `date`.
+ * @returns la description, ou null s'il n'y a aucun étage
  */
-export function definitionFichesEdl({
+export function definitionTableauxEdl({
+  affaire = null, etat = null, niveaux = [], pieces = [], elementsExport = [], photos = [], points = [], elements = null,
+  visitees = null, redacteur = '', date = null, inclurePropositions = false,
+}) {
+  const { etages } = tableauxDuRapport({ niveaux, pieces, elementsExport, photos, points, elements, visitees, inclurePropositions })
+  if (!etages.length) return null
+  const propositions = elementsExport.some((e) => e.aValider)
+    || etages.some((e) => e.lignes.some((l) => l.ficheAValider))
+  const nom = rempli([affaire?.code_affaire, affaire?.nom].filter(Boolean).join(' · '))
+  return documentPdf(affaire, [
+    {
+      id: 'tableaux',
+      stack: [
+        { text: 'DESCRIPTION DES PIÈCES', fontSize: 8, bold: true, color: CHARTE.orange, characterSpacing: 1 },
+        { text: nom ? `État des lieux — ${nom}` : 'État des lieux', fontSize: 16, bold: true, color: CHARTE.encre, margin: [0, 1, 0, 10] },
+        legendeTableau(),
+      ],
+    },
+    ...etages.map(blocNiveau),
+    noteSources({ date: date ?? etat?.created_at ?? null, redacteur, propositions }),
+  ], { taille: 'A3', orientation: 'landscape' })
+}
+
+/**
+ * Description pdfmake de l'annexe des photos (A4 portrait), en fin de
+ * rapport : par niveau puis par pièce (ordre du plan), « Hors pièces » en
+ * fin de niveau, trois photos par rangée, légende « Ph n · pièce · élément »
+ * avec les numéros du DXF. Paramètres de `suiteRapportEdl`, plus `affaire` et
+ * @param images { photos: photoId → JPEG } (data URL, Map ou objet ; une photo sans image est omise)
+ * @returns la description, ou null s'il n'y a aucune photo à montrer
+ */
+export function definitionPhotosEdl({
   affaire = null, niveaux = [], pieces = [], elementsExport = [], photos = [], points = [], elements = null,
   visitees = null, images = {}, inclurePropositions = false,
 }) {
-  const { pages } = suiteRapportEdl({ niveaux, pieces, elementsExport, photos, points, elements, visitees, images, inclurePropositions })
-  const contenu = pages.filter((p) => p.sorte !== 'plan')
-    .map((page) => (page.sorte === 'piece' ? fichePiece({ ...page, images, inclurePropositions }) : pageHorsPieces(page)))
+  const { etages, photos: numerotees } = tableauxDuRapport({ niveaux, pieces, elementsExport, photos, points, elements, visitees, inclurePropositions })
+  const pointsParId = new Map(points.map((p) => [p.id, p]))
+  const connues = new Set(pieces.map((p) => p.id))
+  const elementsDuPoint = elementsDuPointDe({ elementsExport, elements })
+  const illustrees = (liste, nomPiece) => liste
+    .map((ph) => ({ ph, point: pointsParId.get(ph.point_id), image: prendre(ph.id, images.photos) }))
+    .filter((x) => x.image)
+    .sort((a, b) => a.ph.numero - b.ph.numero)
+    .map(({ ph, point, image }) => ({ image, legende: legendePhoto(ph, point, elementsDuPoint(point), nomPiece) }))
+
+  const contenu = []
+  for (const etage of etages) {
+    const groupes = etage.visitees
+      .map((piece) => ({ nom: libellePiece(piece), photos: illustrees(numerotees.filter((ph) => pointsParId.get(ph.point_id)?.piece_id === piece.id), libellePiece(piece)) }))
+    const hors = numerotees.filter((ph) => {
+      const point = pointsParId.get(ph.point_id)
+      return !!point && point.niveau_id === etage.niveau.id && (point.piece_id == null || !connues.has(point.piece_id))
+    })
+    groupes.push({ nom: 'Hors pièces', photos: illustrees(hors, 'Hors pièces') })
+    const avecPhotos = groupes.filter((g) => g.photos.length)
+    if (!avecPhotos.length) continue
+    avecPhotos.forEach((g, i) => {
+      const [premiere, ...suite] = lignePhotos(g.photos, 'petites')
+      contenu.push(ensemble([
+        ...(i === 0 ? [titreSection(etage.nom)] : []),
+        { text: [g.nom, { text: `  (${g.photos.length})`, fontSize: 8, color: COULEUR.gris }], fontSize: 10, bold: true, color: CHARTE.encre, margin: [0, 4, 0, 4] },
+        premiere,
+      ]), ...suite)
+    })
+  }
   if (!contenu.length) return null
-  // Premier nœud du document : un saut avant lui ouvrirait une page blanche
-  const [premiere, ...suite] = contenu
-  const sansSaut = { ...premiere }
-  delete sansSaut.pageBreak
-  return documentA4(affaire, [sansSaut, ...suite])
+  return documentPdf(affaire, [
+    { id: 'photos', text: 'Annexe — Photos', fontSize: 17, bold: true, color: CHARTE.encre },
+    { canvas: [{ type: 'line', x1: 0, y1: 4, x2: LARGEUR_UTILE, y2: 4, lineWidth: 1.2, lineColor: CHARTE.orange }], margin: [0, 0, 0, 6] },
+    ...contenu,
+  ])
 }

@@ -95,25 +95,58 @@ Commit : `feat: état des lieux — rapport PDF : planches A3 par étage, fiches
 
 ---
 
-### Task 5 : Rapport Word — planches à symboles déplaçables
+### Décisions de l'agence, deuxième temps (2026-11-19)
+
+L'agence a montré une **synthèse par pièce** qui lui convient (artefact « 2135-NOD — Rapport d'état des lieux avec description des matériaux et installations », hors dépôt) : en tête des **chiffres clés** et des **points d'attention**, puis **un tableau par niveau**, une ligne par pièce, colonnes **Pièce · Sol · Mur · Plafond · Bloc porte (huisserie, vantail, quincaillerie) · Équipements · Points particuliers** ; chaque matériau porte un **statut** : *Conserver* (vert `#3F7D3A`, étiquette cernée), *Rafraîchir* (remise en état sans dépose : peinture, reprise, rebouchage — texte `#8E5508`, cerne pointillé `#B7700A`), *Déposer* (dépose, remplacement, suppression — blanc sur `#B9481B`), *À préciser* (rien n'est dit — gris `#5A554F`, cerne tireté `#938980`). Équipements et points particuliers : sans statut. Choix de l'agence : **ces tableaux remplacent les fiches d'une page par pièce** (rapport : garde, planches A3, tableaux par niveau, **photos en annexe**) ; **statuts proposés par l'analyse**, modifiables en relecture ; **chiffres clés et points d'attention calculés par l'app** (aucun appel payant).
+
+---
+
+### Task 5 : Fiche de pièce — statuts et bloc porte
+
+**Files :**
+- Modify : `src/modules/etude/etat-des-lieux/analyse/analyseEdlLogique.js` (`RUBRIQUES_FICHE`, bornes, consignes et schéma JSON de la fiche, `completudeFiche` inchangée : la porte n'est pas obligatoire), `api/analyser-edl.js` si le schéma y est recopié, `analyse/FicheRelecture.jsx` (un menu de statut à côté de Sol, Murs, Plafond, Plinthes et Bloc porte ; trois champs Huisserie / Vantail / Quincaillerie), `export/ficheExportEdl.js` (statuts et porte suivent la règle « fiche proposée écartée »), `export/exportDxfEdl.js` (ligne de finition « Sol : Carrelage (Conserver) » ; « Porte : huisserie bois, vantail bois, … (Rafraîchir) » si renseignée).
+- Create : `src/modules/etude/etat-des-lieux/statutsEdl.js` (pur) : `STATUTS = [{ code: 'conserver', libelle: 'Conserver', … couleurs }, { code: 'rafraichir', … }, { code: 'deposer', … }, { code: 'a-preciser', … }]`, `statutDe(fiche, rubrique)` → code (`'a-preciser'` si absent ou inconnu, et si la rubrique est vide), `libelleStatut(code)`.
+- Test : `tests/etat-des-lieux-analyse-ia.test.js` (schéma, consignes), `tests/etat-des-lieux-relecture-analyse.test.js` si concerné, nouveau `tests/etat-des-lieux-statuts.test.js`, DXF.
+
+**Forme de la fiche** (jsonb `edl_pieces.fiche`, **aucune migration**) : les rubriques texte restent (`sol`, `murs`, `plafond`, `plinthes`, `hsp`, `remarques`) ; s'ajoutent `porte: { huisserie, vantail, quincaillerie }` (textes courts, `""` si rien) et `statuts: { sol, murs, plafond, plinthes, porte }` (codes de `STATUTS`, ou `null`). Une ancienne fiche sans ces clés se lit telle quelle (statuts « À préciser », porte vide). **Consignes à Claude** : un statut par rubrique d'après ce qui est dit (« à repeindre », « à reprendre », « reboucher » → rafraichir ; « à remplacer », « à déposer », « à supprimer », « hors service » → deposer ; « bon état », « à garder » → conserver ; rien de dit sur l'état → null) ; bloc porte décrit d'après ce qui est dit (un bloc porte « bois » = huisserie et vantail bois ; « métallique » = huisserie métallique, vantail bois) ; la fiche actuelle (corrigée par l'agence) garde ses statuts sauf si la frise les contredit clairement. Le schéma JSON imposé accepte `null` (`anyOf`). En relecture, **modifier un statut vaut validation** de la fiche, comme le reste.
+
+Commit : `feat: état des lieux — statuts des matériaux et bloc porte dans la fiche (analyse, relecture, DXF)`.
+
+---
+
+### Task 6 : Rapport PDF — synthèse, tableaux par niveau, annexe photos
+
+**Files :**
+- Create : `src/modules/etude/etat-des-lieux/export/tableauxEdlLogique.js` (pur) :
+  - `lignesTableau({ pieces visitées d'un niveau, elementsExport, photos numérotées, points, inclurePropositions })` → `[{ piece: { designation, numero, surface, hsp }, sol: [{ texte, statut }], mur: […], plafond: […], porte: { huisserie, vantail, quincaillerie, statut } | null, equipements: [texte], particuliers: [texte] }]` — sol : sol puis plinthes (« Plinthes : … ») ; mur : murs ; plafond : plafond ; équipements = éléments exportés hors désordres, regroupés par type avec leur nombre (« 3 prises de courant », quantités de `quantiteElement`), cotes et « Ph n » à la suite ; points particuliers = désordres (libellé, cotes, « Ph n ») puis `remarques` de la fiche. Les propositions suivent la règle habituelle (marquées « à valider » si incluses). Une rubrique vide : `[]` (affichée « Non décrit »).
+  - `syntheseRapport({ etages, lignes })` → `{ chiffres: [{ valeur, libelle }], attention: [{ titre, texte }] }` : chiffres — pièces relevées (détail par niveau), éléments à déposer sur éléments décrits (rubriques statuées « Déposer » / rubriques renseignées), à rafraîchir, à préciser, désordres relevés ; points d'attention — par niveau : les désordres (pièce : libellé), puis les rubriques à déposer (pièce : rubrique, texte), puis les rubriques « À préciser » non vides (« à vérifier »). Au plus 5 entrées, regroupées par thème (Désordres, À déposer, À vérifier), textes tronqués proprement.
+- Modify : `export/rapportEdlLogique.js` — `definitionGardeEdl` porte en plus, sous le tableau des étages, les **chiffres clés** (grands nombres, filet orange au-dessus, comme l'artefact) et l'encadré **Points d'attention** (fond `#F4F1EE`, filet orange à gauche) ; `definitionFichesEdl` est remplacée par `definitionTableauxEdl` (**A3 paysage**, un tableau par niveau : titre du niveau précédé d'un carré orange, ligne de comptes « 21 locaux · 0 à déposer · 17 à rafraîchir · … », en-tête répété à chaque page, une ligne par pièce insécable, étiquettes de statut dessinées comme l'artefact, légende « Lecture du tableau » une fois avant le premier tableau, note « Sources » à la fin) et `definitionPhotosEdl` (A4 portrait, « Annexe — Photos », par niveau puis pièce, 3 par rangée, légende « Ph n · pièce · élément », comme `lignePhotos`). La page « Hors pièces » devient une ligne « Hors pièces » en fin de tableau du niveau. Extraits de plan par pièce : supprimés (les planches les remplacent ; ne plus les dessiner dans `genererRapportEdl.js`).
+- Modify : `export/genererRapportEdl.js` et `export/assemblageRapportEdl.js` : garde (A4) + planches (A3) + tableaux (A3) + photos (A4) ; pied sur les pages A4 **et** A3 de tableaux (pas sur les planches, qui ont leur cartouche) — adapter `assemblerRapport` pour recevoir une suite de documents `{ octets, pied: true|false }` ou `{ planches }`.
+- Test : `tests/etat-des-lieux-export-tableaux.test.js` (nouveau), `tests/etat-des-lieux-export-pdf.test.js` (adapter), test d'assemblage.
+
+Commit : `feat: état des lieux — rapport : synthèse, tableaux par niveau avec statuts, photos en annexe`.
+
+---
+
+### Task 7 : Rapport Word — planches à symboles déplaçables, tableaux, photos
 
 **Files :**
 - Modify : `export/rapportWordEdl.js`
 - Test : `tests/etat-des-lieux-export-word.test.js`
 
-Sections : garde (A4 portrait, comme aujourd'hui) ; **par étage une section A3 paysage, marges 0, pied vide** contenant un seul paragraphe avec des images **flottantes** positionnées par rapport à la page (`floating: { horizontalPosition: { relative: HorizontalPositionRelativeFrom.PAGE, offset }, verticalPosition: { relative: VerticalPositionRelativeFrom.PAGE, offset }, wrap: { type: TextWrappingType.NONE }, allowOverlap: true }`, offsets en EMU = mm × 36 000) : le **fond** (planche sans symboles ni légende, pleine page, `behindDocument: true, lockAnchor: true`, `altText` « Fond de plan <titre> »), la **légende** (PNG à `legende.cadreMm`, `altText` « Légende »), puis **chaque symbole** (PNG de sa clé, posé pour que son point d'insertion tombe sur `xMm, yMm`, `altText` = nom du type, ex. « Prise de courant ») ; puis les fiches en A4 portrait comme aujourd'hui (le pied paginé seulement sur les sections A4). `documentWordEdl` reçoit `planches: [{ niveauId, mise, fond (octets JPEG), legende (octets PNG), symboles: Map cle → octets PNG }]`. Un étage sans fond (image ratée) : section quand même, symboles posés, texte « Plan indisponible ».
+Même suite que le PDF : **garde** (A4 portrait, chiffres clés et points d'attention en vrai texte) ; **par étage une section A3 paysage, marges 0, pied vide**, un paragraphe d'images **flottantes** positionnées par rapport à la page (`floating: { horizontalPosition: { relative: HorizontalPositionRelativeFrom.PAGE, offset }, verticalPosition: { relative: VerticalPositionRelativeFrom.PAGE, offset }, wrap: { type: TextWrappingType.NONE }, allowOverlap: true }`, offsets en EMU = mm × 36 000) : le **fond** (planche sans symboles ni légende, pleine page, `behindDocument: true, lockAnchor: true`, `altText` « Fond de plan <titre> »), la **légende** (PNG à `legende.cadreMm`, `altText` « Légende »), puis **chaque symbole** (PNG de sa clé, posé pour que son point d'insertion tombe sur `xMm, yMm` : image à `(xMm − centre[0]/pxParMm, yMm − centre[1]/pxParMm)`, `altText` = nom du type) ; puis les **tableaux par niveau** en A3 paysage (vrais tableaux Word, en-tête répété, statuts en étiquettes de couleur : texte coloré gras sur fond clair, Déposer blanc sur `#B9481B`), légende « Lecture du tableau », note Sources ; puis l'**annexe photos** en A4 portrait. Même contenu que le PDF : tout vient de `suiteRapportEdl`, `misePlanche`, `lignesTableau`, `syntheseRapport`. `documentWordEdl` reçoit `planches: [{ niveauId, mise, fond, legende, symboles: Map cle → octets PNG }]` (fabriqués par `genererRapportEdl`). Un étage sans fond : section quand même, symboles posés, texte « Plan indisponible ».
 
-**Tests :** XML relu (fflate) : pour un étage à 3 symboles dont 2 identiques, la section A3 (`w:pgSz w:w="23811" w:h="16838" w:orient="landscape"`, marges 0) contient 1 + 1 + 3 ancres `wp:anchor`, la première `behindDoc="1"` et `locked="1"`, les symboles `behindDoc="0"` et `locked="0"`, `descr` = nom du type ; positions EMU attendues ; 2 images de symbole distinctes dans `word/media` (dédoublonnage) ; fiches toujours présentes après ; pied paginé absent de la section A3.
+**Tests :** XML relu (fflate) : section A3 (`w:pgSz w:w="23811" w:h="16838" w:orient="landscape"`, marges 0) d'un étage à 3 symboles dont 2 identiques → 1 + 1 + 3 `wp:anchor`, la première `behindDoc="1"` et `locked="1"`, les symboles `behindDoc="0"` / `locked="0"`, `descr` = nom du type, positions EMU attendues ; 2 images de symbole dans `word/media` ; tableau d'un niveau : en-têtes des 7 colonnes, une ligne par pièce, statuts écrits ; annexe photos ; pied paginé absent des planches.
 
-Commit : `feat: état des lieux — rapport Word : planches A3, symboles déplaçables`.
+Commit : `feat: état des lieux — rapport Word : planches à symboles déplaçables, tableaux, photos`.
 
 ---
 
-### Task 6 : Fenêtre d'export, documentation
+### Task 8 : Fenêtre d'export, documentation
 
 **Files :**
 - Modify : `export/ExportEdl.jsx`, `export/exportFenetreLogique.js` (réglages `indice` (texte, vide par défaut → date du jour au cartouche) et `numeros` (niveauId → texte, défaut « EDL-1 », « EDL-2 »… dans l'ordre des étages) ; `cleRapport` les inclut ; mémorisés par affaire sur l'appareil, lecture/écriture sous try/catch) ; section « Planches » de la fenêtre : un champ « Indice » et un champ « N° » par étage coché (44 px de haut) ; l'onglet « Rapport PDF » montre le PDF assemblé (pages A3 et A4 mêlées : vérifier que l'aperçu pdf.js les réduit à la largeur).
-- Modify : `CLAUDE.md` (section État des lieux, puce Export : planches, assemblage pdf-lib, Word à symboles flottants, `orientationElement`, `quantiteElement`, nouveaux types ; nombre de tests), conception `2026-11-17-etat-des-lieux-design.md` § 7 (avenant du 2026-11-19).
+- Modify : `CLAUDE.md` (section État des lieux, puce Export : planches, assemblage pdf-lib, tableaux et statuts, Word à symboles flottants, `orientationElement`, `quantiteElement`, nouveaux types ; nombre de tests), conception `2026-11-17-etat-des-lieux-design.md` § 7 (avenant du 2026-11-19).
 - Test : `tests/etat-des-lieux-export-fenetre.test.js` (réglages par défaut, clé du rapport qui change avec l'indice et un numéro).
 
 Commit : `feat: état des lieux — fenêtre d'export : numéros et indice des planches` puis `docs: …`.

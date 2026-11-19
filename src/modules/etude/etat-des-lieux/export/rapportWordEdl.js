@@ -1,42 +1,66 @@
 // ─── Rapport Word de l'état des lieux ────────────────────────────────────────
 //
 // Demande de l'agence (2026-11-19) : le rapport aussi en .docx, pour le
-// reprendre à la main après coup. Même contenu que le PDF : la suite des pages
-// vient de `suiteRapportEdl` et les textes de `resumeFiche`, `ligneElement`,
-// `resumeGarde` (rapportEdlLogique.js). Seule la mise en page est propre au
-// Word : vrais titres (volet de navigation de Word), vrais tableaux, images
-// posées dans le texte, une section paysage par plan d'étage.
+// reprendre à la main après coup. Même suite et même contenu que le PDF :
+// garde A4 (chiffres clés et points d'attention en vrai texte), une planche
+// A3 paysage par étage, les tableaux par niveau (A3 paysage), l'annexe des
+// photos (A4). Ce qui s'y lit se décide ailleurs, une fois pour les deux
+// formats : `misePlanche` (plancheEdl.js), `tableauxDuRapport` /
+// `syntheseRapport` (tableauxEdlLogique.js), `resumeGarde`, `photosAnnexeEdl`
+// et les textes des tableaux (rapportEdlLogique.js).
+//
+// Planche : comme l'exemple Word de l'agence, le plan est une image de fond
+// pleine page, verrouillée et derrière le texte ; la légende et chaque
+// symbole sont des images flottantes posées par rapport à la page, que l'on
+// déplace à la souris pour corriger un relevé. Les images (fond sans
+// symboles ni légende, légende seule, une image par clé de symbole) arrivent
+// dessinées par `genererRapportEdl.js` ; deux symboles de même clé partagent
+// la même image (Word ne la range qu'une fois).
+//
+// Statuts des matériaux : pas d'étiquette cernée comme dans le PDF (un
+// tableau dans chaque case serait lourd à reprendre), un mot coloré —
+// Conserver vert gras, Rafraîchir brun gras sur fond clair, Déposer blanc
+// gras sur orange foncé, À préciser gris italique.
 //
 // Sans navigateur (docx tourne aussi dans Node) : testé par
 // tests/etat-des-lieux-export-word.test.js. Chargé à la demande dans l'app
 // (`import()`), docx n'alourdit pas le reste.
 
 import {
-  AlignmentType, BorderStyle, Document, Footer, HeadingLevel, ImageRun, Packer, PageNumber, PageOrientation,
-  Paragraph, ShadingType, Table, TableCell, TableLayoutType, TableRow, TextRun, WidthType,
+  AlignmentType, BorderStyle, Document, Footer, HeadingLevel, HorizontalPositionRelativeFrom, ImageRun, Packer, PageNumber,
+  PageOrientation, Paragraph, ShadingType, Table, TableCell, TableLayoutType, TableRow, TextRun, TextWrappingType,
+  VerticalPositionRelativeFrom, WidthType,
 } from 'docx'
 import { COULEUR } from '../../../chantier/comptes-rendus/rapportLogique.js'
+import { CHAMPS_PORTE, LIBELLES_PORTE, STATUTS, infosStatut } from '../statutsEdl.js'
+import { PX_PAR_MM, tailleImageLegende, tailleImageSymbole } from './dessinPlancheEdl.js'
 import {
-  CADRE_PLAN_ETAGE, CADRE_PLAN_PIECE, COULEUR_PROPOSITION, comptesEtage, couleurCalque, designationPiece, groupesElements,
-  ligneElement, resumeFiche, resumeGarde, suiteRapportEdl, texteLatin,
+  AUCUNE_PIECE_VISITEE, AUCUN_POINT_ATTENTION, CHARTE, COULEUR_PROPOSITION, NOTE_LECTURE_TABLEAU, SURTITRE_TABLEAUX,
+  TITRE_ANNEXE_PHOTOS, TITRE_LECTURE_TABLEAU, photosAnnexeEdl, propositionsTableaux, resumeGarde, sourcesRapportEdl,
+  texteLatin, texteNonVisitees, titreTableauxEdl,
 } from './rapportEdlLogique.js'
+import { syntheseRapport, tableauxDuRapport, texteComptes } from './tableauxEdlLogique.js'
 
 export { Packer }
 
 // ─── Unités ──────────────────────────────────────────────────────────────────
 
-// Word compte en vingtièmes de point (twips), les images en pixels à 96 ppp
+// Word compte en vingtièmes de point (twips), les images en pixels à 96 ppp,
+// les positions des images flottantes en EMU (36 000 par millimètre)
 const twips = (pt) => Math.round(pt * 20)
+const twipsMm = (mm) => Math.round((mm * 1440) / 25.4)
 const px = (pt) => (pt * 96) / 72
+const pxMm = (mm) => (mm * 96) / 25.4
+export const emu = (mm) => Math.round(mm * 36000)
 const demi = (pt) => Math.round(pt * 2) // tailles de police en demi-points
 const hex = (c) => String(c).replace(/^#/, '').toUpperCase()
 
-const A4 = { largeur: 595, hauteur: 842 }
+// Feuilles en twips, côté court puis côté long (docx échange les deux en paysage)
+const A4 = { court: 11906, long: 16838 }
+const A3 = { court: 16838, long: 23811 }
 const MARGES = { haut: 36, droite: 36, bas: 44, gauche: 36 }
-const LARGEUR_UTILE = A4.largeur - MARGES.gauche - MARGES.droite // 523 pt
-// Un peu moins haut que dans le PDF : les paragraphes de Word ont leur
-// interligne, une image trop haute passerait seule à la page suivante
-const CADRE_ETAGE = [CADRE_PLAN_ETAGE[0], CADRE_PLAN_ETAGE[1] - 25]
+const LARGEUR_UTILE = (A4.court - twips(MARGES.gauche) - twips(MARGES.droite)) / 20 // 523 pt
+const LARGEUR_A3 = A3.long - twips(MARGES.gauche) - twips(MARGES.droite) // twips
 
 // ─── Images ──────────────────────────────────────────────────────────────────
 
@@ -78,11 +102,35 @@ export function tailleDansCadre(dimensions, [l, h]) {
 const prendre = (cle, collection) => (collection instanceof Map ? collection.get(cle) : collection?.[cle]) ?? null
 
 function image(octets, cadre, { centre = false, avant = 0, apres = 4 } = {}) {
-  const t = tailleDansCadre(dimensionsJpeg(octets), cadre)
+  const taille = tailleDansCadre(dimensionsJpeg(octets), cadre)
   return new Paragraph({
     alignment: centre ? AlignmentType.CENTER : AlignmentType.LEFT,
     spacing: { before: twips(avant), after: twips(apres) },
-    children: [new ImageRun({ type: 'jpg', data: octets, transformation: { width: Math.round(px(t.largeur)), height: Math.round(px(t.hauteur)) } })],
+    children: [new ImageRun({ type: 'jpg', data: octets, transformation: { width: Math.round(px(taille.largeur)), height: Math.round(px(taille.hauteur)) } })],
+  })
+}
+
+/**
+ * Image flottante posée par rapport à la page (mm du papier, y vers le bas),
+ * sans habillage : le texte ne l'écarte pas et elle peut en chevaucher une
+ * autre. `fond` : derrière le texte et verrouillée (le plan), comme
+ * l'exemple de l'agence ; sinon déplaçable.
+ */
+function flottante({ type, data, xMm, yMm, largeurMm, hauteurMm, nom, rang, fond = false }) {
+  return new ImageRun({
+    type,
+    data,
+    transformation: { width: pxMm(largeurMm), height: pxMm(hauteurMm) },
+    floating: {
+      horizontalPosition: { relative: HorizontalPositionRelativeFrom.PAGE, offset: emu(xMm) },
+      verticalPosition: { relative: VerticalPositionRelativeFrom.PAGE, offset: emu(yMm) },
+      wrap: { type: TextWrappingType.NONE },
+      allowOverlap: true,
+      behindDocument: fond,
+      lockAnchor: fond,
+      zIndex: rang,
+    },
+    altText: { name: nom, description: nom, title: nom },
   })
 }
 
@@ -94,26 +142,27 @@ const t = (texte, { taille, color, ...options } = {}) => new TextRun({
 
 const paragraphe = (enfants, options = {}) => new Paragraph({ children: Array.isArray(enfants) ? enfants : [enfants], ...options })
 
-const discret = (texte) => paragraphe(t(texte, { italics: true, taille: 8.5, color: COULEUR.grisClair }), { spacing: { before: twips(2), after: twips(4) } })
-
-const titre1 = (enfants, { saut = false } = {}) => new Paragraph({ heading: HeadingLevel.HEADING_1, pageBreakBefore: saut, keepNext: true, children: enfants })
 const titre2 = (texte) => new Paragraph({ heading: HeadingLevel.HEADING_2, keepNext: true, children: [new TextRun(texte)] })
-const titre3 = (texte, couleur) => new Paragraph({ heading: HeadingLevel.HEADING_3, keepNext: true, children: [t(texte, { color: couleur })] })
 
 // Le filet orange sous un titre de page : bordure basse d'un paragraphe vide
-const filet = () => new Paragraph({
+const filet = (couleur = COULEUR.orange, epaisseur = 10) => new Paragraph({
   spacing: { before: 0, after: twips(6) },
-  border: { bottom: { style: BorderStyle.SINGLE, size: 10, color: hex(COULEUR.orange), space: 1 } },
+  border: { bottom: { style: BorderStyle.SINGLE, size: epaisseur, color: hex(couleur), space: 1 } },
   children: [],
 })
+
+const espace = (pt = 6) => new Paragraph({ spacing: { before: 0, after: twips(pt) }, children: [] })
 
 // ─── Tableaux ────────────────────────────────────────────────────────────────
 
 const SANS = { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' }
-const FILET = { style: BorderStyle.SINGLE, size: 4, color: hex(COULEUR.filet) }
+const trait = (couleur, pt = 0.5) => ({ style: BorderStyle.SINGLE, size: Math.max(2, Math.round(pt * 8)), color: hex(couleur) })
+const FILET = trait(COULEUR.filet)
 const BORDURES_FINES = { top: SANS, bottom: SANS, left: SANS, right: SANS, insideHorizontal: FILET, insideVertical: SANS }
 const BORDURES_AUCUNE = { top: SANS, bottom: SANS, left: SANS, right: SANS, insideHorizontal: SANS, insideVertical: SANS }
+const CASE_SANS = { top: SANS, bottom: SANS, left: SANS, right: SANS }
 const MARGES_CASE = { top: twips(3), bottom: twips(3), left: twips(4), right: twips(4) }
+const fondCase = (couleur) => (couleur ? { shading: { type: ShadingType.CLEAR, color: 'auto', fill: hex(couleur) } } : {})
 
 function tableau(lignes, largeurs, { bordures = BORDURES_FINES, fond = null, entete = false } = {}) {
   const total = largeurs.reduce((a, b) => a + b, 0)
@@ -128,23 +177,81 @@ function tableau(lignes, largeurs, { bordures = BORDURES_FINES, fond = null, ent
       children: cases.map((contenu, j) => new TableCell({
         width: { size: twips(largeurs[j]), type: WidthType.DXA },
         margins: MARGES_CASE,
-        ...(typeof fond === 'function' ? (fond(i) ? { shading: { type: ShadingType.CLEAR, color: 'auto', fill: hex(fond(i)) } } : {}) : fond ? { shading: { type: ShadingType.CLEAR, color: 'auto', fill: hex(fond) } } : {}),
+        ...fondCase(typeof fond === 'function' ? fond(i) : fond),
         children: Array.isArray(contenu) ? contenu : [contenu],
       })),
     })),
   })
 }
 
-const espace = (pt = 6) => new Paragraph({ spacing: { before: 0, after: twips(pt) }, children: [] })
+// ─── Garde ───────────────────────────────────────────────────────────────────
 
-// ─── Pages ───────────────────────────────────────────────────────────────────
+// Chiffres clés : un filet orange au-dessus de chacun, séparés par des
+// colonnes vides (Word n'a pas d'écart entre cases)
+function blocChiffres(chiffres) {
+  if (!chiffres.length) return []
+  const ecart = 12
+  const largeur = (LARGEUR_UTILE - ecart * (chiffres.length - 1)) / chiffres.length
+  const largeurs = chiffres.flatMap((_, i) => (i ? [ecart, largeur] : [largeur]))
+  const cases = chiffres.flatMap((c, i) => {
+    const chiffre = new TableCell({
+      width: { size: twips(largeur), type: WidthType.DXA },
+      margins: { top: twips(5), bottom: 0, left: 0, right: 0 },
+      borders: { ...CASE_SANS, top: trait(CHARTE.orange, 3) },
+      children: [
+        paragraphe(t(c.valeur, { bold: true, taille: 22, color: CHARTE.encre })),
+        paragraphe(t(c.libelle, { taille: 7.5, color: CHARTE.discret })),
+        ...(c.detail ? [paragraphe(t(c.detail, { taille: 6.5, color: CHARTE.discret }), { spacing: { before: twips(1) } })] : []),
+      ],
+    })
+    const vide = new TableCell({ width: { size: twips(ecart), type: WidthType.DXA }, borders: CASE_SANS, children: [paragraphe([])] })
+    return i ? [vide, chiffre] : [chiffre]
+  })
+  return [
+    espace(10),
+    new Table({
+      layout: TableLayoutType.FIXED,
+      width: { size: twips(LARGEUR_UTILE), type: WidthType.DXA },
+      columnWidths: largeurs.map(twips),
+      borders: BORDURES_AUCUNE,
+      rows: [new TableRow({ cantSplit: true, children: cases })],
+    }),
+  ]
+}
 
-function pageDeGarde({ garde, images }) {
+function blocAttention(attention) {
+  const lignes = attention.length
+    ? attention.map((a) => paragraphe([t(`${a.titre}  `, { bold: true, taille: 8.5, color: CHARTE.encre }), t(a.texte, { taille: 8.5, color: CHARTE.encre })], { spacing: { after: twips(3) } }))
+    : [paragraphe(t(AUCUN_POINT_ATTENTION, { taille: 8.5, color: CHARTE.discret }))]
+  return [
+    paragraphe(t('POINTS D’ATTENTION', { bold: true, taille: 9.5, color: CHARTE.encre }), { keepNext: true, spacing: { before: twips(16), after: twips(4) } }),
+    new Table({
+      layout: TableLayoutType.FIXED,
+      width: { size: twips(LARGEUR_UTILE), type: WidthType.DXA },
+      columnWidths: [twips(LARGEUR_UTILE)],
+      borders: BORDURES_AUCUNE,
+      rows: [new TableRow({
+        children: [new TableCell({
+          width: { size: twips(LARGEUR_UTILE), type: WidthType.DXA },
+          margins: { top: twips(8), bottom: twips(5), left: twips(10), right: twips(10) },
+          borders: { ...CASE_SANS, left: trait(CHARTE.orange, 3) },
+          ...fondCase(CHARTE.fondAttention),
+          children: lignes,
+        })],
+      })],
+    }),
+  ]
+}
+
+function pageDeGarde({ garde, synthese, images }) {
   const entete = (texte) => paragraphe(t(texte.toUpperCase(), { taille: 7, color: COULEUR.gris }))
   const valeur = (texte, gras = false) => paragraphe(t(texte || '—', { bold: gras }))
   return [
     ...(images.logo ? [image(images.logo, [90, 44])] : []),
-    paragraphe(t('État des lieux', { bold: true, taille: 28 }), { spacing: { before: twips(40), after: twips(2) } }),
+    new Paragraph({
+      heading: HeadingLevel.HEADING_1, spacing: { before: twips(28), after: twips(2) },
+      children: [t('État des lieux', { bold: true, taille: 28 })],
+    }),
     paragraphe(t(garde.nom, { taille: 16, color: COULEUR.texte })),
     ...(garde.code ? [paragraphe(t(garde.code, { taille: 12, color: COULEUR.orange }), { spacing: { before: twips(2) } })] : []),
     filet(),
@@ -168,71 +275,255 @@ function pageDeGarde({ garde, images }) {
       ]),
     ], [LARGEUR_UTILE - 180, 60, 60, 60], { fond: (i) => (i === 0 ? COULEUR.texte : null), entete: true }),
     ...(garde.propositions ? [paragraphe(t(garde.propositions, { italics: true, taille: 8.5, color: COULEUR_PROPOSITION }), { spacing: { before: twips(8) } })] : []),
+    ...blocChiffres(synthese.chiffres),
+    ...blocAttention(synthese.attention),
   ]
 }
 
-function pagePlan({ niveau, pieces, visitees, nonVisitees, elements, images }) {
-  const plan = prendre(niveau.id, images.plans)
-  const calques = groupesElements(elements)
-  const nom = texteLatin(niveau.nom).trim() || 'Étage'
-  const separateur = () => t('  ·  ', { color: COULEUR.grisClair })
+// ─── Planches ────────────────────────────────────────────────────────────────
+
+/**
+ * Les images flottantes d'une planche, dans l'ordre d'empilement : fond
+ * (verrouillé, derrière), légende, puis chaque symbole posé pour que son
+ * point d'insertion tombe sur (xMm, yMm). L'image d'une clé est faite
+ * d'après le premier symbole qui la porte (`genererRapportEdl.js`) : sa
+ * taille et son point d'insertion se relisent donc sur lui.
+ */
+export function imagesPlancheWord({ mise, pxParMm = PX_PAR_MM, fond = null, legende = null, symboles = new Map() }) {
+  const p = pxParMm || PX_PAR_MM
+  const images = []
+  let rang = 1
+  if (fond) {
+    images.push({
+      type: 'jpg', data: fond, xMm: 0, yMm: 0, largeurMm: mise.format.largeur, hauteurMm: mise.format.hauteur,
+      nom: texteLatin(`Fond de plan ${mise.cartouche?.titre ?? mise.etage ?? ''}`).trim(), rang: rang++, fond: true,
+    })
+  }
+  if (legende && mise.legende?.cadreMm) {
+    const taille = tailleImageLegende(mise.legende, p)
+    images.push({
+      type: 'png', data: legende,
+      xMm: mise.legende.cadreMm.x - taille.origine[0] / p, yMm: mise.legende.cadreMm.y - taille.origine[1] / p,
+      largeurMm: taille.largeur / p, hauteurMm: taille.hauteur / p, nom: 'Légende', rang: rang++,
+    })
+  }
+  const tailles = new Map()
+  for (const s of mise.symboles ?? []) {
+    const data = prendre(s.cle, symboles)
+    if (!data) continue
+    if (!tailles.has(s.cle)) tailles.set(s.cle, tailleImageSymbole(s, p))
+    const taille = tailles.get(s.cle)
+    images.push({
+      type: 'png', data,
+      xMm: s.xMm - taille.centre[0] / p, yMm: s.yMm - taille.centre[1] / p,
+      largeurMm: taille.largeur / p, hauteurMm: taille.hauteur / p, nom: texteLatin(s.nom) || 'Élément', rang: rang++,
+    })
+  }
+  return images
+}
+
+const indisponible = (nom) => paragraphe([
+  t(`${nom} — Plan indisponible`, { bold: true, taille: 11, color: CHARTE.encre }),
+  t(' : la planche de l’étage n’a pas pu être dessinée.', { taille: 9, color: CHARTE.discret }),
+], { spacing: { before: twips(22) }, indent: { left: twipsMm(10) } })
+
+function pagePlanche(planche, nom) {
+  const images = imagesPlancheWord(planche)
   return [
-    titre1([new TextRun(nom), t('   Plan de l’étage', { bold: false, taille: 10, color: COULEUR.gris })]),
-    paragraphe(t(comptesEtage({ pieces, visitees, elements }), { taille: 8.5, color: COULEUR.gris }), { spacing: { after: 0 } }),
-    filet(),
-    ...(calques.length ? [paragraphe([
-      t('Calques : ', { taille: 8, color: COULEUR.gris }),
-      ...calques.flatMap((g, i) => [...(i ? [separateur()] : []), t(g.libelle, { bold: true, taille: 8, color: couleurCalque(g.calque) })]),
-      ...(elements.some((e) => e.aValider) ? [separateur(), t('en bleu : à valider', { italics: true, taille: 8, color: COULEUR_PROPOSITION })] : []),
-    ], { spacing: { after: twips(4) } })] : []),
-    plan ? image(plan, CADRE_ETAGE, { centre: true }) : discret('Plan de l’étage indisponible (fichier non chargé).'),
-    ...(nonVisitees.length ? [paragraphe([
-      t(`Pièce${nonVisitees.length > 1 ? 's' : ''} non visitée${nonVisitees.length > 1 ? 's' : ''} (${nonVisitees.length}, sans fiche) : `, { bold: true, taille: 8, color: COULEUR.gris }),
-      t(nonVisitees.map(designationPiece).join(', '), { taille: 8, color: COULEUR.gris }),
-    ], { spacing: { before: twips(6) } })] : []),
+    // Un seul paragraphe porte toutes les images, comme l'exemple de l'agence
+    new Paragraph({ spacing: { before: 0, after: 0 }, children: images.map(flottante) }),
+    ...(planche.fond ? [] : [indisponible(nom)]),
   ]
 }
 
-function blocElements(titre, elements) {
-  if (!elements.length) return [titre2(titre), discret('Aucun élément relevé.')]
+// ─── Tableaux par niveau ─────────────────────────────────────────────────────
+
+// Rafraîchir : fond clair propre au Word (le PDF cerne l'étiquette en pointillé)
+const FOND_RAFRAICHIR = '#FFF4E0'
+
+/** Le mot du statut, en couleur, suivi d'un espace (voir l'en-tête). */
+function etiquette(code) {
+  const st = infosStatut(code)
+  const fond = st.code === 'rafraichir' ? FOND_RAFRAICHIR : st.fond
   return [
-    titre2(titre),
-    ...groupesElements(elements).flatMap((g) => [
-      titre3(g.libelle, couleurCalque(g.calque)),
-      tableau(g.elements.map((e) => {
-        const l = ligneElement(e)
-        return [
-          paragraphe(t(l.numero, { bold: true, color: l.aValider ? COULEUR_PROPOSITION : couleurCalque(g.calque) })),
-          paragraphe([
-            t(l.libelle),
-            ...(l.type ? [t(`  ${l.type}`, { taille: 7.5, color: COULEUR.gris })] : []),
-            ...(l.aValider ? [t('  (à valider)', { italics: true, color: COULEUR_PROPOSITION })] : []),
-            ...(l.sansPoint ? [t('  (sans point sur le plan)', { taille: 7.5, italics: true, color: COULEUR.grisClair })] : []),
-          ]),
-          paragraphe(t(l.cotes, { taille: 8.5 })),
-        ]
-      }), [34, LARGEUR_UTILE - 34 - 150, 150]),
+    new TextRun({
+      text: `\u00A0${texteLatin(st.libelle).toUpperCase()}\u00A0`,
+      size: demi(6.5),
+      characterSpacing: 6,
+      color: hex(st.texte),
+      ...(st.code === 'a-preciser' ? { italics: true } : { bold: true }),
+      ...(fond ? { shading: { type: ShadingType.CLEAR, color: 'auto', fill: hex(fond) } } : {}),
+    }),
+    t('  ', { taille: 8 }),
+  ]
+}
+
+// Pièce, Sol, Mur, Plafond, Bloc porte, Équipements, Points particuliers :
+// les largeurs du PDF (points), la dernière colonne prend le reste de l'A3
+const COLONNES = ['Pièce', 'Sol', 'Mur', 'Plafond', 'Bloc porte', 'Équipements', 'Points particuliers']
+const LARGEURS_COLONNES = (() => {
+  const fixes = [120, 150, 140, 130, 140, 190].map(twips)
+  return [...fixes, LARGEUR_A3 - fixes.reduce((a, b) => a + b, 0)]
+})()
+
+const nonDecrit = () => paragraphe(t('Non décrit', { italics: true, taille: 7.5, color: CHARTE.discret }))
+const sansObjet = () => paragraphe(t('—', { taille: 8, color: CHARTE.filet }))
+const marqueAValider = () => t(' (à valider)', { italics: true, taille: 8, color: COULEUR_PROPOSITION })
+const ecartItem = (i, pt = 3) => ({ spacing: { before: i ? twips(pt) : 0 } })
+
+function celluleMateriaux(items, aValider) {
+  if (!items.length) return [nonDecrit()]
+  return items.map((it, i) => paragraphe([
+    ...etiquette(it.statut), t(it.texte, { taille: 8, color: CHARTE.encre }), ...(aValider ? [marqueAValider()] : []),
+  ], ecartItem(i)))
+}
+
+function cellulePorte(porte, aValider) {
+  if (!porte) return [nonDecrit()]
+  return [
+    paragraphe(etiquette(porte.statut), { spacing: { after: twips(1) } }),
+    ...CHAMPS_PORTE.filter((c) => porte[c]).map((c) => paragraphe([
+      t(`${LIBELLES_PORTE[c].toUpperCase()}  `, { taille: 5.5, color: CHARTE.discret, characterSpacing: 8 }),
+      t(porte[c], { taille: 8, color: CHARTE.encre }),
+    ], { spacing: { after: twips(1) } })),
+    ...(aValider ? [paragraphe(t('à valider', { italics: true, taille: 7, color: COULEUR_PROPOSITION }))] : []),
+  ]
+}
+
+function celluleListe(items) {
+  if (!items.length) return [nonDecrit()]
+  return items.map((it, i) => paragraphe([
+    t(it.texte, { taille: 8, color: CHARTE.encre }), ...(it.aValider ? [marqueAValider()] : []),
+  ], ecartItem(i, 2.5)))
+}
+
+function cellulePiece({ piece, ficheAValider, hors }) {
+  const note = (texte, couleur = CHARTE.discret) => paragraphe(t(texte, { italics: true, taille: 6.5, color: couleur }), { spacing: { before: twips(1) } })
+  return [
+    paragraphe([
+      ...(piece.numero ? [t(`${piece.numero}  `, { bold: true, taille: 7.5, color: CHARTE.orangeFonce })] : []),
+      t(piece.designation, { bold: true, taille: 11, color: hors ? CHARTE.discret : CHARTE.encre }),
     ]),
+    ...(piece.surface || piece.hsp
+      ? [paragraphe(t([piece.surface, piece.hsp ? `HSP ${piece.hsp}` : null].filter(Boolean).join(' · '), { taille: 7, color: CHARTE.discret }), { spacing: { before: twips(1) } })]
+      : []),
+    ...(hors ? [note('Relevés posés en dehors des pièces dessinées')] : []),
+    ...(ficheAValider ? [note('Fiche proposée, à valider', COULEUR_PROPOSITION)] : []),
   ]
 }
 
-function blocSansElement(sansElement) {
-  if (!sansElement.length) return []
+// Une rangée par pièce, même très haute : Word la coupe d'une page à l'autre
+// (le PDF, lui, la découpe en rangées « (suite) »)
+function rangeePiece(l) {
+  const vide = (items, cellule) => (l.hors && !items?.length ? [sansObjet()] : cellule())
+  const contenus = [
+    cellulePiece(l),
+    ...(l.hors ? [[sansObjet()], [sansObjet()], [sansObjet()], [sansObjet()]] : [
+      celluleMateriaux(l.sol, l.ficheAValider),
+      celluleMateriaux(l.mur, l.ficheAValider),
+      celluleMateriaux(l.plafond, l.ficheAValider),
+      cellulePorte(l.porte, l.ficheAValider),
+    ]),
+    vide(l.equipements, () => celluleListe(l.equipements)),
+    vide(l.particuliers, () => celluleListe(l.particuliers)),
+  ]
+  return new TableRow({
+    children: contenus.map((children, j) => new TableCell({
+      width: { size: LARGEURS_COLONNES[j], type: WidthType.DXA },
+      margins: { top: twips(6), bottom: twips(6), left: j ? twips(5) : 0, right: twips(5) },
+      children,
+    })),
+  })
+}
+
+function tableauNiveau(lignes) {
+  const entete = new TableRow({
+    tableHeader: true,
+    cantSplit: true,
+    children: COLONNES.map((c, j) => new TableCell({
+      width: { size: LARGEURS_COLONNES[j], type: WidthType.DXA },
+      margins: { top: twips(2), bottom: twips(4), left: j ? twips(5) : 0, right: twips(5) },
+      borders: { ...CASE_SANS, bottom: trait(CHARTE.encre, 1) },
+      children: [paragraphe(t(c.toUpperCase(), { bold: true, taille: 6.5, color: CHARTE.discret, characterSpacing: 12 }))],
+    })),
+  })
+  return new Table({
+    layout: TableLayoutType.FIXED,
+    width: { size: LARGEUR_A3, type: WidthType.DXA },
+    columnWidths: LARGEURS_COLONNES,
+    borders: { top: SANS, left: SANS, right: SANS, insideVertical: SANS, bottom: trait(CHARTE.filet), insideHorizontal: trait(CHARTE.filet) },
+    rows: [entete, ...lignes.map(rangeePiece)],
+  })
+}
+
+// Titre de niveau : carré orange (bordure gauche épaisse) et filet noir dessous
+const titreNiveau = (nom, saut) => new Paragraph({
+  heading: HeadingLevel.HEADING_2,
+  pageBreakBefore: saut,
+  keepNext: true,
+  spacing: { before: 0, after: twips(3) },
+  border: {
+    left: { style: BorderStyle.SINGLE, size: 48, color: hex(CHARTE.orange), space: 6 },
+    bottom: { style: BorderStyle.SINGLE, size: 8, color: hex(CHARTE.encre), space: 2 },
+  },
+  children: [t(texteLatin(nom).toUpperCase(), { bold: true, taille: 12, color: CHARTE.encre, characterSpacing: 16 })],
+})
+
+function blocNiveau(etage, rang) {
+  const lignes = etage.lignes
+  const nonVisitees = etage.nonVisitees ?? []
+  const nv = texteNonVisitees(nonVisitees)
   return [
-    titre2('Points sans élément'),
-    paragraphe(t(`${sansElement.length > 1 ? 'Points posés' : 'Point posé'} en visite sans type ni élément exporté :`, { taille: 8.5, color: COULEUR.gris })),
-    paragraphe(sansElement.flatMap((p, i) => [
-      ...(i ? [t(', ', { taille: 8.5 })] : []),
-      t(`P${p.numero}`, { bold: true, taille: 8.5 }),
-      ...(p.elementAValider ? [t(' (élément à valider)', { italics: true, taille: 8.5, color: COULEUR_PROPOSITION })] : []),
-    ]), { spacing: { before: twips(2) } }),
+    titreNiveau(etage.nom, rang > 0),
+    paragraphe(t(texteComptes(lignes), { taille: 8, color: CHARTE.discret }), { keepNext: true, spacing: { after: twips(8) } }),
+    lignes.length ? tableauNiveau(lignes) : paragraphe(t(AUCUNE_PIECE_VISITEE, { italics: true, taille: 8.5, color: CHARTE.discret })),
+    ...(nonVisitees.length ? [paragraphe([
+      t(nv.libelle, { bold: true, taille: 7.5, color: CHARTE.discret }), t(nv.liste, { taille: 7.5, color: CHARTE.discret }),
+    ], { spacing: { before: twips(8) } })] : []),
   ]
 }
+
+function legendeTableau() {
+  const largeur = LARGEUR_A3 / STATUTS.length
+  return [
+    paragraphe(t(TITRE_LECTURE_TABLEAU.toUpperCase(), { bold: true, taille: 7, color: CHARTE.discret, characterSpacing: 16 }), { keepNext: true, spacing: { after: twips(4) } }),
+    new Table({
+      layout: TableLayoutType.FIXED,
+      width: { size: LARGEUR_A3, type: WidthType.DXA },
+      columnWidths: STATUTS.map(() => largeur),
+      borders: BORDURES_AUCUNE,
+      rows: [new TableRow({
+        cantSplit: true,
+        children: STATUTS.map((st) => new TableCell({
+          width: { size: largeur, type: WidthType.DXA },
+          margins: { top: 0, bottom: 0, left: 0, right: twips(18) },
+          children: [paragraphe([...etiquette(st.code), t(texteLatin(st.sens), { taille: 7.5, color: CHARTE.discret })])],
+        })),
+      })],
+    }),
+    paragraphe(t(NOTE_LECTURE_TABLEAU, { taille: 7, color: CHARTE.discret }), { spacing: { before: twips(5), after: twips(14) } }),
+  ]
+}
+
+function pagesTableaux({ affaire, etages, elementsExport, date, redacteur }) {
+  const propositions = propositionsTableaux(etages, elementsExport)
+  return [
+    paragraphe(t(SURTITRE_TABLEAUX.toUpperCase(), { bold: true, taille: 8, color: CHARTE.orange, characterSpacing: 20 })),
+    new Paragraph({
+      heading: HeadingLevel.HEADING_1, spacing: { before: twips(1), after: twips(10) },
+      children: [t(titreTableauxEdl(affaire), { bold: true, taille: 16, color: CHARTE.encre })],
+    }),
+    ...legendeTableau(),
+    ...etages.flatMap(blocNiveau),
+    paragraphe(sourcesRapportEdl({ date, redacteur, propositions }).map((m) => t(m.texte, { bold: !!m.gras, taille: 7, color: CHARTE.discret })), { spacing: { before: twips(16) } }),
+  ]
+}
+
+// ─── Annexe des photos ───────────────────────────────────────────────────────
 
 // Trois photos par rangée, légende dessous ; un tableau sans bordures, que
 // Word laisse déplacer ou retailler
-function blocPhotos(photos) {
-  if (!photos.length) return []
+function tableauPhotos(photos) {
   const parLigne = 3
   const ecart = 8
   const largeur = (LARGEUR_UTILE - ecart * (parLigne - 1)) / parLigne
@@ -250,49 +541,23 @@ function blocPhotos(photos) {
       ]
     }))
   }
-  return [titre2(`Photos (${photos.length})`), tableau(lignes, colonnes, { bordures: BORDURES_AUCUNE })]
+  return tableau(lignes, colonnes, { bordures: BORDURES_AUCUNE })
 }
 
-function fichePiece({ etage, piece, elements, sansElement, photos, images, inclurePropositions, saut }) {
-  const extrait = prendre(piece.id, images.pieces)
-  const r = resumeFiche({ piece, elements, sansElement, photos, inclurePropositions })
-  const mesure = (libelle, valeur, absent, mesuree = false) => (valeur
-    ? [t(`${libelle}  `, { taille: 8, color: COULEUR.gris }), t(valeur, { bold: true }), ...(mesuree ? [t(' (mesurée)', { taille: 7, color: COULEUR.grisClair })] : [])]
-    : [t(absent, { taille: 8, color: COULEUR.grisClair })])
+function pagesPhotos(annexe) {
   return [
-    new Paragraph({ pageBreakBefore: saut, keepNext: true, spacing: { after: 0 }, children: [t(texteLatin(etage).toUpperCase(), { bold: true, taille: 8, color: COULEUR.orange })] }),
-    titre1([new TextRun(designationPiece(piece))]),
-    paragraphe([
-      ...mesure('Surface', r.surface?.texte, 'Surface inconnue', r.surface?.mesuree),
-      t('     '),
-      ...mesure('HSP', r.hsp, 'HSP non relevée'),
-    ], { spacing: { after: 0 } }),
-    filet(),
-    ...(r.ficheProposee ? [paragraphe(t('Fiche proposée par l’analyse, à valider par l’agence.', { italics: true, taille: 8.5, color: COULEUR_PROPOSITION }), { spacing: { after: twips(4) } })] : []),
-    ...(extrait ? [image(extrait, CADRE_PLAN_PIECE, { centre: true })] : []),
-    ...(r.vide ? [discret('Rien n’a été relevé dans cette pièce.')] : []),
-    titre2('Finitions'),
-    tableau(r.finitions.map(({ libelle, valeur }) => [
-      paragraphe(t(libelle, { bold: true, taille: 8.5, color: COULEUR.gris })),
-      paragraphe(valeur ? t(valeur) : t('Non relevé', { italics: true, taille: 8.5, color: COULEUR.grisClair })),
-    ]), [70, LARGEUR_UTILE - 70]),
-    ...blocElements(`Éléments relevés${elements.length ? ` (${elements.length})` : ''}`, elements),
-    ...blocSansElement(sansElement),
-    // Les retours à la ligne de la dictée restent des paragraphes
-    ...(r.remarques ? [titre2('Remarques'), ...r.remarques.split('\n').map((l) => paragraphe(t(l)))] : []),
-    ...blocPhotos(photos),
-  ]
-}
-
-function pageHorsPieces({ etage, elements, sansElement, photos, saut }) {
-  return [
-    new Paragraph({ pageBreakBefore: saut, keepNext: true, spacing: { after: 0 }, children: [t(texteLatin(etage).toUpperCase(), { bold: true, taille: 8, color: COULEUR.orange })] }),
-    titre1([new TextRun('Hors pièces')]),
-    filet(),
-    discret('Relevés posés en dehors des pièces dessinées (façade, cour, circulation non découpée…).'),
-    ...(elements.length ? blocElements(`Éléments relevés (${elements.length})`, elements) : []),
-    ...blocSansElement(sansElement),
-    ...blocPhotos(photos),
+    new Paragraph({ heading: HeadingLevel.HEADING_1, children: [t(TITRE_ANNEXE_PHOTOS, { color: CHARTE.encre })] }),
+    filet(CHARTE.orange, 10),
+    ...annexe.flatMap(({ nom, groupes }) => [
+      titre2(nom),
+      ...groupes.flatMap((g) => [
+        new Paragraph({
+          heading: HeadingLevel.HEADING_3, keepNext: true,
+          children: [t(g.nom, { bold: true, taille: 10, color: CHARTE.encre }), t(`  (${g.photos.length})`, { bold: false, taille: 8, color: COULEUR.gris })],
+        }),
+        tableauPhotos(g.photos),
+      ]),
+    ]),
   ]
 }
 
@@ -306,49 +571,67 @@ function pied(affaire) {
   })
 }
 
-const proprietesPage = (paysage) => ({
+// Pied vide des planches : sans lui, Word reprendrait celui de la section précédente
+const piedVide = () => new Footer({ children: [new Paragraph({ children: [] })] })
+
+const proprietesPage = (feuille, paysage, marges = MARGES) => ({
   page: {
-    size: { width: twips(A4.largeur), height: twips(A4.hauteur), orientation: paysage ? PageOrientation.LANDSCAPE : PageOrientation.PORTRAIT },
-    margin: { top: twips(MARGES.haut), right: twips(MARGES.droite), bottom: twips(MARGES.bas), left: twips(MARGES.gauche), footer: twips(20), header: twips(18) },
+    size: { width: feuille.court, height: feuille.long, orientation: paysage ? PageOrientation.LANDSCAPE : PageOrientation.PORTRAIT },
+    margin: {
+      top: twips(marges.haut), right: twips(marges.droite), bottom: twips(marges.bas), left: twips(marges.gauche),
+      footer: marges.haut ? twips(20) : 0, header: marges.haut ? twips(18) : 0,
+    },
   },
 })
+
+const SANS_MARGE = { haut: 0, droite: 0, bas: 0, gauche: 0 }
+
+// La feuille d'une planche d'après sa mise (A3 paysage aujourd'hui)
+function feuillePlanche(mise) {
+  const { largeur, hauteur } = mise?.format ?? { largeur: 420, hauteur: 297 }
+  return { feuille: { court: twipsMm(Math.min(largeur, hauteur)), long: twipsMm(Math.max(largeur, hauteur)) }, paysage: largeur >= hauteur }
+}
 
 const POLICE = 'Arial'
 
 /**
  * Le rapport Word (objet `Document` de docx, à passer à `Packer`).
- * Paramètres de `suiteRapportEdl` ; les images sont des octets JPEG
- * (Uint8Array) : { logo, photoAffaire, plans: niveauId → octets,
- * pieces: pieceId → octets, photos: photoId → octets } (Map ou objet).
+ * Paramètres de `suiteRapportEdl`, plus :
+ * @param images octets JPEG (Uint8Array) : { logo, photoAffaire,
+ *   photos: photoId → octets } (Map ou objet)
+ * @param planches par étage (fabriquées par `genererRapportEdl`) :
+ *   [{ niveauId, mise (`misePlanche`), pxParMm, fond (JPEG sans symboles ni
+ *   légende, ou null), legende (PNG ou null), symboles: Map cle → PNG }] ;
+ *   un étage sans planche reçoit une page « Plan indisponible »
  */
 export function documentWordEdl({
   affaire = null, etat = null, niveaux = [], pieces = [], elementsExport = [], photos = [], points = [], elements = null,
-  visitees = null, images = {}, redacteur = '', date = null, inclurePropositions = false,
+  visitees = null, images = {}, planches = [], redacteur = '', date = null, inclurePropositions = false,
 }) {
-  const { etages, pages } = suiteRapportEdl({ niveaux, pieces, elementsExport, photos, points, elements, visitees, images, inclurePropositions })
-  const garde = resumeGarde({ affaire, etages, redacteur, date: date ?? etat?.created_at ?? null, elementsExport, pieces })
+  const parametres = { niveaux, pieces, elementsExport, photos, points, elements, visitees, inclurePropositions }
+  const { etages } = tableauxDuRapport(parametres)
+  const dateRapport = date ?? etat?.created_at ?? null
+  const garde = resumeGarde({ affaire, etages, redacteur, date: dateRapport, elementsExport, pieces })
+  const synthese = syntheseRapport({ etages })
   const footers = { default: pied(affaire) }
+  const sansPied = { default: piedVide() }
+  const planchesParNiveau = new Map((planches ?? []).map((p) => [p.niveauId ?? p.mise?.niveauId, p]))
 
-  // Une section par orientation : la garde, puis chaque plan d'étage en
-  // paysage suivi des fiches de ses pièces en portrait
-  const sections = [{ properties: proprietesPage(false), footers, children: pageDeGarde({ garde, images }) }]
-  let courante = null
-  for (const page of pages) {
-    if (page.sorte === 'plan') {
-      sections.push({ properties: proprietesPage(true), footers, children: pagePlan({ ...page, images }) })
-      courante = null
-      continue
+  const sections = [{ properties: proprietesPage(A4, false), footers, children: pageDeGarde({ garde, synthese, images }) }]
+  for (const etage of etages) {
+    const planche = planchesParNiveau.get(etage.niveau.id)
+    if (planche?.mise) {
+      const { feuille, paysage } = feuillePlanche(planche.mise)
+      sections.push({ properties: proprietesPage(feuille, paysage, SANS_MARGE), footers: sansPied, children: pagePlanche(planche, etage.nom) })
+    } else {
+      sections.push({ properties: proprietesPage(A3, true), footers: sansPied, children: [indisponible(etage.nom)] })
     }
-    if (!courante) {
-      courante = { properties: proprietesPage(false), footers, children: [] }
-      sections.push(courante)
-    }
-    // Une section commence sur une page neuve : pas de saut en tête
-    const saut = courante.children.length > 0
-    courante.children.push(...(page.sorte === 'piece'
-      ? fichePiece({ ...page, images, inclurePropositions, saut })
-      : pageHorsPieces({ ...page, saut })))
   }
+  if (etages.length) {
+    sections.push({ properties: proprietesPage(A3, true), footers, children: pagesTableaux({ affaire, etages, elementsExport, date: dateRapport, redacteur }) })
+  }
+  const annexe = photosAnnexeEdl({ ...parametres, images })
+  if (annexe.length) sections.push({ properties: proprietesPage(A4, false), footers, children: pagesPhotos(annexe) })
 
   return new Document({
     creator: 'JGA Architectes',
@@ -358,7 +641,7 @@ export function documentWordEdl({
         document: { run: { font: POLICE, size: demi(9), color: hex(COULEUR.texte) }, paragraph: { spacing: { line: 264 } } },
         heading1: { run: { font: POLICE, size: demi(17), bold: true, color: hex(COULEUR.texte) }, paragraph: { spacing: { before: twips(1), after: 0 } } },
         heading2: { run: { font: POLICE, size: demi(9.5), bold: true, allCaps: true, color: hex(COULEUR.orange) }, paragraph: { spacing: { before: twips(12), after: twips(4) } } },
-        heading3: { run: { font: POLICE, size: demi(9), bold: true }, paragraph: { spacing: { before: twips(4), after: twips(2) } } },
+        heading3: { run: { font: POLICE, size: demi(9), bold: true }, paragraph: { spacing: { before: twips(4), after: twips(4) } } },
       },
     },
     sections,

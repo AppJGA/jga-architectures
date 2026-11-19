@@ -22,7 +22,7 @@ import { COULEUR_IA } from '../../../chantier/comptes-rendus/enregistrement/styl
 import { numeroterPhotos } from './numerotationEdl.js'
 import { ficheEcartee, ficheExportee, hspExport } from './ficheExportEdl.js'
 import { CHAMPS_PORTE, LIBELLES_PORTE, STATUTS, infosStatut, textePorte } from '../statutsEdl.js'
-import { libellePiece, syntheseRapport, tableauxDuRapport, texteComptes } from './tableauxEdlLogique.js'
+import { LIBELLE_HORS_PIECES, libellePiece, syntheseRapport, tableauxDuRapport, texteComptes } from './tableauxEdlLogique.js'
 
 // ─── Textes ──────────────────────────────────────────────────────────────────
 
@@ -483,18 +483,59 @@ function blocNiveau(etage, rang) {
         ...titre,
         { text: texteComptes(lignes), fontSize: 8, color: CHARTE.discret, margin: [0, 0, 0, 8] },
       ]),
-      lignes.length ? tableauNiveau(lignes) : { text: 'Aucune pièce visitée à ce niveau.', italics: true, fontSize: 8.5, color: CHARTE.discret },
+      lignes.length ? tableauNiveau(lignes) : { text: AUCUNE_PIECE_VISITEE, italics: true, fontSize: 8.5, color: CHARTE.discret },
       ...(nonVisitees.length ? [{
         margin: [0, 8, 0, 0], fontSize: 7.5, color: CHARTE.discret,
-        text: [{ text: `Pièces non visitées (${nonVisitees.length}) : `, bold: true }, nonVisitees.map(libellePiece).join(', ')],
+        text: [{ text: texteNonVisitees(nonVisitees).libelle, bold: true }, texteNonVisitees(nonVisitees).liste],
       }] : []),
     ],
   }
 }
 
+// ─── Textes des tableaux, communs au PDF et au Word ──────────────────────────
+
+export const AUCUNE_PIECE_VISITEE = 'Aucune pièce visitée à ce niveau.'
+
+/** « Pièces non visitées (2) : » et « 03 Cellier, 04 Garage ». */
+export const texteNonVisitees = (nonVisitees = []) => ({
+  libelle: `Pièces non visitées (${nonVisitees.length}) : `,
+  liste: nonVisitees.map(libellePiece).join(', '),
+})
+
+export const TITRE_LECTURE_TABLEAU = 'Lecture du tableau'
+export const NOTE_LECTURE_TABLEAU = '« Non décrit » : rien n’a été relevé pour cette rubrique ; « — » : sans objet. Équipements et points particuliers n’ont pas de statut ; cotes et « Ph n » renvoient aux planches et à l’annexe photos.'
+export const SURTITRE_TABLEAUX = 'Description des pièces'
+
+/** « État des lieux — 9901 · Maison de l’essai » : titre des tableaux. */
+export function titreTableauxEdl(affaire) {
+  const nom = rempli([affaire?.code_affaire, affaire?.nom].filter(Boolean).join(' · '))
+  return nom ? `État des lieux — ${nom}` : 'État des lieux'
+}
+
+/** Vrai si un élément ou une fiche des tableaux est une proposition à valider. */
+export const propositionsTableaux = (etages, elementsExport = []) => elementsExport.some((e) => e.aValider)
+  || etages.some((e) => e.lignes.some((l) => l.ficheAValider))
+
+/**
+ * Note des sources, en morceaux [{ texte, gras }] : le PDF et le Word la
+ * composent chacun à sa façon, mais disent la même chose.
+ */
+export function sourcesRapportEdl({ date, redacteur, propositions }) {
+  const d = dateIso(date)
+  const visite = d ? `Relevé sur site du ${jour(d, { day: 'numeric', month: 'long', year: 'numeric' })}${rempli(redacteur) ? ` (${rempli(redacteur)})` : ''}` : 'Relevé sur site'
+  return [
+    { texte: 'Sources. ', gras: true },
+    { texte: `${visite} : points, photos et descriptions dictées pièce par pièce, transcrites puis analysées et relues par l’agence ; plans de l’existant importés. Surfaces et HSP lues sur le plan d’origine, sinon mesurées sur le contour ou dites en visite. ` },
+    { texte: 'Statut « À préciser » : rien n’a été dit sur l’état pendant la visite.' },
+    ...(propositions ? [{ texte: ' Les mentions « à valider » sont des propositions de l’analyse pas encore relues par l’agence.' }] : []),
+  ]
+}
+
+export const AUCUN_POINT_ATTENTION = 'Aucun désordre, aucune rubrique à déposer ni à vérifier.'
+
 function legendeTableau() {
   return ensemble([
-    { text: 'LECTURE DU TABLEAU', fontSize: 7, bold: true, color: CHARTE.discret, characterSpacing: 0.8, margin: [0, 0, 0, 4] },
+    { text: TITRE_LECTURE_TABLEAU.toUpperCase(), fontSize: 7, bold: true, color: CHARTE.discret, characterSpacing: 0.8, margin: [0, 0, 0, 4] },
     {
       columnGap: 18,
       columns: STATUTS.map((st) => ({
@@ -503,23 +544,16 @@ function legendeTableau() {
       })),
     },
     {
-      text: '« Non décrit » : rien n’a été relevé pour cette rubrique ; « — » : sans objet. Équipements et points particuliers n’ont pas de statut ; cotes et « Ph n » renvoient aux planches et à l’annexe photos.',
+      text: NOTE_LECTURE_TABLEAU,
       fontSize: 7, color: CHARTE.discret, margin: [0, 5, 0, 14],
     },
   ])
 }
 
-function noteSources({ date, redacteur, propositions }) {
-  const d = dateIso(date)
-  const visite = d ? `Relevé sur site du ${jour(d, { day: 'numeric', month: 'long', year: 'numeric' })}${rempli(redacteur) ? ` (${rempli(redacteur)})` : ''}` : 'Relevé sur site'
+function noteSources(params) {
   return {
     margin: [0, 16, 0, 0], fontSize: 7, color: CHARTE.discret,
-    text: [
-      { text: 'Sources. ', bold: true },
-      `${visite} : points, photos et descriptions dictées pièce par pièce, transcrites puis analysées et relues par l’agence ; plans de l’existant importés. Surfaces et HSP lues sur le plan d’origine, sinon mesurées sur le contour ou dites en visite. `,
-      'Statut « À préciser » : rien n’a été dit sur l’état pendant la visite.',
-      ...(propositions ? [' Les mentions « à valider » sont des propositions de l’analyse pas encore relues par l’agence.'] : []),
-    ],
+    text: sourcesRapportEdl(params).map((m) => (m.gras ? { text: m.texte, bold: true } : m.texte)),
   }
 }
 
@@ -548,7 +582,7 @@ function blocAttention(attention) {
   const titre = { text: 'POINTS D’ATTENTION', bold: true, fontSize: 9.5, color: CHARTE.encre, margin: [0, 16, 0, 4] }
   const lignes = attention.length
     ? attention.map((a) => [{ fontSize: 8.5, color: CHARTE.encre, text: [{ text: `${a.titre}  `, bold: true }, a.texte] }])
-    : [[{ fontSize: 8.5, color: CHARTE.discret, text: 'Aucun désordre, aucune rubrique à déposer ni à vérifier.' }]]
+    : [[{ fontSize: 8.5, color: CHARTE.discret, text: AUCUN_POINT_ATTENTION }]]
   return [ensemble([titre, {
     table: { widths: ['*'], body: lignes },
     layout: {
@@ -645,9 +679,10 @@ function pageDeGarde({ affaire, etages, redacteur, date, elementsExport, pieces,
 }
 
 /**
- * Ce que contient le rapport, page par page, sans mise en page : la suite
- * que lit le Word (`rapportWordEdl.js`). Le PDF lit les mêmes étages, pièces
- * et photos par `tableauxDuRapport` (tableaux par niveau, annexe photos).
+ * Ce que contient le rapport, page par page, sans mise en page (plans, fiches
+ * par pièce, hors pièces). Le PDF et le Word ne la lisent plus : ils passent
+ * par `tableauxDuRapport` (tableaux par niveau) et `photosAnnexeEdl`, qui
+ * reposent sur les mêmes étages, pièces et photos.
  *
  * @param elementsExport sortie d'`elementsAExporter` (export DXF) :
  *   [{ id, pieceId, pointId, x, y, calque, type, libelle, cotes, numero, aValider }]
@@ -819,15 +854,13 @@ export function definitionTableauxEdl({
 }) {
   const { etages } = tableauxDuRapport({ niveaux, pieces, elementsExport, photos, points, elements, visitees, inclurePropositions })
   if (!etages.length) return null
-  const propositions = elementsExport.some((e) => e.aValider)
-    || etages.some((e) => e.lignes.some((l) => l.ficheAValider))
-  const nom = rempli([affaire?.code_affaire, affaire?.nom].filter(Boolean).join(' · '))
+  const propositions = propositionsTableaux(etages, elementsExport)
   return documentPdf(affaire, [
     {
       id: 'tableaux',
       stack: [
-        { text: 'DESCRIPTION DES PIÈCES', fontSize: 8, bold: true, color: CHARTE.orange, characterSpacing: 1 },
-        { text: nom ? `État des lieux — ${nom}` : 'État des lieux', fontSize: 16, bold: true, color: CHARTE.encre, margin: [0, 1, 0, 10] },
+        { text: SURTITRE_TABLEAUX.toUpperCase(), fontSize: 8, bold: true, color: CHARTE.orange, characterSpacing: 1 },
+        { text: titreTableauxEdl(affaire), fontSize: 16, bold: true, color: CHARTE.encre, margin: [0, 1, 0, 10] },
         legendeTableau(),
       ],
     },
@@ -844,8 +877,37 @@ export function definitionTableauxEdl({
  * @param images { photos: photoId → JPEG } (data URL, Map ou objet ; une photo sans image est omise)
  * @returns la description, ou null s'il n'y a aucune photo à montrer
  */
-export function definitionPhotosEdl({
-  affaire = null, niveaux = [], pieces = [], elementsExport = [], photos = [], points = [], elements = null,
+export function definitionPhotosEdl({ affaire = null, ...params }) {
+  const contenu = []
+  for (const { nom, groupes } of photosAnnexeEdl(params)) {
+    groupes.forEach((g, i) => {
+      const [premiere, ...suite] = lignePhotos(g.photos, 'petites')
+      contenu.push(ensemble([
+        ...(i === 0 ? [titreSection(nom)] : []),
+        { text: [g.nom, { text: `  (${g.photos.length})`, fontSize: 8, color: COULEUR.gris }], fontSize: 10, bold: true, color: CHARTE.encre, margin: [0, 4, 0, 4] },
+        premiere,
+      ]), ...suite)
+    })
+  }
+  if (!contenu.length) return null
+  return documentPdf(affaire, [
+    { id: 'photos', text: TITRE_ANNEXE_PHOTOS, fontSize: 17, bold: true, color: CHARTE.encre },
+    { canvas: [{ type: 'line', x1: 0, y1: 4, x2: LARGEUR_UTILE, y2: 4, lineWidth: 1.2, lineColor: CHARTE.orange }], margin: [0, 0, 0, 6] },
+    ...contenu,
+  ])
+}
+
+export const TITRE_ANNEXE_PHOTOS = 'Annexe — Photos'
+
+/**
+ * Contenu de l'annexe des photos, commun au PDF et au Word : par niveau
+ * (ceux qui ont des photos), les pièces visitées dans l'ordre du plan puis
+ * « Hors pièces », chacune avec ses photos [{ image, legende }] triées par
+ * numéro. Paramètres de `suiteRapportEdl`.
+ * @returns [{ nom, niveauId, groupes: [{ nom, photos }] }]
+ */
+export function photosAnnexeEdl({
+  niveaux = [], pieces = [], elementsExport = [], photos = [], points = [], elements = null,
   visitees = null, images = {}, inclurePropositions = false,
 }) {
   const { etages, photos: numerotees } = tableauxDuRapport({ niveaux, pieces, elementsExport, photos, points, elements, visitees, inclurePropositions })
@@ -858,7 +920,7 @@ export function definitionPhotosEdl({
     .sort((a, b) => a.ph.numero - b.ph.numero)
     .map(({ ph, point, image }) => ({ image, legende: legendePhoto(ph, point, elementsDuPoint(point), nomPiece) }))
 
-  const contenu = []
+  const annexe = []
   for (const etage of etages) {
     const groupes = etage.visitees
       .map((piece) => ({ nom: libellePiece(piece), photos: illustrees(numerotees.filter((ph) => pointsParId.get(ph.point_id)?.piece_id === piece.id), libellePiece(piece)) }))
@@ -866,22 +928,9 @@ export function definitionPhotosEdl({
       const point = pointsParId.get(ph.point_id)
       return !!point && point.niveau_id === etage.niveau.id && (point.piece_id == null || !connues.has(point.piece_id))
     })
-    groupes.push({ nom: 'Hors pièces', photos: illustrees(hors, 'Hors pièces') })
+    groupes.push({ nom: LIBELLE_HORS_PIECES, photos: illustrees(hors, LIBELLE_HORS_PIECES) })
     const avecPhotos = groupes.filter((g) => g.photos.length)
-    if (!avecPhotos.length) continue
-    avecPhotos.forEach((g, i) => {
-      const [premiere, ...suite] = lignePhotos(g.photos, 'petites')
-      contenu.push(ensemble([
-        ...(i === 0 ? [titreSection(etage.nom)] : []),
-        { text: [g.nom, { text: `  (${g.photos.length})`, fontSize: 8, color: COULEUR.gris }], fontSize: 10, bold: true, color: CHARTE.encre, margin: [0, 4, 0, 4] },
-        premiere,
-      ]), ...suite)
-    })
+    if (avecPhotos.length) annexe.push({ nom: etage.nom, niveauId: etage.niveau.id, groupes: avecPhotos })
   }
-  if (!contenu.length) return null
-  return documentPdf(affaire, [
-    { id: 'photos', text: 'Annexe — Photos', fontSize: 17, bold: true, color: CHARTE.encre },
-    { canvas: [{ type: 'line', x1: 0, y1: 4, x2: LARGEUR_UTILE, y2: 4, lineWidth: 1.2, lineColor: CHARTE.orange }], margin: [0, 0, 0, 6] },
-    ...contenu,
-  ])
+  return annexe
 }

@@ -253,13 +253,11 @@ export async function genererRapportEdl({
   const blob = new Blob([octets], { type: 'application/pdf' })
 
   // Le Word reprend les mêmes images, gardées en Blob (les planches le sont
-  // déjà) ; les data URL du PDF sont lâchées. Plus d'extrait de pièce : le
-  // Word les remplace par les planches (tâche Word)
+  // déjà) ; les data URL du PDF sont lâchées
   const pourWord = {
     logo: blobDeDataUrl(images.logo),
     photoAffaire: blobDeDataUrl(images.photoAffaire),
     planches: planchesWord,
-    pieces: new Map(),
     photos: new Map([...images.photos].map(([cle, url]) => [cle, blobDeDataUrl(url)])),
   }
   let word = null
@@ -269,7 +267,6 @@ export async function genererRapportEdl({
       const imagesWord = {
         logo: await octetsDe(pourWord.logo),
         photoAffaire: await octetsDe(pourWord.photoAffaire),
-        pieces: await versOctets(pourWord.pieces),
         photos: await versOctets(pourWord.photos),
       }
       const planches = []

@@ -226,6 +226,28 @@ d'export avec aperçu (demande de l'agence) ; symboles validés par l'agence.
 rédacteur), par étage le plan avec les points numérotés, puis une fiche par
 pièce : finitions, HSP, éléments numérotés par calque, photos.
 
+**Avenant du 2026-11-19** (exemples de l'agence : planches « report relevé »
+en PDF et Word à symboles déplaçables, synthèse par pièce — gardés hors
+dépôt ; plan `docs/superpowers/plans/2026-11-19-etat-des-lieux-planches.md`).
+Le rapport devient : garde A4 avec **chiffres clés et points d'attention**
+(calculés par l'app, aucun appel payant) ; **une planche A3 paysage par
+étage**, plan existant au 1/100 (1/200 et au-delà si l'étage ne tient pas),
+**symboles seuls** colorés par famille et tournés contre leur mur, « ×n »
+pour les prises, légende encadrée des seuls symboles utilisés, cartouche de
+l'agence avec N° et indice saisis dans la fenêtre d'export ; **un tableau
+par niveau** (A3), une ligne par pièce : Sol, Mur, Plafond, Bloc porte
+(huisserie, vantail, quincaillerie), Équipements, Points particuliers, chaque
+matériau avec un **statut** — Conserver, Rafraîchir, Déposer, À préciser —
+proposé par l'analyse et modifiable en relecture (fiche `porte` et
+`statuts`, sans migration) ; **photos en annexe**. Ces tableaux remplacent
+les fiches d'une page par pièce et le plan A4 par étage. pdfmake ne
+changeant pas de format en cours de document, les morceaux A4 et A3 sont
+assemblés par pdf-lib. Le Word reprend la même suite : par étage le plan en
+fond verrouillé et chaque symbole en image flottante déplaçable, puis les
+tableaux en vrais tableaux Word et l'annexe photos. Nouveaux types de
+l'exemple : prise RJ45, applique, dalle, réglette, goulotte, baie de
+brassage.
+
 ## 8. Données (migration 077)
 
 Toutes les tables reçoivent les droits d'API (`grant … to authenticated`,

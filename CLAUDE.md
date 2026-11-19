@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 1605 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans, gestion de l'application, état des lieux)
+npm test         # 1720 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans, gestion de l'application, état des lieux)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -966,6 +966,20 @@ lot 1 : `docs/superpowers/plans/2026-11-17-etat-des-lieux-lot1-preparer.md`.
     analyse, `suiteFicheRecue`), éléments par calque en bleu avec l'extrait
     entendu : Valider / Modifier / Écarter (confirmation), « Ajouter un
     élément », « Relancer l'analyse » (confirmée : elle se paie).
+  - **Statuts et bloc porte** (2026-11-19, **aucune migration** : dans le
+    jsonb `edl_pieces.fiche`) : `porte: { huisserie, vantail, quincaillerie }`
+    et `statuts: { sol, murs, plafond, plinthes, porte }`, codes de
+    `statutsEdl.js` (pur, lu aussi par le serveur : Conserver / Rafraîchir /
+    Déposer, ou `null` = « À préciser », jamais enregistré). Une ancienne
+    fiche se lit telle quelle (`statutDe` → à préciser, `porteDe` vide).
+    Claude propose les statuts d'après ce qui est dit (« à repeindre » →
+    rafraîchir, « à remplacer » / « hors service » → déposer, rien sur
+    l'état → null ; « porte bois » = huisserie et vantail bois) et garde
+    ceux de la fiche actuelle sauf contradiction claire ; schéma fermé,
+    statuts en `anyOf` avec `null`. Relecture : un menu de statut à côté de
+    chaque rubrique et un bloc « Bloc porte » (`FicheRelecture.jsx`) —
+    modifier un statut vaut validation, comme le reste. Le DXF écrit
+    « Sol : Carrelage (Conserver) » et la ligne « Porte : … ».
 - **Export (lot 4)** (`export/`, plan
   `docs/superpowers/plans/2026-11-18-etat-des-lieux-lot4-exporter.md`, aucune
   migration, aucun appel payant) : bouton « Exporter » du module → **fenêtre
@@ -981,8 +995,9 @@ lot 1 : `docs/superpowers/plans/2026-11-17-etat-des-lieux-lot1-preparer.md`.
     `$HANDSEED` serait fragile) : par étage `…-EDL.dxf` (seuls les calques
     `EDL-`, à **fusionner** dans ArchiCAD) et `…-EDL-avec-plan.dxf` (+ plan
     allégé du fichier vectoriel ; ses textes perdent rotation et alignement).
-    Un bloc `EDL_<CODE>` par type, inséré tourné comme la pièce
-    (`orientationPiece`) ; libellés « P7 · … » empilés quand plusieurs
+    Un bloc `EDL_<CODE>` par type, inséré tourné par
+    `orientationElement` (voir Symboles), variante `…_R` du bloc quand ses
+    textes tomberaient la tête en bas ; libellés « P7 · … » empilés quand plusieurs
     éléments partagent un point ; cotes sur `EDL-Cotes` ; nom, surface, HSP
     (`EDL-Pièces`), finitions (`EDL-Finitions`) ; « Ph n » (`EDL-Photos`) ;
     `%%` échappé. **Aucun texte sur un autre** (demande de l'agence,
@@ -999,35 +1014,106 @@ lot 1 : `docs/superpowers/plans/2026-11-17-etat-des-lieux-lot1-preparer.md`.
     Noms de calques accentués : relus par LibreDWG, **à confirmer au premier
     essai de fusion dans ArchiCAD** (sinon les translittérer en un seul
     endroit, `nomCalqueValide`).
-  - **Symboles usuels** (`symbolesEdl.js`, seul catalogue : DXF, PDF, écran
-    ; validés par l'agence le 2026-11-18, « à faire évoluer ») : appareils
-    de plomberie et chauffage à leur taille réelle, autres symboles à taille
-    fixe (~0,30 m) ; primitives R12 seulement (ligne, polyligne, cercle, arc,
-    texte centré). Changer un symbole = modifier son entrée. Planche dans la
-    fenêtre d'export (`PlancheSymboles.jsx`).
-  - **Rapport PDF** (`rapportEdlLogique.js` pur, `planRapportEdl.js` dessin
-    sans DOM, `genererRapportEdl.js`) : garde, un plan paysage par étage
-    cadré sur les pièces (symboles et numéros), une fiche par pièce visitée
-    (finitions, éléments par calque, photos « Ph n » numérotées comme le DXF
-    par `numeroterPhotos`, points sans élément). Extraits de pièce limités
-    aux vecteurs de la pièce (iPad). **Mêmes règles que le DXF** : fiche
-    proposée écartée et HSP (lue sur le plan, sinon dite) par
-    `ficheExportEdl.js` ; pièce d'un point posée une fois par
-    `preparerExport` (`pieceDuPoint`, étage du point) ; décalage des symboles
-    d'un même point par `decalagesSymboles` ; relevés hors de toute pièce sur
-    une page « Hors pièces ». ZIP asynchrone (`zip` de fflate, workers) ; un
-    plan existant illisible ne retire que son `…-avec-plan.dxf` (avertissement).
+  - **Symboles usuels** (`symbolesEdl.js`, seul catalogue : DXF, PDF, Word,
+    écran ; validés par l'agence le 2026-11-18, « à faire évoluer », repris
+    le 2026-11-19 d'après sa légende « report relevé ») : appareils de
+    plomberie et chauffage à leur taille réelle, ainsi que réglette,
+    goulotte et baie de brassage, dont la longueur compte ; autres symboles
+    à taille fixe (~0,30 m) ; primitives R12 seulement (ligne, polyligne,
+    cercle, arc, texte centré). Changer un symbole = modifier son entrée.
+    Types ajoutés le 2026-11-19 (`calquesEdl.js`, seule liste : consignes de
+    Claude et barre de la visite suivent) : `rj45`, `applique`, `dalle`,
+    `reglette`, `goulotte`, `baie-brassage` ; le détecteur de fumée devient
+    un rond noir à point central. **Convention : le dos d'un symbole (côté
+    mur) est en −y local** ; `orientationElement` tourne un type de
+    `TYPES_MURAUX` à moins de 0,8 m d'un côté de sa pièce contre ce côté
+    (+y vers l'intérieur), sinon comme la pièce (`orientationPiece`) — DXF,
+    planches et Word passent par elle. `quantiteElement` lit le nombre de
+    prises / RJ45 dans le libellé (« ×3 », « 3 prises », « trois », « double »
+    → 2…), 1 sinon : « ×n » de la planche, nombres des tableaux. Un symbole
+    par type et par point (quantités additionnées, `emplacementsDuPoint`).
+    Couleurs par famille (`COULEURS_CALQUES`, calées sur l'exemple :
+    électricité bleue, sécurité noire, désordres violets…), distinctes du
+    bleu des propositions. Planche dans la fenêtre d'export
+    (`PlancheSymboles.jsx`).
+  - **Rapport** (refait le 2026-11-19 sur l'exemple de l'agence, planches
+    « report relevé » et synthèse par pièce gardés hors dépôt ; plan
+    `docs/superpowers/plans/2026-11-19-etat-des-lieux-planches.md`) : garde
+    A4 (chiffres clés et points d'attention) → **une planche A3 paysage par
+    étage** → **tableaux par niveau** en A3 → **annexe photos** en A4. Plus
+    de fiche d'une page par pièce, plus d'extrait de plan par pièce : les
+    planches et les tableaux les remplacent (choix de l'agence).
+    - **Planche** (`plancheEdl.js`, pur) : `misePlanche` décide tout —
+      échelle (1/100, 1/200, 1/250… la première qui fait tenir pièces,
+      relevés hors pièces et 1,5 m de marge), repère mètres → mm papier
+      (`versMmPlanche`, y vers le bas), symboles **seuls** (ni « P7 » ni
+      texte : le plan d'origine porte noms, surfaces et HSP) à 4,5 mm sur le
+      papier quelle que soit l'échelle (les symboles à taille réelle restent
+      à l'échelle), « ×n » pour les prises, proposition entourée d'un cercle
+      pointillé bleu ; légende encadrée des seuls types présents (entrée
+      « à valider » s'il y a lieu), posée dans le coin qui couvre le moins
+      le dessin ; cartouche de l'agence (affaire, échelle, format, phase EDL,
+      date, **indice**, **N°**, « EXISTANT - Plan <étage> »). Le dessin
+      (`dessinPlancheEdl.js`, contexte 2D injecté, sans DOM, testé avec un
+      contexte enregistreur) et le Word lisent **la même mise** : ce qui est
+      dans le PDF est ce qui est dans le Word. Canevas à 200 dpi (≈ 7,7 Mpx,
+      réduit au-delà de 16 Mpx pour l'iPad).
+    - **Tableaux** (`tableauxEdlLogique.js`, pur) : une ligne par pièce
+      visitée, colonnes Pièce · Sol · Mur · Plafond · Bloc porte ·
+      Équipements · Points particuliers ; chaque matériau porte son statut
+      en étiquette (Conserver vert cerné, Rafraîchir cerne pointillé ambre,
+      Déposer blanc sur rouille, À préciser cerne tireté gris) ; équipements
+      regroupés par type et libellé avec leur nombre (`quantiteElement`),
+      cotes et « Ph n » ; points particuliers = désordres, remarques, puis
+      points sans élément — aucune photo ni aucun point ne disparaît. Ligne
+      « Hors pièces » en fin de niveau, pièces non visitées nommées dessous.
+      Une pièce trop chargée continue sur une rangée « (suite) »
+      (`rangeesDeLigne`, 45 lignes) : pdfmake coupait sans le dire une
+      rangée plus haute que la page. **Chiffres clés et points d'attention
+      calculés par l'app** (`syntheseRapport`, aucun appel payant).
+    - **Assemblage par pdf-lib** (`assemblageRapportEdl.js`, testé dans
+      Node) : **pdfmake ne sait pas changer de format en cours de
+      document**, donc garde, tableaux et photos sont trois documents
+      pdfmake, les planches des pages JPEG pleine page, et pdf-lib met le
+      tout bout à bout ; il écrit aussi le pied « Affaire · État des lieux ·
+      page n / N » (Helvetica, d'où `texteLatin`) sur toutes les pages sauf
+      les planches, qui ont leur cartouche (N compte les planches). L'aperçu
+      pdf.js réduit chaque page à la même largeur, A3 et A4 mêlées.
+    **Mêmes règles que le DXF** : fiche proposée écartée, statuts, porte et
+    HSP (lue sur le plan, sinon dite) par `ficheExportEdl.js` ; pièce d'un
+    point posée une fois par `preparerExport` (`pieceDuPoint`, étage du
+    point) ; photos numérotées par `numeroterPhotos`. ZIP asynchrone (`zip`
+    de fflate, workers) ; un plan existant illisible ne retire que son
+    `…-avec-plan.dxf` (avertissement) ; une planche ratée manque seule
+    (avertissement), le rapport continue.
   - **Rapport Word** (demande de l'agence, 2026-11-19 : le reprendre à la
     main ; `rapportWordEdl.js`, docx **épinglé 9.15.2**, chargé à la demande,
     testé dans `etat-des-lieux-export-word.test.js`) : **même contenu que le
-    PDF** — la suite des pages vient de `suiteRapportEdl`, les textes de
-    `resumeFiche` / `ligneElement` / `resumeGarde`, communs aux deux ; ne
-    jamais décider un contenu dans l'un seulement. Vrais titres (volet de
-    navigation), tableaux, une section paysage par plan. Mêmes images : le
-    rapport rend `fabriquerWord()`, qui reprend les Blobs dessinés pour le
-    PDF (rien redessiné ni retéléchargé). Case « Rapport Word » de la
-    fenêtre (cochée par défaut, `rapportVoulu`) ; l'aperçu reste celui du
+    PDF** — tout vient de `tableauxDuRapport`, `syntheseRapport` et
+    `misePlanche` (plus de `suiteRapportEdl` ni de fiche par pièce) ; ne
+    jamais décider un contenu dans l'un seulement. Garde en vrai texte ;
+    par étage une section A3 paysage sans marges ni pied : la planche sans
+    symboles ni légende en **fond verrouillé** derrière le texte
+    (`behindDoc`, `locked`), la légende en image flottante, puis **chaque
+    symbole en image flottante déplaçable**, nommée d'après son type, posée
+    pour que son point d'insertion tombe à sa place (`imagesPlancheWord`,
+    pur ; EMU = mm × 36 000) — l'agence déplace un symbole mal placé sans
+    retoucher le plan. Images de symbole partagées par clé (type, angle
+    arrondi à 5°, quantité, proposition). Puis les tableaux en vrais
+    tableaux Word (en-tête répété, statuts en texte coloré), l'annexe
+    photos. Mêmes images : le rapport rend `fabriquerWord()`, qui reprend
+    les Blobs dessinés pour le PDF (rien redessiné ni retéléchargé). Case
+    « Rapport Word » de la fenêtre (cochée par défaut ; `rapportVoulu` : le
+    rapport se fabrique pour le PDF ou le Word) ; l'aperçu reste celui du
     PDF ; le .docx est rangé dans le ZIP sans recompression.
+  - **Numéros et indice des planches** (section « Planches » de la
+    fenêtre) : un « Indice » (vide : la date du jour au cartouche) et un
+    « N° » par étage coché (« EDL-1 », « EDL-2 »… dans l'ordre des étages,
+    donnés à chaque étage pour qu'en décocher un ne renumérote pas les
+    autres). Dans `cleRapport` (étages retenus seulement, textes lus comme
+    le générateur) : aperçu et ZIP suivent, 450 ms après la dernière touche.
+    Retenus par affaire sur l'appareil (`jga.edl-export.<affaire>`, lecture
+    et écriture sous try/catch, défauts sinon).
 
 ## To-do list (`src/modules/etude/todo/`)
 

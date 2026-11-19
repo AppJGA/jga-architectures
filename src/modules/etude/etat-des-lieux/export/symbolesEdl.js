@@ -640,7 +640,7 @@ export function symboleSvg(code) {
     if (p.polyligne) return { type: p.ferme ? 'polygon' : 'polyline', points: p.polyligne.map(pt).join(' ') }
     if (p.cercle) {
       const [cx, cy, r] = p.cercle
-      return { type: 'circle', cx: arrondi(cx), cy: arrondi(-cy), r }
+      return { type: 'circle', cx: arrondi(cx), cy: arrondi(-cy), r, ...(p.plein ? { plein: true } : {}) }
     }
     if (p.arc) {
       const [cx, cy, r, debut, fin] = p.arc

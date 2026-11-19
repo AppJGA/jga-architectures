@@ -18,7 +18,7 @@ export function SymboleEdl({ code, taille = 48, couleur = 'currentColor', epaiss
         if (e.type === 'line') return <line key={i} x1={e.x1} y1={e.y1} x2={e.x2} y2={e.y2} style={trait} />
         if (e.type === 'polyline') return <polyline key={i} points={e.points} style={trait} />
         if (e.type === 'polygon') return <polygon key={i} points={e.points} style={trait} />
-        if (e.type === 'circle') return <circle key={i} cx={e.cx} cy={e.cy} r={e.r} style={trait} />
+        if (e.type === 'circle') return <circle key={i} cx={e.cx} cy={e.cy} r={e.r} style={e.plein ? { ...trait, fill: couleur } : trait} />
         if (e.type === 'path') return <path key={i} d={e.d} style={trait} />
         return (
           <text

@@ -160,7 +160,8 @@ function symbolesPlanche(elements, pieces, transform) {
 
 // ─── Légende ────────────────────────────────────────────────────────────────
 
-const MULTIPLE = ' (×n : nb de prises)'
+// La RJ45 compte aussi par ×n : la mention ne dit pas « prises » pour elle
+const MULTIPLE = { prise: ' (×n : nb de prises)', rj45: ' (×n : nombre)' }
 
 function groupesLegende(symboles) {
   const groupes = []
@@ -171,7 +172,7 @@ function groupesLegende(symboles) {
       .filter((t) => siens.some((s) => s.code === t.code))
       .map((t) => {
         const multiple = siens.some((s) => s.code === t.code && s.quantite > 1)
-        return { code: t.code, libelle: texteLatin(t.libelle + (multiple ? MULTIPLE : '')), ...(multiple ? { multiple: true } : {}) }
+        return { code: t.code, libelle: texteLatin(t.libelle + (multiple ? MULTIPLE[t.code] ?? ' (×n : nombre)' : '')), ...(multiple ? { multiple: true } : {}) }
       })
     // Un relevé sans type a son losange : il s'explique aussi
     if (siens.some((s) => !s.code)) entrees.push({ code: null, libelle: 'Autre relevé', sansType: true })

@@ -22,7 +22,7 @@
 // redemande le texte seul, en français. Sans l'en-tête (comptes rendus),
 // rien ne change.
 
-import { verifierAgence } from './_agence.js'
+import { verifierAgence, noterConsommation } from './_agence.js'
 
 const MISTRAL = 'https://api.mistral.ai/v1/audio/transcriptions'
 const MODELE = 'voxtral-mini-latest'
@@ -131,6 +131,8 @@ export default async function handler(req, res) {
       return
     }
     const resultat = await reponse.json()
+    // Mistral facture à la minute d'audio : sa réponse dit combien il en a lu
+    await noterConsommation(url, cleSupabase, jeton, { fonction: 'transcrire', modele: resultat.model ?? MODELE, usage: resultat.usage ?? {} })
     const texte = String(resultat.text ?? '').trim()
     if (!horodatage) { res.status(200).json({ texte }); return }
     res.status(200).json({ texte, segments: horodate ? segmentsDe(resultat) : null })

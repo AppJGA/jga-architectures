@@ -8,7 +8,7 @@
 import { supabase } from '../core/supabase/client'
 import { toutesOperations } from '../modules/chantier/comptes-rendus/horsLigne/synchro'
 import { BAIL_MS } from '../shared/notion/synchroNotionLogique'
-import { periodeCredits, periodePrecedente, resumeConsommation } from './consommationIaLogique'
+import { debutLecture, resumeConsommation } from './consommationIaLogique'
 
 const absente = (error) => error && ['PGRST202', '42883', 'PGRST205', '42P01'].includes(error.code)
 
@@ -38,11 +38,11 @@ export async function stockageTotal() {
 }
 
 /**
- * Les appels à Claude de la période de crédits en cours et de la précédente
+ * Les appels à Claude et à Mistral des périodes en cours et précédentes
  * (migration 083) ; null si la table n'existe pas encore.
  */
 export async function consommationIa(maintenant = new Date()) {
-  const depuis = periodePrecedente(periodeCredits(maintenant)).debut.toISOString()
+  const depuis = debutLecture(maintenant).toISOString()
   const { data, error } = await supabase.from('ia_consommation')
     .select('cree_le, fonction, modele, usage').gte('cree_le', depuis).order('cree_le').limit(10000)
   if (absente(error)) return null

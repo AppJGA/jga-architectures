@@ -133,7 +133,8 @@ export const LIBELLES_FONCTIONS = {
  * @returns { periode, depense, part, alerte, reste, appels, parFonction,
  *            precedente, projection, depuis }
  */
-export function resumeConsommation(lignes = [], maintenant = new Date(), credits = CREDITS_API) {
+export function resumeConsommation(toutes = [], maintenant = new Date(), credits = CREDITS_API) {
+  const lignes = toutes.filter((l) => !deMistral(l))
   const periode = periodeCredits(maintenant, credits.jourRenouvellement)
   const avant = periodePrecedente(periode)
   const dans = (l, p) => {
@@ -183,4 +184,72 @@ export function formatDollars(montant) {
   const m = Number(montant) || 0
   if (m > 0 && m < 0.005) return '< 0,01 $'
   return `${m.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} $`
+}
+
+// ─── Mistral (transcription des visites enregistrées) ───────────────────────
+//
+// api/transcrire.js note chaque transcription réussie dans la même table
+// (`fonction` = 'transcrire'). Mistral facture à la minute d'audio, sans
+// crédits inclus : on suit la dépense du mois civil (celui de sa facture), à
+// 0,0035 $ la minute (Voxtral Mini Transcribe 3, prix public relevé le
+// 2026-11-19 ; un ancien modèle moins cher est compté à ce prix : mieux vaut
+// surestimer). Le chiffre qui fait foi est celui du tableau de bord Mistral.
+
+export const FONCTIONS_MISTRAL = ['transcrire']
+export const PRIX_MISTRAL_MINUTE = 0.0035
+export const CONSOLE_MISTRAL = 'https://console.mistral.ai/usage'
+
+export const deMistral = (l) => FONCTIONS_MISTRAL.includes(l?.fonction)
+
+/** Secondes d'audio d'une transcription (`usage.prompt_audio_seconds`). */
+export const secondesAudio = (usage) => n(usage?.prompt_audio_seconds)
+
+/** Coût en dollars d'une transcription. */
+export const coutTranscription = (usage) => (secondesAudio(usage) / 60) * PRIX_MISTRAL_MINUTE
+
+/** Le mois civil (UTC) qui contient `date`. */
+export function moisCivil(date = new Date()) {
+  const d = new Date(date)
+  return {
+    debut: new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1)),
+    fin: new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1)),
+  }
+}
+
+/** Le premier instant à lire pour les deux résumés (période précédente comprise). */
+export function debutLecture(maintenant = new Date()) {
+  const claude = periodePrecedente(periodeCredits(maintenant)).debut
+  const mistral = moisCivil(new Date(moisCivil(maintenant).debut.getTime() - 1)).debut
+  return claude < mistral ? claude : mistral
+}
+
+/**
+ * Ce que montre la carte « API Mistral ».
+ * @returns { periode, depense, minutes, appels, precedente, projection, depuis }
+ */
+export function resumeMistral(toutes = [], maintenant = new Date()) {
+  const lignes = toutes.filter(deMistral)
+  const periode = moisCivil(maintenant)
+  const avant = moisCivil(new Date(periode.debut.getTime() - 1))
+  const dans = (l, p) => {
+    const t = new Date(l.cree_le).getTime()
+    return t >= p.debut.getTime() && t < p.fin.getTime()
+  }
+  const totaux = (ls) => ({
+    depense: ls.reduce((s, l) => s + coutTranscription(l.usage), 0),
+    minutes: ls.reduce((s, l) => s + secondesAudio(l.usage), 0) / 60,
+    appels: ls.length,
+  })
+  const courant = totaux(lignes.filter((l) => dans(l, periode)))
+  const precedentes = lignes.filter((l) => dans(l, avant))
+  const ecoule = maintenant.getTime() - periode.debut.getTime()
+  const duree = periode.fin.getTime() - periode.debut.getTime()
+  const dates = lignes.map((l) => new Date(l.cree_le).getTime()).filter(Number.isFinite)
+  return {
+    periode,
+    ...courant,
+    precedente: precedentes.length ? { periode: avant, ...totaux(precedentes) } : null,
+    projection: ecoule >= 86400000 && courant.depense > 0 ? courant.depense * (duree / ecoule) : null,
+    depuis: dates.length ? new Date(Math.min(...dates)) : null,
+  }
 }

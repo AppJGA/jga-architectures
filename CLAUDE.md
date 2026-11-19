@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 1733 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans, gestion de l'application, état des lieux)
+npm test         # 1736 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans, gestion de l'application, état des lieux)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -1259,6 +1259,15 @@ du 7 au 6 (`CREDITS_API` : 100 $ du forfait Max, **seul endroit à changer**),
 reste, projection, détail par usage, période précédente ; c'est une
 estimation, la Console fait foi. Au-delà de 80 %, la bulle d'accueil prévient
 (`alerteAccueil`, `credits`).
+**API Mistral** (carte voisine, même table, aucune migration de plus) :
+`api/transcrire.js` note chaque transcription réussie (`fonction` =
+`transcrire`, `usage.prompt_audio_seconds`) ; `resumeMistral` compte le mois
+civil (facture Mistral, pas de crédits inclus) à `PRIX_MISTRAL_MINUTE`
+(0,0035 $, Voxtral Mini Transcribe 3 relevé le 2026-11-19), minutes, morceaux,
+projection, mois précédent. `FONCTIONS_MISTRAL` sépare les deux fournisseurs :
+une ligne Mistral ne compte jamais dans les crédits Claude. Mistral a une API
+d'administration (`/v1/admin/usage`, clé d'administrateur) si un chiffre exact
+devenait nécessaire.
 
 ## Échéances partagées avec Notion
 

@@ -3,7 +3,7 @@ import { RefreshCw, AlertTriangle, ExternalLink } from 'lucide-react'
 import { chargerGestion } from './gestionAppDonnees'
 import { LIMITES, jauge, parSorte, parAffaire, etatComptes, formatTaille } from './gestionAppLogique'
 import { NettoyageStockage } from '../modules/chantier/comptes-rendus/NettoyageStockage'
-import { resumeConsommation, formatDollars, CONSOLE_FACTURATION } from './consommationIaLogique'
+import { resumeConsommation, resumeMistral, formatDollars, CONSOLE_FACTURATION, CONSOLE_MISTRAL, PRIX_MISTRAL_MINUTE } from './consommationIaLogique'
 
 // ─── Gestion de l'application ────────────────────────────────────────────────
 //
@@ -128,6 +128,39 @@ function CreditsClaude({ consommation }) {
   )
 }
 
+const fmtMois = (d) => d.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric', timeZone: 'UTC' })
+const fmtMinutes = (m) => (m < 60 ? `${Math.round(m)} min` : `${Math.floor(m / 60)} h ${String(Math.round(m % 60)).padStart(2, '0')}`)
+
+function ConsommationMistral({ consommation }) {
+  const r = useMemo(() => (Array.isArray(consommation) ? resumeMistral(consommation) : null), [consommation])
+  if (consommation === null) return <p style={{ fontSize: 13, color: '#5E5854' }}>Le suivi s’affichera une fois la migration 083 passée dans Supabase.</p>
+  if (!r) return <p style={{ fontSize: 13, color: '#B8412C' }}>Lecture de la consommation impossible pour le moment.</p>
+  return (
+    <>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 8, marginBottom: 12 }}>
+        <Chiffre valeur={formatDollars(r.depense)} libelle={`dépensés en ${fmtMois(r.periode.debut)}`} />
+        <Chiffre valeur={fmtMinutes(r.minutes)} libelle="d’audio transcrit" />
+        <Chiffre valeur={r.appels.toLocaleString('fr-FR')} libelle={`morceau${r.appels > 1 ? 'x' : ''} transcrit${r.appels > 1 ? 's' : ''}`} />
+      </div>
+      <p style={{ margin: '0 0 8px', fontSize: 12, color: '#5E5854' }}>
+        Pas de crédits inclus : Mistral facture chaque mois ce qui a été transcrit, environ {formatDollars(PRIX_MISTRAL_MINUTE * 60)} l’heure d’audio.
+        {r.projection != null && <> Au rythme actuel, ≈ {formatDollars(r.projection)} sur le mois.</>}
+      </p>
+      {r.precedente && (
+        <p style={{ margin: '0 0 8px', fontSize: 12, color: '#5E5854' }}>
+          {fmtMois(r.precedente.periode.debut).replace(/^./, (c) => c.toUpperCase())} : {formatDollars(r.precedente.depense)}, {fmtMinutes(r.precedente.minutes)} d’audio.
+        </p>
+      )}
+      <p style={{ margin: 0, fontSize: 12, color: '#9C9591' }}>
+        Estimation au prix public, d’après les transcriptions de l’app{r.depuis ? ` comptées depuis le ${r.depuis.toLocaleDateString('fr-FR')}` : ' (aucune encore comptée)'}. Le montant exact se lit chez Mistral :{' '}
+        <a href={CONSOLE_MISTRAL} target="_blank" rel="noreferrer" style={{ color: ARDOISE, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+          ouvrir la consommation <ExternalLink size={11} />
+        </a>
+      </p>
+    </>
+  )
+}
+
 const ligneTableau = { borderTop: '0.5px solid rgba(0,0,0,0.06)' }
 const cellule = { padding: '6px 8px', fontSize: 12, color: '#1F1B17', textAlign: 'left', verticalAlign: 'top' }
 const entete = { ...cellule, fontSize: 11, fontWeight: 600, color: '#9C9591', textTransform: 'uppercase', letterSpacing: '0.04em' }
@@ -219,8 +252,12 @@ export default function GestionApplicationPage({ source = chargerGestion }) {
             )}
           </Carte>
 
-          <Carte titre="Crédits API Claude" large>
+          <Carte titre="Crédits API Claude">
             <CreditsClaude consommation={donnees.consommation} />
+          </Carte>
+
+          <Carte titre="API Mistral · transcription">
+            <ConsommationMistral consommation={donnees.consommation} />
           </Carte>
 
           <Carte titre="Comptes" large>

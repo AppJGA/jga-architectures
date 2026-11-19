@@ -170,3 +170,44 @@ describe('crédits API Claude', () => {
     assert.equal(formatDollars(0), '0,00 $')
   })
 })
+
+// ─── API Mistral ─────────────────────────────────────────────────────────────
+
+import { coutTranscription, resumeMistral, moisCivil, debutLecture, PRIX_MISTRAL_MINUTE } from '../src/admin/consommationIaLogique.js'
+
+describe('API Mistral', () => {
+  test('coût à la minute d’audio', () => {
+    proche(coutTranscription({ prompt_audio_seconds: 180 }), 3 * PRIX_MISTRAL_MINUTE)
+    assert.equal(coutTranscription({}), 0)
+    assert.equal(coutTranscription(null), 0)
+  })
+
+  test('mois civil et début de lecture commun aux deux résumés', () => {
+    const m = moisCivil(new Date('2026-12-31T23:00:00Z'))
+    assert.equal(m.debut.toISOString(), '2026-12-01T00:00:00.000Z')
+    assert.equal(m.fin.toISOString(), '2027-01-01T00:00:00.000Z')
+    // Claude remonte au 7 octobre, Mistral au 1er octobre : le plus tôt
+    assert.equal(debutLecture(new Date('2026-11-19T00:00:00Z')).toISOString(), '2026-10-01T00:00:00.000Z')
+    // Le 3 novembre, Claude remonte au 7 septembre
+    assert.equal(debutLecture(new Date('2026-11-03T00:00:00Z')).toISOString(), '2026-09-07T00:00:00.000Z')
+  })
+
+  test('chaque fournisseur ne compte que ses lignes', () => {
+    const lignes = [
+      { cree_le: '2026-10-20T10:00:00Z', fonction: 'transcrire', modele: 'voxtral-mini-latest', usage: { prompt_audio_seconds: 600 } },
+      { cree_le: '2026-11-08T10:00:00Z', fonction: 'transcrire', modele: 'voxtral-mini-latest', usage: { prompt_audio_seconds: 180 } },
+      { cree_le: '2026-11-09T10:00:00Z', fonction: 'transcrire', modele: 'voxtral-mini-latest', usage: { prompt_audio_seconds: 120 } },
+      { cree_le: '2026-11-09T11:00:00Z', fonction: 'analyser-visite', modele: 'claude-sonnet-5-5', usage: { input_tokens: 1e6 } },
+    ]
+    const maintenant = new Date('2026-11-16T00:00:00Z')
+    const m = resumeMistral(lignes, maintenant)
+    assert.equal(m.appels, 2)
+    proche(m.minutes, 5)
+    proche(m.depense, 5 * PRIX_MISTRAL_MINUTE)
+    proche(m.precedente.minutes, 10)
+    proche(m.projection, m.depense * 30 / 15)
+    const c = resumeConsommation(lignes, maintenant)
+    assert.equal(c.appels, 1)
+    proche(c.depense, 2)
+  })
+})

@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 1599 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans, gestion de l'application, état des lieux)
+npm test         # 1605 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans, gestion de l'application, état des lieux)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -1017,6 +1017,17 @@ lot 1 : `docs/superpowers/plans/2026-11-17-etat-des-lieux-lot1-preparer.md`.
     d'un même point par `decalagesSymboles` ; relevés hors de toute pièce sur
     une page « Hors pièces ». ZIP asynchrone (`zip` de fflate, workers) ; un
     plan existant illisible ne retire que son `…-avec-plan.dxf` (avertissement).
+  - **Rapport Word** (demande de l'agence, 2026-11-19 : le reprendre à la
+    main ; `rapportWordEdl.js`, docx **épinglé 9.15.2**, chargé à la demande,
+    testé dans `etat-des-lieux-export-word.test.js`) : **même contenu que le
+    PDF** — la suite des pages vient de `suiteRapportEdl`, les textes de
+    `resumeFiche` / `ligneElement` / `resumeGarde`, communs aux deux ; ne
+    jamais décider un contenu dans l'un seulement. Vrais titres (volet de
+    navigation), tableaux, une section paysage par plan. Mêmes images : le
+    rapport rend `fabriquerWord()`, qui reprend les Blobs dessinés pour le
+    PDF (rien redessiné ni retéléchargé). Case « Rapport Word » de la
+    fenêtre (cochée par défaut, `rapportVoulu`) ; l'aperçu reste celui du
+    PDF ; le .docx est rangé dans le ZIP sans recompression.
 
 ## To-do list (`src/modules/etude/todo/`)
 

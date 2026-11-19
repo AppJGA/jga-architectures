@@ -17,10 +17,17 @@ import { COULEURS_CALQUES, COULEUR_PROPOSITION, nomFichierRapportEdl } from './r
 
 // ─── Réglages ───────────────────────────────────────────────────────────────
 
-/** Tous les étages, propositions écartées, DXF avec le plan, rapport. */
+/** Tous les étages, propositions écartées, DXF avec le plan, rapport PDF et Word. */
 export function reglagesParDefaut(niveaux = []) {
-  return { niveaux: niveaux.map((n) => n.id), inclurePropositions: false, avecPlan: true, rapport: true }
+  return { niveaux: niveaux.map((n) => n.id), inclurePropositions: false, avecPlan: true, rapport: true, word: true }
 }
+
+/**
+ * Le rapport est à fabriquer : pour le PDF ou pour le Word, qui naît des
+ * mêmes images (`fabriquerWord` du rapport). L'aperçu montre le PDF dans les
+ * deux cas : le Word dit la même chose.
+ */
+export const rapportVoulu = (reglages) => !!(reglages?.rapport || reglages?.word)
 
 // Les étages dans l'ordre du plan, quel que soit l'ordre des coches
 const niveauxChoisis = (niveaux, reglages) => {
@@ -200,8 +207,8 @@ export function nomsFichiersDxf(affaire, niveaux = [], date = new Date()) {
 /**
  * Le ZIP : `fichiers` = [{ nom, octets (Uint8Array) }] → promesse des octets.
  * Les DXF (texte) se compressent bien : niveau 6, le défaut de fflate. Le PDF
- * est déjà compressé (images JPEG, flux dégonflés) : rangé tel quel (niveau
- * 0), sans passer des secondes à le recompresser pour rien sur un iPad.
+ * et le Word (un ZIP lui-même) sont déjà compressés : rangés tels quels (niveau
+ * 0), sans passer des secondes à les recompresser pour rien sur un iPad.
  * `zip` (et non `zipSync`) compresse chaque gros fichier dans un worker :
  * plusieurs DXF avec le plan figeaient l'écran le temps de la compression.
  * Les octets d'un DXF sont cédés au worker (`consume`) plutôt que copiés :
@@ -209,7 +216,7 @@ export function nomsFichiersDxf(affaire, niveaux = [], date = new Date()) {
  */
 export function fabriquerZip(fichiers = []) {
   const contenu = {}
-  for (const f of fichiers) contenu[f.nom] = /\.pdf$/i.test(f.nom) ? [f.octets, { level: 0 }] : [f.octets, { level: 6, consume: true }]
+  for (const f of fichiers) contenu[f.nom] = /\.(pdf|docx)$/i.test(f.nom) ? [f.octets, { level: 0 }] : [f.octets, { level: 6, consume: true }]
   return new Promise((resolve, reject) => {
     zip(contenu, (err, octets) => (err ? reject(err) : resolve(octets)))
   })
@@ -257,7 +264,7 @@ export function clesAGarder({ reglages = [], etageVisible = null, dessinVisible 
   const dessins = new Set()
   for (const r of reglages) {
     if (!r) continue
-    if (r.rapport) rapport.add(cleRapport(r))
+    if (rapportVoulu(r)) rapport.add(cleRapport(r))
     if (etageVisible && r.niveaux?.includes(etageVisible)) {
       for (const avec of [false, true]) dxf.add(cleDxf(etageVisible, r, avec))
     }

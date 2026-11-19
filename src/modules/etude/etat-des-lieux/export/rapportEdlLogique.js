@@ -216,14 +216,13 @@ export function hspPiece(piece, { inclurePropositions = false } = {}) {
 
 const FINITIONS = [['sol', 'Sol'], ['murs', 'Murs'], ['plafond', 'Plafond'], ['plinthes', 'Plinthes']]
 
-function tableauFinitions(fiche) {
+function tableauFinitions(finitions) {
   return {
     layout: tableauFin,
     margin: [0, 0, 0, 2],
     table: {
       widths: [70, '*'],
-      body: FINITIONS.map(([cle, libelle]) => {
-        const valeur = rempli(fiche?.[cle])
+      body: finitions.map(({ libelle, valeur }) => {
         return [
           { text: libelle, bold: true, fontSize: 8.5, color: COULEUR.gris },
           valeur ? { text: valeur, fontSize: 9 } : { text: 'Non relevé', italics: true, fontSize: 8.5, color: COULEUR.grisClair },
@@ -250,20 +249,19 @@ function blocElements(titre, elements) {
         dontBreakRows: true,
         widths: [30, '*', 150],
         body: g.elements.map((e) => {
-          const type = texteLatin(typeEdl(e.type)?.libelle)
-          const libelle = libelleElement(e)
+          const l = ligneElement(e)
           return [
-            { text: e.numero != null ? `P${e.numero}` : '—', bold: true, fontSize: 9, color: e.aValider ? COULEUR_PROPOSITION : couleurCalque(g.calque) },
+            { text: l.numero, bold: true, fontSize: 9, color: l.aValider ? COULEUR_PROPOSITION : couleurCalque(g.calque) },
             {
               fontSize: 9,
               text: [
-                libelle,
-                ...(type && type.toLowerCase() !== libelle.toLowerCase() ? [{ text: `  ${type}`, fontSize: 7.5, color: COULEUR.gris }] : []),
-                ...(e.aValider ? [{ text: '  (à valider)', italics: true, color: COULEUR_PROPOSITION }] : []),
-                ...(!Number.isFinite(e.x) || !Number.isFinite(e.y) ? [{ text: '  (sans point sur le plan)', fontSize: 7.5, italics: true, color: COULEUR.grisClair }] : []),
+                l.libelle,
+                ...(l.type ? [{ text: `  ${l.type}`, fontSize: 7.5, color: COULEUR.gris }] : []),
+                ...(l.aValider ? [{ text: '  (à valider)', italics: true, color: COULEUR_PROPOSITION }] : []),
+                ...(l.sansPoint ? [{ text: '  (sans point sur le plan)', fontSize: 7.5, italics: true, color: COULEUR.grisClair }] : []),
               ],
             },
-            rempli(e.cotes) ? { text: rempli(e.cotes), fontSize: 8.5, color: COULEUR.texte } : { text: '', fontSize: 8.5 },
+            { text: l.cotes, fontSize: 8.5, color: COULEUR.texte },
           ]
         }),
       },
@@ -271,9 +269,7 @@ function blocElements(titre, elements) {
   ], g.elements.length <= 12))
 }
 
-function enteteFiche(etage, piece, inclurePropositions) {
-  const surface = surfacePiece(piece)
-  const hsp = hspPiece(piece, { inclurePropositions })
+function enteteFiche(etage, piece, { surface, hsp }) {
   return [
     {
       columns: [
@@ -328,21 +324,18 @@ function blocPhotos(photos) {
 
 function fichePiece({ etage, piece, elements, sansElement, photos, images, inclurePropositions }) {
   const extrait = prendre(piece.id, images.pieces)
-  // Fiche proposée et non retenue : la pièce se lit comme sans fiche, comme
-  // dans le DXF
-  const fiche = ficheExportee(piece, { inclurePropositions })
-  const remarques = rempli(fiche?.remarques)
-  const vide = !elements.length && !sansElement.length && !photos.length && !ficheRemplie(fiche)
+  const resume = resumeFiche({ piece, elements, sansElement, photos, inclurePropositions })
+  const { remarques, vide } = resume
   return {
     id: `fiche-${piece.id}`,
     pageBreak: 'before',
     pageOrientation: 'portrait',
     stack: [
-      ...enteteFiche(etage, piece, inclurePropositions),
-      ...(piece.fiche_a_valider && fiche ? [{ text: 'Fiche proposée par l’analyse, à valider par l’agence.', italics: true, fontSize: 8.5, color: COULEUR_PROPOSITION, margin: [0, 0, 0, 4] }] : []),
+      ...enteteFiche(etage, piece, resume),
+      ...(resume.ficheProposee ? [{ text: 'Fiche proposée par l’analyse, à valider par l’agence.', italics: true, fontSize: 8.5, color: COULEUR_PROPOSITION, margin: [0, 0, 0, 4] }] : []),
       ...(extrait ? [{ image: extrait, fit: CADRE_PLAN_PIECE, alignment: 'center', margin: [0, 0, 0, 4] }] : []),
       ...(vide ? [discret('Rien n’a été relevé dans cette pièce.')] : []),
-      ensemble([titreSection('Finitions'), tableauFinitions(fiche)]),
+      ensemble([titreSection('Finitions'), tableauFinitions(resume.finitions)]),
       ...blocElements(titreSection(`Éléments relevés${elements.length ? ` (${elements.length})` : ''}`), elements),
       ...blocSansElement(sansElement),
       ...(remarques ? [ensemble([titreSection('Remarques'), { text: remarques, fontSize: 9 }], remarques.length < 1500)] : []),
@@ -383,7 +376,7 @@ function pagePlan({ niveau, pieces, visitees, nonVisitees, elements, images }) {
           { width: '*', text: [{ text: nom, fontSize: 15, bold: true }, { text: '   Plan de l’étage', fontSize: 10, color: COULEUR.gris }] },
           {
             width: 260, alignment: 'right', fontSize: 8.5, color: COULEUR.gris, margin: [0, 4, 0, 0],
-            text: `${pieces.length} pièce${pieces.length > 1 ? 's' : ''} · ${visitees.length} visitée${visitees.length > 1 ? 's' : ''} · ${elements.length} élément${elements.length > 1 ? 's' : ''}`,
+            text: comptesEtage({ pieces, visitees, elements }),
           },
         ],
       },
@@ -430,6 +423,9 @@ export function nomFichierRapportEdl(affaire, date = new Date()) {
     .replace(/[^A-Za-z0-9-]+/g, '-').replace(/^-+|-+$/g, '')
   return `${[dateIso(date), code || null, 'etat-des-lieux'].filter(Boolean).join('-')}.pdf`
 }
+
+/** « 2026-11-18-2618-etat-des-lieux.docx » : le rapport Word, à côté du PDF */
+export const nomFichierWordEdl = (affaire, date = new Date()) => nomFichierRapportEdl(affaire, date).replace(/\.pdf$/, '.docx')
 
 function pageDeGarde({ affaire, etages, redacteur, date, elementsExport, pieces, images }) {
   const propositions = elementsExport.filter((e) => e.aValider).length
@@ -488,7 +484,9 @@ function pageDeGarde({ affaire, etages, redacteur, date, elementsExport, pieces,
 }
 
 /**
- * Description pdfmake du rapport.
+ * Ce que contient le rapport, page par page, sans mise en page : la même
+ * suite sert au PDF (`definitionRapportEdl`) et au Word
+ * (`rapportWordEdl.js`), pour qu'ils disent la même chose.
  *
  * @param elementsExport sortie d'`elementsAExporter` (export DXF) :
  *   [{ id, pieceId, pointId, x, y, calque, type, libelle, cotes, numero, aValider }]
@@ -501,12 +499,16 @@ function pageDeGarde({ affaire, etages, redacteur, date, elementsExport, pieces,
  * @param visitees identifiants des pièces où l'on est entré en visite (Set ou tableau)
  * @param inclurePropositions comme le DXF : une fiche proposée (`fiche_a_valider`)
  *   n'est imprimée que si vrai ; sinon la pièce se lit sans fiche
- * @param images { logo, photoAffaire, plans: niveauId → JPEG, pieces: pieceId → JPEG,
- *   photos: photoId → JPEG } (Map ou objet ; une image absente est omise)
+ * @param images { photos: photoId → image } (Map ou objet) : une photo sans
+ *   image est omise ; l'image est rendue telle quelle (data URL pour pdfmake,
+ *   octets pour le Word)
+ * @returns { etages, pages: [{ sorte: 'plan', niveau, pieces, visitees, nonVisitees, elements }
+ *   | { sorte: 'piece', etage, piece, elements, sansElement, photos: [{ image, legende }] }
+ *   | { sorte: 'hors', etage, niveauId, elements, sansElement, photos }] }
  */
-export function definitionRapportEdl({
-  affaire = null, etat = null, niveaux = [], pieces = [], elementsExport = [], photos = [], points = [], elements = null,
-  visitees = null, images = {}, redacteur = '', date = null, inclurePropositions = false,
+export function suiteRapportEdl({
+  niveaux = [], pieces = [], elementsExport = [], photos = [], points = [], elements = null,
+  visitees = null, images = {}, inclurePropositions = false,
 }) {
   const etages = etagesDuRapport({ niveaux, pieces, elementsExport, points, visitees, inclurePropositions })
   const sansElement = pointsSansElement({ points, elements, elementsExport })
@@ -532,29 +534,112 @@ export function definitionRapportEdl({
     .map(({ ph, point, image }) => ({ image, legende: legendePhoto(ph, point, elementsDuPoint(point)) }))
   const parNumero = (a, b) => (a.numero ?? 0) - (b.numero ?? 0)
 
-  const contenu = [pageDeGarde({ affaire, etages, redacteur, date: date ?? etat?.created_at ?? null, elementsExport, pieces, images })]
+  const pages = []
   for (const etage of etages) {
     const nomEtage = rempli(etage.niveau.nom) || 'Étage'
-    contenu.push(pagePlan({ ...etage, elements: elementsDeLEtage(elementsExport, etage.niveau.id, pieces), images }))
+    pages.push({ sorte: 'plan', ...etage, elements: elementsDeLEtage(elementsExport, etage.niveau.id, pieces) })
     for (const piece of etage.visitees) {
-      contenu.push(fichePiece({
+      pages.push({
+        sorte: 'piece',
         etage: nomEtage,
         piece,
         elements: elementsExport.filter((e) => e.pieceId === piece.id),
         sansElement: sansElement.filter((p) => p.piece_id === piece.id).sort(parNumero),
         photos: illustrees(photosNumerotees.filter((ph) => pointsParId.get(ph.point_id)?.piece_id === piece.id)),
-        images,
-        inclurePropositions,
-      }))
+      })
     }
     const hors = relevesHorsPieces({ niveauId: etage.niveau.id, pieces, elementsExport, points, photos: photosNumerotees, sansElement })
     const photosHors = illustrees(hors.photos)
     if (hors.elements.length || hors.sansElement.length || photosHors.length) {
-      contenu.push(pageHorsPieces({
-        etage: nomEtage, niveauId: etage.niveau.id, elements: hors.elements,
+      pages.push({
+        sorte: 'hors', etage: nomEtage, niveauId: etage.niveau.id, elements: hors.elements,
         sansElement: hors.sansElement.sort(parNumero), photos: photosHors,
-      }))
+      })
     }
+  }
+  return { etages, pages }
+}
+
+/**
+ * Ce que dit une fiche de pièce, partagé par le PDF et le Word : fiche
+ * exportée (une fiche proposée non retenue se lit comme absente, comme dans
+ * le DXF), surface, HSP, remarques, pièce vide.
+ */
+export function resumeFiche({ piece, elements = [], sansElement = [], photos = [], inclurePropositions = false }) {
+  const fiche = ficheExportee(piece, { inclurePropositions })
+  return {
+    fiche,
+    surface: surfacePiece(piece),
+    hsp: hspPiece(piece, { inclurePropositions }),
+    remarques: rempli(fiche?.remarques),
+    ficheProposee: !!(piece.fiche_a_valider && fiche),
+    vide: !elements.length && !sansElement.length && !photos.length && !ficheRemplie(fiche),
+    finitions: FINITIONS.map(([cle, libelle]) => ({ cle, libelle, valeur: rempli(fiche?.[cle]) })),
+  }
+}
+
+/** Ligne d'un élément : libellé, type quand il dit autre chose, sans point. */
+export function ligneElement(e) {
+  const type = texteLatin(typeEdl(e.type)?.libelle)
+  const libelle = libelleElement(e)
+  return {
+    numero: e.numero != null ? `P${e.numero}` : '—',
+    libelle,
+    type: type && type.toLowerCase() !== libelle.toLowerCase() ? type : null,
+    aValider: !!e.aValider,
+    sansPoint: !Number.isFinite(e.x) || !Number.isFinite(e.y),
+    cotes: rempli(e.cotes),
+  }
+}
+
+/** Page de garde : textes communs au PDF et au Word. */
+export function resumeGarde({ affaire, etages, redacteur, date, elementsExport = [], pieces = [] }) {
+  const propositions = elementsExport.filter((e) => e.aValider).length
+  const d = dateIso(date)
+  return {
+    nom: rempli(affaire?.nom) || 'Affaire',
+    code: rempli(affaire?.code_affaire),
+    adresse: texteLatin([affaire?.projet_adresse, affaire?.projet_commune].filter(Boolean).join(' ')),
+    moa: rempli(affaire?.moa_nom),
+    date: d ? jour(d, { day: 'numeric', month: 'long', year: 'numeric' }) : '—',
+    redacteur: rempli(redacteur) || '—',
+    etages: etages.map((e) => ({
+      nom: rempli(e.niveau.nom) || 'Étage',
+      pieces: e.pieces.length,
+      visitees: e.visitees.length,
+      // Par étage et non par pièce : les relevés hors pièces comptent
+      elements: elementsDeLEtage(elementsExport, e.niveau.id, pieces).length,
+    })),
+    propositions: propositions
+      ? `${propositions} élément${propositions > 1 ? 's' : ''} marqué${propositions > 1 ? 's' : ''} « à valider » : proposition${propositions > 1 ? 's' : ''} de l’analyse pas encore relue${propositions > 1 ? 's' : ''} par l’agence.`
+      : null,
+  }
+}
+
+/** « 12 pièces · 5 visitées · 30 éléments » */
+export function comptesEtage({ pieces, visitees, elements }) {
+  const s = (n) => (n > 1 ? 's' : '')
+  return `${pieces.length} pièce${s(pieces.length)} · ${visitees.length} visitée${s(visitees.length)} · ${elements.length} élément${s(elements.length)}`
+}
+
+export const designationPiece = designation
+
+/**
+ * Description pdfmake du rapport : la suite de `suiteRapportEdl` mise en
+ * page. Paramètres de `suiteRapportEdl`, plus :
+ * @param images { logo, photoAffaire, plans: niveauId → JPEG, pieces: pieceId → JPEG,
+ *   photos: photoId → JPEG } (data URL, Map ou objet ; une image absente est omise)
+ */
+export function definitionRapportEdl({
+  affaire = null, etat = null, niveaux = [], pieces = [], elementsExport = [], photos = [], points = [], elements = null,
+  visitees = null, images = {}, redacteur = '', date = null, inclurePropositions = false,
+}) {
+  const { etages, pages } = suiteRapportEdl({ niveaux, pieces, elementsExport, photos, points, elements, visitees, images, inclurePropositions })
+  const contenu = [pageDeGarde({ affaire, etages, redacteur, date: date ?? etat?.created_at ?? null, elementsExport, pieces, images })]
+  for (const page of pages) {
+    if (page.sorte === 'plan') contenu.push(pagePlan({ ...page, images }))
+    else if (page.sorte === 'piece') contenu.push(fichePiece({ ...page, images, inclurePropositions }))
+    else contenu.push(pageHorsPieces(page))
   }
 
   return {

@@ -55,7 +55,7 @@ function donneesEssai() {
 describe('réglages et clés', () => {
   test('par défaut : tous les étages, propositions écartées, plan et rapport', () => {
     const r = reglagesParDefaut(donneesEssai().niveaux)
-    assert.deepEqual(r, { niveaux: ['n1', 'n2'], inclurePropositions: false, avecPlan: true, rapport: true })
+    assert.deepEqual(r, { niveaux: ['n1', 'n2'], inclurePropositions: false, avecPlan: true, rapport: true, word: true })
     assert.ok(exportPossible(r))
     assert.ok(!exportPossible({ ...r, niveaux: [] }))
     assert.ok(!exportPossible(null))
@@ -316,10 +316,12 @@ describe('correctifs (tour 1)', () => {
     assert.ok(g.dxf.has(cleDxf('n2', r, false)))
     assert.ok(!g.dxf.has(cleDxf('n2', r, true)))
     assert.deepEqual([...g.dessins], [cleDxf('n1', differe, true)])
-    // Rapport décoché : plus de rapport gardé ; étage décoché : plus de DXF
-    const sans = clesAGarder({ reglages: [{ ...r, rapport: false, niveaux: ['n2'] }], etageVisible: 'n1' })
+    // PDF et Word décochés : plus de rapport gardé ; étage décoché : plus de DXF
+    const sans = clesAGarder({ reglages: [{ ...r, rapport: false, word: false, niveaux: ['n2'] }], etageVisible: 'n1' })
     assert.equal(sans.rapport.size, 0)
     assert.equal(sans.dxf.size, 0)
+    // Le Word seul se fabrique depuis le rapport : il reste gardé
+    assert.equal(clesAGarder({ reglages: [{ ...r, rapport: false }] }).rapport.size, 1)
   })
 
   test('éviction : seulement les entrées réglées hors de la liste', () => {
@@ -341,6 +343,9 @@ describe('correctifs (tour 1)', () => {
     const relu = unzipSync(zip)
     assert.equal(relu['r.pdf'].length, 20000)
     assert.deepEqual([...relu['a.dxf']], [...dxf])
+    // Le Word (un ZIP lui-même) est rangé tel quel, comme le PDF
+    const docx = new Uint8Array(20000)
+    assert.ok((await fabriquerZip([{ nom: 'r.docx', octets: docx }])).length > docx.length)
   })
 
   test('les champs frais de l’analyse recouvrent les pièces lues', () => {

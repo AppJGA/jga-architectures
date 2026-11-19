@@ -52,6 +52,24 @@ const enDataUrl = (blob) => new Promise((resolve, reject) => {
   lecteur.readAsDataURL(blob)
 })
 
+// Data URL JPEG → Blob : ce que le Word garde des photos une fois le PDF
+// fait (la chaîne base64 pèse deux fois plus en mémoire)
+function blobDeDataUrl(dataUrl) {
+  if (!dataUrl) return null
+  const binaire = atob(String(dataUrl).slice(String(dataUrl).indexOf(',') + 1))
+  const octets = new Uint8Array(binaire.length)
+  for (let i = 0; i < binaire.length; i++) octets[i] = binaire.charCodeAt(i)
+  return new Blob([octets], { type: 'image/jpeg' })
+}
+
+const octetsDe = async (blob) => (blob ? new Uint8Array(await blob.arrayBuffer()) : null)
+
+async function versOctets(blobs) {
+  const sortie = new Map()
+  for (const [cle, blob] of blobs) sortie.set(cle, await octetsDe(blob))
+  return sortie
+}
+
 // Map de Blobs → Map de data URL, au dernier moment (pdfmake les veut ainsi)
 async function versDataUrls(blobs) {
   const sortie = new Map()
@@ -78,7 +96,9 @@ async function fondImage(niveau, obtenirLiens) {
  *   photo ; il lève une erreur pour arrêter une fabrication devenue inutile
  *   (réglages changés) sans finir de télécharger et d'encoder les photos
  * Les autres paramètres sont ceux de `definitionRapportEdl`.
- * @returns { blob, nomFichier, avertissements }
+ * @returns { blob, nomFichier, avertissements, fabriquerWord } — `fabriquerWord()`
+ *   rend la promesse du rapport Word ({ blob, nomFichier }) fait des mêmes
+ *   images (rien n'est redessiné ni retéléchargé), une seule fois
  */
 export async function genererRapportEdl({
   affaire, etat = null, niveaux = [], pieces = [], points = [], elements = null, elementsExport = [], photos = [],
@@ -164,13 +184,40 @@ export async function genererRapportEdl({
   surEtape('Rapport : mise en page…')
   images.plans = await versDataUrls(plans)
   images.pieces = await versDataUrls(extraits)
-  plans.clear()
-  extraits.clear()
-  const definition = definitionRapportEdl({ affaire, etat, niveaux, pieces, elementsExport, photos, points, elements, visitees, images, redacteur, date, inclurePropositions })
+  const parametres = { affaire, etat, niveaux, pieces, elementsExport, photos, points, elements, visitees, redacteur, date, inclurePropositions }
+  const definition = definitionRapportEdl({ ...parametres, images })
   const blob = await pdfMake.createPdf(definition).getBlob()
+
+  // Le Word reprend les mêmes images, gardées en Blob (plans et extraits le
+  // sont déjà) ; les data URL du PDF sont lâchées
+  const pourWord = {
+    logo: blobDeDataUrl(images.logo),
+    photoAffaire: blobDeDataUrl(images.photoAffaire),
+    plans,
+    pieces: extraits,
+    photos: new Map([...images.photos].map(([cle, url]) => [cle, blobDeDataUrl(url)])),
+  }
+  let word = null
+  const fabriquerWord = () => {
+    word ??= (async () => {
+      const { Packer, documentWordEdl, nomFichierWordEdl } = await import('./rapportWordEdl')
+      const imagesWord = {
+        logo: await octetsDe(pourWord.logo),
+        photoAffaire: await octetsDe(pourWord.photoAffaire),
+        plans: await versOctets(pourWord.plans),
+        pieces: await versOctets(pourWord.pieces),
+        photos: await versOctets(pourWord.photos),
+      }
+      const document = documentWordEdl({ ...parametres, images: imagesWord })
+      return { blob: await Packer.toBlob(document), nomFichier: nomFichierWordEdl(affaire, date) }
+    })()
+    // Un échec peut se retenter au prochain export
+    word.catch(() => { word = null })
+    return word
+  }
   const avertissements = [...manquants].map(([quoi, n]) => {
     const [singulier, pluriel, feminin] = LIBELLES_MANQUANTS[quoi] ?? [quoi, quoi, false]
     return `${n} ${n > 1 ? pluriel : singulier} non chargé${feminin ? 'e' : ''}${n > 1 ? 's' : ''}`
   })
-  return { blob, nomFichier: nomFichierRapportEdl(affaire, date), avertissements }
+  return { blob, nomFichier: nomFichierRapportEdl(affaire, date), avertissements, fabriquerWord }
 }

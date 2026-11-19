@@ -11,9 +11,9 @@ import { lireDonneesExport, chargerPlanNiveau } from './exportDonnees'
 import { genererRapportEdl } from './genererRapportEdl'
 import {
   avertissementsExport, cleDxf, cleRapport, clesAEvincer, clesAGarder, dessinDxf, dxfDuNiveau, exportPossible,
-  fabriquerZip, fichiersDxf, nomFichierZip, nomsFichiersDxf, noteUniteArchicad, preparerExport, reglagesParDefaut, uniteEtage,
+  fabriquerZip, fichiersDxf, nomFichierZip, nomsFichiersDxf, noteUniteArchicad, preparerExport, rapportVoulu, reglagesParDefaut, uniteEtage,
 } from './exportFenetreLogique'
-import { nomFichierRapportEdl } from './rapportEdlLogique'
+import { nomFichierRapportEdl, nomFichierWordEdl } from './rapportEdlLogique'
 import { PlancheSymboles } from './PlancheSymboles'
 import { ApercuDxfEdl } from './ApercuDxfEdl'
 
@@ -167,7 +167,7 @@ export function ExportEdl({ affaireId, obtenirLiens, enAttente = 0, onFermer }) 
   // plus ceux de l'écran (ou que la fenêtre se ferme)
   const cleVivante = useRef(null)
   useEffect(() => {
-    cleVivante.current = reglages?.rapport ? cleRapport(reglages) : null
+    cleVivante.current = rapportVoulu(reglages) ? cleRapport(reglages) : null
   }, [reglages])
   useEffect(() => () => { cleVivante.current = null }, [])
 
@@ -214,7 +214,8 @@ export function ExportEdl({ affaireId, obtenirLiens, enAttente = 0, onFermer }) 
     [donnees, reglages],
   )
   const onglets = [
-    ...(reglages?.rapport ? [{ id: 'rapport', libelle: 'Rapport PDF' }] : []),
+    // Le Word dit la même chose que le PDF : son aperçu est celui du PDF
+    ...(rapportVoulu(reglages) ? [{ id: 'rapport', libelle: reglages.rapport ? 'Rapport PDF' : 'Rapport (aperçu du Word)' }] : []),
     ...etagesChoisis.map((n) => ({ id: n.id, libelle: `DXF — ${n.nom || 'sans nom'}` })),
   ]
   const [ongletVoulu, setOngletVoulu] = useState('rapport')
@@ -226,7 +227,7 @@ export function ExportEdl({ affaireId, obtenirLiens, enAttente = 0, onFermer }) 
   const pagesCourantes = useRef(apercuPdf)
   const [erreurPdf, setErreurPdf] = useState(null) // { cle, message }
   const [relancePdf, setRelancePdf] = useState(0)
-  const ongletRapport = onglet === 'rapport' && pret && !!reglagesApercu?.rapport
+  const ongletRapport = onglet === 'rapport' && pret && rapportVoulu(reglagesApercu)
   const cleRapportApercu = reglagesApercu ? cleRapport(reglagesApercu) : null
 
   useEffect(() => {
@@ -329,7 +330,7 @@ export function ExportEdl({ affaireId, obtenirLiens, enAttente = 0, onFermer }) 
     // Tout ce que ce ZIP attend reste en cache jusqu'à la fin
     retenues.current = new Set([
       ...prep.etages.flatMap((e) => [cleDxf(e.niveau.id, voulus, false), cleDxf(e.niveau.id, voulus, true)]),
-      ...(voulus.rapport ? [cleRapport(voulus)] : []),
+      ...(rapportVoulu(voulus) ? [cleRapport(voulus)] : []),
     ])
     try {
       // Un plan illisible ne coûte que le DXF avec le plan de son étage (avertissement)
@@ -339,10 +340,15 @@ export function ExportEdl({ affaireId, obtenirLiens, enAttente = 0, onFermer }) 
         surEtape: (etape) => setExportEtat({ etape }),
       })
       let avertissements = avertissementsDxf
-      if (voulus.rapport) {
+      if (rapportVoulu(voulus)) {
         setExportEtat({ etape: 'Rapport : images…', rapport: true })
         const r = await obtenirRapport(voulus)
-        fichiers.push({ nom: r.nomFichier, octets: new Uint8Array(await r.blob.arrayBuffer()) })
+        if (voulus.rapport) fichiers.push({ nom: r.nomFichier, octets: new Uint8Array(await r.blob.arrayBuffer()) })
+        if (voulus.word) {
+          setExportEtat({ etape: 'Rapport Word…' })
+          const w = await r.fabriquerWord()
+          fichiers.push({ nom: w.nomFichier, octets: new Uint8Array(await w.blob.arrayBuffer()) })
+        }
         avertissements = [...avertissements, ...(r.avertissements ?? [])]
       }
       setExportEtat({ etape: 'Compression du ZIP…' })
@@ -373,6 +379,7 @@ export function ExportEdl({ affaireId, obtenirLiens, enAttente = 0, onFermer }) 
       ...(reglages.avecPlan && n.chemin_vecteurs ? [{ nom: noms.get(n.id).avecPlan, unite: uniteEtage(n) }] : []),
     ]),
     ...(reglages.rapport ? [{ nom: nomFichierRapportEdl(affaireExport, date), unite: null }] : []),
+    ...(reglages.word ? [{ nom: nomFichierWordEdl(affaireExport, date), unite: null }] : []),
   ] : []
   const noteUnite = noteUniteArchicad(etagesChoisis)
   const sansPlan = reglages?.avecPlan ? etagesChoisis.filter((n) => !n.chemin_vecteurs) : []
@@ -525,6 +532,11 @@ export function ExportEdl({ affaireId, obtenirLiens, enAttente = 0, onFermer }) 
           <input type="checkbox" checked={reglages.rapport} disabled={exportEnCours}
             onChange={(e) => majReglages({ rapport: e.target.checked })} style={caseACocher} />
           <span>Rapport PDF</span>
+        </label>
+        <label style={ligneCase}>
+          <input type="checkbox" checked={!!reglages.word} disabled={exportEnCours}
+            onChange={(e) => majReglages({ word: e.target.checked })} style={caseACocher} />
+          <span>Rapport Word <span style={{ color: PALE, fontSize: 11 }}>(.docx, modifiable — même contenu que le PDF)</span></span>
         </label>
         {sansPlan.length > 0 && (
           <p style={{ margin: '4px 0 0', fontSize: 11, color: PALE }}>

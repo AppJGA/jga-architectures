@@ -317,7 +317,7 @@ const POLICE = 'Arial'
 
 /**
  * Le rapport Word (objet `Document` de docx, à passer à `Packer`).
- * Paramètres de `definitionRapportEdl` ; les images sont des octets JPEG
+ * Paramètres de `suiteRapportEdl` ; les images sont des octets JPEG
  * (Uint8Array) : { logo, photoAffaire, plans: niveauId → octets,
  * pieces: pieceId → octets, photos: photoId → octets } (Map ou objet).
  */

@@ -8,7 +8,7 @@ import { test, describe } from 'node:test'
 import { unzipSync, strFromU8 } from 'fflate'
 
 import { elementsAExporter } from '../src/modules/etude/etat-des-lieux/export/exportDxfEdl.js'
-import { definitionRapportEdl, nomFichierWordEdl } from '../src/modules/etude/etat-des-lieux/export/rapportEdlLogique.js'
+import { definitionFichesEdl, definitionGardeEdl, nomFichierWordEdl } from '../src/modules/etude/etat-des-lieux/export/rapportEdlLogique.js'
 import { Packer, dimensionsJpeg, documentWordEdl, tailleDansCadre } from '../src/modules/etude/etat-des-lieux/export/rapportWordEdl.js'
 
 const carre = (x, y, c) => [[x, y], [x + c, y], [x + c, y + c], [x, y + c]]
@@ -90,9 +90,10 @@ describe('rapport Word', () => {
 
   test('mêmes pages que le PDF : garde, un plan paysage par étage, une fiche par pièce visitée, hors pièces', async () => {
     const { corps, paragraphes } = await ouvrir(documentWordEdl(donnees()))
-    const pdf = definitionRapportEdl(donnees()).content.map((c) => c.id)
-    assert.deepEqual(pdf, ['garde', 'plan-n1', 'fiche-p1', 'fiche-p2', 'hors-pieces-n1', 'plan-n2', 'fiche-p4'])
-    // Titres de niveau 1 (volet de navigation de Word) dans l'ordre du PDF
+    // Le PDF : garde puis fiches (les plans y sont des planches A3, posées à part)
+    const pdf = [...definitionGardeEdl(donnees()).content, ...definitionFichesEdl(donnees()).content].map((c) => c.id)
+    assert.deepEqual(pdf, ['garde', 'fiche-p1', 'fiche-p2', 'hors-pieces-n1', 'fiche-p4'])
+    // Titres de niveau 1 (volet de navigation de Word) : fiches dans l'ordre du PDF
     const titres = [...corps.matchAll(/<w:p>(?:(?!<\/w:p>)[\s\S])*?<w:pStyle w:val="Heading1"\/>[\s\S]*?<\/w:p>/g)]
       .map((m) => decoder([...m[0].matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g)].map((x) => x[1]).join('')))
     assert.deepEqual(titres, ['RDC   Plan de l’étage', '01 · Séjour', '02 · Salle d’eau', 'Hors pièces', 'R+1   Plan de l’étage', '11 · Chambre'])

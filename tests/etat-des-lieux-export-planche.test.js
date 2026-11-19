@@ -13,7 +13,8 @@ import {
   dateCartouche, echellePlanche, misePlanche, versMmPlanche,
 } from '../src/modules/etude/etat-des-lieux/export/plancheEdl.js'
 import {
-  POLICE_MULTIPLE_MM, PX_PAR_MM, dessinerLegende, dessinerPlanche, dessinerSymbole, taillePlanchePx, tailleImageSymbole,
+  POLICE_MULTIPLE_MM, PX_PAR_MM, TRAIT, dessinerLegende, dessinerPlanche, dessinerSymbole, taillePlanchePx, tailleImageLegende,
+  tailleImageSymbole,
 } from '../src/modules/etude/etat-des-lieux/export/dessinPlancheEdl.js'
 
 const proche = (a, b, ecart = 1e-6) => assert.ok(Math.abs(a - b) < ecart, `${a} ≠ ${b}`)
@@ -616,5 +617,22 @@ describe('planche : dessin', () => {
     assert.deepEqual(cadre.args, [0, 0, m.legende.cadreMm.largeur * 10, m.legende.cadreMm.hauteur * 10])
     const b = boiteDes(appels)
     assert.ok(b.x0 >= -1e-6 && b.y0 >= -1e-6 && b.x1 <= m.legende.cadreMm.largeur * 10 + 1e-6 && b.y1 <= m.legende.cadreMm.hauteur * 10 + 1e-6)
+  })
+
+  test('tailleImageLegende : le cadre et son trait tiennent dans l’image, posée par `origine`', () => {
+    const m = mise({ pieces: [salle], points: pts, elements: els })
+    const p = 10
+    const img = tailleImageLegende(m.legende, p)
+    assert.ok(Number.isInteger(img.largeur) && Number.isInteger(img.hauteur))
+    const { ctx, appels } = enregistreur()
+    dessinerLegende(ctx, m.legende, { origineMm: img.origine.map((v) => v / p), pxParMm: p })
+    const cadre = appels.filter((a) => a.nom === 'strokeRect').at(-1)
+    // Le trait du cadre déborde de moitié : il reste dans l'image
+    const demiTrait = (TRAIT.cadreLegende / 2) * p
+    assert.ok(cadre.args[0] - demiTrait >= 0 && cadre.args[1] - demiTrait >= 0)
+    assert.ok(cadre.args[0] + cadre.args[2] + demiTrait <= img.largeur && cadre.args[1] + cadre.args[3] + demiTrait <= img.hauteur)
+    // Posée en (cadreMm − origine), l'image recouvre la légende de la planche
+    proche(cadre.args[0], img.origine[0])
+    proche(cadre.args[1], img.origine[1])
   })
 })

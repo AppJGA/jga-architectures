@@ -355,6 +355,24 @@ export function dessinerLegende(ctx, legende, { origineMm = null, pxParMm = PX_P
   ctx.restore()
 }
 
+/**
+ * Image de la légende seule (Word) : taille en pixels et place du coin haut
+ * gauche du cadre (`origine`) dans l'image — le trait du cadre déborde de
+ * moitié, d'où la marge. Dessinée par `dessinerLegende(ctx, legende,
+ * { origineMm: origine / pxParMm })`, l'image posée en
+ * (cadreMm.x − origine[0] / pxParMm, cadreMm.y − origine[1] / pxParMm)
+ * recouvre la légende de la planche.
+ */
+export function tailleImageLegende(legende, pxParMm = PX_PAR_MM) {
+  const { largeur, hauteur } = legende.cadreMm
+  const m = TRAIT.cadreLegende / 2 + MARGE_IMAGE_MM
+  return {
+    largeur: Math.max(1, Math.ceil((largeur + 2 * m) * pxParMm)),
+    hauteur: Math.max(1, Math.ceil((hauteur + 2 * m) * pxParMm)),
+    origine: [m * pxParMm, m * pxParMm],
+  }
+}
+
 // ─── Cartouche ──────────────────────────────────────────────────────────────
 
 const C = { libelle: 2, valeur: 3, affaire: 4.2, adresse: 3, numero: 9, titre: 4.5, logo: 9, marge: 1.5, air: 3 }

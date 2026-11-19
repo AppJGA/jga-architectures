@@ -1,7 +1,9 @@
 // ─── Rapport PDF de l'état des lieux : logique pure ──────────────────────────
 //
-// Page de garde, puis par étage une page paysage avec le plan (image fabriquée
-// sur canevas par `genererRapportEdl.js`), puis une fiche par pièce visitée.
+// Page de garde, puis une planche A3 par étage (`plancheEdl.js`, dessinée par
+// `genererRapportEdl.js`), puis en annexe une fiche par pièce visitée. Garde et
+// fiches sont deux documents pdfmake A4 décrits ici ; les planches et le pied
+// de page sont posés par l'assemblage (`assemblageRapportEdl.js`, pdf-lib).
 // Tout ce qui se lit dans le PDF se décide ici, sans navigateur : les images
 // arrivent prêtes (data URL JPEG, pdfmake ne lit pas le WebP), rangées par
 // clé. Testé par tests/etat-des-lieux-export-pdf.test.js.
@@ -366,52 +368,13 @@ function pageHorsPieces({ etage, niveauId, elements, sansElement, photos }) {
   }
 }
 
-function pagePlan({ niveau, pieces, visitees, nonVisitees, elements, images }) {
-  const plan = prendre(niveau.id, images.plans)
-  const calques = groupesElements(elements)
-  const nom = rempli(niveau.nom) || 'Étage'
-  return {
-    id: `plan-${niveau.id}`,
-    pageBreak: 'before',
-    pageOrientation: 'landscape',
-    stack: [
-      {
-        columns: [
-          { width: '*', text: [{ text: nom, fontSize: 15, bold: true }, { text: '   Plan de l’étage', fontSize: 10, color: COULEUR.gris }] },
-          {
-            width: 260, alignment: 'right', fontSize: 8.5, color: COULEUR.gris, margin: [0, 4, 0, 0],
-            text: comptesEtage({ pieces, visitees, elements }),
-          },
-        ],
-      },
-      { canvas: [{ type: 'line', x1: 0, y1: 4, x2: A4_PAYSAGE.largeur, y2: 4, lineWidth: 1.2, lineColor: COULEUR.orange }], margin: [0, 0, 0, 4] },
-      ...(calques.length ? [{
-        fontSize: 8, margin: [0, 0, 0, 4],
-        text: [
-          { text: 'Calques : ', color: COULEUR.gris },
-          ...calques.flatMap((g, i) => [...(i ? [{ text: '  ·  ', color: COULEUR.grisClair }] : []), { text: g.libelle, bold: true, color: couleurCalque(g.calque) }]),
-          ...(elements.some((e) => e.aValider) ? [{ text: '  ·  ', color: COULEUR.grisClair }, { text: 'en bleu : à valider', italics: true, color: COULEUR_PROPOSITION }] : []),
-        ],
-      }] : []),
-      plan
-        ? { image: plan, fit: CADRE_PLAN_ETAGE, alignment: 'center' }
-        : discret('Plan de l’étage indisponible (fichier non chargé).'),
-      ...(nonVisitees.length ? [{
-        fontSize: 8, color: COULEUR.gris, margin: [0, 6, 0, 0],
-        text: [{ text: `Pièce${nonVisitees.length > 1 ? 's' : ''} non visitée${nonVisitees.length > 1 ? 's' : ''} (${nonVisitees.length}, sans fiche) : `, bold: true }, nonVisitees.map(designation).join(', ')],
-      }] : []),
-    ],
-  }
-}
-
-/** « Affaire · État des lieux · page n / N » */
+/**
+ * « 9901 Maison de l’essai · État des lieux » : le pied des pages A4, que
+ * l'assemblage (`assemblageRapportEdl.js`) complète de « · page n / N ».
+ */
 export function piedRapportEdl(affaire) {
   const libelle = texteLatin([affaire?.code_affaire, affaire?.nom].filter(Boolean).join(' ')) || 'Affaire'
-  return (page, pages) => ({
-    margin: [36, 14, 36, 0],
-    text: `${libelle} · État des lieux · page ${page} / ${pages}`,
-    fontSize: 7, color: COULEUR.gris,
-  })
+  return `${libelle} · État des lieux`
 }
 
 export const dateIso = (d) => {
@@ -489,7 +452,7 @@ function pageDeGarde({ affaire, etages, redacteur, date, elementsExport, pieces,
 
 /**
  * Ce que contient le rapport, page par page, sans mise en page : la même
- * suite sert au PDF (`definitionRapportEdl`) et au Word
+ * suite sert au PDF (`definitionFichesEdl`, planches par étage) et au Word
  * (`rapportWordEdl.js`), pour qu'ils disent la même chose.
  *
  * @param elementsExport sortie d'`elementsAExporter` (export DXF) :
@@ -628,31 +591,53 @@ export function comptesEtage({ pieces, visitees, elements }) {
 
 export const designationPiece = designation
 
+// Réglages communs aux deux documents pdfmake (A4 portrait) ; pas de pied :
+// l'assemblage l'écrit, une fois le nombre total de pages connu
+const documentA4 = (affaire, contenu) => ({
+  pageSize: 'A4',
+  pageOrientation: 'portrait',
+  pageMargins: MARGES,
+  info: { title: titreRapportEdl(affaire), author: 'JGA Architectes' },
+  defaultStyle: { font: 'Roboto', fontSize: 9, color: COULEUR.texte, lineHeight: 1.15 },
+  content: contenu,
+})
+
+/** « État des lieux — Maison de l’essai » : titre du PDF (métadonnées). */
+export const titreRapportEdl = (affaire) => texteLatin(`État des lieux${affaire?.nom ? ` — ${affaire.nom}` : ''}`)
+
 /**
- * Description pdfmake du rapport : la suite de `suiteRapportEdl` mise en
- * page. Paramètres de `suiteRapportEdl`, plus :
- * @param images { logo, photoAffaire, plans: niveauId → JPEG, pieces: pieceId → JPEG,
- *   photos: photoId → JPEG } (data URL, Map ou objet ; une image absente est omise)
+ * Description pdfmake de la page de garde (A4). Paramètres de
+ * `suiteRapportEdl`, plus `affaire`, `etat`, `redacteur`, `date` et
+ * @param images { logo, photoAffaire } (data URL ; une image absente est omise)
  */
-export function definitionRapportEdl({
-  affaire = null, etat = null, niveaux = [], pieces = [], elementsExport = [], photos = [], points = [], elements = null,
+export function definitionGardeEdl({
+  affaire = null, etat = null, niveaux = [], pieces = [], elementsExport = [], points = [],
   visitees = null, images = {}, redacteur = '', date = null, inclurePropositions = false,
 }) {
-  const { etages, pages } = suiteRapportEdl({ niveaux, pieces, elementsExport, photos, points, elements, visitees, images, inclurePropositions })
-  const contenu = [pageDeGarde({ affaire, etages, redacteur, date: date ?? etat?.created_at ?? null, elementsExport, pieces, images })]
-  for (const page of pages) {
-    if (page.sorte === 'plan') contenu.push(pagePlan({ ...page, images }))
-    else if (page.sorte === 'piece') contenu.push(fichePiece({ ...page, images, inclurePropositions }))
-    else contenu.push(pageHorsPieces(page))
-  }
+  const etages = etagesDuRapport({ niveaux, pieces, elementsExport, points, visitees, inclurePropositions })
+  return documentA4(affaire, [pageDeGarde({ affaire, etages, redacteur, date: date ?? etat?.created_at ?? null, elementsExport, pieces, images })])
+}
 
-  return {
-    pageSize: 'A4',
-    pageOrientation: 'portrait',
-    pageMargins: MARGES,
-    info: { title: texteLatin(`État des lieux${affaire?.nom ? ` — ${affaire.nom}` : ''}`), author: 'JGA Architectes' },
-    defaultStyle: { font: 'Roboto', fontSize: 9, color: COULEUR.texte, lineHeight: 1.15 },
-    footer: piedRapportEdl(affaire),
-    content: contenu,
-  }
+/**
+ * Description pdfmake des fiches (A4), annexe du rapport après les planches :
+ * les pages « pièce » et « hors pièces » de `suiteRapportEdl`, dans son ordre.
+ * Les pages « plan » n'y sont pas : la planche A3 de l'étage les remplace.
+ * Paramètres de `suiteRapportEdl`, plus `affaire` et
+ * @param images { pieces: pieceId → JPEG, photos: photoId → JPEG } (data URL,
+ *   Map ou objet ; une image absente est omise)
+ * @returns la description, ou null s'il n'y a aucune fiche
+ */
+export function definitionFichesEdl({
+  affaire = null, niveaux = [], pieces = [], elementsExport = [], photos = [], points = [], elements = null,
+  visitees = null, images = {}, inclurePropositions = false,
+}) {
+  const { pages } = suiteRapportEdl({ niveaux, pieces, elementsExport, photos, points, elements, visitees, images, inclurePropositions })
+  const contenu = pages.filter((p) => p.sorte !== 'plan')
+    .map((page) => (page.sorte === 'piece' ? fichePiece({ ...page, images, inclurePropositions }) : pageHorsPieces(page)))
+  if (!contenu.length) return null
+  // Premier nœud du document : un saut avant lui ouvrirait une page blanche
+  const [premiere, ...suite] = contenu
+  const sansSaut = { ...premiere }
+  delete sansSaut.pageBreak
+  return documentA4(affaire, [sansSaut, ...suite])
 }

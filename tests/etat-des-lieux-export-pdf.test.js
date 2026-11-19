@@ -13,7 +13,7 @@ import { lireDxf } from '../src/modules/etude/etat-des-lieux/dxfLecture.js'
 import { decalagesSymboles } from '../src/modules/etude/etat-des-lieux/export/symbolesEdl.js'
 import { numeroterPhotos } from '../src/modules/etude/etat-des-lieux/export/numerotationEdl.js'
 import {
-  definitionRapportEdl, etagesDuRapport, groupesElements, hspPiece, HORS_LATIN, nombreFr, nomFichierRapportEdl,
+  definitionFichesEdl, definitionGardeEdl, etagesDuRapport, groupesElements, hspPiece, HORS_LATIN, nombreFr, nomFichierRapportEdl,
   pieceVisitee, piedRapportEdl, pointsSansElement, relevesHorsPieces, surfacePiece, texteLatin,
 } from '../src/modules/etude/etat-des-lieux/export/rapportEdlLogique.js'
 import {
@@ -73,6 +73,14 @@ const images = {
   photos: new Map([['ph1', IMG], ['ph2', IMG], ['ph3', IMG]]),
 }
 
+// Le PDF hors planches : la garde, puis les fiches en annexe (les planches A3
+// sont dessinées et posées par l'assemblage)
+function rapportPdf(d) {
+  const garde = definitionGardeEdl(d)
+  const fiches = definitionFichesEdl(d)
+  return { garde, fiches, content: [...garde.content, ...(fiches?.content ?? [])] }
+}
+
 const donnees = (plus = {}) => ({
   affaire, niveaux, pieces, elementsExport, photos, points, elements,
   visitees: new Set(['p2']), images, redacteur: 'Rédacteur Inventé', date: '2026-11-18', ...plus,
@@ -118,7 +126,7 @@ describe('rapport PDF et DXF : mêmes fiches, même HSP, mêmes photos', () => {
   })
   const exporterLesDeux = (d, inclurePropositions = false) => {
     const prep = preparerExport(d, { niveaux: ['n1'], inclurePropositions, rapport: true })
-    const pdf = texteDe({ stack: definitionRapportEdl({ ...prep.rapport, images: { photos: new Map([['ph1', IMG]]) } }).content })
+    const pdf = texteDe({ stack: rapportPdf({ ...prep.rapport, images: { photos: new Map([['ph1', IMG]]) } }).content })
     const dxf = lireDxf(dxfDuNiveau(prep.etages[0], { inclurePropositions })).textes.map((t) => t.texte).join(' | ')
     return { prep, pdf, dxf }
   }
@@ -138,8 +146,11 @@ describe('rapport PDF et DXF : mêmes fiches, même HSP, mêmes photos', () => {
   })
 
   test('pièce dont la seule trace est une fiche proposée écartée : pas de fiche', () => {
-    const { pdf } = exporterLesDeux(donneesFenetre({ points: [], photos: [], elements: [] }))
-    assert.match(pdf, /non visitée \(1, sans fiche\)/)
+    const prep = preparerExport(donneesFenetre({ points: [], photos: [], elements: [] }), { niveaux: ['n1'], rapport: true })
+    const r = rapportPdf({ ...prep.rapport, images: {} })
+    assert.equal(r.fiches, null)
+    const garde = r.garde.content[0].stack.find((n) => n.table?.headerRows === 1)
+    assert.deepEqual(garde.table.body[1].slice(1).map((c) => c.text), ['1', '0', '0'])
   })
 
   test('point sans piece_id dans une pièce : rattaché des deux côtés, « Ph 1 » des deux côtés', () => {
@@ -154,12 +165,11 @@ describe('rapport PDF et DXF : mêmes fiches, même HSP, mêmes photos', () => {
     const d = donneesFenetre({ points: [{ id: 'pt1', niveau_id: 'n1', piece_id: null, numero: 3, x: 6, y: 1, type: null }] })
     const prep = preparerExport(d, { niveaux: ['n1'], rapport: true })
     assert.equal(prep.rapport.points[0].piece_id, null)
-    const def = definitionRapportEdl({ ...prep.rapport, images: { photos: new Map([['ph1', IMG]]) } })
+    const def = rapportPdf({ ...prep.rapport, images: { photos: new Map([['ph1', IMG]]) } })
     const hors = def.content.find((n) => n.id === 'hors-pieces-n1')
     assert.ok(hors, def.content.map((n) => n.id).join(', '))
     assert.ok(texteDe(hors).includes('Hors pièces') && texteDe(hors).includes('Ph 1') && texteDe(hors).includes('Prise'))
-    // Plan de l'étage et garde comptent l'élément posé hors pièce
-    assert.match(texteDe(def.content.find((n) => n.id === 'plan-n1')), /1 élément/)
+    // La garde compte l'élément posé hors pièce
     const garde = def.content[0].stack.find((n) => n.table?.headerRows === 1)
     assert.equal(garde.table.body[1][3].text, '1')
     assert.ok(lireDxf(dxfDuNiveau(prep.etages[0])).textes.some((t) => t.texte === 'Ph 1'))
@@ -169,7 +179,7 @@ describe('rapport PDF et DXF : mêmes fiches, même HSP, mêmes photos', () => {
 })
 
 describe('rapport PDF : structure', () => {
-  const def = definitionRapportEdl(donnees())
+  const def = rapportPdf(donnees())
   const ids = def.content.map((n) => n.id)
 
   test('les éléments viennent bien d’elementsAExporter (pointId, numéro du point)', () => {
@@ -178,47 +188,54 @@ describe('rapport PDF : structure', () => {
     assert.ok(!elementsExport.some((e) => e.id === 'e6'), 'calque inconnu écarté par l’export')
   })
 
-  test('page de garde, puis par étage (dans l’ordre) le plan et les fiches des pièces visitées', () => {
-    assert.deepEqual(ids, ['garde', 'plan-n1', 'fiche-p1', 'fiche-p2', 'plan-n2', 'fiche-p4'])
+  test('page de garde, puis en annexe les fiches des pièces visitées, étage par étage (dans l’ordre)', () => {
+    // Plus de page « plan » : la planche A3 de chaque étage la remplace
+    assert.deepEqual(ids, ['garde', 'fiche-p1', 'fiche-p2', 'fiche-p4'])
+    assert.deepEqual(def.garde.content.map((n) => n.id), ['garde'])
     const garde = texteDe(def.content[0])
     for (const attendu of ['État des lieux', 'Maison de l’essai', '9901', '1 rue Imaginaire Villefictive', 'Rédacteur Inventé', '18 novembre 2026', 'RDC', 'R+1']) {
       assert.ok(garde.includes(attendu), `garde sans « ${attendu} »`)
     }
   })
 
-  test('plans en paysage, fiches en portrait, chacun sur sa page', () => {
-    for (const n of def.content.slice(1)) {
-      assert.equal(n.pageBreak, 'before')
-      assert.equal(n.pageOrientation, n.id.startsWith('plan-') ? 'landscape' : 'portrait')
+  test('garde et fiches : deux documents A4 portrait, sans pied pdfmake ; une fiche par page', () => {
+    for (const d of [def.garde, def.fiches]) {
+      assert.equal(d.pageSize, 'A4')
+      assert.equal(d.pageOrientation, 'portrait')
+      assert.equal(d.footer, undefined, 'le pied est écrit par l’assemblage')
+      assert.ok(d.info.title.includes('Maison de l’essai'))
     }
-    assert.equal(def.pageSize, 'A4')
-    assert.ok(def.content[1].stack.some((x) => x.image === IMG), 'image du plan absente')
+    const [premiere, ...suite] = def.fiches.content
+    assert.equal(premiere.pageBreak, undefined, 'pas de page blanche en tête des fiches')
+    for (const n of suite) assert.equal(n.pageBreak, 'before')
+    for (const n of def.fiches.content) assert.equal(n.pageOrientation, 'portrait')
   })
 
-  test('pièce non visitée : pas de fiche, signalée sous le plan de son étage', () => {
+  test('pièce non visitée : pas de fiche, décomptée sur la garde', () => {
     assert.ok(!ids.includes('fiche-p3'))
-    assert.match(texteDe(def.content[1]), /non visitée \(1, sans fiche\).*03 · Cellier/)
+    const garde = def.content[0].stack.find((n) => n.table?.headerRows === 1)
+    assert.deepEqual(garde.table.body[1].map((c) => c.text), ['RDC', '3', '2', '7'])
   })
 
   test('fiche : nom, surface, HSP, finitions, remarques', () => {
-    const f1 = texteDe(def.content[2])
+    const f1 = texteDe(def.content[1])
     for (const attendu of ['01 · Séjour', '25 m²', '2,50 m', 'Parquet chêne', 'Peinture blanche', 'Non relevé', 'Fissure au droit de la fenêtre -> à surveiller']) {
       assert.ok(f1.includes(attendu), `fiche sans « ${attendu} »`)
     }
-    assert.ok(def.content[2].stack.some((x) => x.image === IMG), 'extrait de la pièce absent')
-    const f2 = texteDe(def.content[3])
+    assert.ok(def.content[1].stack.some((x) => x.image === IMG), 'extrait de la pièce absent')
+    const f2 = texteDe(def.content[2])
     assert.ok(f2.includes('9 m²') && f2.includes('(mesurée)'), f2)
     assert.ok(f2.includes('HSP non relevée'))
-    assert.ok(texteDe(def.content[5]).includes('2,45 m'), 'HSP dite en visite')
+    assert.ok(texteDe(def.content[3]).includes('2,45 m'), 'HSP dite en visite')
   })
 
   test('éléments numérotés « P n » et groupés par calque, dans l’ordre de calquesEdl.js', () => {
-    const vus = intertitres(def.content[2])
+    const vus = intertitres(def.content[1])
     assert.deepEqual(vus, ['Plomberie', 'Électricité', 'Menuiseries'])
     const ordre = CALQUES.map((c) => c.libelle)
     const rangs = vus.map((t) => ordre.indexOf(t))
     assert.deepEqual(rangs, [...rangs].sort((a, b) => a - b))
-    const t = texteDe(def.content[2])
+    const t = texteDe(def.content[1])
     assert.match(t, /P1 Prise double .*h 0,30/)
     assert.match(t, /P7 Interrupteur/, 'point typé sans élément, exporté de son type')
     // Fenêtre sans libellé : le type sert de libellé
@@ -226,46 +243,46 @@ describe('rapport PDF : structure', () => {
   })
 
   test('propositions marquées « à valider », élément sans point signalé', () => {
-    assert.match(texteDe(def.content[2]), /Arrivée d’eau en attente\s+\(à valider\)/)
+    assert.match(texteDe(def.content[1]), /Arrivée d’eau en attente\s+\(à valider\)/)
     assert.ok(texteDe(def.content[0]).includes('2 éléments marqués « à valider »'))
-    const t2 = texteDe(def.content[3])
+    const t2 = texteDe(def.content[2])
     assert.ok(t2.includes('Sèche-serviettes') && t2.includes('(sans point sur le plan)'))
   })
 
   test('points sans élément : par pointId, calque écarté compris', () => {
-    const t1 = texteDe(def.content[2])
+    const t1 = texteDe(def.content[1])
     assert.ok(t1.includes('POINTS SANS ÉLÉMENT'), t1)
     assert.match(t1, /exporté : P4 ,\s+P6/)
     assert.ok(!/P[1237] \(élément/.test(t1))
-    assert.ok(!texteDe(def.content[3]).includes('POINTS SANS ÉLÉMENT'), 'P5 porte le lavabo, P8 sa proposition')
+    assert.ok(!texteDe(def.content[2]).includes('POINTS SANS ÉLÉMENT'), 'P5 porte le lavabo, P8 sa proposition')
   })
 
   test('propositions exclues : le point reste listé, « (élément à valider) »', () => {
-    const sans = definitionRapportEdl(donnees({ elementsExport: exporter(false) }))
-    const t1 = texteDe(sans.content[2])
+    const sans = rapportPdf(donnees({ elementsExport: exporter(false) }))
+    const t1 = texteDe(sans.content[1])
     assert.match(t1, /P3\s+\(élément à valider\)/)
     assert.ok(!t1.includes('Arrivée d’eau en attente'))
-    assert.match(texteDe(sans.content[3]), /P8\s+\(élément à valider\)/)
+    assert.match(texteDe(sans.content[2]), /P8\s+\(élément à valider\)/)
     assert.ok(!texteDe(sans.content[0]).includes('à valider »'))
     const seuls = pointsSansElement({ points, elements, elementsExport: exporter(false) })
     assert.deepEqual(seuls.map((p) => [p.id, !!p.elementAValider]), [['pt3', true], ['pt4', false], ['pt6', false], ['pt8', true]])
   })
 
   test('photos « Ph n » numérotées comme le DXF, rangées dans la pièce de leur point', () => {
-    const t1 = texteDe(def.content[2])
+    const t1 = texteDe(def.content[1])
     assert.ok(t1.includes('PHOTOS (2)'))
     assert.ok(t1.includes('Ph 1 · P1 · Prise double'), t1)
     assert.ok(t1.includes('Ph 2 · P4'))
-    assert.ok(texteDe(def.content[3]).includes('Ph 3 · P5 · Lavabo'))
+    assert.ok(texteDe(def.content[2]).includes('Ph 3 · P5 · Lavabo'))
     // Numéros reçus (ceux donnés au DXF) : repris tels quels
     const recues = photos.map((ph, i) => ({ ...ph, numero: 10 + i }))
-    const d = definitionRapportEdl(donnees({ photos: recues }))
-    assert.ok(texteDe(d.content[3]).includes('Ph 11 · P5 · Lavabo'))
+    const d = rapportPdf(donnees({ photos: recues }))
+    assert.ok(texteDe(d.content[2]).includes('Ph 11 · P5 · Lavabo'))
   })
 
-  test('pied de page « Affaire · État des lieux · page n / N »', () => {
-    assert.equal(def.footer(3, 12).text, '9901 Maison de l’essai · État des lieux · page 3 / 12')
-    assert.equal(piedRapportEdl(null)(1, 1).text, 'Affaire · État des lieux · page 1 / 1')
+  test('pied de page « Affaire · État des lieux » (complété par l’assemblage de « · page n / N »)', () => {
+    assert.equal(piedRapportEdl(affaire), '9901 Maison de l’essai · État des lieux')
+    assert.equal(piedRapportEdl(null), 'Affaire · État des lieux')
   })
 
   test('aucun caractère hors latin courant dans les textes produits', () => {
@@ -274,16 +291,16 @@ describe('rapport PDF : structure', () => {
       pieces: pieces.map((p) => (p.id === 'p1' ? { ...p, nom: 'Séjour ✓', fiche: { ...p.fiche, murs: 'Enduit ≈ 2 cm, e\u0301caille\u0301' } } : p)),
       elementsExport: elementsExport.map((e) => (e.id === 'e1' ? { ...e, libelle: 'Prise ⚡ 16 A', cotes: '≥ 0,30 m' } : e)),
     })
-    const tout = textes(definitionRapportEdl(sale).content)
+    const tout = textes(rapportPdf(sale).content)
     assert.deepEqual(tout.filter((t) => t.match(HORS_LATIN)), [])
     assert.ok(tout.some((t) => t.includes('Enduit ~ 2 cm, écaillé')))
     assert.ok(tout.some((t) => t.includes('>= 0,30 m')))
   })
 
   test('image absente : texte de remplacement, pas d’erreur', () => {
-    const d = definitionRapportEdl(donnees({ images: {} }))
-    assert.ok(texteDe(d.content[1]).includes('Plan de l’étage indisponible'))
-    assert.ok(!texteDe(d.content[2]).includes('PHOTOS'))
+    const d = rapportPdf(donnees({ images: {} }))
+    assert.ok(!d.content[1].stack.some((x) => x.image), 'extrait absent : pas d’image')
+    assert.ok(!texteDe(d.content[1]).includes('PHOTOS'))
   })
 
   test('éléments sans pointId (ancienne forme) : la position rattache encore', () => {

@@ -1,8 +1,10 @@
 // ─── Fabrication du rapport PDF de l'état des lieux, dans le navigateur ──────
 //
-// Les images d'abord (plan de chaque étage et extrait de chaque pièce dessinés
-// sur canevas, photos des points réduites en JPEG), puis pdfmake. Tout ce que
-// dit le PDF se décide dans `rapportEdlLogique.js`.
+// Les images d'abord (planche A3 de chaque étage et extrait de chaque pièce
+// dessinés sur canevas, photos des points réduites en JPEG), puis pdfmake pour
+// la garde et les fiches (A4), enfin pdf-lib qui réunit garde, planches et
+// fiches et écrit le pied de page (`assemblageRapportEdl.js`). Tout ce que dit
+// le PDF se décide dans `rapportEdlLogique.js` et `plancheEdl.js`.
 
 import { chargerPdfMake } from '../../../chantier/comptes-rendus/genererRapport'
 import { imagePourPdf, bandeauPourPdf } from '../../../chantier/comptes-rendus/imagesRapport'
@@ -10,13 +12,18 @@ import { chargerImage } from '../../../chantier/comptes-rendus/compressionPhoto'
 import { canevasBlanc, libererCanevas } from '../renduNiveau'
 import { chargerVecteurs } from '../vecteursEdl'
 import {
-  CADRE_PLAN_PIECE, definitionRapportEdl, elementsDeLEtage, etagesDuRapport, nomFichierRapportEdl, pointsSansElement, relevesHorsPieces,
+  CADRE_PLAN_PIECE, definitionFichesEdl, definitionGardeEdl, elementsDeLEtage, etagesDuRapport, nomFichierRapportEdl,
+  piedRapportEdl, pointsSansElement, titreRapportEdl,
 } from './rapportEdlLogique'
-import { cadragePiece, cadragePlan, dessinerPlanRapport, vecteursDuCadrage, PX_PLAN_ETAGE } from './planRapportEdl'
+import { cadragePiece, dessinerPlanRapport, vecteursDuCadrage } from './planRapportEdl'
+import { misePlanche } from './plancheEdl'
+import { PX_PAR_MM, dessinerLegende, dessinerPlanche, dessinerSymbole, tailleImageLegende, tailleImageSymbole, taillePlanchePx } from './dessinPlancheEdl'
 
-const QUALITE_PLAN = 0.82
+const QUALITE_PLANCHE = 0.85
 const QUALITE_EXTRAIT = 0.7
 const TAILLE_PHOTO = 800
+// Plafond de surface d'un canevas sur iPad
+const PX_MAX_CANEVAS = 16e6
 
 // « 2 photos non chargées », « 1 plan vectoriel non chargé »
 const LIBELLES_MANQUANTS = {
@@ -24,6 +31,7 @@ const LIBELLES_MANQUANTS = {
   'photo de l’affaire': ['photo de l’affaire', 'photos de l’affaire', true],
   'plan vectoriel': ['plan vectoriel', 'plans vectoriels', false],
   plan: ['plan', 'plans', false],
+  planche: ['planche d’étage', 'planches d’étage', true],
   'lien des photos': ['lien des photos', 'liens des photos', false],
   photo: ['photo', 'photos', true],
 }
@@ -33,7 +41,7 @@ const LIBELLES_MANQUANTS = {
 // JPEG) et non en data URL tant que le dessin continue : une data URL pèse
 // 4/3 en base64, le double en mémoire de chaîne ; elles ne sont faites qu'au
 // moment de la mise en page.
-async function imagePlan(c, options, qualite = QUALITE_PLAN) {
+async function imagePlan(c, options, qualite) {
   const { canvas, ctx } = canevasBlanc(c.largeur, c.hauteur)
   try {
     dessinerPlanRapport(ctx, { cadrage: c, ...options })
@@ -43,6 +51,67 @@ async function imagePlan(c, options, qualite = QUALITE_PLAN) {
   } finally {
     libererCanevas(canvas)
   }
+}
+
+const encoder = (canvas, type, qualite) => new Promise((resolve, reject) => {
+  canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('Image non encodée'))), type, qualite)
+})
+
+// Canevas sans fond : images du Word posées par-dessus le plan
+function canevasTransparent(largeur, hauteur) {
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.max(1, Math.round(largeur))
+  canvas.height = Math.max(1, Math.round(hauteur))
+  return { canvas, ctx: canvas.getContext('2d') }
+}
+
+async function imageTransparente(largeur, hauteur, dessiner) {
+  const { canvas, ctx } = canevasTransparent(largeur, hauteur)
+  try {
+    dessiner(ctx)
+    return await encoder(canvas, 'image/png')
+  } finally {
+    libererCanevas(canvas)
+  }
+}
+
+/** Résolution de la planche : `DPI_PLANCHE`, réduite si le canevas dépassait 16 Mpx. */
+function pxParMmPlanche(mise, pxParMm = PX_PAR_MM) {
+  const { largeur, hauteur } = taillePlanchePx(mise, pxParMm)
+  return largeur * hauteur <= PX_MAX_CANEVAS ? pxParMm : pxParMm * Math.sqrt(PX_MAX_CANEVAS / (largeur * hauteur)) * 0.999
+}
+
+// La planche d'un étage (JPEG du PDF) et ce que le Word en reprend : le même
+// canevas redessiné sans symboles ni légende (fond verrouillé du Word), la
+// légende seule et une image par clé de symbole (images flottantes)
+async function imagesPlanche(mise, { vecteurs, fond, logo }) {
+  const pxParMm = pxParMmPlanche(mise)
+  const { largeur, hauteur } = taillePlanchePx(mise, pxParMm)
+  const { canvas, ctx } = canevasBlanc(largeur, hauteur)
+  let jpeg
+  let fondWord
+  try {
+    dessinerPlanche(ctx, mise, { vecteurs, fond, logo, pxParMm })
+    jpeg = await encoder(canvas, 'image/jpeg', QUALITE_PLANCHE)
+    dessinerPlanche(ctx, mise, { vecteurs, fond, logo, pxParMm, avecSymboles: false, avecLegende: false })
+    fondWord = await encoder(canvas, 'image/jpeg', QUALITE_PLANCHE)
+  } finally {
+    libererCanevas(canvas)
+  }
+  let legende = null
+  if (mise.legende?.groupes?.length) {
+    const t = tailleImageLegende(mise.legende, pxParMm)
+    legende = await imageTransparente(t.largeur, t.hauteur, (c) => dessinerLegende(c, mise.legende, { origineMm: t.origine.map((v) => v / pxParMm), pxParMm }))
+  }
+  // Une image par clé, d'après le premier symbole qui la porte (les angles
+  // d'une même clé diffèrent de moins de 5°)
+  const symboles = new Map()
+  for (const s of mise.symboles) {
+    if (symboles.has(s.cle)) continue
+    const t = tailleImageSymbole(s, pxParMm)
+    symboles.set(s.cle, await imageTransparente(t.largeur, t.hauteur, (c) => dessinerSymbole(c, s, { centrePx: t.centre, pxParMm })))
+  }
+  return { jpeg, word: { niveauId: mise.niveauId, mise, pxParMm, fond: fondWord, legende, symboles } }
 }
 
 const enDataUrl = (blob) => new Promise((resolve, reject) => {
@@ -61,6 +130,9 @@ function blobDeDataUrl(dataUrl) {
   for (let i = 0; i < binaire.length; i++) octets[i] = binaire.charCodeAt(i)
   return new Blob([octets], { type: 'image/jpeg' })
 }
+
+// Numéro de planche reçu des réglages (Map ou objet)
+const texteDe = (collection, cle) => String((collection instanceof Map ? collection.get(cle) : collection?.[cle]) ?? '').trim()
 
 const octetsDe = async (blob) => (blob ? new Uint8Array(await blob.arrayBuffer()) : null)
 
@@ -92,18 +164,24 @@ async function fondImage(niveau, obtenirLiens) {
  * @param vecteurs Map niveauId → vecteurs déjà décodés (facultatif : sinon lus
  *   par `chargerVecteurs`, une fois par chemin)
  * @param surEtape (texte) → void, pour la progression de l'écran d'export
- * @param verifier () → void, appelé avant chaque extrait de pièce et chaque
- *   photo ; il lève une erreur pour arrêter une fabrication devenue inutile
+ * @param verifier () → void, appelé avant chaque planche, chaque extrait de
+ *   pièce et chaque photo ; il lève une erreur pour arrêter une fabrication devenue inutile
  *   (réglages changés) sans finir de télécharger et d'encoder les photos
- * Les autres paramètres sont ceux de `definitionRapportEdl`.
+ * @param numeros numéro de chaque planche au cartouche (Map ou objet niveauId →
+ *   texte) ; « EDL-1 », « EDL-2 »… dans l'ordre des étages à défaut
+ * @param indice indice des planches (texte ; vide : la date, cf. `misePlanche`)
+ * Les autres paramètres sont ceux de `definitionGardeEdl` / `definitionFichesEdl`.
  * @returns { blob, nomFichier, avertissements, fabriquerWord } — `fabriquerWord()`
  *   rend la promesse du rapport Word ({ blob, nomFichier }) fait des mêmes
- *   images (rien n'est redessiné ni retéléchargé), une seule fois
+ *   images (rien n'est redessiné ni retéléchargé), une seule fois. Le Word
+ *   reçoit `planches` : par étage, dans l'ordre, { niveauId, mise, pxParMm,
+ *   fond (JPEG sans symboles ni légende), legende (PNG ou null),
+ *   symboles: Map cle → PNG }, en octets
  */
 export async function genererRapportEdl({
   affaire, etat = null, niveaux = [], pieces = [], points = [], elements = null, elementsExport = [], photos = [],
   visitees = null, redacteur = '', date = new Date(), obtenirLiens, vecteurs = null, surEtape = () => {}, verifier = () => {},
-  inclurePropositions = false,
+  inclurePropositions = false, numeros = null, indice = '',
 }) {
   const manquants = new Map()
   const tolerer = (promesse, quoi) => Promise.resolve(promesse).catch((err) => {
@@ -115,36 +193,42 @@ export async function genererRapportEdl({
   surEtape('Rapport : chargement de pdfmake…')
   const pdfMake = await chargerPdfMake()
   const images = { photos: new Map() }
-  const plans = new Map() // niveauId → Blob
+  const planchesPdf = [] // { jpeg: Blob, largeurMm, hauteurMm }, dans l'ordre des étages
+  const planchesWord = [] // { niveauId, mise, pxParMm, fond, legende, symboles } (Blobs)
   const extraits = new Map() // pieceId → Blob
   images.logo = await tolerer(imagePourPdf(`${window.location.origin}/Logo_JGA_Archi.jpg`, 400, 0.85), 'logo')
   if (affaire?.photo_url) images.photoAffaire = await tolerer(bandeauPourPdf(affaire.photo_url), 'photo de l’affaire')
+
+  // Le logo du cartouche, dessiné sur le canevas : une image, pas une data URL
+  const logoImage = images.logo ? await tolerer(chargerImage(images.logo), 'logo') : null
 
   const etages = etagesDuRapport({ niveaux, pieces, elementsExport, points, visitees, inclurePropositions })
   const seuls = pointsSansElement({ points, elements, elementsExport })
   const vues = new Set(etages.flatMap((e) => e.visitees.map((p) => p.id)))
   const pointsParId = new Map(points.map((p) => [p.id, p]))
-  const position = (p) => (p && Number.isFinite(Number(p.x)) && Number.isFinite(Number(p.y)) ? [Number(p.x), Number(p.y)] : null)
-  for (const { niveau, pieces: siennes, visitees: visiteesEtage } of etages) {
-    surEtape(`Rapport : plan de l’étage ${niveau.nom || 'sans nom'}…`)
+  const dateRapport = date ?? etat?.created_at ?? null
+  for (const [rang, { niveau, pieces: siennes, visitees: visiteesEtage }] of etages.entries()) {
+    verifier()
+    surEtape(`Rapport : planche de l’étage ${niveau.nom || 'sans nom'}…`)
     let v = vecteurs?.get?.(niveau.id) ?? null
     if (!v && niveau.chemin_vecteurs) v = await tolerer(chargerVecteurs(niveau.chemin_vecteurs, obtenirLiens), 'plan vectoriel')
     const fond = v ? null : await tolerer(fondImage(niveau, obtenirLiens), 'plan')
-    // Par étage et non par pièce : un relevé hors des pièces reste sur le plan
+    const mise = misePlanche({
+      niveau, pieces, elementsExport, boiteVecteurs: v?.boite ?? niveau.cadrage ?? null,
+      affaire, date: dateRapport, redacteur, inclurePropositions,
+      numero: texteDe(numeros, niveau.id) || `EDL-${rang + 1}`, indice,
+    })
+    // Une planche ratée n'arrête pas le rapport : elle manque, avec un avertissement
+    const planche = await tolerer(imagesPlanche(mise, { vecteurs: v, fond, logo: logoImage }), 'planche')
+    if (planche) {
+      planchesPdf.push({ jpeg: planche.jpeg, largeurMm: mise.format.largeur, hauteurMm: mise.format.hauteur })
+      planchesWord.push(planche.word)
+    }
+    // Par étage et non par pièce : un relevé hors des pièces reste sur l'extrait
     const dessin = {
       vecteurs: v, fond, pieces: siennes, visitees: vues,
       elementsExport: elementsDeLEtage(elementsExport, niveau.id, pieces),
       pointsSeuls: seuls.filter((p) => p.niveau_id === niveau.id),
-    }
-    // Le cadrage s'étend aux relevés hors pièces (façade, cour) : coupés du
-    // plan, ils seraient dans le DXF sans se voir dans le rapport
-    const hors = relevesHorsPieces({ niveauId: niveau.id, pieces, elementsExport, points, photos, sansElement: seuls })
-    const reperesHors = [...hors.elements, ...hors.sansElement, ...hors.photos.map((ph) => pointsParId.get(ph.point_id))]
-      .map(position).filter(Boolean).map((pt) => ({ contour: [pt] }))
-    const c = cadragePlan([...siennes, ...reperesHors], { pxMax: PX_PLAN_ETAGE, repli: niveau.cadrage })
-    if (c) {
-      const plan = await tolerer(imagePlan(c, dessin), 'plan')
-      if (plan) plans.set(niveau.id, plan)
     }
     for (const piece of visiteesEtage) {
       verifier()
@@ -182,18 +266,24 @@ export async function genererRapportEdl({
   }
 
   surEtape('Rapport : mise en page…')
-  images.plans = await versDataUrls(plans)
   images.pieces = await versDataUrls(extraits)
   const parametres = { affaire, etat, niveaux, pieces, elementsExport, photos, points, elements, visitees, redacteur, date, inclurePropositions }
-  const definition = definitionRapportEdl({ ...parametres, images })
-  const blob = await pdfMake.createPdf(definition).getBlob()
+  const garde = await octetsDe(await pdfMake.createPdf(definitionGardeEdl({ ...parametres, images })).getBlob())
+  const definitionFiches = definitionFichesEdl({ ...parametres, images })
+  const fiches = definitionFiches ? await octetsDe(await pdfMake.createPdf(definitionFiches).getBlob()) : null
+  surEtape('Rapport : assemblage des planches…')
+  const { assemblerRapport } = await import('./assemblageRapportEdl')
+  const planchesOctets = []
+  for (const p of planchesPdf) planchesOctets.push({ ...p, jpeg: await octetsDe(p.jpeg) })
+  const octets = await assemblerRapport({ garde, planches: planchesOctets, fiches, pied: piedRapportEdl(affaire), titre: titreRapportEdl(affaire) })
+  const blob = new Blob([octets], { type: 'application/pdf' })
 
-  // Le Word reprend les mêmes images, gardées en Blob (plans et extraits le
+  // Le Word reprend les mêmes images, gardées en Blob (planches et extraits le
   // sont déjà) ; les data URL du PDF sont lâchées
   const pourWord = {
     logo: blobDeDataUrl(images.logo),
     photoAffaire: blobDeDataUrl(images.photoAffaire),
-    plans,
+    planches: planchesWord,
     pieces: extraits,
     photos: new Map([...images.photos].map(([cle, url]) => [cle, blobDeDataUrl(url)])),
   }
@@ -204,11 +294,14 @@ export async function genererRapportEdl({
       const imagesWord = {
         logo: await octetsDe(pourWord.logo),
         photoAffaire: await octetsDe(pourWord.photoAffaire),
-        plans: await versOctets(pourWord.plans),
         pieces: await versOctets(pourWord.pieces),
         photos: await versOctets(pourWord.photos),
       }
-      const document = documentWordEdl({ ...parametres, images: imagesWord })
+      const planches = []
+      for (const p of pourWord.planches) {
+        planches.push({ ...p, fond: await octetsDe(p.fond), legende: await octetsDe(p.legende), symboles: await versOctets(p.symboles) })
+      }
+      const document = documentWordEdl({ ...parametres, images: imagesWord, planches })
       return { blob: await Packer.toBlob(document), nomFichier: nomFichierWordEdl(affaire, date) }
     })()
     // Un échec peut se retenter au prochain export

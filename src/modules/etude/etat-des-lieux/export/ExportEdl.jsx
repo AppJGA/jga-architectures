@@ -10,8 +10,8 @@ import {
 import { lireDonneesExport, chargerPlanNiveau } from './exportDonnees'
 import { genererRapportEdl } from './genererRapportEdl'
 import {
-  avertissementsExport, cleDxf, cleRapport, clesAEvincer, clesAGarder, dessinDxf, dxfDuNiveau, exportPossible,
-  fabriquerZip, fichiersDxf, nomFichierZip, nomsFichiersDxf, noteUniteArchicad, preparerExport, rapportVoulu, reglagesParDefaut, uniteEtage,
+  avertissementsExport, cleDxf, cleRapport, clesAEvincer, clesAGarder, dessinDxf, dxfDuNiveau, ecrireReglagesPlanches, exportPossible,
+  fabriquerZip, fichiersDxf, lireReglagesPlanches, nomFichierZip, nomsFichiersDxf, noteUniteArchicad, preparerExport, rapportVoulu, reglagesParDefaut, uniteEtage,
 } from './exportFenetreLogique'
 import { nomFichierRapportEdl, nomFichierWordEdl } from './rapportEdlLogique'
 import { PlancheSymboles } from './PlancheSymboles'
@@ -44,6 +44,11 @@ const boutonSecondaire = { display: 'inline-flex', alignItems: 'center', gap: 6,
 const boutonPetit = { display: 'inline-flex', alignItems: 'center', gap: 4, minHeight: 44, padding: '0 10px', fontSize: 11, border: '0.5px solid rgba(0,0,0,0.15)', background: 'white', borderRadius: 2, cursor: 'pointer', color: '#374151' }
 const caseACocher = { width: 18, height: 18, minHeight: 0, margin: 0, flexShrink: 0, accentColor: ACCENT }
 const ligneCase = { minHeight: 44, display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontSize: 13, color: ENCRE }
+const ligneChamp = { minHeight: 44, display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: ENCRE }
+const champTexte = {
+  width: 120, height: 44, minHeight: 44, padding: '0 10px', boxSizing: 'border-box', flexShrink: 0,
+  border: '0.5px solid rgba(0,0,0,0.15)', borderRadius: 2, background: 'white', fontSize: 13, color: ENCRE,
+}
 
 // Génération devenue inutile (réglages changés, fenêtre fermée) : arrêtée à
 // l'étape suivante du rapport, sans message
@@ -143,7 +148,8 @@ export function ExportEdl({ affaireId, obtenirLiens, enAttente = 0, onFermer }) 
         if (d.indisponible) { setLecture({ etat: 'indisponible' }); return }
         caches.current = nouveauxCaches()
         setLecture({ etat: 'pret', donnees: d })
-        setReglages(reglagesParDefaut(d.niveaux))
+        // Numéros et indice des planches : ceux tapés au dernier export de l'affaire
+        setReglages(reglagesParDefaut(d.niveaux, lireReglagesPlanches(affaireId)))
       },
       (err) => { if (vivant) setLecture({ etat: 'echec', message: err?.message ?? String(err) }) },
     )
@@ -200,7 +206,10 @@ export function ExportEdl({ affaireId, obtenirLiens, enAttente = 0, onFermer }) 
         const v = await chargerPlanNiveau(n, obtenirLiens).catch(() => null)
         if (v) vecteurs.set(n.id, v)
       }
-      return genererRapportEdl({ affaire: affaireExport, etat: donnees.etat, ...r, redacteur, date, obtenirLiens, vecteurs, surEtape, verifier })
+      return genererRapportEdl({
+        affaire: affaireExport, etat: donnees.etat, ...r, redacteur, date, obtenirLiens, vecteurs, surEtape, verifier,
+        numeros: voulus.numeros, indice: voulus.indice,
+      })
     })(), elaguerMaintenant)
   }, [donnees, affaireExport, redacteur, date, obtenirLiens, elaguerMaintenant])
   // L'aperçu lit la dernière version sans en dépendre : un rendu qui refait
@@ -366,6 +375,13 @@ export function ExportEdl({ affaireId, obtenirLiens, enAttente = 0, onFermer }) 
 
   // ── Rendu ──
   const majReglages = (champs) => { setReglages((r) => ({ ...r, ...champs })); setExportEtat(null) }
+  // Numéros et indice retenus sur l'appareil dès la frappe ; l'aperçu, lui,
+  // attend 450 ms après la dernière touche comme pour une coche (`useDiffere`)
+  const majPlanches = (champs) => {
+    const suivant = { numeros: reglages.numeros, indice: reglages.indice, ...champs }
+    majReglages(champs)
+    ecrireReglagesPlanches(affaireId, suivant)
+  }
   const basculerNiveau = (id, coche) => majReglages({
     niveaux: coche ? (donnees.niveaux.filter((n) => n.id === id || reglages.niveaux.includes(n.id)).map((n) => n.id)) : reglages.niveaux.filter((x) => x !== id),
   })
@@ -544,6 +560,27 @@ export function ExportEdl({ affaireId, obtenirLiens, enAttente = 0, onFermer }) 
           </p>
         )}
       </section>
+
+      {rapportVoulu(reglages) && (
+        <section>
+          <p style={titreSection}>Planches</p>
+          <label style={ligneChamp}>
+            <span style={{ flex: 1 }}>Indice</span>
+            <input type="text" value={reglages.indice ?? ''} disabled={exportEnCours} placeholder="Date du jour"
+              onChange={(e) => majPlanches({ indice: e.target.value })} style={champTexte} />
+          </label>
+          {[...etagesChoisis].sort((a, b) => (a.ordre ?? 0) - (b.ordre ?? 0)).map((n, i) => (
+            <label key={n.id} style={ligneChamp}>
+              <span style={{ flex: 1 }}>N° — {n.nom || 'Étage sans nom'}</span>
+              <input type="text" value={reglages.numeros?.[n.id] ?? ''} disabled={exportEnCours} placeholder={`EDL-${i + 1}`}
+                onChange={(e) => majPlanches({ numeros: { ...reglages.numeros, [n.id]: e.target.value } })} style={champTexte} />
+            </label>
+          ))}
+          <p style={{ margin: '4px 0 0', fontSize: 11, color: PALE }}>
+            Au cartouche de chaque planche A3. Indice vide : la date du jour. Retenus pour cette affaire sur cet appareil.
+          </p>
+        </section>
+      )}
 
       {avertissements.length > 0 && (
         <div role="status" style={{ padding: '10px 12px', background: AMBRE.fond, border: `0.5px solid ${AMBRE.bord}` }}>

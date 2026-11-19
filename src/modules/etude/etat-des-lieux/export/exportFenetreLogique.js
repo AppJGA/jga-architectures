@@ -17,9 +17,61 @@ import { COULEURS_CALQUES, COULEUR_PROPOSITION, nomFichierRapportEdl } from './r
 
 // ─── Réglages ───────────────────────────────────────────────────────────────
 
-/** Tous les étages, propositions écartées, DXF avec le plan, rapport PDF et Word. */
-export function reglagesParDefaut(niveaux = []) {
-  return { niveaux: niveaux.map((n) => n.id), inclurePropositions: false, avecPlan: true, rapport: true, word: true }
+/**
+ * Tous les étages, propositions écartées, DXF avec le plan, rapport PDF et
+ * Word. Planches : indice vide (le cartouche porte alors la date) et
+ * numéros « EDL-1 », « EDL-2 »… dans l'ordre des étages — sauf ce que
+ * l'appareil a retenu pour l'affaire (`lireReglagesPlanches`). Les numéros
+ * sont donnés pour chaque étage, coché ou non : décocher un étage ne
+ * renumérote pas les autres planches.
+ */
+export function reglagesParDefaut(niveaux = [], memorise = null) {
+  const retenus = memorise?.numeros && typeof memorise.numeros === 'object' ? memorise.numeros : {}
+  const numeros = {}
+  ;[...niveaux].sort((a, b) => (a.ordre ?? 0) - (b.ordre ?? 0)).forEach((n, i) => {
+    numeros[n.id] = typeof retenus[n.id] === 'string' ? retenus[n.id] : `EDL-${i + 1}`
+  })
+  return {
+    niveaux: niveaux.map((n) => n.id), inclurePropositions: false, avecPlan: true, rapport: true, word: true,
+    indice: typeof memorise?.indice === 'string' ? memorise.indice : '',
+    numeros,
+  }
+}
+
+// ─── Numéros et indice des planches, retenus sur l'appareil ─────────────────
+//
+// Un numéro de planche ou un indice se tape une fois par affaire : le
+// retrouver à l'export suivant évite de le ressaisir (et de livrer un
+// indice A après un indice B). Gardé par affaire dans localStorage, qui peut
+// manquer ou refuser (navigation privée, iPad plein) : la fenêtre marche
+// alors avec les valeurs par défaut.
+
+export const cleReglagesPlanches = (affaireId) => `jga.edl-export.${affaireId}`
+
+/** { numeros, indice } retenus pour l'affaire, ou null. */
+export function lireReglagesPlanches(affaireId, stockage = globalThis.localStorage) {
+  try {
+    const brut = stockage?.getItem(cleReglagesPlanches(affaireId))
+    if (brut == null) return null
+    const lu = JSON.parse(brut)
+    if (!lu || typeof lu !== 'object') return null
+    return {
+      numeros: lu.numeros && typeof lu.numeros === 'object' ? lu.numeros : {},
+      indice: typeof lu.indice === 'string' ? lu.indice : '',
+    }
+  } catch {
+    return null
+  }
+}
+
+/** Retient numéros et indice de l'affaire ; un refus de l'appareil est sans suite. */
+export function ecrireReglagesPlanches(affaireId, { numeros = {}, indice = '' } = {}, stockage = globalThis.localStorage) {
+  try {
+    stockage?.setItem(cleReglagesPlanches(affaireId), JSON.stringify({ numeros, indice }))
+    return true
+  } catch {
+    return false
+  }
 }
 
 /**
@@ -39,9 +91,17 @@ const niveauxChoisis = (niveaux, reglages) => {
 export const cleDxf = (niveauId, reglages, avecPlan) =>
   `dxf|${niveauId}|${reglages?.inclurePropositions ? 1 : 0}|${avecPlan ? 1 : 0}`
 
-/** Clé du rapport : les étages retenus et les propositions (pas le plan des DXF). */
-export const cleRapport = (reglages) =>
-  `rapport|${reglages?.inclurePropositions ? 1 : 0}|${[...(reglages?.niveaux ?? [])].sort().join(',')}`
+/**
+ * Clé du rapport : les étages retenus, les propositions, l'indice et le
+ * numéro de chaque planche retenue (pas le plan des DXF, ni le numéro d'un
+ * étage décoché). Textes pris comme le générateur les lit (espaces ôtées) :
+ * une espace de plus ne refait pas le rapport.
+ */
+export const cleRapport = (reglages) => {
+  const niveaux = [...(reglages?.niveaux ?? [])].sort()
+  const numeros = niveaux.map((id) => String(reglages?.numeros?.[id] ?? '').trim())
+  return `rapport|${reglages?.inclurePropositions ? 1 : 0}|${niveaux.join(',')}|${JSON.stringify([String(reglages?.indice ?? '').trim(), numeros])}`
+}
 
 /** Rien à exporter : aucun étage, ou ni DXF possible ni rapport. */
 export const exportPossible = (reglages) => (reglages?.niveaux?.length ?? 0) > 0

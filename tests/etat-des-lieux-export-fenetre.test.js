@@ -12,7 +12,7 @@ import { decoderDxf, lireDxf } from '../src/modules/etude/etat-des-lieux/dxfLect
 import { encoderDxf } from '../src/modules/etude/etat-des-lieux/export/exportDxfEdl.js'
 import {
   COULEUR_PLAN_APERCU, alignementCanevas, clesAEvincer, clesAGarder, superposerAnalyse, avertissementsExport, boiteDessin, cleDxf, cleRapport, couleurCalqueApercu,
-  deplacer, dessinDxf, dxfDuNiveau, exportPossible, fabriquerZip, fichiersDxf, nomFichierZip, nomsFichiersDxf, noteUniteArchicad,
+  cleReglagesPlanches, deplacer, dessinDxf, dxfDuNiveau, ecrireReglagesPlanches, exportPossible, lireReglagesPlanches, fabriquerZip, fichiersDxf, nomFichierZip, nomsFichiersDxf, noteUniteArchicad,
   preparerExport, reglagesParDefaut, uniteEtage, versDessin, versEcran, vueAjustee, zoomer,
 } from '../src/modules/etude/etat-des-lieux/export/exportFenetreLogique.js'
 import { COULEUR_PROPOSITION } from '../src/modules/etude/etat-des-lieux/export/rapportEdlLogique.js'
@@ -55,7 +55,10 @@ function donneesEssai() {
 describe('réglages et clés', () => {
   test('par défaut : tous les étages, propositions écartées, plan et rapport', () => {
     const r = reglagesParDefaut(donneesEssai().niveaux)
-    assert.deepEqual(r, { niveaux: ['n1', 'n2'], inclurePropositions: false, avecPlan: true, rapport: true, word: true })
+    assert.deepEqual(r, {
+      niveaux: ['n1', 'n2'], inclurePropositions: false, avecPlan: true, rapport: true, word: true,
+      indice: '', numeros: { n1: 'EDL-1', n2: 'EDL-2' },
+    })
     assert.ok(exportPossible(r))
     assert.ok(!exportPossible({ ...r, niveaux: [] }))
     assert.ok(!exportPossible(null))
@@ -73,6 +76,48 @@ describe('réglages et clés', () => {
     assert.equal(cleRapport(r), cleRapport({ ...r, niveaux: ['n2', 'n1'], avecPlan: false }))
     assert.notEqual(cleRapport(r), cleRapport({ ...r, niveaux: ['n1'] }))
     assert.notEqual(cleRapport(r), cleRapport({ ...r, inclurePropositions: true }))
+  })
+
+  test('numéros des planches dans l’ordre des étages, valeurs retenues reprises', () => {
+    const niveaux = [{ id: 'b', ordre: 1 }, { id: 'a', ordre: 0 }, { id: 'c', ordre: 2 }]
+    assert.deepEqual(reglagesParDefaut(niveaux).numeros, { a: 'EDL-1', b: 'EDL-2', c: 'EDL-3' })
+    const r = reglagesParDefaut(niveaux, { numeros: { b: '10-2', z: 'ancien' }, indice: 'B' })
+    assert.deepEqual(r.numeros, { a: 'EDL-1', b: '10-2', c: 'EDL-3' })
+    assert.equal(r.indice, 'B')
+    // Valeurs illisibles : les défauts
+    assert.deepEqual(reglagesParDefaut(niveaux, { numeros: 'x', indice: 3 }), reglagesParDefaut(niveaux))
+  })
+
+  test('la clé du rapport change avec l’indice et le numéro d’une planche retenue', () => {
+    const r = reglagesParDefaut(donneesEssai().niveaux)
+    assert.notEqual(cleRapport(r), cleRapport({ ...r, indice: 'A' }))
+    assert.notEqual(cleRapport(r), cleRapport({ ...r, numeros: { ...r.numeros, n2: '10-2' } }))
+    // Espaces autour : lues comme le générateur, même rapport
+    assert.equal(cleRapport({ ...r, indice: 'A' }), cleRapport({ ...r, indice: ' A ' }))
+    // Le numéro d'un étage décoché ne compte pas
+    const seul = { ...r, niveaux: ['n1'] }
+    assert.equal(cleRapport(seul), cleRapport({ ...seul, numeros: { ...r.numeros, n2: 'autre' } }))
+    // Un séparateur tapé dans un champ ne fait pas croire à une autre combinaison
+    assert.notEqual(cleRapport({ ...r, indice: 'A","B' }), cleRapport({ ...r, indice: 'A', numeros: { n1: 'B', n2: 'EDL-2' } }))
+    // La mémoire des caches reconnaît toujours une clé de rapport
+    assert.ok(cleRapport({ ...r, indice: 'x|y' }).startsWith('rapport|'))
+  })
+
+  test('numéros et indice retenus par affaire sur l’appareil, sans jamais lever', () => {
+    const memoire = new Map()
+    const stockage = { getItem: (k) => memoire.get(k) ?? null, setItem: (k, v) => memoire.set(k, String(v)) }
+    assert.equal(lireReglagesPlanches('a1', stockage), null)
+    assert.ok(ecrireReglagesPlanches('a1', { numeros: { n1: '10-1' }, indice: 'C' }, stockage))
+    assert.ok(memoire.has(cleReglagesPlanches('a1')))
+    assert.deepEqual(lireReglagesPlanches('a1', stockage), { numeros: { n1: '10-1' }, indice: 'C' })
+    assert.equal(lireReglagesPlanches('a2', stockage), null)
+    // Contenu abîmé, stockage absent ou qui refuse : rien ne lève
+    memoire.set(cleReglagesPlanches('a3'), '{pas du json')
+    assert.equal(lireReglagesPlanches('a3', stockage), null)
+    const refus = { getItem: () => { throw new Error('refus') }, setItem: () => { throw new Error('plein') } }
+    assert.equal(lireReglagesPlanches('a1', refus), null)
+    assert.equal(ecrireReglagesPlanches('a1', { indice: 'A' }, refus), false)
+    assert.equal(lireReglagesPlanches('a1', null), null)
   })
 })
 

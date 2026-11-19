@@ -6,6 +6,7 @@ import { test, describe } from 'node:test'
 
 import { CALQUES, CALQUES_DE_POINT, calqueEdl, typeEdl, libellePoint } from '../src/modules/etude/etat-des-lieux/calquesEdl.js'
 import { cadrage } from '../src/modules/etude/etat-des-lieux/geometrieEdl.js'
+import { AIDE_MEMOIRE, aideMemoire, memoriserOuverture, ouvrirAChaqueEntree } from '../src/modules/etude/etat-des-lieux/visite/aideMemoireLogique.js'
 import {
   ZOOM_MAX_VISITE, penseBete, pieceSous, pointProche, cadrePiece, numeroSuivant, numeroPourRestauration,
   piecesVisitees, etatPiece, visiteEnCours, evenementPourEtat, messageArret, cheminsPhotoEdl,
@@ -367,5 +368,51 @@ describe('remplacer les plans après une visite', async () => {
       operationEdl(TYPES_EDL.evenement, { evenement: { id: 'e' } }, o),
     ]
     assert.deepEqual(photosDesOperations(ops).sort(), ['p1', 'p2'])
+  })
+})
+
+describe('aide-mémoire de la pièce', () => {
+  const piece = { id: 'p1', fiche: null, hsp_lue: null }
+  const cle = (aide, c) => aide.groupes.flatMap((g) => g.rubriques).find((r) => r.cle === c)
+
+  test('rien de relevé : tout à faire, toutes les familles demandées', () => {
+    const aide = aideMemoire(piece)
+    assert.equal(aide.faites, 0)
+    assert.equal(aide.total, AIDE_MEMOIRE.flatMap((g) => g.rubriques).length)
+    for (const c of ['sol', 'murs', 'plafond', 'plinthes', 'hsp', 'porte', 'menuiseries', 'electricite', 'plomberie', 'chauffage', 'securite', 'desordres']) assert.ok(cle(aide, c), c)
+  })
+
+  test('les calques cités existent', () => {
+    for (const r of AIDE_MEMOIRE.flatMap((g) => g.rubriques)) for (const c of r.calques ?? []) assert.ok(calqueEdl(c), c)
+  })
+
+  test('cochée par la fiche, la porte, la HSP lue sur le plan, un point ou un élément de la pièce', () => {
+    const p = { id: 'p1', hsp_lue: 2.5, fiche: { sol: 'Carrelage', murs: '', porte: { huisserie: 'bois', vantail: '', quincaillerie: '' } } }
+    const points = [
+      { id: 'a', piece_id: 'p1', type: 'prise' },
+      { id: 'b', piece_id: 'p2', type: 'lavabo' }, // autre pièce : ne compte pas
+      { id: 'c', piece_id: 'p1', type: null },
+    ]
+    const elements = [{ piece_id: 'p1', calque: 'desordres' }, { piece_id: 'p2', calque: 'plomberie' }]
+    const aide = aideMemoire(p, { points, elements })
+    assert.equal(cle(aide, 'sol').fait, true)
+    assert.equal(cle(aide, 'murs').fait, false)
+    assert.equal(cle(aide, 'hsp').fait, true)
+    assert.equal(cle(aide, 'porte').fait, true)
+    assert.equal(cle(aide, 'electricite').fait, true)
+    assert.equal(cle(aide, 'plomberie').fait, false)
+    assert.equal(cle(aide, 'desordres').fait, true)
+    assert.equal(aide.faites, 5)
+  })
+
+  test('ouverture à chaque entrée : oui par défaut, mémorisée, sans stockage pas d’erreur', () => {
+    const memoire = new Map()
+    const stockage = { getItem: (k) => memoire.get(k) ?? null, setItem: (k, v) => memoire.set(k, v) }
+    assert.equal(ouvrirAChaqueEntree(stockage), true)
+    memoriserOuverture(false, stockage)
+    assert.equal(ouvrirAChaqueEntree(stockage), false)
+    const casse = { getItem: () => { throw new Error('bloqué') }, setItem: () => { throw new Error('bloqué') } }
+    assert.equal(ouvrirAChaqueEntree(casse), true)
+    assert.doesNotThrow(() => memoriserOuverture(true, casse))
   })
 })

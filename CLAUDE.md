@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 1720 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans, gestion de l'application, état des lieux)
+npm test         # 1724 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans, gestion de l'application, état des lieux)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -867,8 +867,15 @@ lot 1 : `docs/superpowers/plans/2026-11-17-etat-des-lieux-lot1-preparer.md`.
   l'écriture réussie). Barres au-dessus du plan à hauteur fixe pendant
   toute la visite et `cleDeCadre` (taille du conteneur dans la clé) : une
   pièce ouverte est toujours bien cadrée. Pièces grises tant
-  qu'elles ne sont pas visitées (`piecesVisitees`). Pense-bête Sol · Murs ·
-  Plafond · Plinthes · HSP, coché d'après `edl_pieces.fiche` (lot 3).
+  qu'elles ne sont pas visitées (`piecesVisitees`). **Aide-mémoire** (demande
+  de l'agence, 2026-11-19, `aideMemoireLogique.js` testé, `AideMemoireEdl.jsx`)
+  : ouvert à chaque entrée dans une pièce (réglage de l'appareil, case dans le
+  panneau), en haut à droite du plan, fermé par ✕, rouvert par le bouton
+  « Aide-mémoire n/N » de la barre de la pièce. Rappelle finitions et leur
+  état, bloc porte, menuiseries, électricité, plomberie, chauffage,
+  sécurité, désordres ; chaque rubrique se coche seule (fiche remplie par
+  l'analyse, HSP lue sur le plan, point ou élément de son calque dans la
+  pièce). La liste ne vit que dans `AIDE_MEMOIRE`.
   **Journal** `edl_evenements` (debut, fin, entree, sortie, point,
   point-modifie, point-supprime, photo, pause, reprise, coupure), heure de
   l'appareil.

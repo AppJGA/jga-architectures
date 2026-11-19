@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { X, Undo2, Mic, ChevronLeft, Square } from 'lucide-react'
+import { X, Undo2, Mic, ChevronLeft, Square, ListChecks } from 'lucide-react'
 import { useEnregistrementEdl } from './useEnregistrementEdl'
 import { enregistrementActif } from '../../../chantier/comptes-rendus/enregistrement/enregistrementLogique'
 import {
-  pieceSous, piecesVisitees, visiteEnCours, evenementPourEtat, penseBete, messageArret, designationPiece, arrondirMetre,
+  pieceSous, piecesVisitees, visiteEnCours, evenementPourEtat, messageArret, designationPiece, arrondirMetre,
   etatPieceVisite,
 } from './visiteLogique'
 import { apresSortieDePiece } from '../analyse/analyseEdl'
@@ -12,6 +12,8 @@ import { aire } from '../geometrieEdl'
 import { PlanVisite } from './PlanVisite'
 import { BandeauEnregistrement } from './BandeauEnregistrement'
 import { PanneauPoint } from './PanneauPoint'
+import { AideMemoireEdl } from './AideMemoireEdl'
+import { aideMemoire, memoriserOuverture, ouvrirAChaqueEntree } from './aideMemoireLogique'
 
 // ─── Visite d'un état des lieux, sur la tablette ─────────────────────────────
 //
@@ -83,6 +85,10 @@ export function VisiteEdl({ affaireId, visite, analyse = null, obtenirLiens, onF
   const [niveauId, setNiveauId] = useState(null)
   const [pieceId, setPieceId] = useState(null)
   const [pointId, setPointId] = useState(null)
+  // Aide-mémoire : ouvert à chaque entrée dans une pièce, sauf si le
+  // collaborateur l'a coupé sur cet appareil
+  const [aideOuverte, setAideOuverte] = useState(false)
+  const [aideAuto, setAideAuto] = useState(() => ouvrirAChaqueEntree())
   const [historique, setHistorique] = useState([])
   const [message, setMessage] = useState(null)
   const [confirmerFin, setConfirmerFin] = useState(false)
@@ -122,6 +128,9 @@ export function VisiteEdl({ affaireId, visite, analyse = null, obtenirLiens, onF
   const ancienne = visiteEnCours(donnees?.visites)
 
   useEffect(() => { contexte.current = { visiteId, niveauId: niveau?.id ?? null, pieceId: piece?.id ?? null } })
+  const elementsAnalyse = analyse?.elements
+  const aide = useMemo(() => aideMemoire(piece, { points, elements: elementsAnalyse ?? [] }), [piece, points, elementsAnalyse])
+  const changerAideAuto = (oui) => { setAideAuto(oui); memoriserOuverture(oui) }
 
   // Pause, coupure, reprise : notées au journal avec la pièce où l'on est
   const surEtat = useCallback((nouveau, ancien) => {
@@ -206,6 +215,7 @@ export function VisiteEdl({ affaireId, visite, analyse = null, obtenirLiens, onF
     // Tout de suite, pas au rendu : un second toucher rapide sur une autre
     // pièce doit noter la sortie de celle-ci
     contexte.current = dedans
+    if (ctx.pieceId !== p.id) setAideOuverte(aideAuto)
     setPieceId(p.id)
     setPointId(choisir)
     try {
@@ -228,6 +238,7 @@ export function VisiteEdl({ affaireId, visite, analyse = null, obtenirLiens, onF
     contexte.current = { ...ctx, pieceId: null }
     setPieceId(null)
     setPointId(null)
+    setAideOuverte(false)
     try {
       await Promise.all([rec.couper(), visite.noter('sortie', ctx)])
       analyserApres(ctx.visiteId)
@@ -477,15 +488,10 @@ export function VisiteEdl({ affaireId, visite, analyse = null, obtenirLiens, onF
             <p style={{ margin: 0, fontSize: 15, fontWeight: 600, color: '#1F1B17', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{designationPiece(piece)}</p>
             <p style={{ margin: 0, fontSize: 12, color: '#9C9591' }}>{fmtM2(aire(piece.contour))}</p>
           </div>
-          <div aria-label="À décrire dans la pièce" style={{ marginLeft: 'auto', display: 'flex', gap: 6, flexShrink: 0 }}>
-            {penseBete(piece.fiche).map((r) => (
-              <span key={r.cle} style={{
-                fontSize: 12, padding: '4px 8px', borderRadius: 2, whiteSpace: 'nowrap',
-                border: `0.5px solid ${r.fait ? '#2A8A4E' : 'rgba(0,0,0,0.15)'}`, color: r.fait ? '#2A8A4E' : '#5E5854',
-                background: r.fait ? 'rgba(42,138,78,0.08)' : 'white',
-              }}>{r.fait ? '✓ ' : ''}{r.libelle}</span>
-            ))}
-          </div>
+          <button type="button" aria-pressed={aideOuverte} onClick={() => setAideOuverte((o) => !o)}
+            style={{ ...bouton, marginLeft: 'auto', flexShrink: 0, ...(aide.faites === aide.total ? { color: '#2A8A4E', borderColor: '#2A8A4E' } : {}) }}>
+            <ListChecks size={17} /> Aide-mémoire · {aide.faites}/{aide.total}
+          </button>
         </>)}
       </div>
       <PanneauPoint
@@ -517,6 +523,9 @@ export function VisiteEdl({ affaireId, visite, analyse = null, obtenirLiens, onF
               )}
               {erreurLecture}
             </div>
+          )}
+          {piece && aideOuverte && actif && (
+            <AideMemoireEdl titre={designationPiece(piece)} aide={aide} ouvrirAuto={aideAuto} onOuvrirAuto={changerAideAuto} onFermer={() => setAideOuverte(false)} />
           )}
           {!actif && (
             <div style={{ flex: 1, minHeight: 0, background: 'rgba(60,56,52,0.6)', display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 48, paddingLeft: 16, paddingRight: 16, gap: 14, textAlign: 'center', overflowY: 'auto' }}>

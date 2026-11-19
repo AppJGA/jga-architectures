@@ -218,6 +218,52 @@ describe('fichier DXF', () => {
     }
   })
 
+  test('textes des symboles lisibles : variante « _R » du bloc au-delà de 90°', () => {
+    const salle = { id: 'sr', nom: 'Bureau', numero: null, contour: rectangle(0, 0, 4, 3), surface_lue: null, hsp_lue: null }
+    const rj = (id, x, y) => ({ id, pieceId: 'sr', pointId: id, x, y, calque: 'electricite', type: 'rj45', libelle: 'RJ45', cotes: '', numero: 1, aValider: false })
+    const blocDe = (texte, nom) => {
+      const debut = texte.indexOf(`\r\n  2\r\n${nom}\r\n`)
+      return texte.slice(debut + 2, texte.indexOf('ENDBLK', debut))
+    }
+    // Contre le mur du haut : inséré à 180°, textes retournés dans le bloc
+    const haut = genererDxfEdl({ pieces: [salle], elementsExport: [rj('a', 2, 2.8)] })
+    const lh = relire(haut)
+    assert.deepEqual(lh.blocs, ['EDL_RJ45_R'])
+    const insert = entitesBrutes(haut, 'INSERT')
+    assert.equal(insert.length, 1)
+    assert.equal(insert[0].get(2), 'EDL_RJ45_R')
+    proche(Number(insert[0].get(50)), 180)
+    const [texteBloc] = entitesBrutes(blocDe(haut, 'EDL_RJ45_R'), 'TEXT')
+    assert.equal(texteBloc.get(1), 'RJ')
+    proche(Number(texteBloc.get(50)), 180)
+    // Une fois déployé, le texte se lit droit (180 + 180 ≡ 0)
+    const deploye = lh.textes.find((t) => t.texte === 'RJ')
+    proche(Math.cos((deploye.rotation * Math.PI) / 180), 1)
+    // Loin des murs : droit, bloc ordinaire seul
+    const milieu = genererDxfEdl({ pieces: [salle], elementsExport: [rj('b', 2, 1.5)] })
+    assert.deepEqual(relire(milieu).blocs, ['EDL_RJ45'])
+    assert.equal(entitesBrutes(milieu, 'INSERT')[0].get(2), 'EDL_RJ45')
+    const [texteDroit] = entitesBrutes(blocDe(milieu, 'EDL_RJ45'), 'TEXT')
+    assert.equal(texteDroit.has(50), false)
+    // Les deux sur l'étage : deux blocs, ordinaire puis retourné
+    assert.deepEqual(relire(genererDxfEdl({ pieces: [salle], elementsExport: [rj('a', 2, 2.8), rj('b', 2, 1.5)] })).blocs, ['EDL_RJ45', 'EDL_RJ45_R'])
+    // Symbole sans texte : jamais de variante
+    const prise = { ...rj('c', 2, 2.8), type: 'prise' }
+    assert.deepEqual(relire(genererDxfEdl({ pieces: [salle], elementsExport: [prise] })).blocs, ['EDL_PRISE'])
+  })
+
+  test('point plein du détecteur : cercles concentriques dans le bloc', () => {
+    const salle = { id: 'sd', nom: 'Couloir', numero: null, contour: rectangle(0, 0, 4, 3), surface_lue: null, hsp_lue: null }
+    const df = { id: 'd', pieceId: 'sd', pointId: 'd', x: 2, y: 1.5, calque: 'securite', type: 'detecteur-fumee', libelle: '', cotes: '', numero: 1, aValider: false }
+    const texte = genererDxfEdl({ pieces: [salle], elementsExport: [df] })
+    const debut = texte.indexOf('\r\n  2\r\nEDL_DETECTEUR_FUMEE\r\n')
+    const cercles = entitesBrutes(texte.slice(debut + 2, texte.indexOf('ENDBLK', debut)), 'CIRCLE').map((c) => Number(c.get(40))).sort((a, b) => a - b)
+    assert.equal(cercles.length, 4)
+    proche(cercles[2], 0.045)
+    proche(cercles[3], 0.12)
+    proche(cercles[0], 0.015)
+  })
+
   test('en centimètres : coordonnées, symboles et hauteurs × 100', () => {
     const elementsExport = elementsAExporter({ pieces: [sejour], points, elements })
     const l = relire(genererDxfEdl({ pieces: [sejour], elementsExport, unitesParMetre: 100 }))

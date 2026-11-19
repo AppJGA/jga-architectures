@@ -298,16 +298,39 @@ function ecrivain() {
   }
 }
 
-// Primitives d'un symbole (mètres) écrites dans l'unité du fichier
-function ecrirePrimitives(w, calque, primitives, u) {
+// Un disque plein (`plein`) en cercles concentriques : R12 ne remplit rien
+// sans SOLID, et des cercles serrés se lisent comme un point
+const ANNEAUX_PLEIN = 3
+
+// Primitives d'un symbole (mètres) écrites dans l'unité du fichier ;
+// `tourneTextes` ajoute 180° aux textes (variante « _R » du bloc)
+function ecrirePrimitives(w, calque, primitives, u, { tourneTextes = false } = {}) {
   const s = ([x, y]) => [x * u, y * u]
   for (const p of primitives) {
     if (p.ligne) w.ligne(calque, s(p.ligne[0]), s(p.ligne[1]))
     else if (p.polyligne) w.polyligne(calque, p.polyligne.map(s), p.ferme)
-    else if (p.cercle) w.cercle(calque, s(p.cercle), p.cercle[2] * u)
+    else if (p.cercle && p.plein) {
+      for (let i = ANNEAUX_PLEIN; i >= 1; i--) w.cercle(calque, s(p.cercle), (p.cercle[2] * u * i) / ANNEAUX_PLEIN)
+    } else if (p.cercle) w.cercle(calque, s(p.cercle), p.cercle[2] * u)
     else if (p.arc) w.arc(calque, s(p.arc), p.arc[2] * u, p.arc[3], p.arc[4])
-    else if (p.texte) w.texte(calque, s(p.pos), p.hauteur * u, texteDxf(p.texte), { rotation: p.rotation ?? 0, h: 1, v: 2 })
+    else if (p.texte) {
+      const rotation = (p.rotation ?? 0) + (tourneTextes ? 180 : 0)
+      w.texte(calque, s(p.pos), p.hauteur * u, texteDxf(p.texte), { rotation, h: 1, v: 2 })
+    }
   }
+}
+
+// Un symbole à texte inséré entre 90° et 270° (contre un mur du haut) aurait
+// ses textes la tête en bas : il prend la variante « _R » du bloc, dont les
+// textes (centrés, donc à la même place) sont retournés. Même seuil que
+// `rotationLisible` de symbolesEdl.js
+export const SUFFIXE_RETOURNE = '_R'
+const aDuTexte = (code) => SYMBOLES[code]?.primitives.some((p) => p.texte != null) ?? false
+export function blocInsere(code, angle) {
+  let r = ((angle % 360) + 360) % 360
+  if (r > 180) r -= 360
+  const retourne = aDuTexte(code) && (r > 90 + 1e-9 || r <= -90 + 1e-9)
+  return retourne ? `${nomBloc(code)}${SUFFIXE_RETOURNE}` : nomBloc(code)
 }
 
 // Gardé ici pour les appelants d'avant : le placement des textes en a besoin aussi
@@ -491,7 +514,7 @@ export function genererDxfEdl({
   const { unitesParMetre: u, insunits } = uniteDxf(unitesParMetre ?? niveau?.unites_par_metre)
   const w = ecrivain()
   const calquesUtilises = new Set()
-  const typesUtilises = new Set()
+  const blocsUtilises = new Set()
   const etendue = [Infinity, Infinity, -Infinity, -Infinity]
   // Tout passe par là : coordonnées converties et étendue tenue à jour
   const enUnites = ([x, y]) => {
@@ -565,10 +588,11 @@ export function genererDxfEdl({
       const { dx, boite: b } = em
       const calque = nomCalque(element.calque, element.aValider)
       if (em.type) {
-        typesUtilises.add(em.type)
+        const bloc = blocInsere(em.type, em.angle ?? r.angle)
+        blocsUtilises.add(bloc)
         // L'étendue suit la boîte tournée du symbole, pas seulement son point
         for (const coin of [[b.xmin, b.ymin], [b.xmax, b.ymax], [b.xmin, b.ymax], [b.xmax, b.ymin]]) enUnites(place([dx + coin[0], coin[1]]))
-        w.insert(calque, nomBloc(em.type), enUnites(place([dx, 0])), em.angle ?? r.angle)
+        w.insert(calque, bloc, enUnites(place([dx, 0])), em.angle ?? r.angle)
       } else {
         // Sans type (désordre non classé…) : un petit rond suffit à le situer
         w.cercle(calque, enUnites(place([dx, 0])), RAYON_SANS_SYMBOLE * u)
@@ -625,11 +649,14 @@ export function genererDxfEdl({
   // Symboles en blocs, sur le calque 0 : ils prennent le calque (et la
   // couleur) de leur insertion
   g(0, 'SECTION'); g(2, 'BLOCKS')
-  for (const code of Object.keys(SYMBOLES).filter((c) => typesUtilises.has(c))) {
-    const nom = nomBloc(code)
-    g(0, 'BLOCK'); g(8, '0'); g(2, nom); g(70, entier(0)); g(10, '0.0'); g(20, '0.0'); g(30, '0.0'); g(3, nom)
-    ecrirePrimitives(f, '0', SYMBOLES[code].primitives, u)
-    g(0, 'ENDBLK'); g(8, '0')
+  for (const code of Object.keys(SYMBOLES)) {
+    for (const tourneTextes of [false, true]) {
+      const nom = `${nomBloc(code)}${tourneTextes ? SUFFIXE_RETOURNE : ''}`
+      if (!blocsUtilises.has(nom)) continue
+      g(0, 'BLOCK'); g(8, '0'); g(2, nom); g(70, entier(0)); g(10, '0.0'); g(20, '0.0'); g(30, '0.0'); g(3, nom)
+      ecrirePrimitives(f, '0', SYMBOLES[code].primitives, u, { tourneTextes })
+      g(0, 'ENDBLK'); g(8, '0')
+    }
   }
   g(0, 'ENDSEC')
 

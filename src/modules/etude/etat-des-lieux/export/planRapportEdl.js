@@ -102,7 +102,7 @@ export function agrandir(primitives, [ox, oy], k) {
   return primitives.map((p) => {
     if (p.ligne) return { ligne: p.ligne.map(t) }
     if (p.polyligne) return { ...p, polyligne: p.polyligne.map(t) }
-    if (p.cercle) return { cercle: [...t(p.cercle), p.cercle[2] * k] }
+    if (p.cercle) return { ...p, cercle: [...t(p.cercle), p.cercle[2] * k] }
     if (p.arc) return { arc: [...t(p.arc), p.arc[2] * k, p.arc[3], p.arc[4]] }
     return { ...p, pos: t(p.pos), hauteur: p.hauteur * k }
   })
@@ -233,6 +233,13 @@ function tracerPrimitives(ctx, c, primitives, couleur, epaisseur) {
     }
   }
   ctx.stroke()
+  for (const p of primitives) {
+    if (!p.plein || !p.cercle) continue
+    const [x, y] = versPixels(c, p.cercle)
+    ctx.beginPath()
+    ctx.arc(x, y, p.cercle[2] * c.pxParMetre, 0, Math.PI * 2)
+    ctx.fill()
+  }
   for (const p of primitives) {
     if (!p.texte) continue
     const h = p.hauteur * c.pxParMetre

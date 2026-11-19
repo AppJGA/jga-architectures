@@ -123,7 +123,10 @@ describe('symboles usuels : types de la légende de l’agence', () => {
     const p = SYMBOLES['detecteur-fumee'].primitives
     assert.ok(p.every((q) => !('texte' in q)))
     assert.ok(p.every((q) => q.cercle && q.cercle[0] === 0 && q.cercle[1] === 0))
-    assert.ok(p.filter((q) => q.cercle[2] <= 0.05).length >= 2, 'point central rempli')
+    assert.deepEqual(p.map((q) => !!q.plein), [false, true], 'un rond, un point central plein')
+    assert.ok(p[1].cercle[2] < p[0].cercle[2] / 2)
+    // Le drapeau suit la pose
+    assert.equal(primitivesPlacees('detecteur-fumee', { x: 1, y: 2, angle: 30 })[1].plein, true)
   })
 
   test('dessins de la légende', () => {

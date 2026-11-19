@@ -10,7 +10,9 @@
 // devient donc une polyligne.
 //   { ligne: [[x, y], [x, y]] }
 //   { polyligne: [[x, y]…], ferme }
-//   { cercle: [cx, cy, r] }
+//   { cercle: [cx, cy, r], plein? }          plein : disque rempli (le DXF R12,
+//                                            sans remplissage, l'écrit en
+//                                            cercles concentriques serrés)
 //   { arc: [cx, cy, r, debutDeg, finDeg] }   sens trigonométrique, comme le DXF
 //   { texte: 'T', pos: [x, y], hauteur }     pos = milieu du texte (centré)
 //
@@ -35,7 +37,7 @@ const arrondi = (v) => Math.round(v * 10000) / 10000 || 0
 const ligne = (a, b) => ({ ligne: [a, b] })
 const polyligne = (points, ferme = false) => ({ polyligne: points.map(([x, y]) => [arrondi(x), arrondi(y)]), ferme })
 const rect = (x0, y0, x1, y1) => polyligne([[x0, y0], [x1, y0], [x1, y1], [x0, y1]], true)
-const cercle = (cx, cy, r) => ({ cercle: [cx, cy, r] })
+const cercle = (cx, cy, r, { plein = false } = {}) => (plein ? { cercle: [cx, cy, r], plein: true } : { cercle: [cx, cy, r] })
 const arc = (cx, cy, r, debut, fin) => ({ arc: [cx, cy, r, debut, fin] })
 const texte = (t, pos, hauteur) => ({ texte: t, pos, hauteur })
 
@@ -272,9 +274,8 @@ export const SYMBOLES = {
   'compteur-electricite': fixe([cercle(0, 0, 0.12), texte('EL', [0, 0], 0.09)]),
 
   // ── Sécurité ──
-  // Rond à point central plein, comme la légende de l'agence : le point se
-  // remplit de cercles serrés (pas de remplissage en R12 sans SOLID)
-  'detecteur-fumee': fixe([cercle(0, 0, 0.12), cercle(0, 0, 0.045), cercle(0, 0, 0.03), cercle(0, 0, 0.015)]),
+  // Rond à point central plein, comme la légende de l'agence
+  'detecteur-fumee': fixe([cercle(0, 0, 0.12), cercle(0, 0, 0.045, { plein: true })]),
   'eclairage-secours': fixe([rect(-0.15, -0.07, 0.15, 0.07), texte('BAES', [0, 0], 0.06)]),
   extincteur: fixe([triangle(0.30), texte('EX', [0, -0.025], 0.06)]),
 
@@ -519,7 +520,7 @@ export function primitivesPlacees(code, { x = 0, y = 0, angle = 0 } = {}) {
     if (p.polyligne) return { polyligne: p.polyligne.map(t), ferme: p.ferme }
     if (p.cercle) {
       const [cx, cy, r] = p.cercle
-      return { cercle: [...t([cx, cy]), r] }
+      return p.plein ? { cercle: [...t([cx, cy]), r], plein: true } : { cercle: [...t([cx, cy]), r] }
     }
     if (p.arc) {
       const [cx, cy, r, debut, fin] = p.arc

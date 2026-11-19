@@ -459,6 +459,9 @@ describe('plan du rapport', () => {
     const trait = (marque) => marque.primitives.find((p) => p.ligne && Math.abs(p.ligne[0][0] - p.ligne[1][0]) < 1e-9).ligne
     assert.ok(trait(m[0])[1][1] > 2.8, 'trait de la prise vers le mur du haut')
     assert.ok(trait(m[1])[1][1] < 1.5, 'loin des murs : droite, comme la pièce')
+    // Le point plein du détecteur reste plein une fois posé et agrandi
+    const [df] = marquesElements([{ ...el('df', 'detecteur-fumee', 2, 1.5), calque: 'securite' }], [salle], 10)
+    assert.equal(df.primitives.filter((p) => p.plein).length, 1)
     // La porte n'est pas murale : elle suit la pièce (vantail vers +y), même près du mur
     const vantail = m[2].primitives[2].ligne
     assert.ok(vantail[1][1] > vantail[0][1])

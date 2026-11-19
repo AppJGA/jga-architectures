@@ -76,3 +76,97 @@ describe('retour', () => {
     assert.equal(retourParDefaut('/gestion-application').vers, '/home')
   })
 })
+
+// ─── Crédits API Claude ──────────────────────────────────────────────────────
+
+import {
+  coutAppel, usageDuFlux, periodeCredits, resumeConsommation, formatDollars, CREDITS_API,
+} from '../src/admin/consommationIaLogique.js'
+
+const proche = (a, b) => assert.ok(Math.abs(a - b) < 1e-9, `${a} ≠ ${b}`)
+
+describe('crédits API Claude', () => {
+  test('coût d’un appel aux prix publics, cache compris', () => {
+    // Opus 5.5 : 4 $ / 20 $ par million, lecture du cache 0,20 $, écriture 1,25 × l'entrée
+    proche(coutAppel('claude-opus-5-5', { input_tokens: 1e6, output_tokens: 1e6 }), 24)
+    proche(coutAppel('claude-opus-5-5', { cache_creation_input_tokens: 1e6, cache_read_input_tokens: 1e6 }), 5 + 0.2)
+    proche(coutAppel('claude-sonnet-5-5', { input_tokens: 500000, output_tokens: 100000 }), 1 + 1)
+    assert.equal(coutAppel('claude-opus-5-5', null), 0)
+  })
+
+  test('un repli de modèle compte chaque essai à son propre prix', () => {
+    const usage = {
+      input_tokens: 1e6, output_tokens: 0,
+      iterations: [
+        { type: 'message', model: 'claude-opus-5-5', input_tokens: 1e6, output_tokens: 0 },
+        { type: 'fallback_message', model: 'claude-opus-4-8', input_tokens: 1e6, output_tokens: 0 },
+      ],
+    }
+    proche(coutAppel('claude-opus-4-8', usage), 4 + 5)
+  })
+
+  test('modèle inconnu : prix de la famille la plus proche, sinon Opus 5', () => {
+    proche(coutAppel('claude-sonnet-5-5-2027', { input_tokens: 1e6 }), 2)
+    proche(coutAppel('modele-mystere', { input_tokens: 1e6 }), 5)
+  })
+
+  test('usage relevé dans un flux : entrée au départ, cumuls ensuite', () => {
+    const lu = usageDuFlux([
+      { type: 'message_start', message: { model: 'claude-sonnet-5-5', usage: { input_tokens: 1200, output_tokens: 1 } } },
+      { type: 'content_block_delta' },
+      { type: 'message_delta', usage: { output_tokens: 300 } },
+      { type: 'message_delta', usage: { output_tokens: 800 } },
+    ])
+    assert.deepEqual(lu, { modele: 'claude-sonnet-5-5', usage: { input_tokens: 1200, output_tokens: 800 } })
+    assert.equal(usageDuFlux([{ type: 'ping' }]), null)
+  })
+
+  test('période du 7 au 6, à cheval sur l’année', () => {
+    const p = periodeCredits(new Date('2026-11-19T10:00:00Z'))
+    assert.equal(p.debut.toISOString(), '2026-11-07T00:00:00.000Z')
+    assert.equal(p.fin.toISOString(), '2026-12-07T00:00:00.000Z')
+    const q = periodeCredits(new Date('2027-01-03T10:00:00Z'))
+    assert.equal(q.debut.toISOString(), '2026-12-07T00:00:00.000Z')
+    assert.equal(periodeCredits(new Date('2026-11-07T00:00:00Z')).debut.toISOString(), '2026-11-07T00:00:00.000Z')
+  })
+
+  test('résumé : période en cours, précédente, par usage, projection', () => {
+    const lignes = [
+      { cree_le: '2026-11-01T12:00:00Z', fonction: 'edl-pieces', modele: 'claude-opus-5-5', usage: { input_tokens: 1e6 } },
+      { cree_le: '2026-11-08T12:00:00Z', fonction: 'analyser-edl', modele: 'claude-opus-5-5', usage: { output_tokens: 1e6 } },
+      { cree_le: '2026-11-10T12:00:00Z', fonction: 'analyser-edl', modele: 'claude-opus-5-5', usage: { output_tokens: 1e6 } },
+      { cree_le: '2026-11-12T12:00:00Z', fonction: 'analyser-visite', modele: 'claude-sonnet-5-5', usage: { input_tokens: 1e6 } },
+    ]
+    const r = resumeConsommation(lignes, new Date('2026-11-19T00:00:00Z'))
+    proche(r.depense, 42)
+    proche(r.part, 0.42)
+    assert.equal(r.alerte, false)
+    proche(r.reste, 58)
+    assert.equal(r.appels, 3)
+    assert.deepEqual(r.parFonction.map((f) => [f.fonction, f.appels]), [['analyser-edl', 2], ['analyser-visite', 1]])
+    proche(r.precedente.depense, 4)
+    // 42 $ en 12 jours sur une période de 30
+    proche(r.projection, 42 * 30 / 12)
+    assert.equal(r.depuis.toISOString(), '2026-11-01T12:00:00.000Z')
+  })
+
+  test('alerte à 80 %, pas de projection le premier jour, reste jamais négatif', () => {
+    const lignes = [{ cree_le: '2026-11-07T02:00:00Z', fonction: 'analyser-edl', modele: 'claude-opus-5-5', usage: { output_tokens: 6e6 } }]
+    const r = resumeConsommation(lignes, new Date('2026-11-07T10:00:00Z'))
+    assert.equal(r.alerte, true)
+    assert.equal(r.reste, 0)
+    assert.equal(r.projection, null)
+    assert.equal(r.montant, CREDITS_API.montantUsd)
+  })
+
+  test('l’accueil prévient au-delà de 80 % des crédits', () => {
+    assert.equal(alerteAccueil({ credits: 0.5 }), null)
+    assert.match(alerteAccueil({ credits: 0.85, fichiers: 0, base: 0 }).texte, /Crédits API Claude du mois utilisés à 85 %/)
+  })
+
+  test('montants en dollars', () => {
+    assert.equal(formatDollars(12.3), '12,30 $')
+    assert.equal(formatDollars(0.001), '< 0,01 $')
+    assert.equal(formatDollars(0), '0,00 $')
+  })
+})

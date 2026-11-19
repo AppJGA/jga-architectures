@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { RefreshCw, AlertTriangle } from 'lucide-react'
+import { RefreshCw, AlertTriangle, ExternalLink } from 'lucide-react'
 import { chargerGestion } from './gestionAppDonnees'
 import { LIMITES, jauge, parSorte, parAffaire, etatComptes, formatTaille } from './gestionAppLogique'
 import { NettoyageStockage } from '../modules/chantier/comptes-rendus/NettoyageStockage'
+import { resumeConsommation, formatDollars, CONSOLE_FACTURATION } from './consommationIaLogique'
 
 // ─── Gestion de l'application ────────────────────────────────────────────────
 //
@@ -59,6 +60,71 @@ function Chiffre({ valeur, libelle }) {
       <p style={{ margin: 0, fontSize: 22, fontWeight: 500, color: '#1F1B17', fontVariantNumeric: 'tabular-nums' }}>{valeur ?? '—'}</p>
       <p style={{ margin: 0, fontSize: 12, color: '#5E5854' }}>{libelle}</p>
     </div>
+  )
+}
+
+const fmtJour = (d) => d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', timeZone: 'UTC' })
+
+// Le dernier jour de la période (la fin est le jour du renouvellement, exclu)
+const veille = (d) => new Date(d.getTime() - 86400000)
+
+function CreditsClaude({ consommation }) {
+  const r = useMemo(() => (Array.isArray(consommation) ? resumeConsommation(consommation) : null), [consommation])
+  if (consommation === null) {
+    return <p style={{ fontSize: 13, color: '#5E5854' }}>Le suivi s’affichera une fois la migration 083 passée dans Supabase : les appels à Claude seront comptés à partir de là.</p>
+  }
+  if (!r) return <p style={{ fontSize: 13, color: '#B8412C' }}>Lecture de la consommation impossible pour le moment.</p>
+  const pct = Math.round(r.part * 100)
+  const couleur = r.alerte ? ORANGE : ARDOISE
+  return (
+    <>
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: '#1F1B17' }}>Du {fmtJour(r.periode.debut)} au {fmtJour(veille(r.periode.fin))}</span>
+          <span style={{ fontSize: 13, color: couleur, fontVariantNumeric: 'tabular-nums' }}>
+            {formatDollars(r.depense)} / {formatDollars(r.montant)} · <strong>{pct} %</strong>
+          </span>
+        </div>
+        <div role="meter" aria-label="Crédits API Claude utilisés" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}
+          style={{ height: 10, background: '#EEEBE6', overflow: 'hidden' }}>
+          <div style={{ width: `${Math.min(100, pct)}%`, height: '100%', background: couleur }} />
+        </div>
+        <p style={{ margin: '6px 0 0', fontSize: 12, color: '#5E5854' }}>
+          Reste environ <strong>{formatDollars(r.reste)}</strong> · {r.appels} appel{r.appels > 1 ? 's' : ''} · crédits renouvelés le {fmtJour(r.periode.fin)}
+          {r.projection != null && <> · au rythme actuel, ≈ {formatDollars(r.projection)} sur la période</>}
+        </p>
+        {r.alerte && (
+          <p style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '6px 0 0', fontSize: 12, color: ORANGE }}>
+            <AlertTriangle size={13} /> Plus de 80 % des crédits du mois : au-delà, les appels seront refusés ou facturés en plus.
+          </p>
+        )}
+      </div>
+      {r.parFonction.length > 0 && (
+        <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 12 }}>
+          <thead><tr><th style={entete}>Usage</th><th style={{ ...entete, textAlign: 'right' }}>Appels</th><th style={{ ...entete, textAlign: 'right' }}>Coût</th></tr></thead>
+          <tbody>
+            {r.parFonction.map((f) => (
+              <tr key={f.fonction} style={ligneTableau}>
+                <td style={cellule}>{f.libelle}</td>
+                <td style={{ ...cellule, textAlign: 'right' }}>{f.appels.toLocaleString('fr-FR')}</td>
+                <td style={{ ...cellule, textAlign: 'right', whiteSpace: 'nowrap' }}>{formatDollars(f.cout)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {r.precedente && (
+        <p style={{ margin: '0 0 8px', fontSize: 12, color: '#5E5854' }}>
+          Période précédente (du {fmtJour(r.precedente.periode.debut)} au {fmtJour(veille(r.precedente.periode.fin))}) : {formatDollars(r.precedente.depense)}, {r.precedente.appels} appel{r.precedente.appels > 1 ? 's' : ''}.
+        </p>
+      )}
+      <p style={{ margin: 0, fontSize: 12, color: '#9C9591' }}>
+        Estimation aux prix publics, d’après les appels de l’app{r.depuis ? ` comptés depuis le ${r.depuis.toLocaleDateString('fr-FR')}` : ' (aucun encore compté)'}. Le solde exact se lit dans la Console Anthropic :{' '}
+        <a href={CONSOLE_FACTURATION} target="_blank" rel="noreferrer" style={{ color: ARDOISE, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+          ouvrir la facturation <ExternalLink size={11} />
+        </a>
+      </p>
+    </>
   )
 }
 
@@ -151,6 +217,10 @@ export default function GestionApplicationPage({ source = chargerGestion }) {
                 </tbody>
               </table>
             )}
+          </Carte>
+
+          <Carte titre="Crédits API Claude" large>
+            <CreditsClaude consommation={donnees.consommation} />
           </Carte>
 
           <Carte titre="Comptes" large>

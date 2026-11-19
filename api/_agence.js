@@ -14,3 +14,17 @@ export async function verifierAgence(url, cle, jeton) {
 }
 
 export const jetonDe = (req) => String(req.headers.authorization ?? '').replace(/^Bearer\s+/i, '')
+
+// Note le coût d'un appel à Claude (table ia_consommation, migration 083),
+// avec le jeton de l'appelant. Ne fait jamais échouer l'appel : sans la
+// migration ou sans réseau, l'appel n'est simplement pas compté.
+export async function noterConsommation(url, cle, jeton, { fonction, modele, usage }) {
+  if (!url || !cle || !jeton || !usage) return
+  try {
+    await fetch(`${url}/rest/v1/ia_consommation`, {
+      method: 'POST',
+      headers: { apikey: cle, Authorization: `Bearer ${jeton}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+      body: JSON.stringify({ fonction, modele: String(modele ?? 'inconnu'), usage }),
+    })
+  } catch { /* compteur perdu, l'appel continue */ }
+}

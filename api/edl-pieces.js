@@ -13,7 +13,7 @@
 // grand étage pourrait demander de découper l'appel, un étage à la fois.
 
 import Anthropic from '@anthropic-ai/sdk'
-import { verifierAgence, jetonDe } from './_agence.js'
+import { verifierAgence, jetonDe, noterConsommation } from './_agence.js'
 import { construireDemandePieces, MODELE_PIECES } from '../src/modules/etude/etat-des-lieux/piecesIaLogique.js'
 
 export default async function handler(req, res) {
@@ -42,6 +42,8 @@ export default async function handler(req, res) {
       fallbacks: 'default',
       ...construireDemandePieces({ image, largeur, hauteur, textes: Array.isArray(textes) ? textes : [], niveauUnique: !!niveauUnique }),
     }).finalMessage()
+    // Compté avant tout contrôle : une réponse refusée ou tronquée se paie aussi
+    await noterConsommation(url, cleSupabase, jetonDe(req), { fonction: 'edl-pieces', modele: message.model ?? MODELE_PIECES, usage: message.usage })
     if (message.stop_reason === 'refusal') { res.status(422).json({ erreur: 'refus' }); return }
     if (message.stop_reason === 'max_tokens') { res.status(502).json({ erreur: 'reponse-tronquee' }); return }
     const texte = message.content.filter((b) => b.type === 'text').map((b) => b.text).join('')

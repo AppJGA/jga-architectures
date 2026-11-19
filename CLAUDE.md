@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 1724 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans, gestion de l'application, état des lieux)
+npm test         # 1733 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans, gestion de l'application, état des lieux)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -191,7 +191,7 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
   Toujours lire par `referencesCadastre` (repli sur les anciennes colonnes) ;
   l'enregistrement (`colonnesCadastre`) tient aussi à jour `cadastre_section`
   / `cadastre_parcelle` (première ligne) et `cadastre_superficie` (total).
-- **Base** : `supabase/migrations/`, numérotées, 82 fichiers, **passées à la
+- **Base** : `supabase/migrations/`, numérotées, 83 fichiers, **passées à la
   main** dans le SQL Editor de Supabase : un code qui dépend d'une nouvelle
   colonne doit tolérer son absence tant que la migration n'est pas faite.
   **Toute table créée depuis le 2026-10-30 doit recevoir ses droits d'API
@@ -1244,6 +1244,21 @@ lourdes, « Nettoyer le stockage »), comptes (dernière connexion, comptes
 (`admin_stockage`, `admin_base`, `admin_comptes`, `security definer`, refus
 de tout autre appelant, aucune table) ; sans elle la page dit ce qui manque.
 Calculs purs testés (`tests/gestion-application.test.js`).
+
+**Crédits API Claude** (carte de la page, migration 083,
+`consommationIaLogique.js`, testé) : Anthropic ne donne pas le solde des
+crédits par API et son API d'administration est fermée aux organisations
+individuelles. Chaque fonction `api/` qui appelle Claude note donc le `usage`
+de sa réponse dans `ia_consommation` (`noterConsommation` d'`api/_agence.js`,
+jeton de l'appelant, jamais bloquant ; écriture agence, lecture administrateur)
+— **toute nouvelle fonction qui appelle Claude doit en faire autant**, et son
+libellé va dans `LIBELLES_FONCTIONS`. Le flux de `analyser-visite` est relu au
+passage (`usageDuFlux`, écriture à la fin du flux). Coût aux prix publics
+(`PRIX`, essais d'un repli comptés par `usage.iterations`), période de crédits
+du 7 au 6 (`CREDITS_API` : 100 $ du forfait Max, **seul endroit à changer**),
+reste, projection, détail par usage, période précédente ; c'est une
+estimation, la Console fait foi. Au-delà de 80 %, la bulle d'accueil prévient
+(`alerteAccueil`, `credits`).
 
 ## Échéances partagées avec Notion
 

@@ -17,6 +17,8 @@
 // Réservé à l'agence : session Supabase vérifiée, puis `est_agence()`.
 
 import { construireDemande, MODELE_ANALYSE, TAILLE_MAX_CONTEXTE } from '../src/modules/chantier/comptes-rendus/enregistrement/analyseIaLogique.js'
+import { usageDuFlux } from '../src/admin/consommationIaLogique.js'
+import { noterConsommation } from './_agence.js'
 
 export const config = { runtime: 'edge' }
 
@@ -68,5 +70,34 @@ export default async function handler(request) {
     const detail = (await reponse.text().catch(() => '')).slice(0, 300)
     return json(502, { erreur: 'anthropic', statut: reponse.status, detail })
   }
-  return new Response(reponse.body, { status: 200, headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store' } })
+  // Le flux passe tel quel au navigateur ; au passage, on relève le `usage`
+  // des événements pour noter le coût de l'appel une fois le flux terminé
+  // (la fin du flux attend cette écriture, le texte est déjà arrivé).
+  const evenements = []
+  let reste = ''
+  const decodeur = new TextDecoder()
+  const relever = (texte) => {
+    for (const ligne of texte.split('\n')) {
+      if (!ligne.startsWith('data:')) continue
+      try {
+        const e = JSON.parse(ligne.slice(5))
+        if (e?.type === 'message_start' || e?.type === 'message_delta') evenements.push(e)
+      } catch { /* ligne incomplète ou autre événement */ }
+    }
+  }
+  const compteur = new TransformStream({
+    transform(morceau, sortie) {
+      sortie.enqueue(morceau)
+      const texte = reste + decodeur.decode(morceau, { stream: true })
+      const coupure = texte.lastIndexOf('\n')
+      relever(texte.slice(0, coupure + 1))
+      reste = texte.slice(coupure + 1)
+    },
+    async flush() {
+      relever(reste)
+      const lu = usageDuFlux(evenements)
+      if (lu) await noterConsommation(url, cleSupabase, jeton, { fonction: 'analyser-visite', modele: lu.modele ?? MODELE_ANALYSE, usage: lu.usage })
+    },
+  })
+  return new Response(reponse.body.pipeThrough(compteur), { status: 200, headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store' } })
 }

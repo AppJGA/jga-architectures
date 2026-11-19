@@ -13,7 +13,7 @@
 // de 60 s sans Fluid compute, Vercel refuse tout le déploiement).
 
 import Anthropic from '@anthropic-ai/sdk'
-import { verifierAgence, jetonDe } from './_agence.js'
+import { verifierAgence, jetonDe, noterConsommation } from './_agence.js'
 import { construireDemandeCalques, erreurDemandeCalques, MODELE_CALQUES } from '../src/modules/etude/etat-des-lieux/calquesIaLogique.js'
 
 export default async function handler(req, res) {
@@ -42,6 +42,8 @@ export default async function handler(req, res) {
       fallbacks: 'default',
       ...construireDemandeCalques({ calques: corps.calques, apercu: corps.apercu ?? null }),
     }).finalMessage()
+    // Compté avant tout contrôle : une réponse refusée ou tronquée se paie aussi
+    await noterConsommation(url, cleSupabase, jetonDe(req), { fonction: 'edl-calques', modele: message.model ?? MODELE_CALQUES, usage: message.usage })
     if (message.stop_reason === 'refusal') { res.status(422).json({ erreur: 'refus' }); return }
     if (message.stop_reason === 'max_tokens') { res.status(502).json({ erreur: 'reponse-tronquee' }); return }
     const texte = message.content.filter((b) => b.type === 'text').map((b) => b.text).join('')

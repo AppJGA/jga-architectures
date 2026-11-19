@@ -71,18 +71,21 @@ export function parAffaire(lignes = [], affaires = [], n = 10) {
 }
 
 /**
- * L'avertissement de la bulle d'accueil : le plus rempli des deux, s'il
- * dépasse le seuil.
+ * L'avertissement de la bulle d'accueil : le plus rempli de ce qui dépasse
+ * le seuil — stockage, base, crédits API Claude du mois.
  * @param fichiers, base : octets (null si inconnu)
+ * @param credits : part des crédits du mois déjà utilisée (null si inconnue)
  */
-export function alerteAccueil({ fichiers = null, base = null } = {}) {
+export function alerteAccueil({ fichiers = null, base = null, credits = null } = {}) {
   const candidats = [
     fichiers != null && { quoi: 'fichiers', ...jauge(fichiers, LIMITES.fichiers) },
     base != null && { quoi: 'base', ...jauge(base, LIMITES.base) },
+    credits != null && { quoi: 'credits', part: credits, alerte: credits >= SEUIL_ALERTE },
   ].filter((j) => j && j.alerte).sort((a, b) => b.part - a.part)
   if (!candidats.length) return null
   const j = candidats[0]
   const pct = Math.round(j.part * 100)
+  if (j.quoi === 'credits') return { part: j.part, texte: `Crédits API Claude du mois utilisés à ${pct} %` }
   return { part: j.part, texte: `${j.quoi === 'base' ? 'Base de données' : 'Stockage des fichiers'} à ${pct} % de l’offre gratuite` }
 }
 

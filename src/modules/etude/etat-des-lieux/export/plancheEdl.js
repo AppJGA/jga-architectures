@@ -58,13 +58,15 @@ function lireBoite(b) {
 const contourValide = (c) => Array.isArray(c) && c.length >= 3 && c.every((p) => Array.isArray(p) && Number.isFinite(p[0]) && Number.isFinite(p[1]))
 
 /**
- * Emprise du dessin (mètres) : les pièces, à défaut le plan vectoriel, à
- * défaut les éléments posés ; la marge laisse voir la façade.
+ * Emprise du dessin (mètres) : les pièces, à défaut le plan vectoriel, étendue
+ * à tout ce qui est relevé (éléments posés, repères hors pièces : façade,
+ * cour) — un relevé hors du cadre serait dans le DXF sans se voir sur la
+ * planche ; la marge laisse voir la façade.
  */
 function empriseM(pieces, boiteVecteurs, positions) {
   const pts = pieces.filter((p) => contourValide(p.contour)).flatMap((p) => p.contour)
-  let b = pts.length ? boite(pts) : lireBoite(boiteVecteurs)
-  if (!b && positions.length) b = boite(positions)
+  const base = pts.length ? boite(pts) : lireBoite(boiteVecteurs)
+  const b = base ? boite([[base[0], base[1]], [base[2], base[3]], ...positions]) : (positions.length ? boite(positions) : null)
   if (!b) return null
   return [b[0] - MARGE_PLAN_M, b[1] - MARGE_PLAN_M, b[2] + MARGE_PLAN_M, b[3] + MARGE_PLAN_M]
 }
@@ -292,10 +294,12 @@ function casesCartouche(c, cadre) {
  * @param pieces pièces de l'affaire (celles de l'étage font l'emprise)
  * @param elementsExport sortie d'`elementsAExporter` (filtrée ici à l'étage)
  * @param boiteVecteurs emprise du plan vectoriel, en repli sans pièce
+ * @param reperes [[x, y]] (mètres) d'autres relevés à garder sur la feuille :
+ *   points sans élément, points des photos hors des pièces
  * @returns {{ format, zone, echelle, transform, symboles, legende, cartouche, etage, niveauId }}
  */
 export function misePlanche({
-  niveau, pieces = [], elementsExport = [], boiteVecteurs = null,
+  niveau, pieces = [], elementsExport = [], boiteVecteurs = null, reperes = [],
   affaire = null, date = null, redacteur = '', numero = '', indice = '', inclurePropositions = false,
 } = {}) {
   const format = { ...FORMAT_A3 }
@@ -308,7 +312,8 @@ export function misePlanche({
   const elements = elementsDeLEtage(elementsExport, niveauId, pieces).filter((e) => inclurePropositions || !e.aValider)
   const positions = elements.filter((e) => Number.isFinite(e.x) && Number.isFinite(e.y)).map((e) => [e.x, e.y])
 
-  const emprise = empriseM(siennes, boiteVecteurs, positions)
+  const autres = (reperes ?? []).filter((pt) => Array.isArray(pt) && Number.isFinite(pt[0]) && Number.isFinite(pt[1]))
+  const emprise = empriseM(siennes, boiteVecteurs, [...positions, ...autres])
   const echelle = echellePlanche(emprise, zone)
   const mmParMetre = 1000 / echelle
   const origineM = emprise ? [(emprise[0] + emprise[2]) / 2, (emprise[1] + emprise[3]) / 2] : [0, 0]

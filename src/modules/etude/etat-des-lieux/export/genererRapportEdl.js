@@ -13,7 +13,7 @@ import { canevasBlanc, libererCanevas } from '../renduNiveau'
 import { chargerVecteurs } from '../vecteursEdl'
 import {
   CADRE_PLAN_PIECE, definitionFichesEdl, definitionGardeEdl, elementsDeLEtage, etagesDuRapport, nomFichierRapportEdl,
-  piedRapportEdl, pointsSansElement, titreRapportEdl,
+  piedRapportEdl, pointsSansElement, relevesHorsPieces, titreRapportEdl,
 } from './rapportEdlLogique'
 import { cadragePiece, dessinerPlanRapport, vecteursDuCadrage } from './planRapportEdl'
 import { misePlanche } from './plancheEdl'
@@ -84,7 +84,7 @@ function pxParMmPlanche(mise, pxParMm = PX_PAR_MM) {
 // La planche d'un étage (JPEG du PDF) et ce que le Word en reprend : le même
 // canevas redessiné sans symboles ni légende (fond verrouillé du Word), la
 // légende seule et une image par clé de symbole (images flottantes)
-async function imagesPlanche(mise, { vecteurs, fond, logo }) {
+async function imagesPlanche(mise, { vecteurs, fond, logo, verifier = () => {} }) {
   const pxParMm = pxParMmPlanche(mise)
   const { largeur, hauteur } = taillePlanchePx(mise, pxParMm)
   const { canvas, ctx } = canevasBlanc(largeur, hauteur)
@@ -98,6 +98,8 @@ async function imagesPlanche(mise, { vecteurs, fond, logo }) {
   } finally {
     libererCanevas(canvas)
   }
+  // Réglages changés pendant le dessin : inutile de fabriquer les images du Word
+  verifier()
   let legende = null
   if (mise.legende?.groupes?.length) {
     const t = tailleImageLegende(mise.legende, pxParMm)
@@ -207,19 +209,31 @@ export async function genererRapportEdl({
   const vues = new Set(etages.flatMap((e) => e.visitees.map((p) => p.id)))
   const pointsParId = new Map(points.map((p) => [p.id, p]))
   const dateRapport = date ?? etat?.created_at ?? null
+  const position = (p) => (p && Number.isFinite(Number(p.x)) && Number.isFinite(Number(p.y)) ? [Number(p.x), Number(p.y)] : null)
   for (const [rang, { niveau, pieces: siennes, visitees: visiteesEtage }] of etages.entries()) {
     verifier()
     surEtape(`Rapport : planche de l’étage ${niveau.nom || 'sans nom'}…`)
     let v = vecteurs?.get?.(niveau.id) ?? null
     if (!v && niveau.chemin_vecteurs) v = await tolerer(chargerVecteurs(niveau.chemin_vecteurs, obtenirLiens), 'plan vectoriel')
     const fond = v ? null : await tolerer(fondImage(niveau, obtenirLiens), 'plan')
+    // Les relevés hors des pièces (façade, cour) restent sur la feuille : les
+    // éléments, `misePlanche` les compte ; ici les points sans élément et ceux
+    // des photos
+    const hors = relevesHorsPieces({ niveauId: niveau.id, pieces, elementsExport, points, photos, sansElement: seuls })
+    const reperes = [...hors.sansElement, ...hors.photos.map((ph) => pointsParId.get(ph.point_id))].map(position).filter(Boolean)
     const mise = misePlanche({
-      niveau, pieces, elementsExport, boiteVecteurs: v?.boite ?? niveau.cadrage ?? null,
+      niveau, pieces, elementsExport, boiteVecteurs: v?.boite ?? niveau.cadrage ?? null, reperes,
       affaire, date: dateRapport, redacteur, inclurePropositions,
       numero: texteDe(numeros, niveau.id) || `EDL-${rang + 1}`, indice,
     })
     // Une planche ratée n'arrête pas le rapport : elle manque, avec un avertissement
-    const planche = await tolerer(imagesPlanche(mise, { vecteurs: v, fond, logo: logoImage }), 'planche')
+    // L'arrêt demandé par `verifier` ne doit pas passer pour une planche ratée
+    let arret = null
+    const verifierPlanche = () => {
+      try { verifier() } catch (err) { arret = err; throw err }
+    }
+    const planche = await tolerer(imagesPlanche(mise, { vecteurs: v, fond, logo: logoImage, verifier: verifierPlanche }), 'planche')
+    if (arret) throw arret
     if (planche) {
       planchesPdf.push({ jpeg: planche.jpeg, largeurMm: mise.format.largeur, hauteurMm: mise.format.hauteur })
       planchesWord.push(planche.word)

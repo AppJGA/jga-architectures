@@ -65,6 +65,31 @@ describe('planche : format, zone, échelle', () => {
     assert.equal(mise({ pieces: [], boiteVecteurs: { x0: 0, y0: 0, x1: 30, y1: 20 } }).echelle, 100)
   })
 
+  test('un élément à 20 m des pièces reste dans l’emprise', () => {
+    const salle = piece('p1', rect(0, 0, 10, 10))
+    // Point posé hors de toute pièce (cour), exporté de son type
+    const m = mise({ pieces: [salle], points: [point('a', null, 1, 30, 5, 'prise')] })
+    const [s] = m.symboles
+    assert.ok(s, 'symbole absent')
+    const { zone } = m
+    assert.ok(s.xMm >= zone.x && s.xMm <= zone.x + zone.largeur && s.yMm >= zone.y && s.yMm <= zone.y + zone.hauteur, `${s.xMm}, ${s.yMm}`)
+    // L'emprise va de la pièce au point (+ 1,5 m de chaque côté) : centrée entre les deux
+    proche(m.transform.origineM[0], 15)
+    proche(m.transform.origineM[1], 5)
+  })
+
+  test('un repère hors pièces (point sans élément, photo) agrandit l’emprise', () => {
+    const salle = piece('p1', rect(0, 0, 30, 20))
+    assert.equal(mise({ pieces: [salle] }).echelle, 100)
+    const m = mise({ pieces: [salle], reperes: [[60, 10], null, [Number.NaN, 0]] })
+    assert.equal(m.echelle, 200)
+    proche(m.transform.origineM[0], 30)
+    const [x] = versMmPlanche(m.transform, [60, 10])
+    assert.ok(x <= m.zone.x + m.zone.largeur)
+    // Sans pièce : le plan vectoriel, étendu de même
+    assert.equal(mise({ pieces: [], boiteVecteurs: [0, 0, 30, 20], reperes: [[60, 10]] }).echelle, 200)
+  })
+
   test('rien du tout : 1/100, centré dans la zone', () => {
     const m = misePlanche({ niveau })
     assert.equal(m.echelle, 100)

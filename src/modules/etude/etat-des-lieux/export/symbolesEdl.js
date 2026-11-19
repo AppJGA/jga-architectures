@@ -589,6 +589,36 @@ export function decalagesSymboles(types, { echelle = () => 1, angle = () => 0 } 
   return { emplacements, boite }
 }
 
+/**
+ * Symboles des éléments relevés sur un même point, la seule règle du DXF, du
+ * plan du rapport et des planches : un par type, chacun à son angle
+ * (`orientationElement`, contre son mur s'il est mural), côte à côte le long
+ * de la pièce du premier élément (`decalagesSymboles`).
+ *
+ * @param groupe éléments { type, x, y, pieceId } du même point
+ * @param parId Map id → pièce
+ * @param echelle comme pour `decalagesSymboles`
+ * @returns { anglePiece, boite, emplacements: [{ type, dx, boite, angle }] }
+ */
+export function emplacementsDuPoint(groupe, parId = new Map(), { echelle } = {}) {
+  const pieceDe = (e) => (e?.pieceId != null ? parId.get(e.pieceId) ?? null : null)
+  const piece = pieceDe(groupe?.[0])
+  const anglePiece = piece && Array.isArray(piece.contour) ? orientationPiece(piece.contour) : 0
+  const angleSymbole = new Map()
+  for (const e of groupe ?? []) {
+    const type = e.type && SYMBOLES[e.type] ? e.type : null
+    if (type && !angleSymbole.has(type)) angleSymbole.set(type, orientationElement({ type, x: Number(e.x), y: Number(e.y) }, pieceDe(e)))
+  }
+  const { emplacements, boite } = decalagesSymboles((groupe ?? []).map((e) => e.type), {
+    echelle, angle: (type) => (angleSymbole.get(type) ?? anglePiece) - anglePiece,
+  })
+  return {
+    anglePiece,
+    boite,
+    emplacements: emplacements.map((em) => ({ ...em, angle: em.type ? angleSymbole.get(em.type) ?? anglePiece : anglePiece })),
+  }
+}
+
 // ─── SVG ────────────────────────────────────────────────────────────────────
 
 const nb = (v) => String(arrondi(v))

@@ -1,0 +1,354 @@
+// ─── Mise en page d'une planche A3 « report relevé » ─────────────────────────
+//
+// Une planche par étage, comme l'exemple de l'agence (2026-11-19) : plan
+// existant au 1/100 (1/200 et au-delà s'il ne tient pas), symboles seuls,
+// légende encadrée des symboles utilisés, cartouche de l'agence. Tout ce qui
+// est sur la planche se décide ici : le dessin du PDF et le Word lisent la
+// même mise, ce qui se voit dans l'un est ce qui part dans l'autre.
+//
+// Pur, sans DOM, sortie en données simples (sérialisable) : millimètres du
+// papier, y vers le bas. Testé (tests/etat-des-lieux-export-planche.test.js).
+
+import { CALQUES, calqueEdl, typeEdl } from '../calquesEdl.js'
+import { boite } from '../geometrieEdl.js'
+import { MARGE_PLAN_M } from './planRapportEdl.js'
+import { COULEUR_PROPOSITION, couleurCalque, dateIso, elementsDeLEtage, texteLatin } from './rapportEdlLogique.js'
+import { RAYON_SANS_SYMBOLE, SYMBOLES, boitePrimitives, boiteSymbole, emplacementsDuPoint, largeurTexte, primitivesPlacees, quantiteElement } from './symbolesEdl.js'
+
+export const FORMAT_A3 = { nom: 'A3', largeur: 420, hauteur: 297 }
+export const MARGE_PLANCHE = 8
+export const HAUTEUR_CARTOUCHE = 24
+export const ECHELLES = [100, 200, 250, 500, 1000]
+// Un symbole à taille fixe garde la même taille imprimée à toutes les
+// échelles : au 1/500, ses 0,30 m ne feraient plus que 0,6 mm
+export const TAILLE_SYMBOLE_MM = 4.5
+// Élément sans type : un losange de quoi le situer
+export const TAILLE_SANS_TYPE_MM = 3
+export const DPI_PLANCHE = 200
+
+// Légende (estimations en mm, que le dessin reprend)
+export const LEGENDE = {
+  largeur: 150, colonnes: 2, entree: 5, titre: 9, note: 7, texteTitre: 3.5,
+  // Au-delà, deux colonnes : une légende courte reste étroite
+  lignesUneColonne: 6,
+}
+
+const COINS = ['haut-droite', 'haut-gauche', 'bas-droite', 'bas-gauche']
+
+const arrondiMm = (v) => Math.round(v * 1000) / 1000 || 0
+const rempli = (v) => texteLatin(v).trim()
+
+// ─── Repère du papier ───────────────────────────────────────────────────────
+
+/** Mètres du plan (y vers le haut) → millimètres du papier (y vers le bas). */
+export function versMmPlanche(transform, [x, y]) {
+  const { mmParMetre, origineM, origineMm } = transform
+  return [origineMm[0] + (x - origineM[0]) * mmParMetre, origineMm[1] - (y - origineM[1]) * mmParMetre]
+}
+
+const boiteValide = (b) => Array.isArray(b) && b.length === 4 && b.every(Number.isFinite) && b[2] >= b[0] && b[3] >= b[1]
+
+// `boiteVecteurs` : [x0, y0, x1, y1] (fichier vectoriel) ou { x0, y0, x1, y1 } (cadrage)
+function lireBoite(b) {
+  if (!b) return null
+  const t = Array.isArray(b) ? b : [b.x0 ?? b.xmin, b.y0 ?? b.ymin, b.x1 ?? b.xmax, b.y1 ?? b.ymax]
+  return boiteValide(t) ? t : null
+}
+
+const contourValide = (c) => Array.isArray(c) && c.length >= 3 && c.every((p) => Array.isArray(p) && Number.isFinite(p[0]) && Number.isFinite(p[1]))
+
+/**
+ * Emprise du dessin (mètres) : les pièces, à défaut le plan vectoriel, à
+ * défaut les éléments posés ; la marge laisse voir la façade.
+ */
+function empriseM(pieces, boiteVecteurs, positions) {
+  const pts = pieces.filter((p) => contourValide(p.contour)).flatMap((p) => p.contour)
+  let b = pts.length ? boite(pts) : lireBoite(boiteVecteurs)
+  if (!b && positions.length) b = boite(positions)
+  if (!b) return null
+  return [b[0] - MARGE_PLAN_M, b[1] - MARGE_PLAN_M, b[2] + MARGE_PLAN_M, b[3] + MARGE_PLAN_M]
+}
+
+/** Première échelle de `ECHELLES` où l'emprise tient dans la zone (la dernière sinon). */
+export function echellePlanche(emprise, zone) {
+  if (!emprise) return ECHELLES[0]
+  const l = emprise[2] - emprise[0]
+  const h = emprise[3] - emprise[1]
+  return ECHELLES.find((e) => (l * 1000) / e <= zone.largeur + 1e-9 && (h * 1000) / e <= zone.hauteur + 1e-9) ?? ECHELLES[ECHELLES.length - 1]
+}
+
+// ─── Symboles ───────────────────────────────────────────────────────────────
+
+// Taille papier d'un symbole : un à taille fixe a 4,5 mm pour le plus grand
+// côté de sa boîte non tournée, un à taille réelle suit l'échelle
+function mmParMetreSymbole(code, mmParMetre) {
+  const s = SYMBOLES[code]
+  if (!s) return null
+  if (s.taille === 'reelle') return mmParMetre
+  const b = boiteSymbole(code)
+  return TAILLE_SYMBOLE_MM / Math.max(b.largeur, b.hauteur)
+}
+
+/** Boîte papier d'un symbole tourné, et place du point d'insertion dans la boîte. */
+function tailleSymboleMm(code, angle, mmParMetre) {
+  const f = mmParMetreSymbole(code, mmParMetre)
+  if (!f) return { largeur: TAILLE_SANS_TYPE_MM, hauteur: TAILLE_SANS_TYPE_MM, ancre: [TAILLE_SANS_TYPE_MM / 2, TAILLE_SANS_TYPE_MM / 2] }
+  const b = boitePrimitives(primitivesPlacees(code, { angle }))
+  // y du plan vers le haut, du papier vers le bas : le haut de la boîte est ymax
+  return { largeur: arrondiMm(b.largeur * f), hauteur: arrondiMm(b.hauteur * f), ancre: [arrondiMm(-b.xmin * f), arrondiMm(b.ymax * f)] }
+}
+
+const angleCle = (angle) => {
+  const r = Math.round(angle / 5) * 5
+  return ((r % 360) + 360) % 360
+}
+
+function symbolesPlanche(elements, pieces, transform) {
+  const parId = new Map(pieces.map((p) => [p.id, p]))
+  const { mmParMetre } = transform
+  // Agrandissement des symboles en mètres du plan, pour que les décalages
+  // d'un même point se comptent sur les symboles tels qu'imprimés
+  const echelle = (type) => {
+    const f = type ? mmParMetreSymbole(type, mmParMetre) : TAILLE_SANS_TYPE_MM / (2 * RAYON_SANS_SYMBOLE)
+    return f / mmParMetre
+  }
+  const groupes = new Map()
+  for (const e of elements) {
+    if (!Number.isFinite(e.x) || !Number.isFinite(e.y)) continue
+    const cle = e.pointId ?? `${e.x}|${e.y}`
+    if (!groupes.has(cle)) groupes.set(cle, [])
+    groupes.get(cle).push(e)
+  }
+  const symboles = []
+  for (const groupe of groupes.values()) {
+    const premier = groupe[0]
+    const { anglePiece, emplacements } = emplacementsDuPoint(groupe, parId, { echelle })
+    const a = (anglePiece * Math.PI) / 180
+    for (const em of emplacements) {
+      // Un symbole par type et par point, comme le DXF : celui de l'élément
+      // validé s'il y en a un ; les éléments du même avis se cumulent (deux
+      // prises dites au même point font « ×2 »)
+      const duType = groupe.filter((e) => (e.type && SYMBOLES[e.type] ? e.type : null) === em.type)
+      const element = duType.find((e) => !e.aValider) ?? duType[0]
+      const memeAvis = duType.filter((e) => !!e.aValider === !!element.aValider)
+      const quantite = memeAvis.reduce((s, e) => s + quantiteElement(e), 0)
+      const [xMm, yMm] = versMmPlanche(transform, [premier.x + em.dx * Math.cos(a), premier.y + em.dx * Math.sin(a)])
+      const code = em.type
+      const angle = Math.round(em.angle * 1e6) / 1e6 || 0
+      const aValider = !!element.aValider
+      symboles.push({
+        cle: `${code}|${angleCle(angle)}|${quantite}|${aValider ? 1 : 0}`,
+        elementId: element.id,
+        elementIds: memeAvis.map((e) => e.id),
+        code,
+        calque: element.calque,
+        nom: texteLatin(typeEdl(code)?.libelle ?? calqueEdl(element.calque)?.libelle ?? ''),
+        xMm: arrondiMm(xMm),
+        yMm: arrondiMm(yMm),
+        angle,
+        quantite,
+        aValider,
+        couleur: couleurCalque(element.calque),
+        tailleMm: tailleSymboleMm(code, angle, mmParMetre),
+      })
+    }
+  }
+  return symboles
+}
+
+// ─── Légende ────────────────────────────────────────────────────────────────
+
+const MULTIPLE = ' (×n : nb de prises)'
+
+function groupesLegende(symboles) {
+  const groupes = []
+  for (const c of CALQUES) {
+    const siens = symboles.filter((s) => s.calque === c.code)
+    if (!siens.length) continue
+    const entrees = c.types
+      .filter((t) => siens.some((s) => s.code === t.code))
+      .map((t) => {
+        const multiple = siens.some((s) => s.code === t.code && s.quantite > 1)
+        return { code: t.code, libelle: texteLatin(t.libelle + (multiple ? MULTIPLE : '')), ...(multiple ? { multiple: true } : {}) }
+      })
+    // Un relevé sans type a son losange : il s'explique aussi
+    if (siens.some((s) => !s.code)) entrees.push({ code: null, libelle: 'Autre relevé', sansType: true })
+    groupes.push({ calque: c.code, libelle: texteLatin(c.libelle), couleur: couleurCalque(c.code), entrees })
+  }
+  if (symboles.some((s) => s.aValider)) {
+    groupes.push({
+      calque: 'a-valider', libelle: 'À valider', couleur: COULEUR_PROPOSITION,
+      entrees: [{ code: null, libelle: 'Proposition de l’analyse, à valider', proposition: true }],
+    })
+  }
+  return groupes
+}
+
+// Groupes répartis en deux colonnes dans l'ordre des calques, sans être
+// coupés : un groupe va à gauche tant que son milieu tombe avant la moitié
+function colonnesLegende(groupes, n) {
+  if (n === 1) return [groupes.map((_, i) => i)]
+  const lignes = groupes.map((g) => 1 + g.entrees.length)
+  const total = lignes.reduce((s, l) => s + l, 0)
+  const colonnes = [[], []]
+  let cumul = 0
+  groupes.forEach((_, i) => {
+    const premiere = colonnes[1].length === 0 && (cumul === 0 || cumul + lignes[i] / 2 <= total / 2)
+    if (premiere) {
+      colonnes[0].push(i)
+      cumul += lignes[i]
+    } else colonnes[1].push(i)
+  })
+  return colonnes
+}
+
+function noteLegende(date, redacteur) {
+  const d = dateCartouche(date)
+  const r = rempli(redacteur)
+  const releve = d ? `Relevé du ${d}${r ? ` (${r})` : ''}. ` : r ? `Relevé par ${r}. ` : ''
+  return `${releve}Positions relevées sur site, à vérifier.`
+}
+
+function cadreLegende(legende) {
+  const lignes = legende.groupes.map((g) => 1 + g.entrees.length)
+  const total = lignes.reduce((s, l) => s + l, 0)
+  const n = total <= LEGENDE.lignesUneColonne ? 1 : LEGENDE.colonnes
+  const colonnes = colonnesLegende(legende.groupes, n)
+  const lignesMax = Math.max(0, ...colonnes.map((c) => c.reduce((s, i) => s + lignes[i], 0)))
+  const largeurTitre = largeurTexte(legende.titre, LEGENDE.texteTitre) + 6
+  const largeur = n === 1 ? Math.min(LEGENDE.largeur, Math.max(LEGENDE.largeur / 2, largeurTitre)) : LEGENDE.largeur
+  return { colonnes, largeur: arrondiMm(largeur), hauteur: arrondiMm(LEGENDE.titre + lignesMax * LEGENDE.entree + LEGENDE.note) }
+}
+
+function cadreAuCoin(coin, zone, largeur, hauteur) {
+  const x = coin.endsWith('droite') ? zone.x + zone.largeur - largeur : zone.x
+  const y = coin.startsWith('haut') ? zone.y : zone.y + zone.hauteur - hauteur
+  return { x: arrondiMm(x), y: arrondiMm(y), largeur, hauteur }
+}
+
+const recouvrement = (a, b) => {
+  const l = Math.min(a.x + a.largeur, b.x + b.largeur) - Math.max(a.x, b.x)
+  const h = Math.min(a.y + a.hauteur, b.y + b.hauteur) - Math.max(a.y, b.y)
+  return l > 0 && h > 0 ? l * h : 0
+}
+
+/** Coin de la zone où la légende couvre le moins de pièces et de symboles ; en haut à droite à égalité. */
+function coinLegende(zone, largeur, hauteur, obstacles) {
+  let meilleur = COINS[0]
+  let moindre = Infinity
+  for (const coin of COINS) {
+    const cadre = cadreAuCoin(coin, zone, largeur, hauteur)
+    const couvert = obstacles.reduce((s, o) => s + recouvrement(cadre, o), 0)
+    if (couvert < moindre - 1e-9) {
+      moindre = couvert
+      meilleur = coin
+    }
+  }
+  return meilleur
+}
+
+// ─── Cartouche ──────────────────────────────────────────────────────────────
+
+/** « 18/11/2026 » d'une date ou d'un 'AAAA-MM-JJ' ; '' sans date. */
+export function dateCartouche(date) {
+  const d = dateIso(date)
+  if (!d) return ''
+  const [a, m, j] = d.split('-')
+  return `${j}/${m}/${a}`
+}
+
+// Largeurs des cases, de gauche à droite (mm) ; le titre prend le reste
+const CASES = { affaire: 110, colonne: 22, numero: 30, logo: 38 }
+
+function casesCartouche(c, cadre) {
+  const { x, y, largeur, hauteur } = cadre
+  const demi = hauteur / 2
+  const cases = []
+  const ajouter = (cle, cx, cy, l, h, libelle, valeur, extra = {}) => cases.push({ cle, x: arrondiMm(cx), y: arrondiMm(cy), largeur: arrondiMm(l), hauteur: arrondiMm(h), libelle, valeur, ...extra })
+  let cx = x
+  ajouter('affaire', cx, y, CASES.affaire, hauteur, '', c.affaire, { detail: c.adresse })
+  cx += CASES.affaire
+  const grille = [
+    [['code', 'Affaire', c.code], ['echelle', 'Échelle', c.echelle], ['format', 'Format', c.format]],
+    [['phase', 'Phase', c.phase], ['date', 'Date', c.date], ['indice', 'Indice', c.indice]],
+  ]
+  grille.forEach((rang, r) => rang.forEach(([cle, libelle, valeur], i) => ajouter(cle, cx + i * CASES.colonne, y + r * demi, CASES.colonne, demi, libelle, valeur)))
+  cx += 3 * CASES.colonne
+  ajouter('numero', cx, y, CASES.numero, hauteur, 'N°', c.numero, { grand: true })
+  cx += CASES.numero
+  const largeurTitre = x + largeur - CASES.logo - cx
+  ajouter('titre', cx, y, largeurTitre, hauteur, '', c.titre)
+  cx += largeurTitre
+  ajouter('logo', cx, y, CASES.logo, hauteur, '', '')
+  return cases
+}
+
+// ─── La planche ─────────────────────────────────────────────────────────────
+
+/**
+ * Tout ce qui est sur la planche d'un étage.
+ *
+ * @param niveau l'étage ({ id, nom })
+ * @param pieces pièces de l'affaire (celles de l'étage font l'emprise)
+ * @param elementsExport sortie d'`elementsAExporter` (filtrée ici à l'étage)
+ * @param boiteVecteurs emprise du plan vectoriel, en repli sans pièce
+ * @returns {{ format, zone, echelle, transform, symboles, legende, cartouche, etage, niveauId }}
+ */
+export function misePlanche({
+  niveau, pieces = [], elementsExport = [], boiteVecteurs = null,
+  affaire = null, date = null, redacteur = '', numero = '', indice = '', inclurePropositions = false,
+} = {}) {
+  const format = { ...FORMAT_A3 }
+  const largeurUtile = format.largeur - 2 * MARGE_PLANCHE
+  const zone = { x: MARGE_PLANCHE, y: MARGE_PLANCHE, largeur: largeurUtile, hauteur: format.hauteur - 2 * MARGE_PLANCHE - HAUTEUR_CARTOUCHE }
+  const cadreCartouche = { x: MARGE_PLANCHE, y: zone.y + zone.hauteur, largeur: largeurUtile, hauteur: HAUTEUR_CARTOUCHE }
+
+  const niveauId = niveau?.id ?? null
+  const siennes = pieces.filter((p) => !p.niveau_id || p.niveau_id === niveauId)
+  const elements = elementsDeLEtage(elementsExport, niveauId, pieces).filter((e) => inclurePropositions || !e.aValider)
+  const positions = elements.filter((e) => Number.isFinite(e.x) && Number.isFinite(e.y)).map((e) => [e.x, e.y])
+
+  const emprise = empriseM(siennes, boiteVecteurs, positions)
+  const echelle = echellePlanche(emprise, zone)
+  const mmParMetre = 1000 / echelle
+  const origineM = emprise ? [(emprise[0] + emprise[2]) / 2, (emprise[1] + emprise[3]) / 2] : [0, 0]
+  const transform = { mmParMetre, origineM, origineMm: [zone.x + zone.largeur / 2, zone.y + zone.hauteur / 2] }
+
+  const symboles = symbolesPlanche(elements, pieces, transform)
+
+  const etage = rempli(niveau?.nom) || 'Étage'
+  const legende = {
+    titre: `LÉGENDE – ÉTAT DES LIEUX ${etage.toUpperCase()}`,
+    groupes: groupesLegende(symboles),
+    note: noteLegende(date, redacteur),
+  }
+  const { colonnes, largeur, hauteur } = cadreLegende(legende)
+  const obstacles = [
+    ...siennes.filter((p) => contourValide(p.contour)).map((p) => {
+      const [x0, y0, x1, y1] = boite(p.contour.map((pt) => versMmPlanche(transform, pt)))
+      return { x: x0, y: y0, largeur: x1 - x0, hauteur: y1 - y0 }
+    }),
+    ...symboles.map((s) => ({ x: s.xMm - s.tailleMm.ancre[0], y: s.yMm - s.tailleMm.ancre[1], largeur: s.tailleMm.largeur, hauteur: s.tailleMm.hauteur })),
+  ]
+  legende.coin = coinLegende(zone, largeur, hauteur, obstacles)
+  legende.cadreMm = cadreAuCoin(legende.coin, zone, largeur, hauteur)
+  legende.colonnes = colonnes
+
+  const jour = dateCartouche(date)
+  const cartouche = {
+    affaire: rempli(affaire?.nom) || 'Affaire',
+    adresse: rempli([affaire?.projet_adresse, affaire?.projet_commune].filter(Boolean).join(' ')),
+    code: rempli(affaire?.code_affaire),
+    echelle: `1:${echelle}`,
+    format: format.nom,
+    phase: 'EDL',
+    date: jour,
+    indice: rempli(indice) || jour,
+    numero: rempli(numero),
+    titre: `EXISTANT - Plan ${etage}`,
+  }
+  cartouche.cadreMm = cadreCartouche
+  cartouche.cases = casesCartouche(cartouche, cadreCartouche)
+
+  return { format, zone, echelle, transform, symboles, legende, cartouche, etage, niveauId }
+}

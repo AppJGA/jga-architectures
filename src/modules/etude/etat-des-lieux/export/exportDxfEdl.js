@@ -31,7 +31,7 @@
 
 import { CALQUES, calqueEdl, typeEdl } from '../calquesEdl.js'
 import { aire, pointDansPolygone } from '../geometrieEdl.js'
-import { RAYON_SANS_SYMBOLE, SYMBOLES, decalagesSymboles, orientationElement, orientationPiece } from './symbolesEdl.js'
+import { RAYON_SANS_SYMBOLE, SYMBOLES, emplacementsDuPoint, orientationPiece } from './symbolesEdl.js'
 import { placerEtiquettes, pointInterieur, repere } from './placementEtiquettes.js'
 import { dansCp1252, encoderCp1252 } from './encodageDxf.js'
 import { ficheExportee, hspExport } from './ficheExportEdl.js'
@@ -409,7 +409,7 @@ export function etiquettesEtage({ pieces = [], elementsExport = [], photos = [],
   // ── Repères : un par point (symboles et libellés), photos comprises ──
   // Plusieurs éléments sur un même point (« un élément par chose dite » :
   // une fenêtre et son volet sur P3) : un symbole par type, côte à côte le
-  // long de la pièce (`decalagesSymboles`, même règle que le plan du
+  // long de la pièce (`emplacementsDuPoint`, même règle que le plan du
   // rapport), et leurs libellés empilés en un seul bloc.
   const reperes = new Map()
   for (const e of elementsExport) {
@@ -422,16 +422,8 @@ export function etiquettesEtage({ pieces = [], elementsExport = [], photos = [],
     // Le repère (libellés, décalages) suit la pièce ; chaque symbole a son
     // propre angle, contre son mur s'il est mural
     r.angle = angleDe(r.pieceId)
-    const angleSymbole = new Map()
-    for (const e of r.groupe) {
-      if (e.type && !angleSymbole.has(e.type)) {
-        angleSymbole.set(e.type, orientationElement({ type: e.type, x: Number(e.x), y: Number(e.y) }, parId.get(e.pieceId) ?? null))
-      }
-    }
-    const { emplacements, boite } = decalagesSymboles(r.groupe.map((e) => e.type), {
-      angle: (type) => (angleSymbole.get(type) ?? r.angle) - r.angle,
-    })
-    r.emplacements = emplacements.map((em) => ({ ...em, angle: em.type ? angleSymbole.get(em.type) ?? r.angle : r.angle }))
+    const { emplacements, boite } = emplacementsDuPoint(r.groupe, parId)
+    r.emplacements = emplacements
     r.symbole = boite
     r.lignes = []
     for (const e of r.groupe) {

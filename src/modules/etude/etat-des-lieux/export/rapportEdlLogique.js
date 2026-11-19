@@ -414,7 +414,7 @@ export function piedRapportEdl(affaire) {
   })
 }
 
-const dateIso = (d) => {
+export const dateIso = (d) => {
   if (!d) return null
   if (d instanceof Date) return Number.isNaN(d.getTime()) ? null : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
   const m = String(d).match(/^\d{4}-\d{2}-\d{2}/)

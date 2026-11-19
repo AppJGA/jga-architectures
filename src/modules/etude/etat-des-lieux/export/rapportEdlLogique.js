@@ -53,18 +53,22 @@ const designation = (p) => texteLatin([p?.numero, p?.nom].filter(Boolean).join('
 
 // ─── Couleurs des calques ────────────────────────────────────────────────────
 
-// Une couleur par calque, pour le plan et les intertitres des fiches ; le
-// bleu des propositions de l'IA (`COULEUR_IA`) reste réservé à « à valider »
+// Une couleur par famille, calée sur la planche d'exemple de l'agence
+// (électricité en bleu, sécurité en noir, désordres en violet), pour les
+// planches, leur légende et les intertitres des fiches. Le bleu des
+// propositions de l'IA (`COULEUR_IA`) reste distinct de celui de
+// l'électricité : sur une planche, une proposition garde la couleur de sa
+// famille, entourée d'un cercle pointillé de `COULEUR_PROPOSITION`.
 export const COULEURS_CALQUES = {
-  plomberie: '#1F6F8B',
-  electricite: '#B07A00',
+  electricite: '#1565C0',
+  securite: '#1F1B17',
+  desordres: '#8E44AD',
+  plomberie: '#0E7490',
   chauffage: '#C2410C',
   ventilation: '#2A8A4E',
   menuiseries: '#6B4E2E',
   occultations: '#6B6B6B',
   compteurs: '#6B3FA0',
-  securite: '#BE185D',
-  desordres: '#B8412C',
 }
 export const COULEUR_PROPOSITION = COULEUR_IA
 export const couleurCalque = (code) => COULEURS_CALQUES[code] ?? COULEUR.gris

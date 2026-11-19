@@ -6,8 +6,8 @@ import { test, describe } from 'node:test'
 
 import { CALQUES } from '../src/modules/etude/etat-des-lieux/calquesEdl.js'
 import {
-  ECART_SYMBOLES, RAYON_SANS_SYMBOLE, SYMBOLES, boiteSymbole, boitePrimitives, decalagesSymboles, libelleTailleSymbole,
-  orientationPiece, primitivesPlacees, symboleSvg, typesSansSymbole,
+  DISTANCE_MUR, ECART_SYMBOLES, RAYON_SANS_SYMBOLE, SYMBOLES, TYPES_MURAUX, boiteSymbole, boitePrimitives, decalagesSymboles,
+  libelleTailleSymbole, orientationElement, orientationPiece, primitivesPlacees, quantiteElement, symboleSvg, typesSansSymbole,
 } from '../src/modules/etude/etat-des-lieux/export/symbolesEdl.js'
 
 const proche = (a, b, ecart = 1e-9) => assert.ok(Math.abs(a - b) < ecart, `${a} ≠ ${b}`)
@@ -54,6 +54,7 @@ describe('symboles usuels : catalogue', () => {
     const attendu = {
       lavabo: [0.60, 0.45], evier: [1.20, 0.60], baignoire: [1.70, 0.70], douche: [0.90, 0.90],
       wc: [0.40, 0.65], 'ballon-eau-chaude': [0.55, 0.55], radiateur: [0.80, 0.10], chaudiere: [0.45, 0.35],
+      reglette: [0.90, 0.15], goulotte: [0.90, 0.06], 'baie-brassage': [0.60, 0.60],
     }
     for (const [code, [l, h]] of Object.entries(attendu)) {
       assert.equal(SYMBOLES[code].taille, 'reelle', code)
@@ -94,6 +95,188 @@ describe('symboles usuels : catalogue', () => {
     assert.equal(libelleTailleSymbole('lavabo'), '0,60 × 0,45 m · taille réelle')
     assert.match(libelleTailleSymbole('luminaire'), /^0,20 × 0,20 m · taille fixe$/)
     assert.equal(libelleTailleSymbole('inconnu'), '')
+  })
+})
+
+describe('symboles usuels : types de la légende de l’agence', () => {
+  const calqueDe = (code) => CALQUES.find((c) => c.types.some((t) => t.code === code))
+  const libelle = (code) => calqueDe(code).types.find((t) => t.code === code).libelle
+
+  test('types ajoutés à l’électricité, avec les libellés de la légende', () => {
+    const attendus = {
+      rj45: 'Prise informatique RJ45', applique: 'Point lumineux en applique', dalle: 'Luminaire plafond carré (dalle)',
+      reglette: 'Luminaire linéaire (réglette)', goulotte: 'Goulotte électrique', 'baie-brassage': 'Baie de brassage',
+      luminaire: 'Luminaire',
+    }
+    for (const [code, texte] of Object.entries(attendus)) {
+      assert.equal(calqueDe(code).code, 'electricite', code)
+      assert.equal(libelle(code), texte)
+    }
+    assert.equal(calqueDe('detecteur-fumee').code, 'securite')
+  })
+
+  test('codes de type uniques, tous calques confondus', () => {
+    assert.equal(new Set(codesTypes).size, codesTypes.length)
+  })
+
+  test('détecteur : rond à point central, plus aucun texte', () => {
+    const p = SYMBOLES['detecteur-fumee'].primitives
+    assert.ok(p.every((q) => !('texte' in q)))
+    assert.ok(p.every((q) => q.cercle && q.cercle[0] === 0 && q.cercle[1] === 0))
+    assert.ok(p.filter((q) => q.cercle[2] <= 0.05).length >= 2, 'point central rempli')
+  })
+
+  test('dessins de la légende', () => {
+    assert.ok(SYMBOLES.rj45.primitives.some((q) => q.texte === 'RJ'))
+    assert.ok(SYMBOLES.rj45.primitives.some((q) => q.polyligne && q.ferme))
+    const dalle = boiteSymbole('dalle')
+    proche(dalle.largeur, dalle.hauteur)
+    assert.equal(SYMBOLES.dalle.primitives.filter((q) => q.ligne).length, 2)
+    assert.equal(SYMBOLES.reglette.primitives.filter((q) => q.ligne).length, 2)
+    const goulotte = SYMBOLES.goulotte.primitives
+    assert.equal(goulotte.length, 2)
+    for (const q of goulotte) proche(Math.abs(q.ligne[1][0] - q.ligne[0][0]), 0.9)
+    assert.ok(SYMBOLES['baie-brassage'].primitives.filter((q) => q.ligne).length >= 3, 'baie hachurée')
+  })
+})
+
+describe('symboles usuels : contre le mur (dos en −y local)', () => {
+  test('TYPES_MURAUX : seulement des codes de calquesEdl', () => {
+    for (const code of TYPES_MURAUX) assert.ok(codesTypes.includes(code), code)
+    for (const code of ['prise', 'rj45', 'applique', 'goulotte', 'baie-brassage', 'lavabo', 'wc', 'radiateur', 'extincteur']) {
+      assert.ok(TYPES_MURAUX.has(code), code)
+    }
+    for (const code of ['luminaire', 'dalle', 'reglette', 'detecteur-fumee', 'fenetre', 'fissure']) assert.ok(!TYPES_MURAUX.has(code), code)
+  })
+
+  test('chaque symbole mural dissymétrique a son dos côté −y', () => {
+    // Prise : trait jusqu'au mur en −y, demi-cercle vers la pièce
+    const prise = SYMBOLES.prise.primitives
+    assert.ok(prise.some((q) => q.ligne && Math.min(q.ligne[0][1], q.ligne[1][1]) < -0.05 && q.ligne[0][0] === 0 && q.ligne[1][0] === 0))
+    const arcPrise = prise.find((q) => q.arc).arc
+    assert.deepEqual([arcPrise[3], arcPrise[4]], [0, 180])
+    // Applique : petit trait vers le mur
+    assert.ok(SYMBOLES.applique.primitives.some((q) => q.ligne && q.ligne[0][0] === 0 && q.ligne[1][0] === 0 && q.ligne[1][1] < -0.09))
+    // Lavabo et évier : robinet côté mur
+    assert.ok(SYMBOLES.lavabo.primitives.some((q) => q.ligne && q.ligne.every(([, y]) => y < 0)))
+    assert.ok(SYMBOLES.evier.primitives.some((q) => q.cercle && q.cercle[0] === 0 && q.cercle[1] < 0))
+    // WC : réservoir (rectangle) contre le mur
+    const reservoir = boitePrimitives([SYMBOLES.wc.primitives.find((q) => q.polyligne && q.polyligne.length === 4)])
+    assert.ok(reservoir.ymax < 0)
+    // Extincteur : la base du triangle côté mur, la pointe vers la pièce
+    const tri = SYMBOLES.extincteur.primitives.find((q) => q.polyligne).polyligne
+    assert.ok(tri.filter(([, y]) => y < 0).length === 2)
+  })
+
+  // Pièce de 4 × 3, sommets dans le sens trigonométrique (ou inverse)
+  const salle = (sens = 1) => {
+    const c = [[0, 0], [4, 0], [4, 3], [0, 3]]
+    return { id: 'p', contour: sens > 0 ? c : [...c].reverse() }
+  }
+  const versInterieur = (angle) => {
+    const a = (angle * Math.PI) / 180
+    return [-Math.sin(a), Math.cos(a)]
+  }
+
+  test('type mural près d’un mur : dos au mur, +y vers l’intérieur, quel que soit le sens du contour', () => {
+    for (const sens of [1, -1]) {
+      const p = salle(sens)
+      const cas = [
+        [[2, 0.3], [0, 1]], // mur du bas : +y vers le haut
+        [[2, 2.6], [0, -1]], // mur du haut
+        [[0.2, 1.5], [1, 0]], // mur de gauche
+        [[3.5, 1.5], [-1, 0]], // mur de droite
+      ]
+      for (const [[x, y], [nx, ny]] of cas) {
+        const angle = orientationElement({ type: 'prise', x, y }, p)
+        const [vx, vy] = versInterieur(angle)
+        proche(vx, nx, 1e-9)
+        proche(vy, ny, 1e-9)
+        assert.ok(angle > -180 && angle <= 180, `${angle}`)
+      }
+    }
+  })
+
+  test('le mur le plus proche l’emporte ; au-delà de 0,8 m, la pièce', () => {
+    const p = salle()
+    // À 0,3 m du mur de droite, 0,7 m du bas
+    proche(orientationElement({ type: 'radiateur', x: 3.7, y: 0.7 }, p), 90)
+    assert.equal(DISTANCE_MUR, 0.8)
+    assert.equal(orientationElement({ type: 'prise', x: 2, y: 1.5 }, p), orientationPiece(p.contour))
+    assert.equal(orientationElement({ type: 'prise', x: 2, y: 0.85 }, p), orientationPiece(p.contour))
+  })
+
+  test('pièce tournée de 30° : le symbole suit son mur', () => {
+    const a = (30 * Math.PI) / 180
+    const tourne = ([u, v]) => [u * Math.cos(a) - v * Math.sin(a), u * Math.sin(a) + v * Math.cos(a)]
+    const p = { id: 'p', contour: salle().contour.map(tourne) }
+    const [x, y] = tourne([2, 0.2])
+    proche(orientationElement({ type: 'lavabo', x, y }, p), 30, 1e-6)
+    const [x2, y2] = tourne([2, 2.8])
+    proche(orientationElement({ type: 'lavabo', x: x2, y: y2 }, p), -150, 1e-6)
+  })
+
+  test('type non mural : la pièce ; sans pièce : 0', () => {
+    const p = { id: 'p', contour: rectangleTourne(20) }
+    proche(orientationElement({ type: 'luminaire', x: 3, y: 6.1 }, p), 20, 1e-6)
+    proche(orientationElement({ type: null, x: 3, y: 6.1 }, p), 20, 1e-6)
+    assert.equal(orientationElement({ type: 'prise', x: 1, y: 1 }, null), 0)
+    assert.equal(orientationElement({ type: 'prise', x: 1, y: 1 }), 0)
+    assert.equal(orientationElement({ type: 'prise', x: 1, y: 1 }, { contour: null }), 0)
+    // Point sans position : la pièce
+    proche(orientationElement({ type: 'prise' }, p), 20, 1e-6)
+  })
+
+  test('un texte de symbole reste lisible, même tourné de 180°', () => {
+    const rj = primitivesPlacees('rj45', { x: 1, y: 1, angle: 180 }).find((q) => 'texte' in q)
+    assert.equal(rj.rotation, 0)
+    assert.deepEqual(rj.pos, [1, 1])
+    assert.equal(primitivesPlacees('rj45', { angle: -90 }).find((q) => 'texte' in q).rotation, 90)
+    assert.equal(primitivesPlacees('rj45', { angle: 135 }).find((q) => 'texte' in q).rotation, -45)
+  })
+
+  test('décalages : boîte tournée du symbole mural', () => {
+    // Radiateur tourné de 90° dans le repère : 0,10 de large
+    const { emplacements } = decalagesSymboles(['radiateur', 'prise'], { angle: (t) => (t === 'radiateur' ? 90 : 0) })
+    proche(emplacements[0].boite.xmax - emplacements[0].boite.xmin, 0.10)
+    proche(emplacements[1].dx + boiteSymbole('prise').xmin - emplacements[0].boite.xmax, ECART_SYMBOLES)
+  })
+})
+
+describe('symboles usuels : quantité des prises', () => {
+  const q = (libelle, type = 'prise') => quantiteElement({ type, libelle })
+  test('multiplicateurs écrits', () => {
+    assert.equal(q('Prise ×3'), 3)
+    assert.equal(q('prise x3'), 3)
+    assert.equal(q('Prise X 3 sous la fenêtre'), 3)
+    assert.equal(q('3 prises'), 3)
+    assert.equal(q('4 PRISES au-dessus du plan de travail'), 4)
+  })
+  test('en lettres, double, triple, quadruple', () => {
+    assert.equal(q('trois prises'), 3)
+    assert.equal(q('Deux prises'), 2)
+    assert.equal(q('six prises'), 6)
+    assert.equal(q('Prise double'), 2)
+    assert.equal(q('prise triple'), 3)
+    assert.equal(q('Prise QUADRUPLE'), 4)
+    assert.equal(q('Bloc de prises triplé'), 3, 'accent ignoré')
+  })
+  test('RJ45 : le « 45 » ne compte pas', () => {
+    assert.equal(q('Prise RJ45', 'rj45'), 1)
+    assert.equal(q('RJ45 ×2', 'rj45'), 2)
+    assert.equal(q('2 RJ45', 'rj45'), 2)
+    assert.equal(q('deux RJ 45', 'rj45'), 2)
+    assert.equal(q('RJ45 double', 'rj45'), 2)
+  })
+  test('sinon 1 ; autres types toujours 1', () => {
+    assert.equal(q('Prise de courant'), 1)
+    assert.equal(q(''), 1)
+    assert.equal(quantiteElement({ type: 'prise' }), 1)
+    assert.equal(q('Prise x0'), 1)
+    assert.equal(q('Prise 16 A'), 1)
+    assert.equal(q('Interrupteur double', 'interrupteur'), 1)
+    assert.equal(q('3 radiateurs', 'radiateur'), 1)
+    assert.equal(quantiteElement(null), 1)
   })
 })
 
@@ -187,7 +370,7 @@ describe('symboles usuels : placement', () => {
       proche((((fin - debut) % 360) + 360) % 360, 180)
     }
     const [, , , d, f] = primitivesPlacees('prise', { angle: -30 }).find((p) => p.arc).arc
-    assert.deepEqual([d, f], [150, 330])
+    assert.deepEqual([d, f], [330, 150])
   })
 
   test('la boîte suit la rotation : un radiateur tourné de 90° est vertical', () => {

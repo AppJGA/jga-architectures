@@ -17,7 +17,13 @@ export const CALQUES = [
   },
   {
     code: 'electricite', nom: 'EDL-Électricité', libelle: 'Électricité',
-    types: [t('interrupteur', 'Interrupteur'), t('prise', 'Prise de courant'), t('luminaire', 'Luminaire'), t('tableau-electrique', 'Tableau électrique')],
+    // Libellés de la légende de l'agence (planche « report relevé », 2026-11-19)
+    types: [
+      t('interrupteur', 'Interrupteur'), t('prise', 'Prise de courant'), t('rj45', 'Prise informatique RJ45'),
+      t('luminaire', 'Luminaire'), t('applique', 'Point lumineux en applique'), t('dalle', 'Luminaire plafond carré (dalle)'),
+      t('reglette', 'Luminaire linéaire (réglette)'), t('goulotte', 'Goulotte électrique'),
+      t('tableau-electrique', 'Tableau électrique'), t('baie-brassage', 'Baie de brassage'),
+    ],
   },
   { code: 'chauffage', nom: 'EDL-Chauffage', libelle: 'Chauffage', types: [t('radiateur', 'Radiateur'), t('chaudiere', 'Chaudière'), t('thermostat', 'Thermostat')] },
   { code: 'ventilation', nom: 'EDL-Ventilation', libelle: 'Ventilation', types: [t('bouche-vmc', 'Bouche de VMC'), t('grille', 'Grille'), t('conduit', 'Conduit')] },

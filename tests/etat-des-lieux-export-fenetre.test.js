@@ -253,7 +253,7 @@ describe('aperçu du DXF', () => {
   })
 
   test('couleurs : calque connu, proposition, plan', () => {
-    assert.deepEqual(couleurCalqueApercu('EDL-Désordres'), { couleur: '#B8412C', edl: true })
+    assert.deepEqual(couleurCalqueApercu('EDL-Désordres'), { couleur: '#8E44AD', edl: true })
     assert.equal(couleurCalqueApercu('EDL-Pièces').edl, true)
     assert.deepEqual(couleurCalqueApercu('A-WALL'), { couleur: COULEUR_PLAN_APERCU, edl: false })
     assert.deepEqual(alignementCanevas({}), { textAlign: 'left', textBaseline: 'alphabetic' })

@@ -14,12 +14,19 @@
 //   { arc: [cx, cy, r, debutDeg, finDeg] }   sens trigonométrique, comme le DXF
 //   { texte: 'T', pos: [x, y], hauteur }     pos = milieu du texte (centré)
 //
+// Convention (2026-11-19) : le DOS d'un symbole — le côté contre le mur — est
+// du côté −y local, et +y regarde l'intérieur de la pièce. `orientationElement`
+// tourne ainsi un type mural (`TYPES_MURAUX`) contre son mur le plus proche ;
+// tout nouveau symbole mural se dessine dans ce sens.
+//
 // Les appareils (plomberie, chauffage) sont à leur taille réelle vus de
-// dessus, dos au mur vers +y : posés dans une pièce, ils se comparent au plan.
+// dessus : posés dans une pièce, ils se comparent au plan. De même la
+// réglette, la goulotte et la baie de brassage, dont la longueur compte.
 // Les autres symboles ont une taille fixe d'environ 0,30 m — 3 mm au 1/100,
 // 6 mm au 1/50 — selon l'usage des plans français (NF C 15-100 pour
-// l'électricité). Chaque dessin reste de quelques traits : il est répété des
-// centaines de fois dans un DXF et relu par l'agence.
+// l'électricité) et la légende de l'agence. Chaque dessin reste de quelques
+// traits : il est répété des centaines de fois dans un DXF et relu par
+// l'agence.
 
 import { CALQUES } from '../calquesEdl.js'
 
@@ -110,20 +117,20 @@ const reelle = (primitives) => ({ taille: 'reelle', primitives })
 const fixe = (primitives) => ({ taille: 'fixe', primitives })
 
 export const SYMBOLES = {
-  // ── Plomberie : appareils à leur taille réelle ──
+  // ── Plomberie : appareils à leur taille réelle, robinet côté mur (−y) ──
   lavabo: reelle([
     rectArrondi(-0.30, -0.225, 0.30, 0.225, 0.06),
-    ovale(0, -0.03, 0.235, 0.15),
-    cercle(0, -0.03, 0.02),
-    ligne([0, 0.225], [0, 0.15]),
+    ovale(0, 0.03, 0.235, 0.15),
+    cercle(0, 0.03, 0.02),
+    ligne([0, -0.225], [0, -0.15]),
   ]),
   evier: reelle([
     rect(-0.60, -0.30, 0.60, 0.30),
-    rectArrondi(-0.55, -0.25, -0.04, 0.19, 0.05),
-    rectArrondi(0.04, -0.25, 0.55, 0.19, 0.05),
-    cercle(-0.295, -0.03, 0.025),
-    cercle(0.295, -0.03, 0.025),
-    cercle(0, 0.245, 0.02),
+    rectArrondi(-0.55, -0.19, -0.04, 0.25, 0.05),
+    rectArrondi(0.04, -0.19, 0.55, 0.25, 0.05),
+    cercle(-0.295, 0.03, 0.025),
+    cercle(0.295, 0.03, 0.025),
+    cercle(0, -0.245, 0.02),
   ]),
   baignoire: reelle([
     rect(-0.85, -0.35, 0.85, 0.35),
@@ -137,34 +144,67 @@ export const SYMBOLES = {
     ligne([-0.41, 0.41], [0.41, -0.41]),
     cercle(0, 0, 0.04),
   ]),
+  // Réservoir contre le mur (−y), cuvette vers la pièce
   wc: reelle([
-    rect(-0.20, 0.145, 0.20, 0.325),
-    ovale(0, -0.09, 0.175, 0.235),
-    ovale(0, -0.11, 0.105, 0.15),
+    rect(-0.20, -0.325, 0.20, -0.145),
+    ovale(0, 0.09, 0.175, 0.235),
+    ovale(0, 0.11, 0.105, 0.15),
   ]),
   'ballon-eau-chaude': reelle([
     cercle(0, 0, 0.275),
     texte('ECS', [0, 0], 0.10),
   ]),
 
-  // ── Électricité : taille fixe, usage NF C 15-100 ──
+  // ── Électricité : légende de l'agence, usage NF C 15-100 ──
   interrupteur: fixe(interrupteur()),
-  // Prise 2P+T : demi-cercle côté pièce, trait vers le mur (+y), trait
+  // Prise 2P+T : demi-cercle côté pièce (+y), trait vers le mur (−y), trait
   // tangent au sommet de l'arc pour la terre
   prise: fixe([
-    arc(0, 0, 0.09, 180, 360),
+    arc(0, 0, 0.09, 0, 180),
     ligne([-0.09, 0], [0.09, 0]),
-    ligne([0, 0], [0, 0.10]),
-    ligne([-0.09, -0.09], [0.09, -0.09]),
+    ligne([0, 0], [0, -0.10]),
+    ligne([-0.09, 0.09], [0.09, 0.09]),
   ]),
+  rj45: fixe([
+    rect(-0.12, -0.07, 0.12, 0.07),
+    texte('RJ', [0, 0], 0.08),
+  ]),
+  // Plafonnier : cercle barré d'une croix
   luminaire: fixe([
     cercle(0, 0, 0.10),
     ligne([-0.0707, -0.0707], [0.0707, 0.0707]),
     ligne([-0.0707, 0.0707], [0.0707, -0.0707]),
   ]),
+  // Applique : le plafonnier, et un petit trait jusqu'au mur (−y)
+  applique: fixe([
+    cercle(0, 0, 0.09),
+    ligne([-0.0636, -0.0636], [0.0636, 0.0636]),
+    ligne([-0.0636, 0.0636], [0.0636, -0.0636]),
+    ligne([0, -0.09], [0, -0.17]),
+  ]),
+  dalle: fixe([
+    rect(-0.15, -0.15, 0.15, 0.15),
+    ligne([-0.15, -0.15], [0.15, 0.15]),
+    ligne([-0.15, 0.15], [0.15, -0.15]),
+  ]),
+  // Réglette et goulotte à leur longueur réelle : elles se mesurent sur le plan
+  reglette: reelle([
+    rect(-0.45, -0.075, 0.45, 0.075),
+    ligne([-0.45, -0.075], [0.45, 0.075]),
+    ligne([-0.45, 0.075], [0.45, -0.075]),
+  ]),
+  goulotte: reelle([
+    ligne([-0.45, -0.03], [0.45, -0.03]),
+    ligne([-0.45, 0.03], [0.45, 0.03]),
+  ]),
   'tableau-electrique': fixe([
     rect(-0.15, -0.075, 0.15, 0.075),
     ...hachures(-0.15, -0.075, 0.15, 0.075, 0.05),
+  ]),
+  // Baie de 600 × 600, sa taille courante
+  'baie-brassage': reelle([
+    rect(-0.30, -0.30, 0.30, 0.30),
+    ...hachures(-0.30, -0.30, 0.30, 0.30, 0.10),
   ]),
 
   // ── Chauffage ──
@@ -232,7 +272,9 @@ export const SYMBOLES = {
   'compteur-electricite': fixe([cercle(0, 0, 0.12), texte('EL', [0, 0], 0.09)]),
 
   // ── Sécurité ──
-  'detecteur-fumee': fixe([cercle(0, 0, 0.12), texte('DF', [0, 0], 0.08)]),
+  // Rond à point central plein, comme la légende de l'agence : le point se
+  // remplit de cercles serrés (pas de remplissage en R12 sans SOLID)
+  'detecteur-fumee': fixe([cercle(0, 0, 0.12), cercle(0, 0, 0.045), cercle(0, 0, 0.03), cercle(0, 0, 0.015)]),
   'eclairage-secours': fixe([rect(-0.15, -0.07, 0.15, 0.07), texte('BAES', [0, 0], 0.06)]),
   extincteur: fixe([triangle(0.30), texte('EX', [0, -0.025], 0.06)]),
 
@@ -341,6 +383,110 @@ export function orientationPiece(contour) {
   return Math.round(r * 1e6) / 1e6 || 0
 }
 
+// ─── Contre le mur ──────────────────────────────────────────────────────────
+
+// Types posés contre un mur : leur dos (−y local) se tourne vers le mur le
+// plus proche. Les autres (plafonniers, désordres, menuiseries…) suivent la
+// pièce.
+export const TYPES_MURAUX = new Set([
+  'interrupteur', 'prise', 'rj45', 'applique', 'goulotte', 'tableau-electrique', 'baie-brassage',
+  'radiateur', 'thermostat', 'lavabo', 'evier', 'wc', 'ballon-eau-chaude', 'chaudiere', 'grille',
+  'compteur-eau', 'compteur-gaz', 'compteur-electricite', 'extincteur', 'eclairage-secours',
+])
+
+// Au-delà, le point n'est plus « contre » un mur : le symbole suit la pièce
+export const DISTANCE_MUR = 0.8
+
+const contourValide = (c) => Array.isArray(c) && c.length >= 3 && c.every((p) => Array.isArray(p) && Number.isFinite(p[0]) && Number.isFinite(p[1]))
+
+// Aire signée (positive : sommets dans le sens trigonométrique)
+function aireSignee(contour) {
+  let a = 0
+  contour.forEach((p, i) => {
+    const q = contour[(i + 1) % contour.length]
+    a += p[0] * q[1] - q[0] * p[1]
+  })
+  return a / 2
+}
+
+function distanceSegment([px, py], [ax, ay], [bx, by]) {
+  const dx = bx - ax
+  const dy = by - ay
+  const l2 = dx * dx + dy * dy
+  const t = l2 ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / l2)) : 0
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy))
+}
+
+const angleSigne = (deg) => {
+  let r = ((deg % 360) + 360) % 360
+  if (r > 180) r -= 360
+  return Math.round(r * 1e6) / 1e6 || 0
+}
+
+/**
+ * Angle (degrés, sens trigonométrique du plan) d'un élément posé :
+ *   - type mural à moins de `DISTANCE_MUR` d'un côté de sa pièce : l'angle de
+ *     ce côté, retourné s'il le faut pour que +y local regarde l'intérieur
+ *     (le dos du symbole contre le mur) — dans ]-180°, 180°] ;
+ *   - sinon l'orientation de la pièce (`orientationPiece`) ;
+ *   - sans pièce, 0.
+ * La seule règle : DXF, plan du rapport et planches la lisent.
+ */
+export function orientationElement({ type, x, y } = {}, piece = null) {
+  const contour = piece?.contour
+  if (!contour) return 0
+  if (!TYPES_MURAUX.has(type) || !contourValide(contour) || !Number.isFinite(x) || !Number.isFinite(y)) {
+    return orientationPiece(contour)
+  }
+  let plusProche = Infinity
+  let cote = null
+  contour.forEach((a, i) => {
+    const b = contour[(i + 1) % contour.length]
+    if (Math.hypot(b[0] - a[0], b[1] - a[1]) < 1e-9) return
+    const d = distanceSegment([x, y], a, b)
+    if (d < plusProche - 1e-9) {
+      plusProche = d
+      cote = [a, b]
+    }
+  })
+  if (!cote || plusProche >= DISTANCE_MUR) return orientationPiece(contour)
+  const [a, b] = cote
+  const angle = (Math.atan2(b[1] - a[1], b[0] - a[0]) * 180) / Math.PI
+  // Côté parcouru dans le sens trigonométrique : l'intérieur est à sa gauche,
+  // c'est-à-dire du côté +y du côté tourné de son propre angle
+  return angleSigne(aireSignee(contour) >= 0 ? angle : angle + 180)
+}
+
+// ─── Quantité (prises multiples) ────────────────────────────────────────────
+
+const TYPES_QUANTITE = new Set(['prise', 'rj45'])
+const EN_LETTRES = { deux: 2, trois: 3, quatre: 4, cinq: 5, six: 6 }
+const MULTIPLES = { double: 2, doubles: 2, triple: 3, triples: 3, quadruple: 4, quadruples: 4 }
+// Ce que compte un nombre écrit devant : « 3 prises », « deux RJ45 »
+const OBJETS = String.raw`(?:prises?|pc|rj\s*-?\s*45|rj|ports?|sorties?|socles?)\b`
+
+const sansAccents = (t) => String(t ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+
+/**
+ * Nombre de prises (ou de RJ45) qu'un élément représente, lu dans son
+ * libellé : « ×3 », « x 3 », « 3 prises », « trois prises », « double »
+ * (2), « triple » (3), « quadruple » (4). 1 sinon, et pour tout autre type.
+ */
+export function quantiteElement(e) {
+  if (!TYPES_QUANTITE.has(e?.type)) return 1
+  const t = sansAccents(e.libelle).replace(/×/g, 'x')
+  const valide = (n) => (Number.isInteger(n) && n >= 1 ? n : null)
+  const fois = t.match(/(?:^|[^a-z0-9])x\s*(\d+)/)
+  if (fois) return valide(Number(fois[1])) ?? 1
+  const chiffres = t.match(new RegExp(`(?:^|[^a-z0-9])(\\d+)\\s*${OBJETS}`))
+  if (chiffres) return valide(Number(chiffres[1])) ?? 1
+  const lettres = t.match(new RegExp(`\\b(${Object.keys(EN_LETTRES).join('|')})\\s+${OBJETS}`))
+  if (lettres) return EN_LETTRES[lettres[1]]
+  const multiple = t.match(new RegExp(`\\b(${Object.keys(MULTIPLES).join('|')})\\b`))
+  if (multiple) return MULTIPLES[multiple[1]]
+  return 1
+}
+
 // Angle ramené dans [0, 360[ : un arc tourné de -30° garde des bornes que
 // tout lecteur DXF ou canevas comprend, et deux placements égaux s'écrivent
 // pareil (le -0 et le 360 d'un arrondi deviennent 0)
@@ -355,8 +501,11 @@ const angleNormalise = (deg) => {
  * avec ce que la pose ajoute :
  *   - arc : bornes tournées, ramenées dans [0, 360[ ;
  *   - texte : `rotation` (degrés, sens trigonométrique, autour de `pos`) =
- *     celle du catalogue + `angle` — le DXF l'écrit en code 50, le canevas
- *     du rapport la retourne (y vers le bas).
+ *     celle du catalogue + `angle`, ramenée dans ]-90°, 90°] pour rester
+ *     lisible (un symbole contre le mur du haut est tourné de 180° : son
+ *     « RJ » ne se lit pas la tête en bas ; le texte étant centré sur `pos`,
+ *     sa place ne change pas) — le DXF l'écrit en code 50, le canevas du
+ *     rapport la retourne (y vers le bas).
  */
 export function primitivesPlacees(code, { x = 0, y = 0, angle = 0 } = {}) {
   const symbole = SYMBOLES[code]
@@ -376,8 +525,17 @@ export function primitivesPlacees(code, { x = 0, y = 0, angle = 0 } = {}) {
       const [cx, cy, r, debut, fin] = p.arc
       return { arc: [...t([cx, cy]), r, angleNormalise(debut + angle), angleNormalise(fin + angle)] }
     }
-    return { texte: p.texte, pos: t(p.pos), hauteur: p.hauteur, rotation: (p.rotation ?? 0) + angle }
+    return { texte: p.texte, pos: t(p.pos), hauteur: p.hauteur, rotation: rotationLisible((p.rotation ?? 0) + angle) }
   })
+}
+
+// Dans ]-90°, 90°] : au-delà, le texte se lirait la tête en bas
+function rotationLisible(deg) {
+  let r = ((deg % 360) + 360) % 360
+  if (r > 180) r -= 360
+  if (r > 90) r -= 180
+  else if (r <= -90) r += 180
+  return Math.round(r * 1e9) / 1e9 || 0
 }
 
 // ─── Plusieurs symboles sur un même point ───────────────────────────────────
@@ -400,10 +558,13 @@ export const RAYON_SANS_SYMBOLE = 0.05
  *   rond de `RAYON_SANS_SYMBOLE`) ; un même type n'est compté qu'une fois
  * @param echelle (type) → agrandissement du symbole (le rapport grossit les
  *   symboles à taille fixe ; le DXF les garde à 1)
+ * @param angle (type) → rotation du symbole (degrés) par rapport au repère de
+ *   la pièce : un symbole mural tourné contre son mur (`orientationElement`)
+ *   occupe la boîte de ses primitives tournées
  * @returns { emplacements: [{ type, dx, boite }], boite } — `dx` en mètres
- *   dans le repère de la pièce, `boite` (non tournée) autour du point
+ *   dans le repère de la pièce, `boite` autour du point dans ce repère
  */
-export function decalagesSymboles(types, { echelle = () => 1 } = {}) {
+export function decalagesSymboles(types, { echelle = () => 1, angle = () => 0 } = {}) {
   const emplacements = []
   const boite = { xmin: Infinity, ymin: Infinity, xmax: -Infinity, ymax: -Infinity }
   let bord = null
@@ -411,8 +572,9 @@ export function decalagesSymboles(types, { echelle = () => 1 } = {}) {
     const type = brut && SYMBOLES[brut] ? brut : null
     if (emplacements.some((em) => em.type === type)) continue
     const k = echelle(type) || 1
+    const rotation = type ? angle(type) || 0 : 0
     const b0 = type
-      ? boiteSymbole(type)
+      ? (rotation ? boitePrimitives(primitivesPlacees(type, { angle: rotation })) : boiteSymbole(type))
       : { xmin: -RAYON_SANS_SYMBOLE, ymin: -RAYON_SANS_SYMBOLE, xmax: RAYON_SANS_SYMBOLE, ymax: RAYON_SANS_SYMBOLE }
     const b = { xmin: b0.xmin * k, ymin: b0.ymin * k, xmax: b0.xmax * k, ymax: b0.ymax * k }
     const dx = bord === null ? 0 : bord + ECART_SYMBOLES - b.xmin

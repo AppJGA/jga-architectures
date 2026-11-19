@@ -451,6 +451,19 @@ describe('plan du rapport', () => {
     assert.ok(m[0].ancre[0] >= m[1].boite.xmax - 1e-9)
   })
 
+  test('symbole mural contre son mur, même règle que le DXF (orientationElement)', () => {
+    const salle = { id: 'ps', niveau_id: 'n1', contour: [[0, 0], [4, 0], [4, 3], [0, 3]] }
+    const el = (id, type, x, y) => ({ id, pieceId: 'ps', pointId: id, x, y, type, calque: 'electricite', numero: 1, aValider: false })
+    const m = marquesElements([el('haut', 'prise', 2, 2.8), el('milieu', 'prise', 2, 1.5), el('porte', 'porte', 2, 2.8)], [salle], 1000)
+    // Prise contre le mur du haut : tournée de 180°, son trait vers le mur (+y du plan)
+    const trait = (marque) => marque.primitives.find((p) => p.ligne && Math.abs(p.ligne[0][0] - p.ligne[1][0]) < 1e-9).ligne
+    assert.ok(trait(m[0])[1][1] > 2.8, 'trait de la prise vers le mur du haut')
+    assert.ok(trait(m[1])[1][1] < 1.5, 'loin des murs : droite, comme la pièce')
+    // La porte n'est pas murale : elle suit la pièce (vantail vers +y), même près du mur
+    const vantail = m[2].primitives[2].ligne
+    assert.ok(vantail[1][1] > vantail[0][1])
+  })
+
   test('dessin sur un contexte quelconque : pièces, symboles, bulles, points seuls', () => {
     const appels = []
     const ctx = new Proxy({}, {

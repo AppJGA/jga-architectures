@@ -2,13 +2,14 @@
 //
 // Le plan allégé (fichier vectoriel, à défaut l'image de l'étage) passé en
 // gris, les contours des pièces, puis chaque élément : son symbole
-// (`primitivesPlacees`, tourné comme la pièce) et son numéro dans une bulle.
+// (`primitivesPlacees`, tourné par `orientationElement` : comme la pièce, ou
+// contre son mur pour un type mural) et son numéro dans une bulle.
 // Sans navigateur : `ctx` est n'importe quel contexte 2D, c'est
 // `genererRapportEdl.js` qui fournit le canevas et en fait un JPEG.
 
 import { boite, cadrage, versPixels } from '../geometrieEdl.js'
 import { dessinerVecteurs, elementsVisibles } from '../vecteursEdlLogique.js'
-import { RAYON_SANS_SYMBOLE, SYMBOLES, boitePrimitives, decalagesSymboles, orientationPiece, primitivesPlacees } from './symbolesEdl.js'
+import { RAYON_SANS_SYMBOLE, SYMBOLES, boitePrimitives, decalagesSymboles, orientationElement, orientationPiece, primitivesPlacees } from './symbolesEdl.js'
 import { CADRE_PLAN_ETAGE, COULEUR_PROPOSITION, couleurCalque, texteLatin } from './rapportEdlLogique.js'
 import { placerCadre } from './placementEtiquettes.js'
 
@@ -122,6 +123,7 @@ const typeDessine = (e) => (e.type && SYMBOLES[e.type] ? e.type : null)
  * validé s'il y en a un.
  */
 export function marquesElements(elementsExport, pieces, pxParMetre, pxMin = PX_SYMBOLE_MIN) {
+  const parId = new Map((pieces ?? []).map((p) => [p.id, p]))
   const angles = new Map((pieces ?? []).map((p) => [p.id, orientationPiece(p.contour)]))
   const groupes = new Map()
   for (const e of elementsExport ?? []) {
@@ -136,13 +138,22 @@ export function marquesElements(elementsExport, pieces, pxParMetre, pxMin = PX_S
     const premier = groupe[0]
     const angle = angles.get(premier.pieceId) ?? 0
     const a = (angle * Math.PI) / 180
-    const { emplacements } = decalagesSymboles(groupe.map((e) => e.type), { echelle })
+    // Chaque symbole a son angle (contre son mur s'il est mural) ; les
+    // décalages restent le long de la pièce, comme dans le DXF
+    const angleSymbole = new Map()
+    for (const e of groupe) {
+      const type = typeDessine(e)
+      if (type && !angleSymbole.has(type)) angleSymbole.set(type, orientationElement(e, parId.get(e.pieceId) ?? null))
+    }
+    const { emplacements } = decalagesSymboles(groupe.map((e) => e.type), {
+      echelle, angle: (type) => (angleSymbole.get(type) ?? angle) - angle,
+    })
     const siennes = emplacements.map((em) => {
       const duType = groupe.filter((e) => typeDessine(e) === em.type)
       const element = duType.find((e) => !e.aValider) ?? duType[0]
       const x = premier.x + em.dx * Math.cos(a)
       const y = premier.y + em.dx * Math.sin(a)
-      const primitives = agrandir(primitivesPlacees(em.type, { x, y, angle }), [x, y], echelle(em.type))
+      const primitives = agrandir(primitivesPlacees(em.type, { x, y, angle: angleSymbole.get(em.type) ?? angle }), [x, y], echelle(em.type))
       const r = RAYON_SANS_SYMBOLE * echelle(em.type)
       return {
         element, x, y, primitives,

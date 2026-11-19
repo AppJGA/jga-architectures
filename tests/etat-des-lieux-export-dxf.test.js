@@ -210,8 +210,10 @@ describe('fichier DXF', () => {
     assert.deepEqual(l.blocs, ['EDL_LAVABO', 'EDL_PRISE', 'EDL_RADIATEUR'])
     const lavabos = l.traits.filter((t) => t.bloc === 'EDL_LAVABO')
     assert.ok(lavabos.every((t) => t.calque === 'EDL-Plomberie'))
-    for (const [x, y] of [[7, 1], [8, 1.5]]) {
-      const attendu = primitivesPlacees('lavabo', { x, y, angle: 0 }).find((p) => p.polyligne)
+    // (7, 1) à 1 m de tout mur : droit, comme la pièce ; (8, 1,5) à 0,5 m du
+    // mur du haut : tourné de 180°, son dos (−y local) contre ce mur
+    for (const [x, y, angle] of [[7, 1, 0], [8, 1.5, 180]]) {
+      const attendu = primitivesPlacees('lavabo', { x, y, angle }).find((p) => p.polyligne)
       assert.ok(lavabos.some((t) => t.pts.length === attendu.polyligne.length && t.pts.every((p, i) => Math.hypot(p[0] - attendu.polyligne[i][0], p[1] - attendu.polyligne[i][1]) < 1e-6)), `lavabo en ${x}, ${y}`)
     }
   })

@@ -9,7 +9,8 @@
 //     déplacement ni mise à l'échelle ;
 //   - textes en Windows-1252 (`$DWGCODEPAGE ANSI_1252`, `encoderDxf`) ;
 //   - un bloc `EDL_<CODE>` par type de symbole utilisé, inséré à la rotation
-//     de la pièce (les plans sont souvent tournés) ; des `TEXT` seulement,
+//     de `orientationElement` : celle de la pièce (les plans sont souvent
+//     tournés), ou contre son mur pour un type mural ; des `TEXT` seulement,
 //     `MTEXT` n'existant pas en R12.
 // Pur, sans navigateur ; chaque fichier produit est relu par notre propre
 // lecteur dans les tests (tests/etat-des-lieux-export-dxf.test.js).
@@ -30,7 +31,7 @@
 
 import { CALQUES, calqueEdl, typeEdl } from '../calquesEdl.js'
 import { aire, pointDansPolygone } from '../geometrieEdl.js'
-import { RAYON_SANS_SYMBOLE, SYMBOLES, decalagesSymboles, orientationPiece } from './symbolesEdl.js'
+import { RAYON_SANS_SYMBOLE, SYMBOLES, decalagesSymboles, orientationElement, orientationPiece } from './symbolesEdl.js'
 import { placerEtiquettes, pointInterieur, repere } from './placementEtiquettes.js'
 import { dansCp1252, encoderCp1252 } from './encodageDxf.js'
 import { ficheExportee, hspExport } from './ficheExportEdl.js'
@@ -395,9 +396,19 @@ export function etiquettesEtage({ pieces = [], elementsExport = [], photos = [],
     reperes.get(cle).groupe.push(e)
   }
   for (const r of reperes.values()) {
+    // Le repère (libellés, décalages) suit la pièce ; chaque symbole a son
+    // propre angle, contre son mur s'il est mural
     r.angle = angleDe(r.pieceId)
-    const { emplacements, boite } = decalagesSymboles(r.groupe.map((e) => e.type))
-    r.emplacements = emplacements
+    const angleSymbole = new Map()
+    for (const e of r.groupe) {
+      if (e.type && !angleSymbole.has(e.type)) {
+        angleSymbole.set(e.type, orientationElement({ type: e.type, x: Number(e.x), y: Number(e.y) }, parId.get(e.pieceId) ?? null))
+      }
+    }
+    const { emplacements, boite } = decalagesSymboles(r.groupe.map((e) => e.type), {
+      angle: (type) => (angleSymbole.get(type) ?? r.angle) - r.angle,
+    })
+    r.emplacements = emplacements.map((em) => ({ ...em, angle: em.type ? angleSymbole.get(em.type) ?? r.angle : r.angle }))
     r.symbole = boite
     r.lignes = []
     for (const e of r.groupe) {
@@ -557,7 +568,7 @@ export function genererDxfEdl({
         typesUtilises.add(em.type)
         // L'étendue suit la boîte tournée du symbole, pas seulement son point
         for (const coin of [[b.xmin, b.ymin], [b.xmax, b.ymax], [b.xmin, b.ymax], [b.xmax, b.ymin]]) enUnites(place([dx + coin[0], coin[1]]))
-        w.insert(calque, nomBloc(em.type), enUnites(place([dx, 0])), r.angle)
+        w.insert(calque, nomBloc(em.type), enUnites(place([dx, 0])), em.angle ?? r.angle)
       } else {
         // Sans type (désordre non classé…) : un petit rond suffit à le situer
         w.cercle(calque, enUnites(place([dx, 0])), RAYON_SANS_SYMBOLE * u)

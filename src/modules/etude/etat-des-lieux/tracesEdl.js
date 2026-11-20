@@ -35,9 +35,14 @@ export function liaisonPossible(pointA, pointB) {
   return null
 }
 
-/** Une liaison entre ces deux points existe-t-elle déjà (sens interrupteur → luminaire) ? */
+/**
+ * Une liaison entre ces deux points existe-t-elle déjà ? Dans un sens ou dans
+ * l'autre : la base range toujours l'interrupteur en premier, mais un point
+ * dont le type a changé depuis retournerait une liaison déjà posée.
+ */
 export function liaisonExiste(traces, interrupteurId, luminaireId) {
-  return (traces ?? []).some((t) => t.sorte === 'commande' && t.point_a === interrupteurId && t.point_b === luminaireId)
+  return (traces ?? []).some((t) => t.sorte === 'commande'
+    && ((t.point_a === interrupteurId && t.point_b === luminaireId) || (t.point_a === luminaireId && t.point_b === interrupteurId)))
 }
 
 /** Le sommet du contour le plus proche de [x, y] (copie), ou null sans contour. */

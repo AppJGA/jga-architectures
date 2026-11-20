@@ -93,10 +93,13 @@ function ConfirmerFin({ onConfirmer, onAnnuler }) {
 }
 
 // Petits panneaux posés en haut à gauche du plan (le clavier de l'iPad couvre
-// le bas ; l'aide-mémoire est à droite). Ne se ferment que par leurs boutons
-// ou Échap, jamais au toucher à côté.
+// le bas ; l'aide-mémoire est à droite). Dans le flux de la colonne posée sur
+// le plan, sous les bandeaux d'alerte et de refus : en position absolue, ils
+// les recouvraient (et leurs boutons Réessayer / Abandonner). Ne se ferment
+// que par leurs boutons ou Échap, jamais au toucher à côté.
 const panneauPlan = {
-  position: 'absolute', top: 8, left: 8, zIndex: 6, width: 340, maxWidth: 'calc(100% - 16px)', boxSizing: 'border-box',
+  position: 'relative', margin: 8, alignSelf: 'flex-start', flexShrink: 0,
+  zIndex: 6, width: 340, maxWidth: 'calc(100% - 16px)', boxSizing: 'border-box',
   pointerEvents: 'auto', background: 'white', border: '0.5px solid rgba(0,0,0,0.15)', borderRadius: 2,
   boxShadow: '0 6px 20px rgba(0,0,0,0.12)', padding: '8px 8px 10px 14px', display: 'flex', flexDirection: 'column', gap: 8,
 }

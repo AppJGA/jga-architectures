@@ -133,8 +133,9 @@ alter table edl_evenements add constraint edl_evenements_type_check check (type 
 --   · les valeurs proposées et pas encore relues sont retirées, puis les
 --     nouvelles écrites — seulement sur une cote encore sans valeur : une
 --     valeur tapée ou validée n'est jamais remplacée ;
---   · une liaison qui existe déjà entre les deux mêmes points, ou dont un
---     point a disparu, n'est pas ajoutée (rien ne fait échouer l'analyse).
+--   · une liaison qui existe déjà entre les deux mêmes points (dans un sens
+--     ou dans l'autre), ou dont un point a disparu, n'est pas ajoutée (rien
+--     ne fait échouer l'analyse).
 drop function if exists public.edl_ecrire_analyse(uuid, timestamptz, jsonb, jsonb, timestamptz, boolean);
 
 create or replace function public.edl_ecrire_analyse(
@@ -210,7 +211,9 @@ begin
        and exists (select 1 from edl_points p where p.id = t.point_b)
        and not exists (
          select 1 from edl_traces x
-          where x.sorte = 'commande' and x.point_a = t.point_a and x.point_b = t.point_b)
+          where x.sorte = 'commande'
+            and ((x.point_a = t.point_a and x.point_b = t.point_b)
+              or (x.point_a = t.point_b and x.point_b = t.point_a)))
     on conflict (id) do nothing;
     get diagnostics v_traces_ajoutees = row_count;
 

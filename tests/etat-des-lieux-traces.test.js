@@ -55,11 +55,13 @@ describe('liaisons : interrupteur et luminaire', () => {
     assert.equal(liaisonPossible(inter, inter), null)
     assert.equal(liaisonPossible(inter, null), null)
   })
-  test('une liaison déjà posée se reconnaît (sens de la base)', () => {
+  test('une liaison déjà posée se reconnaît, dans les deux sens', () => {
     const traces = [{ id: 't', sorte: 'commande', point_a: 'i1', point_b: 'l1' }, { id: 'c', sorte: 'cote', xa: 0, ya: 0, xb: 1, yb: 0 }]
     assert.equal(liaisonExiste(traces, 'i1', 'l1'), true)
     assert.equal(liaisonExiste(traces, 'i1', 'l2'), false)
     assert.equal(liaisonExiste([], 'i1', 'l1'), false)
+    // Dans l'autre sens aussi (point dont le type a changé depuis)
+    assert.equal(liaisonExiste(traces, 'l1', 'i1'), true)
   })
 })
 

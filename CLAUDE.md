@@ -99,7 +99,8 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
   avancement, présences, remarques, organisation, généralités et export
   PDF du CR, plans,
   documents, tablette du mode Visite, ordinateur de l'éditeur, émission, suite
-  d'une remarque), en
+  d'une remarque, état des lieux — `IconeEtatDesLieux`, plan relevé et loupe,
+  dessinée dans le même trait le 2026-11-20), en
   composants qui s'emploient comme lucide (`size`, `color`). Le manifeste
   garde ses noms lucide ; `ICON_MAP` d'`AffairePage` les traduit. Détaillées :
   pas en dessous de ~16 px (22 dans la colonne, 28 sur les tuiles, à la

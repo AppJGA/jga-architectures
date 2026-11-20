@@ -181,3 +181,10 @@ export function IconeGestionAgence(props) {
 export function IconeAccueil(props) {
   return <Icone {...props}><path d="M4 29L32 6l28 23"/><path d="M10 24.5V56h44V24.5"/><path d="M26 56V41a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v15"/><path d="M44 15.9V9h6v11.8"/></Icone>
 }
+
+// État des lieux : le plan relevé (cloisons, porte, luminaire, point, cote)
+// et la loupe du constat, en badge comme le crayon des plannings
+export function IconeEtatDesLieux(props) {
+  const masque = useMasque()
+  return <Icone {...props}><defs><mask id={masque}><rect width="64" height="64" fill="#fff" stroke="none"/><circle cx="50" cy="50" r="15" fill="#000" stroke="none"/></mask></defs><g mask={`url(#${masque})`}><rect x="6" y="8" width="50" height="44" rx="3"/><path d="M32 8v10M32 25v8M6 33h8M22 33h18"/><path d="M22 33v-8a8 8 0 0 0-8 8"/><circle cx="18" cy="17" r="4.5"/><path d="M15.6 14.6l4.8 4.8M20.4 14.6l-4.8 4.8"/><circle cx="44" cy="20" r="2.2" fill="currentColor" stroke="none"/><path d="M11 45h18M11 42v6M29 42v6"/></g><circle cx="47" cy="47" r="8"/><path d="M52.8 52.8l6.2 6.2"/></Icone>
+}

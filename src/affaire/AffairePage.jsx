@@ -1,6 +1,6 @@
 import { Suspense, useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Pencil, ChevronRight, Eye, ChevronDown, Check, Lock, ScanLine } from 'lucide-react'
+import { Pencil, ChevronRight, Eye, ChevronDown, Check, Lock } from 'lucide-react'
 import { useAffaire } from '../shared/hooks/useAffaires'
 import { useAffaireCollaborateurs } from '../shared/hooks/useAffaireCollaborateurs'
 import { useAuth } from '../core/auth/useAuth'
@@ -22,6 +22,7 @@ import { dernierePhaseRenseignee, nomPhase } from '../modules/etude/financier/ph
 import {
   IconeTableauDeBord, IconePlanningEtude, IconeFinancierEtude, IconeEntreprisesLots, IconeVisitesChantier,
   IconeOpr, IconeFtm, IconePlanningChantier, IconeFinancierChantier, IconeDocuments, IconeTodo, IconePlans,
+  IconeEtatDesLieux,
 } from '../shared/icones/IconesAffaire'
 import { montantsAffaire, tvaAffaire, htDe, formatEuros } from '../shared/montants'
 import { MontantHT } from '../shared/components/MontantHT'
@@ -33,7 +34,7 @@ import { texteTelephones } from '../shared/telephones'
 
 // Noms du manifeste → icônes de l'agence
 const ICON_MAP = {
-  ScanLine,
+  ScanLine: IconeEtatDesLieux,
   Calendar: IconePlanningEtude,
   BarChart2: IconeFinancierEtude,
   CheckSquare: IconeTodo,

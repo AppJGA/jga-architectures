@@ -5,6 +5,7 @@ import { cadrePiece, COULEURS_PIECE, etatPiece, pointProche, ZOOM_MAX_VISITE } f
 import { useVecteursEdl } from '../useVecteursEdl'
 import { zoomMaxVectoriel } from '../vecteursEdlLogique'
 import { COULEUR_IA } from '../../../chantier/comptes-rendus/enregistrement/styleProposition'
+import { symboleEcran, TAILLE_SYMBOLE_PX, RAYON_DISQUE_PX } from '../analyse/symbolesRelectureLogique'
 import { courbeCommande, traitsCote, traceProche, extremitesTrace, texteCote, sensInterieurCote, COULEUR_COMMANDE, COULEUR_COTE, COULEUR_TRAIT_COTE } from './tracesVisiteLogique'
 
 // ─── Plan de la visite ───────────────────────────────────────────────────────
@@ -24,6 +25,9 @@ import { courbeCommande, traitsCote, traceProche, extremitesTrace, texteCote, se
 // une trace (et pas sur un point) la choisit. En mode « Coter », un appui
 // va à l'angle le plus proche de la pièce (`onToucherAngle`), jamais à un
 // point ; les angles sont marqués d'un rond de 44 px, zone sensible comprise.
+// `symboles` (relecture seulement, Map point → `dessinPointRelecture`) : un
+// point typé montre son symbole des planches sur un disque de sa famille,
+// son numéro en petit à côté ; sans entrée, la pastille numérotée.
 
 const ACCENT = 'var(--affaire-accent, #E8602C)'
 // Zone sensible de 44 px au doigt, rond visible plus petit
@@ -34,7 +38,7 @@ const ECART_COTE_PX = 18
 
 export function PlanVisite({
   niveau, pieces, points, nbPhotos, visitees, etats = null, piece, pointId, obtenirLiens, onToucher, onChoisirPoint, onDeplacerPoint, consultation = false,
-  traces = [], traceId = null, mode = null, onChoisirTrace, onToucherAngle,
+  traces = [], traceId = null, mode = null, onChoisirTrace, onToucherAngle, symboles = null,
 }) {
   const svg = useRef(null)
   const glisseCourant = useRef(null)
@@ -190,6 +194,15 @@ export function PlanVisite({
           const [cx, cy] = enCalque(pos)
           const choisi = p.id === pointId
           const r = (choisi ? 13 : 11) / zoom
+          const dessin = symboles?.get(p.id)
+          if (dessin?.sorte === 'symbole') {
+            return (
+              <SymbolePoint
+                key={p.id} dessin={dessin} cx={cx} cy={cy} zoom={zoom} choisi={choisi} photos={nbPhotos.get(p.id) ?? 0}
+                opacite={piece ? (touchable(p) ? 1 : 0.35) : (p.piece_id ? 0.55 : 1)}
+              />
+            )
+          }
           return (
             <g key={p.id} style={{ pointerEvents: 'none', opacity: piece ? (touchable(p) ? 1 : 0.35) : (p.piece_id ? 0.55 : 1) }}>
               {choisi && consultation && (
@@ -273,6 +286,48 @@ function Trace({ trace, points, enCalque, zoom, choisie, attenuee, contour = nul
         x={x} y={y} textAnchor="middle" transform={`rotate(${t.texte.angle} ${x} ${y})`}
         style={{ fontSize: 12 / zoom, fontWeight: 600, fill: couleur, stroke: 'white', strokeWidth: 3 / zoom, paintOrder: 'stroke', fontFamily: "'JetBrains Mono', monospace" }}
       >{texteCote(trace)}</text>
+    </g>
+  )
+}
+
+// Symbole d'un point à la relecture : disque de la famille (cible du doigt),
+// anneau pointillé bleu pour une proposition, symbole des planches à taille
+// d'écran constante, numéro en petit (les listes disent « P3 »)
+function SymbolePoint({ dessin, cx, cy, zoom, choisi, photos, opacite }) {
+  const elements = useMemo(() => symboleEcran(dessin.code, dessin.angle, TAILLE_SYMBOLE_PX), [dessin.code, dessin.angle])
+  const k = 1 / zoom
+  const trait = { fill: 'none', stroke: dessin.couleur, strokeWidth: 1.5 * k, strokeLinejoin: 'round', strokeLinecap: 'round' }
+  const R = RAYON_DISQUE_PX * k
+  return (
+    <g style={{ pointerEvents: 'none', opacity: opacite }}>
+      {choisi && <circle cx={cx} cy={cy} r={R + 5 * k} style={{ fill: 'rgba(47,111,181,0.14)', stroke: COULEUR_IA, strokeWidth: 2.5 * k }} />}
+      <circle cx={cx} cy={cy} r={R} style={{ fill: dessin.couleur, fillOpacity: 0.2, stroke: dessin.couleur, strokeOpacity: 0.45, strokeWidth: 0.5 * k }} />
+      {dessin.proposition && (
+        <circle cx={cx} cy={cy} r={R - 1.5 * k} style={{ fill: 'none', stroke: COULEUR_IA, strokeWidth: 1.2 * k, strokeDasharray: `${3 * k} ${2.5 * k}` }} />
+      )}
+      <g transform={`translate(${cx} ${cy}) scale(${k})`}>
+        {elements.map((e, i) => {
+          if (e.type === 'line') return <line key={i} x1={e.x1} y1={e.y1} x2={e.x2} y2={e.y2} style={{ ...trait, strokeWidth: 1.5 }} />
+          if (e.type === 'polyline' || e.type === 'polygon') {
+            const Forme = e.type
+            return <Forme key={i} points={e.points} style={{ ...trait, strokeWidth: 1.5 }} />
+          }
+          if (e.type === 'circle') return <circle key={i} cx={e.cx} cy={e.cy} r={e.r} style={{ ...trait, strokeWidth: 1.5, ...(e.plein ? { fill: dessin.couleur } : null) }} />
+          if (e.type === 'path') return <path key={i} d={e.d} style={{ ...trait, strokeWidth: 1.5 }} />
+          return (
+            <text key={i} x={e.x} y={e.y} fontSize={e.taille} textAnchor="middle" dominantBaseline="central"
+              transform={e.rotation ? `rotate(${e.rotation} ${e.x} ${e.y})` : undefined}
+              style={{ fill: dessin.couleur, fontFamily: 'Arial, Helvetica, sans-serif', fontWeight: 600 }}>
+              {e.texte}
+            </text>
+          )
+        })}
+      </g>
+      <text x={cx + R * 0.78} y={cy - R * 0.78} textAnchor="start"
+        style={{ fontSize: 9 * k, fontWeight: 600, fill: '#5E5854', stroke: 'white', strokeWidth: 2.5 * k, paintOrder: 'stroke', fontFamily: "'JetBrains Mono', monospace" }}>
+        {dessin.numero}
+      </text>
+      {photos > 0 && <circle cx={cx - R * 0.78} cy={cy - R * 0.78} r={3.5 * k} style={{ fill: '#1F1B17', stroke: 'white', strokeWidth: 1 * k }} />}
     </g>
   )
 }

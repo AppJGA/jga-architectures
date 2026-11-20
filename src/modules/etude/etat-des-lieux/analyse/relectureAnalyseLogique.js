@@ -234,17 +234,24 @@ export function tracesRelecture(traces = [], pieceId, points = []) {
  */
 export function choixLiaisonRelecture({ points = [], elements = [], pieceId }) {
   const effectifs = avecTypeEffectif(points, elements).filter((p) => p?.id)
-  const libelleDuPoint = (p) => {
-    const siens = (elements ?? []).filter((e) => e?.point_id === p.id && texte(e.libelle))
-    const element = siens.find((e) => !e.a_valider) ?? siens[0]
-    return `P${p.numero ?? '?'} · ${element ? texte(element.libelle) : typeEdl(p.type)?.libelle ?? p.type}`
-  }
+  const libelleDuPoint = (p) => libellePointRelecture(p, elements)
   const parNumero = (a, b) => (Number(a.numero) || 0) - (Number(b.numero) || 0)
   const interrupteurs = effectifs.filter(estInterrupteur)
     .sort((a, b) => Number(b.piece_id === pieceId) - Number(a.piece_id === pieceId) || parNumero(a, b))
   const luminaires = effectifs.filter((p) => estLuminaire(p) && p.piece_id === pieceId).sort(parNumero)
   const option = (p) => ({ id: p.id, libelle: libelleDuPoint(p) })
   return { interrupteurs: interrupteurs.map(option), luminaires: luminaires.map(option) }
+}
+
+/**
+ * « P3 · Interrupteur à l'entrée de la pièce » : le libellé de l'élément du
+ * point (validé d'abord), sinon son type (effectif), sinon « sans type ».
+ */
+export function libellePointRelecture(point, elements = []) {
+  const siens = (elements ?? []).filter((e) => e?.point_id === point.id && texte(e.libelle))
+  const element = siens.find((e) => !e.a_valider) ?? siens[0]
+  const type = point.type ?? avecTypeEffectif([point], elements)[0]?.type
+  return `P${point.numero ?? '?'} · ${element ? texte(element.libelle) : typeEdl(type)?.libelle ?? type ?? 'sans type'}`
 }
 
 /** Ce qui empêche de relier ces deux points à la relecture, ou null. */

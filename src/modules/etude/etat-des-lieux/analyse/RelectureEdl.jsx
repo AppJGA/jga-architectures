@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, ChevronRight, RefreshCw, Sparkles } from 'lucide-react'
+import { ArrowLeft, ChevronRight, RefreshCw, Sparkles, Spline, X } from 'lucide-react'
 import { COULEUR_IA } from '../../../chantier/comptes-rendus/enregistrement/styleProposition'
 import { morceauxEtatsDesLieux, remettreEnFile } from '../../../chantier/comptes-rendus/enregistrement/audioLocal'
 import { ECHECS_MAX } from '../../../chantier/comptes-rendus/enregistrement/transcription'
 import { PlanVisite } from '../visite/PlanVisite'
 import { COULEURS_PIECE, designationPiece, etatPieceVisite, piecesVisitees } from '../visite/visiteLogique'
 import { validerElement, ecarterElement, ajouterElement, modifierFiche, validerTrace, ecarterTrace, ajouterLiaison, supprimerPoint, MESSAGE_ANALYSE_INDISPONIBLE } from './analyseDonnees'
-import { piecesARelire, messageLancement, tracesRelecture, choixLiaisonRelecture, suiteEcartElement, suppressionPoint, pointsSansElement } from './relectureAnalyseLogique'
+import { piecesARelire, messageLancement, tracesRelecture, choixLiaisonRelecture, suiteEcartElement, suppressionPoint, pointsSansElement, libellePointRelecture } from './relectureAnalyseLogique'
+import { dessinPointRelecture } from './symbolesRelectureLogique'
+import { debutRelier, toucherRelier, consigneMode, COULEUR_COMMANDE } from '../visite/tracesVisiteLogique'
 import { avecTypeEffectif } from '../tracesEdl'
 import { FicheRelecture } from './FicheRelecture'
 import { ElementsRelecture } from './ElementsRelecture'
@@ -189,6 +191,9 @@ function VuePiece({ affaireId, niveau, pieces, piece, etats, visitees, visite, a
   const [message, setMessage] = useState(null)
   const [lancement, setLancement] = useState(false)
   const [confirmerRelance, setConfirmerRelance] = useState(false)
+  // Mode « Relier » (tracesVisiteLogique, le même que la visite) : ouvert
+  // depuis le panneau du point choisi, fermé par Annuler ou la liaison posée
+  const [relier, setRelier] = useState(null)
 
   const points = useMemo(() => (donnees?.points ?? []).filter((p) => p.niveau_id === niveau.id), [donnees?.points, niveau.id])
   const nbPhotos = useMemo(() => {
@@ -207,6 +212,32 @@ function VuePiece({ affaireId, niveau, pieces, piece, etats, visitees, visite, a
   const choixLiaison = useMemo(() => choixLiaisonRelecture({ points, elements: analyse.elements, pieceId: piece.id }),
     [points, analyse.elements, piece.id])
   const pointElement = elements.find((e) => e.id === elementChoisi)?.point_id ?? null
+  // Le symbole de chaque point typé à la place de sa pastille
+  const symboles = useMemo(() => {
+    const parId = new Map(pieces.map((pc) => [pc.id, pc]))
+    return new Map(points.map((p) => [p.id, dessinPointRelecture(p, { elements: analyse.elements, piece: parId.get(p.piece_id) ?? null })]))
+  }, [points, pieces, analyse.elements])
+  const pointPanneau = pointChoisi ? points.find((p) => p.id === pointChoisi) ?? null : null
+  const peutRelier = (p) => !!p && analyse.tracesDisponibles && !lectureSeule && !!debutRelier(p, analyse.elements)
+
+  // Toucher pendant « Relier » : le point compatible crée la liaison (même
+  // écriture que « Ajouter une liaison ») ; ailleurs, rien, et le motif
+  const relierA = (cible) => {
+    if (!relier) return
+    const r = toucherRelier(relier, cible, { points, traces: tracesNiveau, elements: analyse.elements })
+    if (r.action === 'refus') { setRelier(r.mode); return }
+    setRelier(null)
+    setPointChoisi(cible.id)
+    ecrire(() => ajouterLiaison({
+      affaireId, niveauId: piece.niveau_id ?? niveau.id, pieceId: piece.id, interrupteurId: r.interrupteur.id, luminaireId: r.luminaire.id,
+    }))
+  }
+  const choisirPoint = (id) => {
+    if (relier) { relierA(points.find((p) => p.id === id) ?? null); return }
+    setElementChoisi(null)
+    setTraceChoisie(null)
+    setPointChoisi(id)
+  }
   // Écarter le dernier élément d'un point emporte le point (photos et
   // liaisons comprises) ; les points déjà sans élément se suppriment à la main
   const photos = donnees?.photos
@@ -314,11 +345,42 @@ function VuePiece({ affaireId, niveau, pieces, piece, etats, visitees, visite, a
           <PlanVisite
             key={niveau.id}
             niveau={niveau} pieces={pieces} points={points} nbPhotos={nbPhotos} visitees={visitees} etats={etats}
-            piece={piece} pointId={pointEnEvidence} obtenirLiens={obtenirLiens} consultation
-            traces={tracesNiveau} traceId={traceChoisie}
-            onChoisirPoint={(id) => { setElementChoisi(null); setTraceChoisie(null); setPointChoisi((c) => (c === id ? null : id)) }}
+            piece={piece} pointId={pointEnEvidence} obtenirLiens={obtenirLiens} consultation symboles={symboles}
+            traces={tracesNiveau} traceId={traceChoisie} mode={relier}
+            onChoisirPoint={choisirPoint}
+            onToucher={relier ? () => relierA(null) : undefined}
             onChoisirTrace={(id) => { setElementChoisi(null); setPointChoisi(null); setTraceChoisie((c) => (c === id ? null : id)) }}
           />
+          {(relier || pointPanneau) && (
+            <div style={{
+              position: 'absolute', top: 8, left: 8, right: 8, display: 'flex', alignItems: 'center', gap: 8, padding: '0 0 0 12px',
+              background: 'white', border: `0.5px solid ${relier ? COULEUR_COMMANDE : 'rgba(0,0,0,0.15)'}`, borderRadius: 3, boxShadow: '0 4px 14px -6px rgba(31,27,23,0.35)',
+            }}>
+              {relier ? (
+                <>
+                  <span role="status" style={{ flex: 1, minWidth: 0, fontSize: 13, color: relier.raison ? ROUGE : COULEUR_COMMANDE, fontWeight: 600 }}>{consigneMode(relier)}</span>
+                  <button type="button" onClick={() => setRelier(null)} style={{ ...bouton, border: 'none' }}>Annuler</button>
+                </>
+              ) : (
+                <>
+                  <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 600, color: '#1F1B17', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {libellePointRelecture(pointPanneau, analyse.elements)}
+                  </span>
+                  {peutRelier(pointPanneau) && (
+                    <button type="button" onClick={() => setRelier(debutRelier(pointPanneau, analyse.elements))}
+                      title="Relier cet interrupteur au luminaire qu’il commande (ou l’inverse)"
+                      style={{ ...bouton, color: COULEUR_COMMANDE }}>
+                      <Spline size={15} /> Relier
+                    </button>
+                  )}
+                  <button type="button" aria-label="Fermer" onClick={() => setPointChoisi(null)}
+                    style={{ ...bouton, border: 'none', width: 44, padding: 0, justifyContent: 'center' }}>
+                    <X size={16} />
+                  </button>
+                </>
+              )}
+            </div>
+          )}
         </div>
         <div style={{ minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 16, paddingRight: 2 }}>
           {!visitee && !piece.analyse_le && (

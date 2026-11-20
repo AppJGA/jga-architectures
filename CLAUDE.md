@@ -1050,6 +1050,18 @@ lot 1 : `docs/superpowers/plans/2026-11-17-etat-des-lieux-lot1-preparer.md`.
   pièce avec « Supprimer le point ». La copie de la visite est relue
   (instantané remplacé) ; un geste en attente sur un point disparu
   (modification, photo, liaison 23503 — `pointDisparu`) est tenu pour fait.
+  **Symboles sur le plan de la relecture** (demande de l'agence,
+  `symbolesRelectureLogique.js`, prop `symboles` de `PlanVisite` — la
+  visite garde ses pastilles) : un point typé montre le symbole des
+  planches de son type effectif (un seul par point), même angle
+  (`orientationElement`) et couleur de famille, 28 px à l'écran, sur un
+  disque de sa famille (40 px, la cible), anneau pointillé bleu s'il n'a
+  que des propositions, numéro en petit ; sans type, la pastille. Toucher
+  un point ouvre un panneau en haut du plan (« P3 · … », fermé par ✕) ;
+  « Relier » (interrupteur / luminaire, 084) puis toucher un point
+  compatible **de la pièce** : mêmes règles que la visite
+  (`debutRelier` / `toucherRelier`), même écriture qu'« Ajouter une
+  liaison ».
   **Exports** : `tracesAExporter`, seule
   lecture (liaison proposée écartée sauf « Inclure les propositions »,
   liaison dont un point manque ou change d'étage omise, cote dont seule la

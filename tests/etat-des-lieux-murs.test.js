@@ -191,12 +191,12 @@ describe('finitions de murs : couleurs et géométrie', () => {
     assert.deepEqual(decalageFinition([4, 3], [0, 3], { sens: s2, ecart: 0.1 }).a, [4, 2.9])
     assert.equal(decalageFinition([1, 1], [1, 1]), null)
   })
-  test('une finition ne se touche pas comme une liaison ou une cote, et ne part pas encore dans les exports', () => {
+  test('une finition se touche le long de son mur (onglet « Plans ») ; la relecture « liaisons et cotes » ne la montre pas', () => {
     const f = { id: 'f1', sorte: 'finition', affaire_id: 'a', niveau_id: 'n1', piece_id: 'p1', xa: 0, ya: 0, xb: 4, yb: 0, valeur: 'Faïence', a_valider: false }
     assert.deepEqual(extremitesFinition(f), [[0, 0], [4, 0]])
     assert.equal(extremitesFinition({ ...f, sorte: 'cote' }), null)
-    assert.equal(traceProche([f], [], [2, 0], 1), null)
-    assert.deepEqual(tracesAExporter({ traces: [f], inclurePropositions: true }), [])
+    assert.equal(traceProche([f], [], [2, 0.1], 0.2)?.id, 'f1')
+    assert.equal(traceProche([f], [], [2, 1], 0.2), null)
     assert.deepEqual(SORTES_TRACE, ['commande', 'cote'])
     assert.deepEqual(SORTES_TRACE_FINITIONS, ['commande', 'cote', 'finition'])
     // La relecture « liaisons et cotes » ne les montre pas

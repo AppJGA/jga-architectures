@@ -103,6 +103,42 @@ function contenuReleves({ elements = [], sansElement = [], photos = [], remarque
   return { equipements, particuliers }
 }
 
+// ─── Finitions de murs (085) ─────────────────────────────────────────────────
+
+const enleverPrefixe = (texte, prefixe) => {
+  const t = rempli(texte)
+  if (!prefixe) return t
+  const n = prefixe.length
+  return cle(t.slice(0, n)) === cle(prefixe) && (t.length === n || /[\s,;:-]/.test(t[n])) ? t.slice(n).replace(/^[\s,;:-]+/, '') : t
+}
+
+/**
+ * Les finitions de murs d'une pièce (`tracesAExporter`, sorte 'finition')
+ * en lignes de la colonne « Mur », sous la finition générale :
+ * « Faïence : 2 murs (toute hauteur) » — même finition et même statut
+ * regroupés (propositions à part), le reste de la finition dite entre
+ * parenthèses. Une finition sans nom connu (« autre ») garde son texte.
+ * @returns [{ texte, statut, rubrique: 'finition-mur', aValider }]
+ */
+export function lignesFinitionsMur(finitions = []) {
+  const paquets = new Map()
+  for (const f of finitions) {
+    if (f?.sorte !== 'finition') continue
+    const nom = texteLatin(f.finition?.nom ?? '') || null
+    const detail = nom ? enleverPrefixe(f.valeur, nom) : ''
+    const titre = nom ?? rempli(f.valeur)
+    if (!titre) continue
+    const statut = f.statut ?? STATUT_A_PRECISER
+    const k = [f.aValider ? 'v' : 'r', cle(titre), cle(detail), statut].join('|')
+    if (!paquets.has(k)) paquets.set(k, { titre, detail, statut, aValider: !!f.aValider, n: 0 })
+    paquets.get(k).n++
+  }
+  return [...paquets.values()].map((p) => ({
+    texte: `${p.titre} : ${p.n} mur${p.n > 1 ? 's' : ''}${p.detail ? ` (${p.detail})` : ''}`,
+    statut: p.statut, rubrique: 'finition-mur', aValider: p.aValider,
+  }))
+}
+
 // ─── Lignes du tableau d'un niveau ───────────────────────────────────────────
 
 const parNumero = (a, b) => (a.numero ?? 0) - (b.numero ?? 0)
@@ -122,13 +158,15 @@ function itemRubrique(piece, fiche, rubrique, options, prefixe = '') {
  * @param points lignes `edl_points` : relient une photo à sa pièce
  * @param sansElement points sans élément (`pointsSansElement`) ; calculés
  *   ici sans les lignes `edl_elements` s'ils manquent
+ * @param traces sortie de `tracesAExporter` : ses finitions de murs (085)
+ *   s'ajoutent à la colonne « Mur » (`lignesFinitionsMur`)
  * @returns [{ piece: { id, designation, numero, libelle, surface, hsp },
- *   ficheAValider, sol: [{ texte, statut, rubrique }], mur: […], plafond: […],
+ *   ficheAValider, sol: [{ texte, statut, rubrique }], mur: […, finitions de murs { …, aValider }], plafond: […],
  *   porte: { huisserie, vantail, quincaillerie, texte, statut } | null,
  *   equipements: [{ texte, aValider, sorte }], particuliers: [{ texte, aValider, sorte }] }]
  *   — une rubrique vide vaut [] (« Non décrit »)
  */
-export function lignesTableau({ pieces = [], elementsExport = [], photos = [], points = [], sansElement = null, inclurePropositions = false }) {
+export function lignesTableau({ pieces = [], elementsExport = [], photos = [], points = [], sansElement = null, traces = [], inclurePropositions = false }) {
   const options = { inclurePropositions }
   const seuls = sansElement ?? pointsSansElement({ points, elementsExport })
   const pointsParId = new Map(points.map((p) => [p.id, p]))
@@ -154,7 +192,10 @@ export function lignesTableau({ pieces = [], elementsExport = [], photos = [], p
       },
       ficheAValider,
       sol: [itemRubrique(piece, fiche, 'sol', options), itemRubrique(piece, fiche, 'plinthes', options, 'Plinthes')].filter(Boolean),
-      mur: [itemRubrique(piece, fiche, 'murs', options)].filter(Boolean),
+      mur: [
+        itemRubrique(piece, fiche, 'murs', options),
+        ...lignesFinitionsMur((traces ?? []).filter((t) => t.sorte === 'finition' && t.pieceId === piece.id && (inclurePropositions || !t.aValider))),
+      ].filter(Boolean),
       plafond: [itemRubrique(piece, fiche, 'plafond', options)].filter(Boolean),
       porte: porte ? {
         huisserie: rempli(porte.huisserie), vantail: rempli(porte.vantail), quincaillerie: rempli(porte.quincaillerie),
@@ -192,7 +233,7 @@ export function ligneHorsPieces(hors) {
  */
 export function tableauxDuRapport({
   niveaux = [], pieces = [], elementsExport = [], photos = [], points = [], elements = null,
-  visitees = null, inclurePropositions = false,
+  visitees = null, inclurePropositions = false, traces = [],
 }) {
   const etages = etagesDuRapport({ niveaux, pieces, elementsExport, points, visitees, inclurePropositions })
   const sansElement = pointsSansElement({ points, elements, elementsExport })
@@ -200,7 +241,7 @@ export function tableauxDuRapport({
   return {
     photos: numerotees,
     etages: etages.map((etage) => {
-      const lignes = lignesTableau({ pieces: etage.visitees, elementsExport, photos: numerotees, points, sansElement, inclurePropositions })
+      const lignes = lignesTableau({ pieces: etage.visitees, elementsExport, photos: numerotees, points, sansElement, traces, inclurePropositions })
       const hors = ligneHorsPieces(relevesHorsPieces({ niveauId: etage.niveau.id, pieces, elementsExport, points, photos: numerotees, sansElement }))
       return { ...etage, nom: rempli(etage.niveau.nom) || 'Étage', lignes: hors ? [...lignes, hors] : lignes }
     }),

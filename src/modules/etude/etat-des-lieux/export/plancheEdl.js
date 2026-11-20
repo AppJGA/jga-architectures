@@ -14,7 +14,8 @@ import { boite } from '../geometrieEdl.js'
 import { MARGE_PLAN_M } from './planRapportEdl.js'
 import { COULEUR_PROPOSITION, couleurCalque, dateIso, elementsDeLEtage, texteLatin } from './rapportEdlLogique.js'
 import { RAYON_SANS_SYMBOLE, SYMBOLES, boitePrimitives, boiteSymbole, emplacementsDuPoint, largeurTexte, primitivesPlacees, quantiteElement, tailleSymboleMm as tailleDuTableau } from './symbolesEdl.js'
-import { COULEUR_TRAIT_COTE, courbeCommande, placerValeurCote, sensInterieurCote, traitsCote } from '../visite/tracesVisiteLogique.js'
+import { COULEUR_TRAIT_COTE, courbeCommande, decalageFinition, placerValeurCote, sensInterieurCote, traitsCote } from '../visite/tracesVisiteLogique.js'
+import { FINITIONS_MUR } from '../tracesEdl.js'
 
 export const FORMAT_A3 = { nom: 'A3', largeur: 420, hauteur: 297 }
 export const MARGE_PLANCHE = 8
@@ -39,6 +40,8 @@ export const LEGENDE = {
 // valeur de 2,2 mm posée 0,8 mm au-dessus de la ligne, glissée par pas de
 // 5 mm le long de la ligne si elle couvre un symbole
 export const COTE_PLANCHE = { tic: 2, decalage: 0.8, police: 2.2, ecart: 6, jeu: 1, pas: 5 }
+// Finition de mur (085) : trait de 1,2 mm, son axe à 1 mm du mur dans la pièce
+export const FINITION_PLANCHE = { epaisseur: 1.2, ecart: 1 }
 // Hauteur des capitales de la valeur, à peu près
 const CAPITALES = 0.75
 
@@ -186,6 +189,17 @@ function tracesPlanche(traces, transform, pieces = [], obstacles = []) {
   const gene = [...obstacles]
   const sortie = []
   for (const t of traces) {
+    if (t.sorte === 'finition') {
+      // Côté intérieur décidé en mètres, trait posé sur le papier (y vers le bas)
+      const sens = sensInterieurCote(t.a, t.b, contours.get(t.pieceId))
+      const f = decalageFinition(mm(t.a), mm(t.b), { sens, ecart: FINITION_PLANCHE.ecart, yVersLeBas: true })
+      if (!f) continue
+      sortie.push({
+        id: t.id, sorte: 'finition', aValider: !!t.aValider, couleur: t.aValider ? COULEUR_PROPOSITION : t.finition?.couleur ?? COULEUR_TRAIT_COTE,
+        code: t.finition?.code ?? 'autre', a: f.a.map(arrondiMm), b: f.b.map(arrondiMm), epaisseur: FINITION_PLANCHE.epaisseur,
+      })
+      continue
+    }
     if (t.sorte === 'commande') {
       const c = courbeCommande(t.a, t.b)
       if (!c) continue
@@ -222,7 +236,7 @@ const boiteDePoints = (pts) => ({
 
 // Boîte papier d'une trace : obstacle pour la légende
 function boiteTrace(t) {
-  const pts = t.sorte === 'commande' ? [t.a, t.b, t.sommet] : [...t.coins, t.a, t.b, ...t.texte.coins]
+  const pts = t.sorte === 'commande' ? [t.a, t.b, t.sommet] : t.sorte === 'finition' ? [t.a, t.b] : [...t.coins, t.a, t.b, ...t.texte.coins]
   const [x0, y0, x1, y1] = boite(pts)
   return { x: x0, y: y0, largeur: x1 - x0, hauteur: y1 - y0 }
 }
@@ -245,7 +259,7 @@ function groupesLegende(symboles, traces = []) {
     const siens = symboles.filter((s) => s.calque === c.code)
     const parTrace = ENTREES_TRACES[c.code]
     const avecTrace = !!parTrace && traces.some((t) => t.sorte === parTrace.sorte && !t.aValider)
-    if (!siens.length && !avecTrace) continue
+    if (!siens.length && !avecTrace && c.code !== 'finitions') continue
     const entrees = c.types
       .filter((t) => siens.some((s) => s.code === t.code))
       .map((t) => {
@@ -255,20 +269,32 @@ function groupesLegende(symboles, traces = []) {
     // Un relevé sans type a son losange : il s'explique aussi
     if (siens.some((s) => !s.code)) entrees.push({ code: null, libelle: 'Autre relevé', sansType: true })
     if (avecTrace) entrees.push({ ...parTrace.entree })
+    if (c.code === 'finitions') entrees.push(...entreesFinitions(traces))
+    if (!entrees.length) continue
     groupes.push({ calque: c.code, libelle: texteLatin(c.libelle), couleur: COULEURS_GROUPE[c.code] ?? couleurCalque(c.code), entrees })
   }
   const symbolesProposes = symboles.some((s) => s.aValider)
-  const tracesProposees = traces.some((t) => t.aValider)
-  if (symbolesProposes || tracesProposees) {
+  const tracesProposees = traces.some((t) => t.aValider && t.sorte !== 'finition')
+  const finitionsProposees = traces.some((t) => t.aValider && t.sorte === 'finition')
+  if (symbolesProposes || tracesProposees || finitionsProposees) {
     groupes.push({
       calque: 'a-valider', libelle: 'À valider', couleur: COULEUR_PROPOSITION,
       entrees: [
         ...(symbolesProposes ? [{ code: null, libelle: 'Proposition de l’analyse, à valider', proposition: true }] : []),
         ...(tracesProposees ? [{ code: null, libelle: 'Liaison ou cote proposée, à valider', trace: 'proposition' }] : []),
+        ...(finitionsProposees ? [{ code: null, libelle: 'Finition de mur proposée, à valider', trace: 'finition-proposee' }] : []),
       ],
     })
   }
   return groupes
+}
+
+// Une entrée par finition de mur présente (validée), dans l'ordre de
+// `FINITIONS_MUR`, tracée de sa couleur : « Faïence murale »
+function entreesFinitions(traces) {
+  const presentes = new Set(traces.filter((t) => t.sorte === 'finition' && !t.aValider).map((t) => t.code))
+  return FINITIONS_MUR.filter((f) => presentes.has(f.code))
+    .map((f) => ({ code: null, libelle: texteLatin(f.libelle), trace: 'finition', couleur: f.couleur }))
 }
 
 // Groupes répartis en deux colonnes dans l'ordre des calques, sans être
@@ -381,8 +407,8 @@ function casesCartouche(c, cadre) {
  * @param boiteVecteurs emprise du plan vectoriel, en repli sans pièce
  * @param reperes [[x, y]] (mètres) d'autres relevés à garder sur la feuille :
  *   points sans élément, points des photos hors des pièces
- * @param traces sortie de `tracesAExporter` (filtrée ici à l'étage) : liaisons
- *   et cotes, dans l'emprise, dessinées sous les symboles
+ * @param traces sortie de `tracesAExporter` (filtrée ici à l'étage) : liaisons,
+ *   cotes et finitions de murs, dans l'emprise, dessinées sous les symboles
  * @returns {{ format, zone, echelle, transform, symboles, traces, legende, cartouche, etage, niveauId }}
  */
 export function misePlanche({

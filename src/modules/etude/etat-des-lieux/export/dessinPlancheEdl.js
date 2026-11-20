@@ -35,6 +35,8 @@ export const TRAIT = {
   commande: 0.25,
   cote: 0.18,
   attache: 0.13,
+  // Finition de mur (085) : trait épais de sa couleur, le long du mur
+  finition: 1.2,
 }
 // Tirets d'une liaison ou d'une cote proposée par l'analyse
 const TIRETS_TRACE_MM = [1.2, 0.8]
@@ -253,6 +255,20 @@ export function tailleImageSymbole(symbole, pxParMm = PX_PAR_MM) {
 
 // ─── Liaisons et cotes ──────────────────────────────────────────────────────
 
+/** Une finition de mur de la mise : trait épais de sa couleur, bouts nets (tirets bleus si proposée). */
+function dessinerFinition(ctx, t, p) {
+  ctx.save()
+  ctx.strokeStyle = t.couleur
+  ctx.lineWidth = (t.epaisseur ?? TRAIT.finition) * p
+  ctx.lineCap = 'butt'
+  ctx.setLineDash?.(t.aValider ? TIRETS_TRACE_MM.map((v) => v * 2 * p) : [])
+  ctx.beginPath()
+  ctx.moveTo(t.a[0] * p, t.a[1] * p)
+  ctx.lineTo(t.b[0] * p, t.b[1] * p)
+  ctx.stroke()
+  ctx.restore()
+}
+
 /** Une liaison de la mise : courbe fine de la couleur électricité (tirets si proposée). */
 function dessinerCommande(ctx, t, p) {
   ctx.strokeStyle = t.couleur
@@ -308,13 +324,15 @@ function dessinerCote(ctx, t, p) {
 }
 
 /**
- * Les liaisons et cotes de la mise (`mise.traces`), sous les symboles. Toujours
- * dessinées, symboles ou non : le fond verrouillé du Word les porte (elles n'y
- * sont pas déplaçables, seuls les symboles le sont).
+ * Les liaisons, cotes et finitions de murs de la mise (`mise.traces`), sous
+ * les symboles — les finitions d'abord, sous le reste. Toujours dessinées,
+ * symboles ou non : le fond verrouillé du Word les porte (elles n'y sont pas
+ * déplaçables, seuls les symboles le sont).
  */
 export function dessinerTraces(ctx, traces, { pxParMm = PX_PAR_MM } = {}) {
   if (!traces?.length) return
   ctx.save()
+  for (const t of traces) if (t.sorte === 'finition') dessinerFinition(ctx, t, pxParMm)
   ctx.lineCap = 'round'
   for (const t of traces) {
     if (t.sorte === 'commande') dessinerCommande(ctx, t, pxParMm)
@@ -350,7 +368,9 @@ function traceLegende(ctx, sorte, couleur, [sx, sy], pxParMm) {
   const b = [sx + cl / 2, sy + ch / 4]
   ctx.save()
   ctx.lineCap = 'round'
-  if (sorte === 'cote') {
+  if (sorte === 'finition' || sorte === 'finition-proposee') {
+    dessinerFinition(ctx, { couleur, aValider: sorte === 'finition-proposee', a: [a[0], sy], b: [b[0], sy], epaisseur: TRAIT.finition }, pxParMm)
+  } else if (sorte === 'cote') {
     const tic = COTE_PLANCHE.tic * 0.6
     dessinerCote(ctx, {
       couleur, aValider: false, a: [a[0], sy], b: [b[0], sy],
@@ -367,7 +387,8 @@ function traceLegende(ctx, sorte, couleur, [sx, sy], pxParMm) {
 function entreeLegende(ctx, entree, couleur, [sx, sy], pxParMm) {
   const p = pxParMm
   if (entree.trace) {
-    traceLegende(ctx, entree.trace, couleur, [sx, sy], p)
+    // Une finition a sa propre couleur, pas celle de son groupe
+    traceLegende(ctx, entree.trace, entree.couleur ?? couleur, [sx, sy], p)
     return
   }
   if (entree.proposition) {

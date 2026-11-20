@@ -307,7 +307,7 @@ function celluleMateriaux(items, aValider) {
   if (!items.length) return nonDecrit()
   return {
     stack: items.map((it, i) => ({
-      ...avecEtiquette(it.statut, { text: [it.texte, ...(aValider ? [marqueAValider] : [])], fontSize: 8, color: CHARTE.encre }),
+      ...avecEtiquette(it.statut, { text: [it.texte, ...(aValider || it.aValider ? [marqueAValider] : [])], fontSize: 8, color: CHARTE.encre }),
       margin: [0, i ? 3 : 0, 0, 0],
     })),
   }
@@ -833,9 +833,9 @@ export const titreRapportEdl = (affaire) => texteLatin(`État des lieux${affaire
  */
 export function definitionGardeEdl({
   affaire = null, etat = null, niveaux = [], pieces = [], elementsExport = [], photos = [], points = [], elements = null,
-  visitees = null, images = {}, redacteur = '', date = null, inclurePropositions = false,
+  visitees = null, images = {}, redacteur = '', date = null, inclurePropositions = false, traces = [],
 }) {
-  const { etages } = tableauxDuRapport({ niveaux, pieces, elementsExport, photos, points, elements, visitees, inclurePropositions })
+  const { etages } = tableauxDuRapport({ niveaux, pieces, elementsExport, photos, points, elements, visitees, inclurePropositions, traces })
   const synthese = syntheseRapport({ etages })
   return documentPdf(affaire, [pageDeGarde({ affaire, etages, redacteur, date: date ?? etat?.created_at ?? null, elementsExport, pieces, images, synthese })])
 }
@@ -850,9 +850,9 @@ export function definitionGardeEdl({
  */
 export function definitionTableauxEdl({
   affaire = null, etat = null, niveaux = [], pieces = [], elementsExport = [], photos = [], points = [], elements = null,
-  visitees = null, redacteur = '', date = null, inclurePropositions = false,
+  visitees = null, redacteur = '', date = null, inclurePropositions = false, traces = [],
 }) {
-  const { etages } = tableauxDuRapport({ niveaux, pieces, elementsExport, photos, points, elements, visitees, inclurePropositions })
+  const { etages } = tableauxDuRapport({ niveaux, pieces, elementsExport, photos, points, elements, visitees, inclurePropositions, traces })
   if (!etages.length) return null
   const propositions = propositionsTableaux(etages, elementsExport)
   return documentPdf(affaire, [

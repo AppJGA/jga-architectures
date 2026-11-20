@@ -232,7 +232,8 @@ export async function genererRapportEdl({
   }
 
   surEtape('Rapport : mise en page…')
-  const parametres = { affaire, etat, niveaux, pieces, elementsExport, photos, points, elements, visitees, redacteur, date, inclurePropositions }
+  // `traces` : les finitions de murs (085) entrent aussi dans les tableaux
+  const parametres = { affaire, etat, niveaux, pieces, elementsExport, photos, points, elements, visitees, redacteur, date, inclurePropositions, traces }
   const pdf = async (definition) => (definition ? octetsDe(await pdfMake.createPdf(definition).getBlob()) : null)
   const garde = await pdf(definitionGardeEdl({ ...parametres, images }))
   const tableaux = await pdf(definitionTableauxEdl(parametres))

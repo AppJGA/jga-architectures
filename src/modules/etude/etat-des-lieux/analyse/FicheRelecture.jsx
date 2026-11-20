@@ -29,7 +29,7 @@ const bouton = { display: 'inline-flex', alignItems: 'center', gap: 6, minHeight
 // « À préciser » = pas de statut : valeur vide du menu, null en base
 const OPTIONS_STATUT = STATUTS.map((s) => ({ valeur: s.code === STATUT_A_PRECISER ? '' : s.code, libelle: s.libelle }))
 
-function MenuStatut({ id, rubrique, valeur, lectureSeule, onChange }) {
+export function MenuStatut({ id, rubrique, valeur, lectureSeule, onChange }) {
   const infos = infosStatut(valeur || STATUT_A_PRECISER)
   return (
     <select id={id} aria-label={`Statut — ${rubrique}`} value={valeur} disabled={lectureSeule}

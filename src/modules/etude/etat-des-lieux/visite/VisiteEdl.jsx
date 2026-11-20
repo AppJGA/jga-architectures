@@ -853,13 +853,17 @@ export function VisiteEdl({ affaireId, visite, analyse = null, obtenirLiens, onF
               {erreurLecture}
             </div>
           )}
-          {/* Bandeau d'aide : sous les alertes, jamais sur le voile ; ne capte pas le doigt */}
+          {/* Bandeau d'aide : posé par-dessus le plan juste sous les alertes
+              (ancre de hauteur nulle : les panneaux dessous ne bougent pas),
+              jamais sur le voile ; ne capte pas le doigt */}
           {actif && aide && (
-            <p role="status" style={{
-              position: 'relative', zIndex: 7, alignSelf: 'flex-start', flexShrink: 0, margin: '8px 8px 0', maxWidth: 'calc(100% - 16px)', boxSizing: 'border-box',
-              pointerEvents: 'none', padding: '8px 12px', fontSize: 13, fontWeight: 600, color: '#1F1B17',
-              background: 'rgba(255,255,255,0.94)', borderLeft: `3px solid ${ACCENT}`, borderRadius: 2, boxShadow: '0 4px 14px -6px rgba(31,27,23,0.35)',
-            }}>{aide.texte}</p>
+            <div style={{ position: 'relative', height: 0, flexShrink: 0, zIndex: 7, pointerEvents: 'none' }}>
+              <p role="status" style={{
+                position: 'absolute', top: 8, left: 8, margin: 0, maxWidth: 'min(560px, calc(100vw - 32px))', width: 'max-content', boxSizing: 'border-box',
+                pointerEvents: 'none', padding: '8px 12px', fontSize: 13, fontWeight: 600, color: '#1F1B17',
+                background: 'rgba(255,255,255,0.94)', borderLeft: `3px solid ${ACCENT}`, borderRadius: 2, boxShadow: '0 4px 14px -6px rgba(31,27,23,0.35)',
+              }}>{aide.texte}</p>
+            </div>
           )}
           {actif && traceSaisie && (
             <SaisieCote

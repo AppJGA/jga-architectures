@@ -223,6 +223,23 @@ export function tracesRelecture(traces = [], pieceId, points = []) {
 }
 
 /**
+ * Finitions de murs de la pièce (085), à la relecture : propositions
+ * d'abord, puis dans l'ordre de création.
+ */
+export function finitionsRelecture(traces = [], pieceId) {
+  if (!pieceId) return []
+  const ordre = (a, b) => (Number(b.a_valider) - Number(a.a_valider)) || String(a.created_at ?? '').localeCompare(String(b.created_at ?? ''))
+  return (traces ?? []).filter((t) => t?.sorte === 'finition' && t.piece_id === pieceId).sort(ordre)
+}
+
+/** Finition et statut saisis à la relecture : { valeur, statut } ou le motif du refus. */
+export function lireSaisieFinition({ valeur, statut } = {}) {
+  const v = String(valeur ?? '').replace(/\s+/g, ' ').trim()
+  if (!v) return { erreur: 'Dites la finition du mur, par exemple « Faïence toute hauteur ».' }
+  return { valeur: v.charAt(0).toUpperCase() + v.slice(1), statut: codeStatut(statut) }
+}
+
+/**
  * Ce que propose « Ajouter une liaison » d'une pièce : les interrupteurs de
  * l'étage (ceux de la pièce d'abord, un interrupteur du couloir peut
  * commander la pièce) et les luminaires de la pièce, d'après leur type

@@ -374,7 +374,7 @@ const ecartItem = (i, pt = 3) => ({ spacing: { before: i ? twips(pt) : 0 } })
 function celluleMateriaux(items, aValider) {
   if (!items.length) return [nonDecrit()]
   return items.map((it, i) => paragraphe([
-    ...etiquette(it.statut), t(it.texte, { taille: 8, color: CHARTE.encre }), ...(aValider ? [marqueAValider()] : []),
+    ...etiquette(it.statut), t(it.texte, { taille: 8, color: CHARTE.encre }), ...(aValider || it.aValider ? [marqueAValider()] : []),
   ], ecartItem(i)))
 }
 
@@ -606,9 +606,9 @@ const POLICE = 'Arial'
  */
 export function documentWordEdl({
   affaire = null, etat = null, niveaux = [], pieces = [], elementsExport = [], photos = [], points = [], elements = null,
-  visitees = null, images = {}, planches = [], redacteur = '', date = null, inclurePropositions = false,
+  visitees = null, images = {}, planches = [], redacteur = '', date = null, inclurePropositions = false, traces = [],
 }) {
-  const parametres = { niveaux, pieces, elementsExport, photos, points, elements, visitees, inclurePropositions }
+  const parametres = { niveaux, pieces, elementsExport, photos, points, elements, visitees, inclurePropositions, traces }
   const { etages } = tableauxDuRapport(parametres)
   const dateRapport = date ?? etat?.created_at ?? null
   const garde = resumeGarde({ affaire, etages, redacteur, date: dateRapport, elementsExport, pieces })

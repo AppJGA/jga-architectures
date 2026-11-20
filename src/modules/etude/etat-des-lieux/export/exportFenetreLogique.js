@@ -384,6 +384,8 @@ export function avertissementsExport({ donnees, reglages, enLigne = true }) {
     if (liaisons > 0) sortie.push(`${liaisons} ${pluriel(liaisons, 'liaison')} à valider ne ${liaisons > 1 ? 'seront' : 'sera'} pas ${pluriel(liaisons, 'exportée')}.`)
     const cotes = aValider.filter((t) => t.sorte === 'cote').length
     if (cotes > 0) sortie.push(`${cotes} ${pluriel(cotes, 'valeur')} de cote à valider : ${cotes > 1 ? 'ces cotes partent' : 'cette cote part'} avec « ? ».`)
+    const finitions = aValider.filter((t) => t.sorte === 'finition').length
+    if (finitions > 0) sortie.push(`${finitions} ${pluriel(finitions, 'finition')} de mur à valider ne ${finitions > 1 ? 'seront' : 'sera'} pas ${pluriel(finitions, 'exportée')}.`)
   }
   for (const n of niveaux) {
     // Sans unité connue, `uniteDxf` prend le mètre : le dire, un plan en cm

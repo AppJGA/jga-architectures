@@ -17,7 +17,7 @@ import { EVENEMENT_ANALYSE_EDL, transcrireEtAnalyser, analyserPiece } from './an
 
 const enLigne = () => typeof navigator === 'undefined' || navigator.onLine !== false
 const DELAI_RELECTURE_MS = 400
-const VIDE = { affaireId: null, charge: false, indisponible: false, pieces: new Map(), elements: [], traces: [], tracesDisponibles: false }
+const VIDE = { affaireId: null, charge: false, indisponible: false, pieces: new Map(), elements: [], traces: [], tracesDisponibles: false, finitionsDisponibles: false }
 
 // Ce que l'analyse change sur une pièce : posé par-dessus la pièce de l'écran
 const champsAnalyse = (p) => ({
@@ -48,6 +48,7 @@ export function useAnalyseEdl(affaireId, { lectureSeule = false } = {}) {
           pieces: new Map(r.pieces.map((p) => [p.id, champsAnalyse(p)])), elements: r.elements,
           traces: t ? t.traces : (garder ? avant.traces : []),
           tracesDisponibles: t ? t.tracesDisponibles : (garder ? avant.tracesDisponibles : false),
+          finitionsDisponibles: t ? t.finitionsDisponibles === true : (garder ? avant.finitionsDisponibles === true : false),
         }
       })
     } catch {
@@ -103,7 +104,7 @@ export function useAnalyseEdl(affaireId, { lectureSeule = false } = {}) {
   const pieceEnCours = enCours.affaireId === affaireId ? enCours.pieceId : null
   return useMemo(() => ({
     charge: actuel.charge, indisponible: actuel.indisponible, pieces: actuel.pieces, elements: actuel.elements,
-    traces: actuel.traces, tracesDisponibles: actuel.tracesDisponibles,
+    traces: actuel.traces, tracesDisponibles: actuel.tracesDisponibles, finitionsDisponibles: actuel.finitionsDisponibles === true,
     enCours: pieceEnCours, relire, lancer, reessayer, relancer,
   }), [actuel, pieceEnCours, relire, lancer, reessayer, relancer])
 }

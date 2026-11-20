@@ -176,14 +176,19 @@ export function memeMur(m1, m2) {
  * l'exemple « Faïence murale » de l'agence, les autres d'une petite palette
  * fixe. Reconnues d'après les mots de la finition dite (`mots`, sans
  * accents ni majuscules), dans l'ordre de la liste ; « autre » sinon.
+ * Teintes loin de celles des familles de symboles (`COULEURS_CALQUES` :
+ * chauffage orange, menuiseries brun, ventilation vert…) et du bleu des
+ * propositions. `libelle` : celui de la légende des planches ; `nom` : celui
+ * des tableaux (« Faïence : 2 murs (toute hauteur) »), null pour « autre »
+ * (la finition dite fait alors le nom).
  */
 export const FINITIONS_MUR = [
-  { code: 'faience', libelle: 'Faïence murale', couleur: '#C62828', mots: ['faience'] },
-  { code: 'credence', libelle: 'Crédence', couleur: '#E65100', mots: ['credence'] },
-  { code: 'lambris', libelle: 'Lambris', couleur: '#8D5A2B', mots: ['lambris'] },
-  { code: 'carrelage-mural', libelle: 'Carrelage mural', couleur: '#AD1457', mots: ['carrelage', 'carreau', 'mosaique'] },
-  { code: 'peinture', libelle: 'Peinture spécifique', couleur: '#2E7D32', mots: ['peinture', 'laque', 'enduit', 'papier peint', 'toile de verre'] },
-  { code: 'autre', libelle: 'Autre finition de mur', couleur: '#5D6B78', mots: [] },
+  { code: 'faience', libelle: 'Faïence murale', nom: 'Faïence', couleur: '#C62828', mots: ['faience'] },
+  { code: 'credence', libelle: 'Crédence', nom: 'Crédence', couleur: '#E0A800', mots: ['credence'] },
+  { code: 'lambris', libelle: 'Lambris', nom: 'Lambris', couleur: '#AD1457', mots: ['lambris'] },
+  { code: 'carrelage-mural', libelle: 'Carrelage mural', nom: 'Carrelage mural', couleur: '#FF8A65', mots: ['carrelage', 'carreau', 'mosaique'] },
+  { code: 'peinture', libelle: 'Peinture spécifique', nom: 'Peinture', couleur: '#9E9D24', mots: ['peinture', 'laque', 'enduit', 'papier peint', 'toile de verre'] },
+  { code: 'autre', libelle: 'Autre finition de mur', nom: null, couleur: '#5D6B78', mots: [] },
 ]
 
 const sansAccents = (v) => String(v ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
@@ -371,9 +376,9 @@ const coordonnees = (x, y) => {
 }
 
 /**
- * Les traces qui partent dans les exports (DXF, planches PDF et Word), en
- * mètres du plan, avec la règle des éléments : par défaut, rien de ce qui
- * attend une relecture.
+ * Les traces qui partent dans les exports (DXF, planches PDF et Word,
+ * tableaux), en mètres du plan, avec la règle des éléments : par défaut,
+ * rien de ce qui attend une relecture.
  *   · une liaison proposée (`a_valider`) n'existe que si les propositions
  *     sont demandées ; une liaison dont un point manque, ou n'est plus sur
  *     l'étage de la liaison, est omise ;
@@ -382,17 +387,33 @@ const coordonnees = (x, y) => {
  *     elle part marquée « à valider ».
  * `valeur` : « 3,45 m » (réécrite si lisible), ou null tant que personne ne
  * l'a donnée.
+ *   · une finition de mur (085) proposée n'existe que si les propositions
+ *     sont demandées ; sans texte, elle est omise. Elle part avec son
+ *     `statut` (code ou null) et son entrée de `FINITIONS_MUR` (`finition` :
+ *     code, libellé de légende, nom, couleur).
  *
- * @returns [{ id, sorte, niveauId, pieceId, a: [x, y], b: [x, y], valeur, aValider }]
+ * @returns [{ id, sorte, niveauId, pieceId, a: [x, y], b: [x, y], valeur, aValider, statut?, finition? }]
  */
 export function tracesAExporter({ traces = [], points = [], inclurePropositions = false } = {}) {
   const parId = new Map((points ?? []).map((p) => [p.id, p]))
   const sortie = []
   for (const t of traces ?? []) {
-    // Les finitions de murs (085), absentes de `SORTES_TRACE`, ne partent pas encore
-    if (!t || !SORTES_TRACE.includes(t.sorte)) continue
+    if (!t || !SORTES_TRACE_FINITIONS.includes(t.sorte)) continue
     const niveauId = t.niveau_id ?? null
     const proposee = !!t.a_valider
+    if (t.sorte === 'finition') {
+      if (proposee && !inclurePropositions) continue
+      const a = coordonnees(t.xa, t.ya)
+      const b = coordonnees(t.xb, t.yb)
+      const valeur = typeof t.valeur === 'string' ? t.valeur.replace(/\s+/g, ' ').trim() : ''
+      if (!a || !b || !valeur || !(Math.hypot(b[0] - a[0], b[1] - a[1]) > 0)) continue
+      const { code, libelle, nom, couleur } = finitionMur(valeur)
+      sortie.push({
+        id: t.id, sorte: 'finition', niveauId, pieceId: t.piece_id ?? null, a, b, valeur, aValider: proposee,
+        statut: codeStatut(t.statut), finition: { code, libelle, nom, couleur },
+      })
+      continue
+    }
     if (t.sorte === 'commande') {
       if (proposee && !inclurePropositions) continue
       const pa = parId.get(t.point_a)

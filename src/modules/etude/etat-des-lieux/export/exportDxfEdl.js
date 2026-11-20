@@ -36,7 +36,7 @@ import { placerEtiquettes, pointInterieur, polygoneBoite, repere } from './place
 import { dansCp1252, encoderCp1252 } from './encodageDxf.js'
 import { ficheExportee, hspExport, porteExport, statutExport } from './ficheExportEdl.js'
 import { STATUT_A_PRECISER, libelleStatut } from '../statutsEdl.js'
-import { courbeCommande, placerValeurCote, sensInterieurCote, traitsCote } from '../visite/tracesVisiteLogique.js'
+import { courbeCommande, decalageFinition, placerValeurCote, sensInterieurCote, traitsCote } from '../visite/tracesVisiteLogique.js'
 
 export const CALQUE_A_VALIDER = 'EDL-À valider'
 
@@ -75,6 +75,12 @@ export const ECART_TEXTE_COTE = 0.05
 export const ECART_LIGNE_COTE = 0.6
 export const JEU_COTE = 0.1
 const PAS_VALEUR_COTE = 0.5
+
+// Finition de mur (085) : polyligne de largeur constante (R12, codes 40 / 41),
+// 5 cm de large, son axe à 4 cm du mur dans la pièce — comme à l'écran et sur
+// la planche, elle se lit à côté du trait du mur sans le recouvrir
+export const LARGEUR_FINITION = 0.05
+export const ECART_FINITION = 0.04
 
 const RUBRIQUES = [['sol', 'Sol'], ['murs', 'Murs'], ['plafond', 'Plafond'], ['plinthes', 'Plinthes']]
 
@@ -282,8 +288,10 @@ function ecrivain() {
     ligne(calque, a, b) {
       g(0, 'LINE'); g(8, calque); point(10, a); point(11, b)
     },
-    polyligne(calque, pts, ferme) {
+    // `largeur` : largeur constante (codes 40 et 41 de l'en-tête), dans l'unité du fichier
+    polyligne(calque, pts, ferme, { largeur = null } = {}) {
       g(0, 'POLYLINE'); g(8, calque); g(66, entier(1)); point(10, [0, 0]); g(70, entier(ferme ? 1 : 0))
+      if (largeur > 0) { g(40, nb(largeur)); g(41, nb(largeur)) }
       for (const p of pts) { g(0, 'VERTEX'); g(8, calque); point(10, p) }
       g(0, 'SEQEND'); g(8, calque)
     },
@@ -571,8 +579,9 @@ export function etiquettesEtage({ pieces = [], elementsExport = [], photos = [],
  *                      ses finitions sur `EDL-À valider` si vrai, omises sinon
  * @param traces        sortie de `tracesAExporter` (tracesEdl.js) pour l'étage :
  *                      liaisons en ARC sur EDL-Électricité, cotes (ligne,
- *                      obliques, valeur) sur EDL-Cotes, propositions sur
- *                      `EDL-À valider`
+ *                      obliques, valeur) sur EDL-Cotes, finitions de murs
+ *                      (polyligne épaisse) sur EDL-Finitions, propositions
+ *                      sur `EDL-À valider`
  */
 export function genererDxfEdl({
   niveau = null, pieces = [], elementsExport = [], photos = [], points = [], traces = [],
@@ -641,6 +650,16 @@ export function genererDxfEdl({
     w.polyligne(utiliser(NOM_PIECES), c.piece.contour.map(enUnites), true)
     w.polyligne(NOM_PIECES, c.coins.map(enUnites), true)
     for (const l of c.lignes) w.texte(utiliser(l.calque), enUnites(l.pos), l.hauteur * u, l.texte, { rotation: c.angle, h: 1, v: 2 })
+  }
+
+  // ── Finitions de murs (085), le long du mur côté pièce, sous le reste ──
+  const NOM_FINITIONS = calqueEdl('finitions').nom
+  const contourDe = new Map(pieces.map((p) => [p.id, p.contour]))
+  for (const t of traces ?? []) {
+    if (t.sorte !== 'finition') continue
+    const f = decalageFinition(t.a, t.b, { sens: sensInterieurCote(t.a, t.b, contourDe.get(t.pieceId)), ecart: ECART_FINITION })
+    if (!f) continue
+    w.polyligne(utiliser(t.aValider ? CALQUE_A_VALIDER : NOM_FINITIONS), [f.a, f.b].map(enUnites), false, { largeur: LARGEUR_FINITION * u })
   }
 
   // ── Liaisons et cotes (084), sous les symboles ──

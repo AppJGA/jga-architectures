@@ -4,6 +4,7 @@ import { validerElement, ecarterElement, modifierFiche, validerTrace, ecarterTra
 import { FicheRelecture } from './FicheRelecture'
 import { ElementsRelecture } from './ElementsRelecture'
 import { TracesRelecture } from './TracesRelecture'
+import { FinitionsRelecture } from './FinitionsRelecture'
 import { ConfirmationEdl } from './ConfirmationEdl'
 
 // ─── Revue d'une pièce : fiche, éléments, liaisons et cotes ──────────────────
@@ -115,6 +116,14 @@ export function ContenuRevue({ revue, lectureSeule }) {
           onEcarter={(trace) => revue.ecrire(() => ecarterTrace(trace))}
           choix={revue.choixLiaison}
           onRelier={revue.relier}
+        />
+      )}
+      {analyse.finitionsDisponibles && (
+        <FinitionsRelecture
+          finitions={revue.finitions} lectureSeule={lectureSeule} traceChoisie={revue.traceChoisie}
+          onChoisir={revue.choisirTrace}
+          onValider={(trace, champs) => revue.ecrire(() => validerTrace(trace, champs))}
+          onEcarter={(trace) => revue.ecrire(() => ecarterTrace(trace))}
         />
       )}
     </>

@@ -5,6 +5,8 @@
 // Chaque ligne est réduite à ses colonnes : un champ de plus (l'alias
 // `synchro_id`, une référence « P7 » de Claude) ferait refuser toute la ligne.
 
+import { codeStatut } from '../statutsEdl.js'
+
 // Base sans la 082 : table absente (42P01 de PostgreSQL, PGRST205 de
 // PostgREST) ou colonne absente des pièces (42703, PGRST204). Pour une
 // colonne, son nom est exigé : une autre colonne manquante est une vraie
@@ -165,6 +167,11 @@ export function lignesTracesIa({ traces, visiteId = null, nouvelId = nouvelIdPar
 export function champsValidationTrace(trace, champs = {}) {
   const ligne = { a_valider: false }
   if (trace?.sorte === 'cote' && 'valeur' in champs) ligne.valeur = texteOuNull(champs.valeur)
+  // Finition de mur (085) : son texte et son statut se corrigent aussi
+  if (trace?.sorte === 'finition') {
+    if ('valeur' in champs && texteOuNull(champs.valeur)) ligne.valeur = texteOuNull(champs.valeur)
+    if ('statut' in champs) ligne.statut = codeStatut(champs.statut)
+  }
   return ligne
 }
 

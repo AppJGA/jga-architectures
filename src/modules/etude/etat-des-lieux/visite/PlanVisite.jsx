@@ -56,6 +56,8 @@ export function PlanVisite({
   const touchable = (p) => (!piece || p.piece_id === piece.id)
   // Une trace se touche dans la pièce ouverte, ou toutes sur le plan de l'étage
   const traceTouchable = (t) => (!piece || t.piece_id === piece.id || points.some((p) => p.piece_id === piece.id && (p.id === t.point_a || p.id === t.point_b)))
+  // Une finition de mur ne se touche pas en visite : le toucher va à son mur
+  const traceAChoisir = (t) => t.sorte !== 'finition' && traceTouchable(t)
 
   // Un point différent, ou plus de glisser : on repart d'un compte de doigts sain
   useEffect(() => { pointeurs.current.clear(); glisseCourant.current = null }, [pointId])
@@ -97,7 +99,7 @@ export function PlanVisite({
     if (cible.sorte === 'point') { onChoisirPoint(cible.point.id); return }
     // La ligne de cote est dessinée à 18 px de son mur (tolérance = 22 px)
     const trace = onChoisirTrace
-      ? traceProche(traces.filter(traceTouchable), points, m, tolerance, {
+      ? traceProche(traces.filter(traceAChoisir), points, m, tolerance, {
         ecartCote: (tolerance * ECART_COTE_PX) / RAYON_TOUCHER,
         contourDe: (t) => pieces?.find((pc) => pc.id === t.piece_id)?.contour ?? null,
       })

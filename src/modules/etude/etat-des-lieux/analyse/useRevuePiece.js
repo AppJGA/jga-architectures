@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { piecesVisitees } from '../visite/visiteLogique'
 import { ajouterLiaison, supprimerPoint, ajouterElement, poserPointBureau, typerPoint, MESSAGE_ANALYSE_INDISPONIBLE } from './analyseDonnees'
-import { messageLancement, tracesRelecture, choixLiaisonRelecture, suiteEcartElement, suppressionPoint, pointsSansElement, pieceSansRevue } from './relectureAnalyseLogique'
+import { messageLancement, tracesRelecture, finitionsRelecture, choixLiaisonRelecture, suiteEcartElement, suppressionPoint, pointsSansElement, pieceSansRevue } from './relectureAnalyseLogique'
 import { avecTypeEffectif } from '../tracesEdl'
 import { debutPlacement, toucherPlacement, nouveauPointBureau, derniereVisite, pointAAnnuler, typeDuPoint } from '../plansEdlLogique'
 
@@ -59,6 +59,8 @@ export function useRevuePiece({ affaireId, niveau, piece, visite, analyse }) {
   const tracesNiveau = useMemo(() => (analyse.tracesDisponibles ? (analyse.traces ?? []).filter((t) => t.niveau_id === niveau.id) : []),
     [analyse.tracesDisponibles, analyse.traces, niveau.id])
   const traces = useMemo(() => (pieceId ? tracesRelecture(tracesNiveau, pieceId, points) : []), [tracesNiveau, pieceId, points])
+  // Finitions de murs (085) de la pièce, à part des liaisons et cotes
+  const finitions = useMemo(() => finitionsRelecture(tracesNiveau, pieceId), [tracesNiveau, pieceId])
   // Un point posé sans type prend celui de son élément relevé : les liaisons
   // le nomment ainsi et « Ajouter une liaison » le propose
   const pointsTypes = useMemo(() => avecTypeEffectif(points, analyse.elements), [points, analyse.elements])
@@ -202,7 +204,7 @@ export function useRevuePiece({ affaireId, niveau, piece, visite, analyse }) {
 
   return {
     affaireId, niveauId, piece, visitee, sansRevue,
-    points, elements, tracesNiveau, traces, pointsTypes, choixLiaison, suiteEcart, pointsSeuls,
+    points, elements, tracesNiveau, traces, finitions, pointsTypes, choixLiaison, suiteEcart, pointsSeuls,
     survol, setSurvol, elementChoisi, setElementChoisi, pointChoisi, setPointChoisi, traceChoisie, setTraceChoisie,
     choisirElement, choisirTrace, pointEnEvidence: survol ?? pointElement ?? pointChoisi,
     erreur, setErreur, message, setMessage, confirmerRelance, setConfirmerRelance,

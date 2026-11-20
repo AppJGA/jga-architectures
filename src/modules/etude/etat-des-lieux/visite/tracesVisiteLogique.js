@@ -437,16 +437,19 @@ export function extremitesTrace(trace, points) {
  * La trace la plus proche de `position` (mètres) à `toleranceM` près, ou
  * null : une liaison se touche sur sa courbe, une cote sur sa ligne de cote
  * (décalée de `ecartCote` mètres dans sa pièce, `contourDe(trace)`) comme
- * sur le mur entre ses deux angles.
+ * sur le mur entre ses deux angles, une finition de mur (085) le long de son
+ * mur (son trait n'en est décalé que de quelques pixels). La visite ne leur
+ * passe pas les finitions : un toucher sur le mur y va au mur.
  */
 export function traceProche(traces, points, position, toleranceM, { ecartCote = 0, contourDe = () => null } = {}) {
   let meilleure = null
   let distance = Infinity
   for (const t of traces ?? []) {
-    const bouts = extremitesTrace(t, points)
+    const bouts = extremitesTrace(t, points) ?? extremitesFinition(t)
     if (!bouts) continue
     let d
-    if (t.sorte === 'commande') {
+    if (t.sorte === 'finition') d = distanceTrait(position, bouts)
+    else if (t.sorte === 'commande') {
       const traits = courbeCommande(...bouts)?.points
       if (!traits) continue
       d = distanceTrait(position, traits)
@@ -475,6 +478,7 @@ export function libelleTrace(trace, points) {
     const b = points.find((p) => p.id === trace.point_b)
     return `Liaison ${court(a)} → ${court(b)}`
   }
+  if (trace?.sorte === 'finition') return `Finition de mur · ${String(trace.valeur ?? '').trim() || 'à préciser'}`
   const v = texteCote(trace)
   return v === '?' ? 'Cote à préciser' : `Cote ${v}`
 }

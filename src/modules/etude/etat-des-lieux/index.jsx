@@ -1,7 +1,7 @@
 import { Suspense, lazy, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useParams, useSearchParams } from 'react-router-dom'
-import { Upload, RefreshCw, X, Mic, FileDown } from 'lucide-react'
+import { Upload, RefreshCw, X, Mic, FileDown, ClipboardCheck } from 'lucide-react'
 import { useLiensSignes } from '../../chantier/comptes-rendus/useLiensSignes'
 import { garderImages } from '../../chantier/comptes-rendus/horsLigne/images'
 import { useEtatDesLieux } from './useEtatDesLieux'
@@ -232,13 +232,20 @@ export default function EtatDesLieuxModule({ lectureSeule = false }) {
     return n + (a ? resumePieceRelecture({ ...p, ...a }, analyse.elements, analyse.traces).aValider : 0)
   }, 0)
   const aValiderTotal = vueRelecture || relecturePossible ? edl.niveaux.reduce((n, nv) => n + aValiderDe(nv.id), 0) : 0
-  const ongletVue = (actif, libelle, compte, onClick) => (
+  // « État des lieux » (la relecture, ce qui sera rendu) un peu mis en
+  // valeur à côté de « Fond de plans » (l'outil de préparation), à la
+  // demande de l'agence : fond teinté, icône, couleur de la phase
+  const ongletVue = (actif, libelle, compte, onClick, { enValeur = false } = {}) => (
     <button type="button" role="tab" aria-selected={actif} onClick={onClick}
       style={{
         display: 'inline-flex', alignItems: 'center', gap: 6, minHeight: 44, padding: '0 16px', cursor: 'pointer',
         border: 'none', borderTop: '2px solid transparent', borderBottom: `2px solid ${actif ? 'var(--affaire-accent, #E8602C)' : 'transparent'}`,
-        background: 'none', fontSize: 14, fontWeight: actif ? 600 : 400, color: actif ? '#1F1B17' : '#5E5854',
+        borderRadius: enValeur ? '3px 3px 0 0' : 0,
+        background: enValeur ? 'var(--affaire-accent-clair, rgba(232,96,44,0.10))' : 'none',
+        fontSize: 14, fontWeight: actif || enValeur ? 600 : 400,
+        color: enValeur && !actif ? 'var(--affaire-accent, #E8602C)' : actif ? '#1F1B17' : '#5E5854',
       }}>
+      {enValeur && <ClipboardCheck size={16} aria-hidden="true" />}
       {libelle}
       {compte > 0 && <span style={{ fontSize: 12, fontWeight: 600, color: COULEUR_IA }}>{compte} à valider</span>}
     </button>
@@ -275,8 +282,8 @@ export default function EtatDesLieuxModule({ lectureSeule = false }) {
 
       {(relecturePossible || vueRelecture) && (
         <div role="tablist" aria-label="Vue" style={{ display: 'flex', alignItems: 'center', gap: 4, borderBottom: '0.5px solid rgba(0,0,0,0.1)' }}>
-          {ongletVue(!vueRelecture, 'Pièces', 0, () => choisirVue(false))}
-          {ongletVue(vueRelecture, 'Relecture', aValiderTotal, () => choisirVue(true))}
+          {ongletVue(!vueRelecture, 'Fond de plans', 0, () => choisirVue(false))}
+          {ongletVue(vueRelecture, 'État des lieux', aValiderTotal, () => choisirVue(true), { enValeur: true })}
         </div>
       )}
 

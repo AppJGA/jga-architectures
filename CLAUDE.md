@@ -966,7 +966,7 @@ lot 1 : `docs/superpowers/plans/2026-11-17-etat-des-lieux-lot1-preparer.md`.
   - **Écran** : pièces grises (non visitées), sablier (en attente), vertes
     (fiche complète), ambre (rubrique manquante, `completudeFiche`), rouge
     pâle (échec) ; pense-bête coché d'après la fiche. **Relecture**
-    (`RelectureEdl.jsx`, onglet à côté de « Pièces », `?vue=relecture&piece=`)
+    (`RelectureEdl.jsx`, onglet « État des lieux », mis en valeur, à côté de « Fond de plans » — anciens « Relecture » et « Pièces », renommés à la demande de l’agence le 2026-11-20 —, `?vue=relecture&piece=`)
     : pièces à valider d'abord ; plan de la pièce (`PlanVisite` en
     `consultation`), fiche modifiable (bleue tant que `fiche_a_valider`,
     modifier vaut validation ; un brouillon modifié survit à une nouvelle

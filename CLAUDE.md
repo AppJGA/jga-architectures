@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 1956 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans, gestion de l'application, état des lieux)
+npm test         # 1958 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans, gestion de l'application, état des lieux)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -1139,7 +1139,9 @@ lot 1 : `docs/superpowers/plans/2026-11-17-etat-des-lieux-lot1-preparer.md`.
   avant (point existant choisi, trace choisie, point posé). « Pile » :
   `TOLERANCE_PILE_PX` = 12 px, plus fin que les 22 px des points (un
   interrupteur près d'un mur reste un point) ; un point existant l'emporte
-  s'il est plus près du doigt que l'angle ou le mur. **Angle** : le premier
+  s'il est plus près du doigt que l'angle ou le mur, et sur le mur dès que
+  le doigt est à 6 px de son centre (sinon un point posé sur le mur même ne
+  se choisissait plus). **Angle** : le premier
   s'allume ~20 s (`toucherAngle`, `DUREE_PREMIER_ANGLE_MS` ; id de la future
   cote décidé là, noté par `angle-touche`), le second crée la cote tout de
   suite (« ? ») et ouvre le champ de sa valeur ; le même angle deux fois ne

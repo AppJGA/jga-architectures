@@ -109,9 +109,10 @@ const memeAngle = (a, b) => !!a && !!b && Math.abs(a[0] - b[0]) < 1e-9 && Math.a
  * mur) ; `tolerance` : la zone « pile » en mètres ; `avecAngles` faux (base
  * sans la 084) : un angle n'est que le bout de ses deux murs. `pointExistant`
  * ({ point, distance }) : le point existant le plus proche dans sa zone du
- * doigt — il l'emporte sur l'angle ou le mur seulement s'il est plus près du
- * doigt qu'eux (un point déjà posé contre un mur se choisit en touchant son
- * centre ; toucher le mur lui-même va au mur).
+ * doigt — il l'emporte sur l'angle ou le mur s'il est plus près du doigt
+ * qu'eux, et sur le mur aussi quand le doigt est à la moitié de la zone pile
+ * de son centre (un point posé sur le mur même se choisit en touchant son
+ * centre ; toucher le mur à côté du point va au mur).
  * Rend { sorte: 'angle', angle, index } | { sorte: 'mur', mur } |
  * { sorte: 'point', point } | { sorte: 'plan' } (rien de tout cela : la
  * suite d'avant, trace ou point posé).
@@ -120,7 +121,12 @@ export function cibleToucher({ contour = null, position, tolerance, pointExistan
   const angle = contour && avecAngles ? angleSous(contour, position, tolerance) : null
   const mur = contour && !angle ? murLePlusProche(contour, position, tolerance) : null
   const pile = angle ?? mur
-  if (pointExistant?.point && (!pile || pointExistant.distance < pile.distance)) return { sorte: 'point', point: pointExistant.point }
+  // Doigt sur le centre d'un point posé sur le mur même (une visite d'avant,
+  // un point glissé contre le mur) : le mur est toujours au moins aussi près
+  // que lui, et le point ne se choisirait plus. À la moitié de la zone pile
+  // de son centre, il l'emporte donc sur le mur (pas sur l'angle).
+  const surLePoint = !!mur && pointExistant?.distance <= tolerance / 2
+  if (pointExistant?.point && (!pile || surLePoint || pointExistant.distance < pile.distance)) return { sorte: 'point', point: pointExistant.point }
   if (angle) return { sorte: 'angle', angle: angle.angle, index: angle.index }
   if (mur) return { sorte: 'mur', mur }
   return { sorte: 'plan' }

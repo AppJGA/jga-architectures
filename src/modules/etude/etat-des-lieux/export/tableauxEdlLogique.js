@@ -287,7 +287,8 @@ export function texteComptes(lignes) {
   ].join(' · ')
 }
 
-const LIBELLES_RUBRIQUES = { sol: 'sol', plinthes: 'plinthes', murs: 'murs', plafond: 'plafond', porte: 'bloc porte' }
+// `finition-mur` : une finition de mur (085, `lignesFinitionsMur`) de la colonne « Mur »
+const LIBELLES_RUBRIQUES = { sol: 'sol', plinthes: 'plinthes', murs: 'murs', plafond: 'plafond', porte: 'bloc porte', 'finition-mur': 'finition de mur' }
 
 // Coupe à un espace, jamais au milieu d'un mot
 export function tronquer(texte, max) {
@@ -368,7 +369,8 @@ export function syntheseRapport({ etages = [], lignes = null }) {
       }
     }
     for (const l of etage.lignes) {
-      const aVoir = rubriquesDe(l).filter((x) => x.statut === STATUT_A_PRECISER).map((x) => LIBELLES_RUBRIQUES[x.rubrique])
+      // Plusieurs finitions de murs à préciser ne se nomment qu'une fois
+      const aVoir = [...new Set(rubriquesDe(l).filter((x) => x.statut === STATUT_A_PRECISER).map((x) => LIBELLES_RUBRIQUES[x.rubrique]))]
       if (aVoir.length) themes.verifier.push(devant(`${l.piece.libelle} : ${aVoir.join(', ')}`))
     }
   }

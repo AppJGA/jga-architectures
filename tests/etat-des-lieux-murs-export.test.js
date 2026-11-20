@@ -11,7 +11,7 @@ import { misePlanche, FINITION_PLANCHE } from '../src/modules/etude/etat-des-lie
 import { dessinerTraces, dessinerLegende, TRAIT } from '../src/modules/etude/etat-des-lieux/export/dessinPlancheEdl.js'
 import { genererDxfEdl, encoderDxf, CALQUE_A_VALIDER, LARGEUR_FINITION, ECART_FINITION } from '../src/modules/etude/etat-des-lieux/export/exportDxfEdl.js'
 import { decoderDxf, lireDxf, lireTablesDxf } from '../src/modules/etude/etat-des-lieux/dxfLecture.js'
-import { lignesFinitionsMur, lignesTableau } from '../src/modules/etude/etat-des-lieux/export/tableauxEdlLogique.js'
+import { lignesFinitionsMur, lignesTableau, syntheseRapport } from '../src/modules/etude/etat-des-lieux/export/tableauxEdlLogique.js'
 import { avertissementsExport } from '../src/modules/etude/etat-des-lieux/export/exportFenetreLogique.js'
 import { finitionsRelecture, lireSaisieFinition } from '../src/modules/etude/etat-des-lieux/analyse/relectureAnalyseLogique.js'
 import { champsValidationTrace, ecartTrace } from '../src/modules/etude/etat-des-lieux/analyse/analyseDonneesLogique.js'
@@ -163,6 +163,16 @@ describe('tableaux : colonne « Mur »', () => {
     assert.deepEqual(ligne.mur.map((m) => m.texte), ['Peinture blanche', 'Faïence : 2 murs (toute hauteur)'])
     const [avec] = lignesTableau({ pieces: [salle], traces: exportees([fBas, fProposee], true), inclurePropositions: true })
     assert.deepEqual(avec.mur.map((m) => [m.texte, !!m.aValider]), [['Peinture blanche', false], ['Faïence : 1 mur (toute hauteur)', false], ['Lambris : 1 mur', true]])
+  })
+  test('points d’attention de la garde : une finition de mur se nomme (jamais « undefined »)', () => {
+    const lignes = lignesTableau({ pieces: [salle], traces: exportees([fBas, fCredence, finition('f8', { xa: 0, ya: 3, xb: 4, yb: 3, valeur: 'Lambris', statut: null })]) })
+    const { attention } = syntheseRapport({ etages: [{ niveau, nom: 'RDC', lignes }] })
+    const texte = attention.map((a) => `${a.titre} — ${a.texte}`).join('\n')
+    assert.doesNotMatch(texte, /undefined/)
+    assert.match(texte, /À déposer — .*finition de mur \(Faïence : 1 mur \(toute hauteur\)\)/)
+    // Deux finitions à préciser : nommées une fois
+    assert.match(texte, /À vérifier — [^\n]*finition de mur/)
+    assert.equal(texte.match(/À vérifier[^\n]*/)[0].split('finition de mur').length - 1, 1)
   })
 })
 

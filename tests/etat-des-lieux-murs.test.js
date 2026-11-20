@@ -90,6 +90,16 @@ describe('priorité d’un toucher : angle > mur > point', () => {
     // Loin des murs : le point
     assert.equal(cibleToucher({ contour, position: [2, 1], tolerance: pile, pointExistant: { point, distance: 0.1 } }).sorte, 'point')
   })
+  test('un point posé sur le mur même se choisit en touchant son centre', () => {
+    const point = { id: 'p2' }
+    // Point sur le mur du bas (y = 0) ; doigt à 4 cm de son centre, le long du mur :
+    // le mur (0 cm) est plus près que le point, mais le doigt est sur le point
+    assert.deepEqual(cibleToucher({ contour, position: [2.04, 0], tolerance: pile, pointExistant: { point, distance: 0.04 } }), { sorte: 'point', point })
+    // Plus loin du centre (au-delà de la moitié de la zone pile) : le mur
+    assert.equal(cibleToucher({ contour, position: [2.08, 0], tolerance: pile, pointExistant: { point, distance: 0.08 } }).sorte, 'mur')
+    // Un angle reste à l'angle s'il est plus près que le point
+    assert.equal(cibleToucher({ contour, position: [0.01, 0.01], tolerance: pile, pointExistant: { point, distance: 0.04 } }).sorte, 'angle')
+  })
 })
 
 describe('cote par deux angles, sans bouton', () => {

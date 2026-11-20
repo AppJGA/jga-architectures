@@ -157,6 +157,30 @@ describe('preparerExport', () => {
     assert.deepEqual(etage.elementsExport.map((e) => [e.id, e.aValider]), [['el2', true], ['point-pt3', false]])
   })
 
+  test('liaisons et cotes : par étage, propositions selon le réglage, dans le DXF ; sans la 084 rien', () => {
+    const d = donneesEssai()
+    d.points.push(
+      { id: 'pt-i', niveau_id: 'n1', piece_id: 'p1', numero: 4, type: 'interrupteur', x: 0.5, y: 4 },
+      { id: 'pt-l', niveau_id: 'n1', piece_id: 'p1', numero: 5, type: 'luminaire', x: 2.5, y: 2.5 },
+    )
+    d.traces = [
+      { id: 't1', sorte: 'commande', niveau_id: 'n1', piece_id: 'p1', point_a: 'pt-i', point_b: 'pt-l', a_valider: false },
+      { id: 't2', sorte: 'commande', niveau_id: 'n1', piece_id: 'p1', point_a: 'pt-i', point_b: 'pt-l', a_valider: true, origine: 'ia' },
+      { id: 't3', sorte: 'cote', niveau_id: 'n2', piece_id: 'p2', xa: 0, ya: 0, xb: 4, yb: 0, valeur: '4,01 m', a_valider: false },
+    ]
+    const p = preparerExport(d, reglagesParDefaut(d.niveaux))
+    assert.deepEqual(p.etages.map((e) => e.traces.map((t) => t.id)), [['t1'], ['t3']])
+    assert.deepEqual(p.rapport.traces.map((t) => t.id), ['t1', 't3'])
+    const avec = preparerExport(d, { ...reglagesParDefaut(d.niveaux), inclurePropositions: true, niveaux: ['n1'] })
+    assert.deepEqual(avec.rapport.traces.map((t) => [t.id, t.aValider]), [['t1', false], ['t2', true]])
+    const lu = lireDxf(decoderDxf(encoderDxf(dxfDuNiveau(p.etages[1]))))
+    assert.deepEqual(lu.textes.filter((t) => t.calque === 'EDL-Cotes').map((t) => t.texte), ['4,01 m'])
+    // Base sans la 084 : `traces` absent ou vide
+    const sans = preparerExport(donneesEssai(), reglagesParDefaut(d.niveaux))
+    assert.deepEqual(sans.etages.map((e) => e.traces), [[], []])
+    assert.deepEqual(sans.rapport.traces, [])
+  })
+
   test('le DXF d’un étage porte ses photos numérotées et son unité', () => {
     const d = donneesEssai()
     const etage = preparerExport(d, reglagesParDefaut(d.niveaux)).etages[1]
@@ -256,6 +280,26 @@ describe('avertissements', () => {
     ])
     assert.deepEqual(avertissementsExport({ donnees: d, reglages: { ...r, inclurePropositions: true } }), [])
     assert.deepEqual(avertissementsExport({ donnees: d, reglages: { ...r, niveaux: ['n1'] } }), [])
+  })
+
+  test('liaisons et valeurs de cotes à valider, sur les étages retenus', () => {
+    const d = donneesEssai()
+    d.traces = [
+      { id: 't1', sorte: 'commande', niveau_id: 'n1', a_valider: true },
+      { id: 't2', sorte: 'commande', niveau_id: 'n1', a_valider: true },
+      { id: 't3', sorte: 'cote', niveau_id: 'n1', a_valider: true },
+      { id: 't4', sorte: 'cote', niveau_id: 'n2', a_valider: false },
+    ]
+    const r = { ...reglagesParDefaut(d.niveaux), niveaux: ['n1'] }
+    assert.deepEqual(avertissementsExport({ donnees: d, reglages: r }), [
+      '2 liaisons à valider ne seront pas exportées.',
+      '1 valeur de cote à valider : cette cote part avec « ? ».',
+    ])
+    assert.deepEqual(avertissementsExport({ donnees: d, reglages: { ...r, niveaux: ['n2'] } }), [
+      '1 élément à valider ne sera pas exporté.',
+      '1 fiche de pièce à valider : finitions non exportées.',
+    ])
+    assert.deepEqual(avertissementsExport({ donnees: d, reglages: { ...r, inclurePropositions: true } }), [])
   })
 
   test('pluriel, unité inhabituelle et réseau absent', () => {

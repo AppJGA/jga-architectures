@@ -7,9 +7,11 @@ import { test, describe } from 'node:test'
 
 import { elementsAExporter } from '../src/modules/etude/etat-des-lieux/export/exportDxfEdl.js'
 import { orientationElement, quantiteElement } from '../src/modules/etude/etat-des-lieux/export/symbolesEdl.js'
+import { tracesAExporter } from '../src/modules/etude/etat-des-lieux/tracesEdl.js'
+import { courbeCommande } from '../src/modules/etude/etat-des-lieux/visite/tracesVisiteLogique.js'
 import { COULEUR_PROPOSITION, couleurCalque } from '../src/modules/etude/etat-des-lieux/export/rapportEdlLogique.js'
 import {
-  DPI_PLANCHE, ECHELLES, FORMAT_A3, HAUTEUR_CARTOUCHE, MARGE_PLANCHE, TAILLE_SYMBOLE_MM,
+  COTE_PLANCHE, DPI_PLANCHE, ECHELLES, FORMAT_A3, HAUTEUR_CARTOUCHE, MARGE_PLANCHE, TAILLE_SYMBOLE_MM,
   dateCartouche, echellePlanche, misePlanche, versMmPlanche,
 } from '../src/modules/etude/etat-des-lieux/export/plancheEdl.js'
 import {
@@ -659,5 +661,131 @@ describe('planche : dessin', () => {
     // Posée en (cadreMm − origine), l'image recouvre la légende de la planche
     proche(cadre.args[0], img.origine[0])
     proche(cadre.args[1], img.origine[1])
+  })
+})
+
+// ─── Liaisons et cotes (084) ─────────────────────────────────────────────────
+
+describe('planche : liaisons et cotes', () => {
+  const salle = piece('p1', rect(0, 0, 30, 20))
+  const pts = [point('i', 'p1', 1, 2, 10, 'interrupteur'), point('l', 'p1', 2, 8, 10, 'luminaire')]
+  const liaison = { id: 't1', sorte: 'commande', niveau_id: 'n1', piece_id: 'p1', point_a: 'i', point_b: 'l', a_valider: false }
+  const cote = { id: 't2', sorte: 'cote', niveau_id: 'n1', piece_id: 'p1', xa: 0, ya: 0, xb: 0, yb: 20, valeur: '20,05 m', a_valider: false }
+  const miseTraces = (traces, { inclurePropositions = false, points = pts, ...reste } = {}) => mise({
+    pieces: [salle], points, inclurePropositions, ...reste,
+    traces: tracesAExporter({ traces, points, inclurePropositions }),
+  })
+  const mmProche = (p, q, ecart = 1e-3) => { proche(p[0], q[0], ecart); proche(p[1], q[1], ecart) }
+
+  test('en mm du papier par versMmPlanche ; courbe de l’écran (même sommet)', () => {
+    const m = miseTraces([liaison, cote])
+    const [c, k] = m.traces
+    assert.equal(c.sorte, 'commande')
+    mmProche(c.a, versMmPlanche(m.transform, [2, 10]))
+    mmProche(c.b, versMmPlanche(m.transform, [8, 10]))
+    const courbe = courbeCommande([2, 10], [8, 10])
+    mmProche(c.controle, versMmPlanche(m.transform, courbe.controle))
+    mmProche(c.sommet, versMmPlanche(m.transform, courbe.sommet))
+    // Bombée à gauche du sens i → l, soit vers le haut du plan : vers le haut du papier
+    assert.ok(c.sommet[1] < c.a[1])
+    assert.equal(c.couleur, couleurCalque('electricite'))
+    assert.equal(k.sorte, 'cote')
+    mmProche(k.a, versMmPlanche(m.transform, [0, 0]))
+    mmProche(k.b, versMmPlanche(m.transform, [0, 20]))
+    assert.equal(k.texte.valeur, '20,05 m')
+    // Verticale : lue de bas en haut (−90° y vers le bas), texte à gauche de la ligne
+    proche(k.texte.angle, -90)
+    assert.ok(k.texte.position[0] < k.a[0])
+    for (const [p, q] of k.obliques) proche(Math.hypot(q[0] - p[0], q[1] - p[1]), COTE_PLANCHE.tic, 1e-2)
+  })
+
+  test('les traces entrent dans l’emprise ; celles d’un autre étage non', () => {
+    const loin = { ...cote, id: 't3', xa: 60, ya: 0, xb: 70, yb: 0 }
+    const m = miseTraces([loin])
+    assert.equal(m.echelle, 200)
+    const [k] = m.traces
+    for (const p of [k.a, k.b]) assert.ok(p[0] >= m.zone.x && p[0] <= m.zone.x + m.zone.largeur)
+    const ailleurs = miseTraces([{ ...loin, niveau_id: 'n2' }])
+    assert.equal(ailleurs.echelle, 100)
+    assert.deepEqual(ailleurs.traces, [])
+  })
+
+  test('légende : « Commande d’éclairage » et « Cote » seulement s’il y en a', () => {
+    const sans = miseTraces([])
+    const libelles = (m) => m.legende.groupes.flatMap((g) => g.entrees.map((e) => e.libelle))
+    assert.ok(!libelles(sans).includes('Commande d’éclairage'))
+    assert.ok(!libelles(sans).includes('Cote'))
+    const avec = miseTraces([liaison, cote])
+    const elec = avec.legende.groupes.find((g) => g.calque === 'electricite')
+    assert.deepEqual(elec.entrees.at(-1), { code: null, libelle: 'Commande d’éclairage', trace: 'commande' })
+    const cotes = avec.legende.groupes.find((g) => g.calque === 'cotes')
+    assert.deepEqual(cotes.entrees, [{ code: null, libelle: 'Cote', trace: 'cote' }])
+    // Une cote seule, sans symbole : son groupe existe quand même
+    const seule = miseTraces([cote], { points: [] })
+    assert.deepEqual(seule.legende.groupes.map((g) => g.calque), ['cotes'])
+  })
+
+  test('propositions : écartées par défaut ; dessinées en tirets et légendées si demandées', () => {
+    const proposee = { ...liaison, id: 't9', a_valider: true, origine: 'ia' }
+    const sans = miseTraces([proposee])
+    assert.deepEqual(sans.traces, [])
+    assert.ok(!sans.legende.groupes.some((g) => g.calque === 'a-valider'))
+    // Même passées à la main, la mise retire les propositions non demandées
+    const brutes = mise({ pieces: [salle], points: pts, traces: tracesAExporter({ traces: [proposee], points: pts, inclurePropositions: true }) })
+    assert.deepEqual(brutes.traces, [])
+    const avec = miseTraces([proposee], { inclurePropositions: true })
+    assert.equal(avec.traces[0].couleur, COULEUR_PROPOSITION)
+    const groupe = avec.legende.groupes.find((g) => g.calque === 'a-valider')
+    assert.deepEqual(groupe.entrees.map((e) => e.trace ?? null), ['proposition'])
+    // Pas d'entrée « Commande d'éclairage » pour une liaison seulement proposée
+    assert.ok(!avec.legende.groupes.some((g) => g.entrees.some((e) => e.trace === 'commande')))
+    const { ctx, appels } = enregistreur()
+    dessinerPlanche(ctx, avec, { avecLegende: false })
+    const courbe = appels.find((a) => a.nom === 'quadraticCurveTo')
+    assert.equal(courbe.strokeStyle, COULEUR_PROPOSITION)
+    assert.ok(appels.some((a) => a.nom === 'setLineDash' && a.args[0].length === 2 && a.args[0][0] > 0))
+  })
+
+  test('dessin : sous les symboles, dans le fond du Word aussi, aux épaisseurs voulues', () => {
+    const m = miseTraces([liaison, cote])
+    const p = PX_PAR_MM
+    const { ctx, appels } = enregistreur()
+    dessinerPlanche(ctx, m, { avecLegende: false })
+    const i = appels.findIndex((a) => a.nom === 'quadraticCurveTo')
+    assert.ok(i >= 0, 'courbe non dessinée')
+    const courbe = appels[i]
+    const [c] = m.traces
+    proche(courbe.args[0], c.controle[0] * p, 1e-6)
+    proche(courbe.args[3], c.b[1] * p, 1e-6)
+    assert.equal(courbe.strokeStyle, couleurCalque('electricite'))
+    const traitCourbe = appels.slice(i).find((a) => a.nom === 'stroke')
+    proche(traitCourbe.lineWidth, TRAIT.commande * p, 1e-9)
+    // Cote : valeur écrite sur un liseré blanc, trait de 0,18 mm
+    const valeur = appels.find((a) => a.nom === 'fillText' && a.args[0] === '20,05 m')
+    assert.ok(valeur, 'valeur de cote non écrite')
+    assert.ok(valeur.font.includes(`${Math.round(COTE_PLANCHE.police * p * 10) / 10}px`))
+    assert.ok(appels.some((a) => a.nom === 'strokeText' && a.args[0] === '20,05 m'))
+    assert.ok(appels.some((a) => a.nom === 'stroke' && Math.abs(a.lineWidth - TRAIT.cote * p) < 1e-9))
+    // Avant le premier symbole (premier trait à l'épaisseur des symboles)
+    const iValeur = appels.indexOf(valeur)
+    const iSymbole = appels.findIndex((a) => a.nom === 'stroke' && Math.abs(a.lineWidth - TRAIT.symbole * p) < 1e-9)
+    assert.ok(iSymbole > iValeur, 'les traces doivent passer sous les symboles')
+    // Fond du Word : sans symboles ni légende, les traces y sont
+    const fond = enregistreur()
+    dessinerPlanche(fond.ctx, m, { avecSymboles: false, avecLegende: false })
+    assert.ok(fond.appels.some((a) => a.nom === 'quadraticCurveTo'))
+    assert.ok(textes(fond.appels).includes('20,05 m'))
+    assert.ok(!fond.appels.some((a) => a.nom === 'stroke' && Math.abs(a.lineWidth - TRAIT.symbole * p) < 1e-9))
+  })
+
+  test('légende dessinée : une courbe pour la commande, une cote pour la cote', () => {
+    const m = miseTraces([liaison, cote])
+    const { ctx, appels } = enregistreur()
+    dessinerLegende(ctx, m.legende)
+    const courbe = appels.find((a) => a.nom === 'quadraticCurveTo')
+    assert.equal(courbe.strokeStyle, couleurCalque('electricite'))
+    assert.ok(textes(appels).includes('Commande d’éclairage'))
+    assert.ok(textes(appels).includes('Cote'))
+    assert.ok(appels.some((a) => a.nom === 'stroke' && Math.abs(a.lineWidth - TRAIT.cote * PX_PAR_MM) < 1e-9))
   })
 })

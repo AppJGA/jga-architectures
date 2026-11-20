@@ -14,6 +14,7 @@ import { boite } from '../geometrieEdl.js'
 import { MARGE_PLAN_M } from './planRapportEdl.js'
 import { COULEUR_PROPOSITION, couleurCalque, dateIso, elementsDeLEtage, texteLatin } from './rapportEdlLogique.js'
 import { RAYON_SANS_SYMBOLE, SYMBOLES, boitePrimitives, boiteSymbole, emplacementsDuPoint, largeurTexte, primitivesPlacees, quantiteElement } from './symbolesEdl.js'
+import { COULEUR_COTE, courbeCommande, traitsCote } from '../visite/tracesVisiteLogique.js'
 
 export const FORMAT_A3 = { nom: 'A3', largeur: 420, hauteur: 297 }
 export const MARGE_PLANCHE = 8
@@ -32,6 +33,10 @@ export const LEGENDE = {
   // Au-delà, deux colonnes : une légende courte reste étroite
   lignesUneColonne: 6,
 }
+
+// Liaisons et cotes (084), sur le papier (mm) : obliques de 2 mm, valeur
+// de 2,2 mm posée 0,8 mm au-dessus de la ligne
+export const COTE_PLANCHE = { tic: 2, decalage: 0.8, police: 2.2 }
 
 const COINS = ['haut-droite', 'haut-gauche', 'bas-droite', 'bas-gauche']
 
@@ -158,16 +163,67 @@ function symbolesPlanche(elements, pieces, transform) {
   return symboles
 }
 
+// ─── Liaisons et cotes ──────────────────────────────────────────────────────
+
+/**
+ * Les traces de l'étage (`tracesAExporter`) en millimètres du papier. La
+ * courbe d'une liaison est calculée en mètres (`courbeCommande` : même flèche
+ * et même côté qu'à l'écran et dans le DXF) puis portée sur le papier — une
+ * transformation affine garde la courbe de Bézier ; la cote est calculée sur
+ * le papier (`traitsCote`, y vers le bas : texte jamais à l'envers).
+ */
+function tracesPlanche(traces, transform) {
+  const mm = (p) => versMmPlanche(transform, p).map(arrondiMm)
+  const sortie = []
+  for (const t of traces) {
+    if (t.sorte === 'commande') {
+      const c = courbeCommande(t.a, t.b)
+      if (!c) continue
+      sortie.push({
+        id: t.id, sorte: 'commande', aValider: !!t.aValider, couleur: t.aValider ? COULEUR_PROPOSITION : couleurCalque('electricite'),
+        a: mm(c.a), controle: mm(c.controle), b: mm(c.b), sommet: mm(c.sommet),
+      })
+      continue
+    }
+    const a = mm(t.a)
+    const b = mm(t.b)
+    const c = traitsCote(a, b, { tic: COTE_PLANCHE.tic, decalage: COTE_PLANCHE.decalage, yVersLeBas: true })
+    if (!c) continue
+    sortie.push({
+      id: t.id, sorte: 'cote', aValider: !!t.aValider, couleur: t.aValider ? COULEUR_PROPOSITION : COULEUR_COTE,
+      a, b, obliques: c.obliques.map((o) => o.map((p) => p.map(arrondiMm))),
+      texte: { valeur: texteLatin(t.valeur ?? '').trim() || '?', position: c.texte.position.map(arrondiMm), angle: arrondiMm(c.texte.angle) },
+    })
+  }
+  return sortie
+}
+
+// Boîte papier d'une trace : obstacle pour la légende
+function boiteTrace(t) {
+  const pts = t.sorte === 'commande' ? [t.a, t.b, t.sommet] : [t.a, t.b, t.texte.position]
+  const [x0, y0, x1, y1] = boite(pts)
+  return { x: x0, y: y0, largeur: x1 - x0, hauteur: y1 - y0 }
+}
+
 // ─── Légende ────────────────────────────────────────────────────────────────
 
 // La RJ45 compte aussi par ×n : la mention ne dit pas « prises » pour elle
 const MULTIPLE = { prise: ' (×n : nb de prises)', rj45: ' (×n : nombre)' }
 
-function groupesLegende(symboles) {
+// Une trace s'explique dans le groupe de son calque, seulement si la planche en porte
+const ENTREES_TRACES = {
+  electricite: { sorte: 'commande', entree: { code: null, libelle: 'Commande d’éclairage', trace: 'commande' } },
+  cotes: { sorte: 'cote', entree: { code: null, libelle: 'Cote', trace: 'cote' } },
+}
+const COULEURS_GROUPE = { cotes: COULEUR_COTE }
+
+function groupesLegende(symboles, traces = []) {
   const groupes = []
   for (const c of CALQUES) {
     const siens = symboles.filter((s) => s.calque === c.code)
-    if (!siens.length) continue
+    const parTrace = ENTREES_TRACES[c.code]
+    const avecTrace = !!parTrace && traces.some((t) => t.sorte === parTrace.sorte && !t.aValider)
+    if (!siens.length && !avecTrace) continue
     const entrees = c.types
       .filter((t) => siens.some((s) => s.code === t.code))
       .map((t) => {
@@ -176,12 +232,18 @@ function groupesLegende(symboles) {
       })
     // Un relevé sans type a son losange : il s'explique aussi
     if (siens.some((s) => !s.code)) entrees.push({ code: null, libelle: 'Autre relevé', sansType: true })
-    groupes.push({ calque: c.code, libelle: texteLatin(c.libelle), couleur: couleurCalque(c.code), entrees })
+    if (avecTrace) entrees.push({ ...parTrace.entree })
+    groupes.push({ calque: c.code, libelle: texteLatin(c.libelle), couleur: COULEURS_GROUPE[c.code] ?? couleurCalque(c.code), entrees })
   }
-  if (symboles.some((s) => s.aValider)) {
+  const symbolesProposes = symboles.some((s) => s.aValider)
+  const tracesProposees = traces.some((t) => t.aValider)
+  if (symbolesProposes || tracesProposees) {
     groupes.push({
       calque: 'a-valider', libelle: 'À valider', couleur: COULEUR_PROPOSITION,
-      entrees: [{ code: null, libelle: 'Proposition de l’analyse, à valider', proposition: true }],
+      entrees: [
+        ...(symbolesProposes ? [{ code: null, libelle: 'Proposition de l’analyse, à valider', proposition: true }] : []),
+        ...(tracesProposees ? [{ code: null, libelle: 'Liaison ou cote proposée, à valider', trace: 'proposition' }] : []),
+      ],
     })
   }
   return groupes
@@ -297,10 +359,12 @@ function casesCartouche(c, cadre) {
  * @param boiteVecteurs emprise du plan vectoriel, en repli sans pièce
  * @param reperes [[x, y]] (mètres) d'autres relevés à garder sur la feuille :
  *   points sans élément, points des photos hors des pièces
- * @returns {{ format, zone, echelle, transform, symboles, legende, cartouche, etage, niveauId }}
+ * @param traces sortie de `tracesAExporter` (filtrée ici à l'étage) : liaisons
+ *   et cotes, dans l'emprise, dessinées sous les symboles
+ * @returns {{ format, zone, echelle, transform, symboles, traces, legende, cartouche, etage, niveauId }}
  */
 export function misePlanche({
-  niveau, pieces = [], elementsExport = [], boiteVecteurs = null, reperes = [],
+  niveau, pieces = [], elementsExport = [], boiteVecteurs = null, reperes = [], traces = [],
   affaire = null, date = null, redacteur = '', numero = '', indice = '', inclurePropositions = false,
 } = {}) {
   const format = { ...FORMAT_A3 }
@@ -314,18 +378,22 @@ export function misePlanche({
   const positions = elements.filter((e) => Number.isFinite(e.x) && Number.isFinite(e.y)).map((e) => [e.x, e.y])
 
   const autres = (reperes ?? []).filter((pt) => Array.isArray(pt) && Number.isFinite(pt[0]) && Number.isFinite(pt[1]))
-  const emprise = empriseM(siennes, boiteVecteurs, [...positions, ...autres])
+  const sesTraces = (traces ?? []).filter((t) => (!t.niveauId || t.niveauId === niveauId) && (inclurePropositions || !t.aValider))
+  // Une liaison bombe hors de la corde : son sommet compte aussi
+  const boutsTraces = sesTraces.flatMap((t) => [t.a, t.b, ...(t.sorte === 'commande' ? [courbeCommande(t.a, t.b)?.sommet].filter(Boolean) : [])])
+  const emprise = empriseM(siennes, boiteVecteurs, [...positions, ...autres, ...boutsTraces])
   const echelle = echellePlanche(emprise, zone)
   const mmParMetre = 1000 / echelle
   const origineM = emprise ? [(emprise[0] + emprise[2]) / 2, (emprise[1] + emprise[3]) / 2] : [0, 0]
   const transform = { mmParMetre, origineM, origineMm: [zone.x + zone.largeur / 2, zone.y + zone.hauteur / 2] }
 
   const symboles = symbolesPlanche(elements, pieces, transform)
+  const tracesMm = tracesPlanche(sesTraces, transform)
 
   const etage = rempli(niveau?.nom) || 'Étage'
   const legende = {
     titre: `LÉGENDE – ÉTAT DES LIEUX ${etage.toUpperCase()}`,
-    groupes: groupesLegende(symboles),
+    groupes: groupesLegende(symboles, tracesMm),
     note: noteLegende(date, redacteur),
   }
   const { colonnes, largeur, hauteur } = cadreLegende(legende)
@@ -335,6 +403,7 @@ export function misePlanche({
       return { x: x0, y: y0, largeur: x1 - x0, hauteur: y1 - y0 }
     }),
     ...symboles.map((s) => ({ x: s.xMm - s.tailleMm.ancre[0], y: s.yMm - s.tailleMm.ancre[1], largeur: s.tailleMm.largeur, hauteur: s.tailleMm.hauteur })),
+    ...tracesMm.map(boiteTrace),
   ]
   legende.coin = coinLegende(zone, largeur, hauteur, obstacles)
   legende.cadreMm = cadreAuCoin(legende.coin, zone, largeur, hauteur)
@@ -356,5 +425,5 @@ export function misePlanche({
   cartouche.cadreMm = cadreCartouche
   cartouche.cases = casesCartouche(cartouche, cadreCartouche)
 
-  return { format, zone, echelle, transform, symboles, legende, cartouche, etage, niveauId }
+  return { format, zone, echelle, transform, symboles, traces: tracesMm, legende, cartouche, etage, niveauId }
 }

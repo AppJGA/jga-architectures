@@ -13,6 +13,7 @@ import { lireDxf, lireTablesDxf } from '../dxfLecture.js'
 import { piecesVisitees } from '../visite/visiteLogique.js'
 import { CALQUE_A_VALIDER, elementsAExporter, encoderDxf, genererDxfEdl, pieceDuPoint, uniteDxf } from './exportDxfEdl.js'
 import { numeroterPhotos } from './numerotationEdl.js'
+import { tracesAExporter } from '../tracesEdl.js'
 import { COULEURS_CALQUES, COULEUR_PROPOSITION, nomFichierRapportEdl } from './rapportEdlLogique.js'
 
 // ─── Réglages ───────────────────────────────────────────────────────────────
@@ -119,8 +120,12 @@ export const exportPossible = (reglages) => (reglages?.niveaux?.length ?? 0) > 0
  * passés au DXF comme au rapport : un point sans `piece_id` n'est plus dans
  * l'un et absent de l'autre.
  *
- * @returns { etages: [{ niveau, pieces, points, photos, elementsExport, unite }],
- *            rapport: { niveaux, pieces, points, elements, elementsExport, photos, visitees, inclurePropositions } }
+ * Les liaisons et cotes (084) passent par `tracesAExporter`, une fois, avec
+ * la règle des propositions des éléments ; chaque étage reçoit les siennes.
+ * Sans la migration, `donnees.traces` est vide : rien ne change.
+ *
+ * @returns { etages: [{ niveau, pieces, points, photos, elementsExport, traces, unite }],
+ *            rapport: { niveaux, pieces, points, elements, elementsExport, traces, photos, visitees, inclurePropositions } }
  */
 export function preparerExport(donnees, reglages) {
   const niveaux = donnees?.niveaux ?? []
@@ -134,6 +139,7 @@ export function preparerExport(donnees, reglages) {
 
   const photos = numeroterPhotos(donnees?.photos ?? [], points, { niveaux, pieces })
   const elementsExport = elementsAExporter({ pieces, points, elements, inclurePropositions })
+  const tracesExport = tracesAExporter({ traces: donnees?.traces ?? [], points, inclurePropositions })
   // Un élément suit l'étage de son point, à défaut celui de sa pièce
   const niveauDeLElement = (e) => e.niveauId ?? null
 
@@ -147,6 +153,7 @@ export function preparerExport(donnees, reglages) {
       points: sesPoints,
       photos: photos.filter((ph) => ids.has(ph.point_id)),
       elementsExport: elementsExport.filter((e) => niveauDeLElement(e) === niveau.id),
+      traces: tracesExport.filter((t) => t.niveauId === niveau.id),
       unite: uniteDxf(niveau.unites_par_metre),
     }
   })
@@ -162,6 +169,7 @@ export function preparerExport(donnees, reglages) {
       points: pointsRetenus,
       elements,
       elementsExport: etages.flatMap((e) => e.elementsExport),
+      traces: etages.flatMap((e) => e.traces),
       photos: photos.filter((ph) => idsPoints.has(ph.point_id)),
       visitees: piecesVisitees(donnees?.entrees),
       // Comme les DXF : une fiche proposée n'est imprimée que si demandé
@@ -178,6 +186,7 @@ export function dxfDuNiveau(etage, { plan = null, inclurePropositions = false } 
     elementsExport: etage.elementsExport,
     photos: etage.photos,
     points: etage.points,
+    traces: etage.traces ?? [],
     unitesParMetre: etage.unite.unitesParMetre,
     plan,
     inclurePropositions,
@@ -370,6 +379,11 @@ export function avertissementsExport({ donnees, reglages, enLigne = true }) {
     if (n > 0) sortie.push(`${n} ${pluriel(n, 'élément')} à valider ne ${n > 1 ? 'seront' : 'sera'} pas ${pluriel(n, 'exporté')}.`)
     const fiches = (donnees?.pieces ?? []).filter((p) => p.fiche_a_valider && retenus.has(p.niveau_id)).length
     if (fiches > 0) sortie.push(`${fiches} ${pluriel(fiches, 'fiche')} de pièce à valider : finitions non exportées.`)
+    const aValider = (donnees?.traces ?? []).filter((t) => t.a_valider && retenus.has(t.niveau_id))
+    const liaisons = aValider.filter((t) => t.sorte === 'commande').length
+    if (liaisons > 0) sortie.push(`${liaisons} ${pluriel(liaisons, 'liaison')} à valider ne ${liaisons > 1 ? 'seront' : 'sera'} pas ${pluriel(liaisons, 'exportée')}.`)
+    const cotes = aValider.filter((t) => t.sorte === 'cote').length
+    if (cotes > 0) sortie.push(`${cotes} ${pluriel(cotes, 'valeur')} de cote à valider : ${cotes > 1 ? 'ces cotes partent' : 'cette cote part'} avec « ? ».`)
   }
   for (const n of niveaux) {
     // Sans unité connue, `uniteDxf` prend le mètre : le dire, un plan en cm

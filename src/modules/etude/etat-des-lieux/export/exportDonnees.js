@@ -7,6 +7,7 @@
 //   - étages et pièces en `select('*')` (`chargerEtat`) : `unites_par_metre`,
 //     `chemin_vecteurs`, fiches et marques de l'analyse quand la base les a ;
 //   - points, photos et entrées dans les pièces (`lireToutEdl`, paginé) ;
+//   - liaisons et cotes (`lireToutEdl`, migration 084 ; sans elle, aucune) ;
 //   - éléments relevés (`lireEtatAnalyse`, migration 082 ; sans elle, aucun
 //     élément : seuls les points typés partent).
 // Rien n'est écrit : un compte en lecture seule exporte aussi.
@@ -22,7 +23,7 @@ const DELAI_EXPORT_MS = 20000
 
 /**
  * @returns { indisponible } sans la migration 077, sinon
- *   { etat, niveaux, pieces, points, photos, entrees, elements, analyseIndisponible }
+ *   { etat, niveaux, pieces, points, photos, entrees, traces, elements, analyseIndisponible }
  */
 export async function lireDonneesExport(affaireId) {
   const options = { delaiMs: DELAI_EXPORT_MS }
@@ -45,6 +46,8 @@ export async function lireDonneesExport(affaireId) {
     points: v.points ?? [],
     photos: v.photos ?? [],
     entrees: v.entrees ?? [],
+    // Sans la 084, `lireToutEdl` rend déjà une liste vide
+    traces: v.traces ?? [],
     elements: analyse.elements ?? [],
     analyseIndisponible: !!analyse.indisponible,
   }

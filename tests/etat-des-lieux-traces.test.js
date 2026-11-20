@@ -9,7 +9,7 @@ import { test, describe } from 'node:test'
 import {
   SORTES_TRACE, TYPES_INTERRUPTEUR, TYPES_LUMINAIRE, TYPES_JOURNAL_TRACES, liaisonPossible, liaisonExiste,
   angleLePlusProche, longueurCote, valeurCote, texteValeur, traceValide, nouvelleTrace, tracesIndisponibles, lectureTraces,
-  champsModificationTrace,
+  champsModificationTrace, tracesAExporter,
 } from '../src/modules/etude/etat-des-lieux/tracesEdl.js'
 import {
   debutRelier, debutCoter, consigneMode, toucherRelier, toucherCoter, courbeCommande, traitsCote, traceProche,
@@ -554,5 +554,56 @@ describe('visite : règles de l’agence sur les traces', () => {
     assert.deepEqual(rendu.traces.map((t) => t.id).sort(), [liaison.id, autre.id, cote.id].sort())
     assert.deepEqual(rendu.photos.map((p) => p.id).sort(), ['ph1', 'ph2'])
     assert.equal(rendu.points.find((p) => p.id === 'l1').numero, lum.numero)
+  })
+})
+
+// ─── Export (tâche 4) ────────────────────────────────────────────────────────
+
+describe('tracesAExporter : ce qui part dans le DXF et les planches', () => {
+  const points = [
+    { id: 'i1', niveau_id: 'n1', numero: 1, type: 'interrupteur', x: 1, y: 1 },
+    { id: 'l1', niveau_id: 'n1', numero: 2, type: 'luminaire', x: 3, y: 2 },
+    { id: 'l9', niveau_id: 'n2', numero: 9, type: 'luminaire', x: 3, y: 2 },
+  ]
+  const commande = (id, extra = {}) => ({ id, sorte: 'commande', niveau_id: 'n1', piece_id: 'p1', point_a: 'i1', point_b: 'l1', a_valider: false, ...extra })
+  const cote = (id, extra = {}) => ({ id, sorte: 'cote', niveau_id: 'n1', piece_id: 'p1', xa: 0, ya: 0, xb: 4, yb: 0, valeur: '4,00 m', a_valider: false, ...extra })
+
+  test('liaison et cote validées, en mètres', () => {
+    const [c, k] = tracesAExporter({ traces: [commande('t1'), cote('t2')], points })
+    assert.deepEqual(c, { id: 't1', sorte: 'commande', niveauId: 'n1', pieceId: 'p1', a: [1, 1], b: [3, 2], valeur: null, aValider: false })
+    assert.deepEqual(k, { id: 't2', sorte: 'cote', niveauId: 'n1', pieceId: 'p1', a: [0, 0], b: [4, 0], valeur: '4,00 m', aValider: false })
+  })
+
+  test('liaison proposée : écartée par défaut, marquée si demandée', () => {
+    const traces = [commande('t1', { a_valider: true, origine: 'ia' })]
+    assert.deepEqual(tracesAExporter({ traces, points }), [])
+    const [c] = tracesAExporter({ traces, points, inclurePropositions: true })
+    assert.equal(c.aValider, true)
+  })
+
+  test('liaison dont un point manque ou est sur un autre étage : omise', () => {
+    assert.deepEqual(tracesAExporter({ traces: [commande('t1', { point_b: 'disparu' })], points }), [])
+    assert.deepEqual(tracesAExporter({ traces: [commande('t1', { point_b: 'l9' })], points }), [])
+    // Point sans position
+    assert.deepEqual(tracesAExporter({ traces: [commande('t1')], points: [points[0], { ...points[1], x: null }] }), [])
+  })
+
+  test('cote à la valeur proposée : la cote part, la valeur seulement si demandée', () => {
+    const traces = [cote('t2', { valeur: '3,45 m', a_valider: true })]
+    const [sans] = tracesAExporter({ traces, points })
+    assert.equal(sans.valeur, null)
+    assert.equal(sans.aValider, false)
+    const [avec] = tracesAExporter({ traces, points, inclurePropositions: true })
+    assert.equal(avec.valeur, '3,45 m')
+    assert.equal(avec.aValider, true)
+  })
+
+  test('valeur réécrite si lisible, gardée telle quelle sinon ; cote sans valeur ou incomplète', () => {
+    assert.equal(tracesAExporter({ traces: [cote('t', { valeur: '345 cm' })], points })[0].valeur, '3,45 m')
+    assert.equal(tracesAExporter({ traces: [cote('t', { valeur: 'environ trois' })], points })[0].valeur, 'environ trois')
+    assert.equal(tracesAExporter({ traces: [cote('t', { valeur: null })], points })[0].valeur, null)
+    assert.deepEqual(tracesAExporter({ traces: [cote('t', { xb: 0 }), cote('u', { yb: null })], points }), [])
+    assert.deepEqual(tracesAExporter({ traces: [{ id: 'x', sorte: 'autre' }, null], points }), [])
+    assert.deepEqual(tracesAExporter(), [])
   })
 })

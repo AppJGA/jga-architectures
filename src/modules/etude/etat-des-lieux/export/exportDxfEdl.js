@@ -36,6 +36,7 @@ import { placerEtiquettes, pointInterieur, repere } from './placementEtiquettes.
 import { dansCp1252, encoderCp1252 } from './encodageDxf.js'
 import { ficheExportee, hspExport, porteExport, statutExport } from './ficheExportEdl.js'
 import { STATUT_A_PRECISER, libelleStatut } from '../statutsEdl.js'
+import { courbeCommande, traitsCote } from '../visite/tracesVisiteLogique.js'
 
 export const CALQUE_A_VALIDER = 'EDL-À valider'
 
@@ -63,6 +64,11 @@ export const CARACTERES_CADRE = 32
 const CARACTERES_NOM = Math.round((CARACTERES_CADRE * HAUTEUR_TEXTE) / HAUTEUR_NOM)
 // Un TEXT R12 ne dépasse pas 255 caractères
 const LONGUEUR_TEXTE_MAX = 250
+
+// Cote entre deux angles (084) : trait oblique de 0,15 m à chaque bout, valeur
+// posée 5 cm au-dessus de la ligne, à la hauteur des autres textes
+export const TIC_COTE = 0.15
+export const ECART_TEXTE_COTE = 0.05
 
 const RUBRIQUES = [['sol', 'Sol'], ['murs', 'Murs'], ['plafond', 'Plafond'], ['plinthes', 'Plinthes']]
 
@@ -334,6 +340,32 @@ export function blocInsere(code, angle) {
   return retourne ? `${nomBloc(code)}${SUFFIXE_RETOURNE}` : nomBloc(code)
 }
 
+/**
+ * L'arc de cercle d'une liaison interrupteur → luminaire : il passe par les
+ * deux points et par le sommet de `courbeCommande` (même flèche, même côté
+ * qu'à l'écran et sur la planche). R12 n'a pas de courbe de Bézier ; un ARC
+ * se relit partout et garde le trait fin d'un seul tenant. Mètres du plan,
+ * angles en degrés dans le sens trigonométrique : l'arc va du luminaire à
+ * l'interrupteur (le sommet est à gauche du sens interrupteur → luminaire).
+ * @returns { centre, rayon, debut, fin, sommet } ou null
+ */
+export function arcCommande(a, b) {
+  const courbe = courbeCommande(a, b)
+  if (!courbe) return null
+  const corde = Math.hypot(b[0] - a[0], b[1] - a[1])
+  const milieu = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]
+  const n = [courbe.sommet[0] - milieu[0], courbe.sommet[1] - milieu[1]]
+  const fleche = Math.hypot(n[0], n[1])
+  if (!(fleche > 0)) return null
+  const rayon = (corde * corde) / 4 / (2 * fleche) + fleche / 2
+  const centre = [courbe.sommet[0] - (n[0] / fleche) * rayon, courbe.sommet[1] - (n[1] / fleche) * rayon]
+  const angle = (p) => {
+    const d = (Math.atan2(p[1] - centre[1], p[0] - centre[0]) * 180) / Math.PI
+    return d < 0 ? d + 360 : d
+  }
+  return { centre, rayon, debut: angle(b), fin: angle(a), sommet: courbe.sommet }
+}
+
 // Gardé ici pour les appelants d'avant : le placement des textes en a besoin aussi
 export { pointInterieur }
 
@@ -507,9 +539,13 @@ export function etiquettesEtage({ pieces = [], elementsExport = [], photos = [],
  * @param plan          plan allégé décodé (`decoderVecteurs`) ou null
  * @param inclurePropositions fiche pas encore relue (`fiche_a_valider`) :
  *                      ses finitions sur `EDL-À valider` si vrai, omises sinon
+ * @param traces        sortie de `tracesAExporter` (tracesEdl.js) pour l'étage :
+ *                      liaisons en ARC sur EDL-Électricité, cotes (ligne,
+ *                      obliques, valeur) sur EDL-Cotes, propositions sur
+ *                      `EDL-À valider`
  */
 export function genererDxfEdl({
-  niveau = null, pieces = [], elementsExport = [], photos = [], points = [],
+  niveau = null, pieces = [], elementsExport = [], photos = [], points = [], traces = [],
   unitesParMetre, plan = null, inclurePropositions = false,
 } = {}) {
   const { unitesParMetre: u, insunits } = uniteDxf(unitesParMetre ?? niveau?.unites_par_metre)
@@ -575,6 +611,27 @@ export function genererDxfEdl({
     w.polyligne(utiliser(NOM_PIECES), c.piece.contour.map(enUnites), true)
     w.polyligne(NOM_PIECES, c.coins.map(enUnites), true)
     for (const l of c.lignes) w.texte(utiliser(l.calque), enUnites(l.pos), l.hauteur * u, l.texte, { rotation: c.angle, h: 1, v: 2 })
+  }
+
+  // ── Liaisons et cotes (084), sous les symboles ──
+  const NOM_ELECTRICITE = calqueEdl('electricite').nom
+  const NOM_COTES = calqueEdl('cotes').nom
+  for (const t of traces ?? []) {
+    const calque = utiliser(t.aValider ? CALQUE_A_VALIDER : t.sorte === 'commande' ? NOM_ELECTRICITE : NOM_COTES)
+    if (t.sorte === 'commande') {
+      const arc = arcCommande(t.a, t.b)
+      if (!arc) continue
+      // L'étendue suit les deux bouts et le sommet de la courbe
+      for (const p of [t.a, t.b, arc.sommet]) enUnites(p)
+      w.arc(calque, enUnites(arc.centre), arc.rayon * u, arc.debut, arc.fin)
+      continue
+    }
+    const c = traitsCote(t.a, t.b, { tic: TIC_COTE, decalage: ECART_TEXTE_COTE, yVersLeBas: false })
+    if (!c) continue
+    w.ligne(calque, enUnites(c.ligne[0]), enUnites(c.ligne[1]))
+    for (const [p, q] of c.obliques) w.ligne(calque, enUnites(p), enUnites(q))
+    // Centrée sur sa ligne de base, au-dessus de la ligne, jamais à l'envers
+    w.texte(calque, enUnites(c.texte.position), HAUTEUR_TEXTE * u, texteDxf(t.valeur) || '?', { rotation: c.texte.angle, h: 1 })
   }
 
   // ── Éléments placés : symboles, libellés, cotes ──

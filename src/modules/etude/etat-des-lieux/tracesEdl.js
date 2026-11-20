@@ -165,3 +165,53 @@ export async function lectureTraces(lire) {
     return { traces: [], tracesDisponibles: false }
   }
 }
+
+const coordonnees = (x, y) => {
+  const p = [nombre(x), nombre(y)]
+  return p.every(Number.isFinite) ? p : null
+}
+
+/**
+ * Les traces qui partent dans les exports (DXF, planches PDF et Word), en
+ * mètres du plan, avec la règle des éléments : par défaut, rien de ce qui
+ * attend une relecture.
+ *   · une liaison proposée (`a_valider`) n'existe que si les propositions
+ *     sont demandées ; une liaison dont un point manque, ou n'est plus sur
+ *     l'étage de la liaison, est omise ;
+ *   · une cote est toujours posée à la main : seule sa valeur peut être
+ *     proposée. Sans les propositions, elle part sans valeur (« ? ») ; avec,
+ *     elle part marquée « à valider ».
+ * `valeur` : « 3,45 m » (réécrite si lisible), ou null tant que personne ne
+ * l'a donnée.
+ *
+ * @returns [{ id, sorte, niveauId, pieceId, a: [x, y], b: [x, y], valeur, aValider }]
+ */
+export function tracesAExporter({ traces = [], points = [], inclurePropositions = false } = {}) {
+  const parId = new Map((points ?? []).map((p) => [p.id, p]))
+  const sortie = []
+  for (const t of traces ?? []) {
+    if (!t || !SORTES_TRACE.includes(t.sorte)) continue
+    const niveauId = t.niveau_id ?? null
+    const proposee = !!t.a_valider
+    if (t.sorte === 'commande') {
+      if (proposee && !inclurePropositions) continue
+      const pa = parId.get(t.point_a)
+      const pb = parId.get(t.point_b)
+      const surLEtage = (p) => !niveauId || !p.niveau_id || p.niveau_id === niveauId
+      if (!pa || !pb || pa.id === pb.id || !surLEtage(pa) || !surLEtage(pb)) continue
+      const a = coordonnees(pa.x, pa.y)
+      const b = coordonnees(pb.x, pb.y)
+      if (!a || !b || (a[0] === b[0] && a[1] === b[1])) continue
+      sortie.push({ id: t.id, sorte: 'commande', niveauId: niveauId ?? pa.niveau_id ?? null, pieceId: t.piece_id ?? null, a, b, valeur: null, aValider: proposee })
+      continue
+    }
+    const a = coordonnees(t.xa, t.ya)
+    const b = coordonnees(t.xb, t.yb)
+    if (!a || !b || !(Math.hypot(b[0] - a[0], b[1] - a[1]) > 0)) continue
+    const garderValeur = !proposee || inclurePropositions
+    const brute = garderValeur && typeof t.valeur === 'string' && t.valeur.trim() ? t.valeur.trim() : null
+    const valeur = brute ? texteValeur(valeurCote(brute)) ?? brute : null
+    sortie.push({ id: t.id, sorte: 'cote', niveauId, pieceId: t.piece_id ?? null, a, b, valeur, aValider: proposee && garderValeur && !!valeur })
+  }
+  return sortie
+}

@@ -144,6 +144,8 @@ async function fondImage(niveau, obtenirLiens) {
  * @param numeros numéro de chaque planche au cartouche (Map ou objet niveauId →
  *   texte) ; « EDL-1 », « EDL-2 »… dans l'ordre des étages à défaut
  * @param indice indice des planches (texte ; vide : la date, cf. `misePlanche`)
+ * @param traces liaisons et cotes (`tracesAExporter`, via `preparerExport`) :
+ *   sur les planches, dans le fond du Word compris
  * Les autres paramètres sont ceux de `definitionGardeEdl` / `definitionTableauxEdl`.
  * @returns { blob, nomFichier, avertissements, fabriquerWord } — `fabriquerWord()`
  *   rend la promesse du rapport Word ({ blob, nomFichier }) fait des mêmes
@@ -155,7 +157,7 @@ async function fondImage(niveau, obtenirLiens) {
 export async function genererRapportEdl({
   affaire, etat = null, niveaux = [], pieces = [], points = [], elements = null, elementsExport = [], photos = [],
   visitees = null, redacteur = '', date = new Date(), obtenirLiens, vecteurs = null, surEtape = () => {}, verifier = () => {},
-  inclurePropositions = false, numeros = null, indice = '',
+  inclurePropositions = false, numeros = null, indice = '', traces = [],
 }) {
   const manquants = new Map()
   const tolerer = (promesse, quoi) => Promise.resolve(promesse).catch((err) => {
@@ -192,7 +194,7 @@ export async function genererRapportEdl({
     const hors = relevesHorsPieces({ niveauId: niveau.id, pieces, elementsExport, points, photos, sansElement: seuls })
     const reperes = [...hors.sansElement, ...hors.photos.map((ph) => pointsParId.get(ph.point_id))].map(position).filter(Boolean)
     const mise = misePlanche({
-      niveau, pieces, elementsExport, boiteVecteurs: v?.boite ?? niveau.cadrage ?? null, reperes,
+      niveau, pieces, elementsExport, traces, boiteVecteurs: v?.boite ?? niveau.cadrage ?? null, reperes,
       affaire, date: dateRapport, redacteur, inclurePropositions,
       numero: texteDe(numeros, niveau.id) || `EDL-${rang + 1}`, indice,
     })

@@ -11,8 +11,10 @@ import { pointDansPolygone } from '../src/modules/etude/etat-des-lieux/geometrie
 import { primitivesPlacees } from '../src/modules/etude/etat-des-lieux/export/symbolesEdl.js'
 import { encoderCp1252, octetCp1252 } from '../src/modules/etude/etat-des-lieux/export/encodageDxf.js'
 import { numeroterPhotos } from '../src/modules/etude/etat-des-lieux/export/numerotationEdl.js'
+import { tracesAExporter } from '../src/modules/etude/etat-des-lieux/tracesEdl.js'
+import { courbeCommande } from '../src/modules/etude/etat-des-lieux/visite/tracesVisiteLogique.js'
 import {
-  CALQUE_A_VALIDER, couperLignes, echapperPourcent, elementsAExporter, encoderDxf, genererDxfEdl, nomBloc, nomCalqueValide,
+  CALQUE_A_VALIDER, ECART_TEXTE_COTE, TIC_COTE, arcCommande, couperLignes, echapperPourcent, elementsAExporter, encoderDxf, genererDxfEdl, nomBloc, nomCalqueValide,
   pointInterieur, texteHsp, texteSurface, uniteDxf,
 } from '../src/modules/etude/etat-des-lieux/export/exportDxfEdl.js'
 
@@ -557,5 +559,109 @@ describe('fiche proposée et HSP : la règle du rapport', () => {
     const l = relire(genererDxfEdl({ pieces: [chambre], unitesParMetre: 100, inclurePropositions: true }))
     assert.deepEqual(textesDe(l, CALQUE_A_VALIDER), ['Sol : Moquette proposée'])
     assert.deepEqual(textesDe(l, 'EDL-Pièces').filter((t) => t.startsWith('HSP')), ['HSP 2,50 m'])
+  })
+})
+
+// ─── Liaisons et cotes (084) ─────────────────────────────────────────────────
+
+describe('liaisons et cotes', () => {
+  const inter = { id: 'pt-i', niveau_id: 'n1', piece_id: 'pc-1', numero: 6, type: 'interrupteur', x: 1, y: 3 }
+  const lum = { id: 'pt-l', niveau_id: 'n1', piece_id: 'pc-1', numero: 7, type: 'luminaire', x: 4, y: 3 }
+  const lesPoints = [inter, lum]
+  const liaison = { id: 'tr-1', sorte: 'commande', niveau_id: 'n1', piece_id: 'pc-1', point_a: 'pt-i', point_b: 'pt-l', a_valider: false }
+  const coteBas = { id: 'tr-2', sorte: 'cote', niveau_id: 'n1', piece_id: 'pc-1', xa: 0, ya: 0, xb: 5, yb: 0, valeur: '5,02 m', a_valider: false }
+  const dxf = ({ traces, inclurePropositions = false, unitesParMetre = 100 }) => genererDxfEdl({
+    pieces: [sejour], points: lesPoints, elementsExport: [], unitesParMetre, inclurePropositions,
+    traces: tracesAExporter({ traces, points: lesPoints, inclurePropositions }),
+  })
+
+  test('liaison : un ARC sur EDL-Électricité, des deux points, avec la flèche de l’écran', () => {
+    for (const u of [1, 100, 1000]) {
+      const texte = dxf({ traces: [liaison], unitesParMetre: u })
+      const lu = relire(texte)
+      const arcs = lu.traits.filter((t) => t.calque === 'EDL-Électricité')
+      assert.equal(arcs.length, 1)
+      const pts = arcs[0].pts
+      // Sens trigonométrique : du luminaire à l'interrupteur
+      prochePoint(pts[0], [4 * u, 3 * u], 1e-6 * u)
+      prochePoint(pts[pts.length - 1], [1 * u, 3 * u], 1e-6 * u)
+      // Rayon d'un cercle de flèche 20 % : (L²/4 + f²) / 2f = 0,725 L
+      const [brut] = entitesBrutes(texte, 'ARC')
+      proche(Number(brut.get(40)), 0.725 * 3 * u, 1e-4 * u)
+      assert.equal(brut.get(8), 'EDL-Électricité')
+      // Bombée à gauche du sens interrupteur → luminaire (ici vers le haut), au sommet de la courbe de l'écran
+      const haut = Math.max(...pts.map((p) => p[1]))
+      const { sommet } = courbeCommande([1, 3], [4, 3])
+      proche(haut, sommet[1] * u, 0.01 * u)
+      proche(sommet[1], 3 + 0.2 * 3)
+      assert.ok(lu.calques.some((c) => c.nom === 'EDL-Électricité'))
+    }
+  })
+
+  test('arcCommande : mêmes bouts et même sommet dans tous les sens', () => {
+    for (const [a, b] of [[[0, 0], [2, 0]], [[2, 0], [0, 0]], [[1, 1], [1, 5]], [[3, 2], [-1, -4]]]) {
+      const arc = arcCommande(a, b)
+      const { sommet } = courbeCommande(a, b)
+      prochePoint(arc.sommet, sommet)
+      for (const p of [a, b, sommet]) proche(Math.hypot(p[0] - arc.centre[0], p[1] - arc.centre[1]), arc.rayon, 1e-9)
+      const angle = (p) => ((Math.atan2(p[1] - arc.centre[1], p[0] - arc.centre[0]) * 180) / Math.PI + 360) % 360
+      proche(arc.debut, angle(b), 1e-9)
+      proche(arc.fin, angle(a), 1e-9)
+      // Le sommet est sur l'arc parcouru de `debut` à `fin` en sens trigonométrique
+      const etendue = (arc.fin - arc.debut + 360) % 360
+      assert.ok((angle(sommet) - arc.debut + 360) % 360 < etendue)
+    }
+    assert.equal(arcCommande([1, 1], [1, 1]), null)
+  })
+
+  test('cote : ligne, deux obliques et valeur au-dessus sur EDL-Cotes, dans l’unité du plan', () => {
+    const texte = dxf({ traces: [coteBas] })
+    const lu = relire(texte)
+    const traits = lu.traits.filter((t) => t.calque === 'EDL-Cotes')
+    assert.equal(traits.length, 3)
+    const ligne = traits.find((t) => Math.hypot(t.pts[1][0] - t.pts[0][0], t.pts[1][1] - t.pts[0][1]) > 100)
+    prochePoint(ligne.pts[0], [0, 0])
+    prochePoint(ligne.pts[1], [500, 0])
+    // Obliques à 45°, de TIC_COTE, centrées sur les bouts
+    for (const [bout, oblique] of [[[0, 0], traits[1]], [[500, 0], traits[2]]]) {
+      const [p, q] = oblique.pts
+      proche(Math.hypot(q[0] - p[0], q[1] - p[1]), TIC_COTE * 100, 1e-6)
+      prochePoint([(p[0] + q[0]) / 2, (p[1] + q[1]) / 2], bout)
+      proche(Math.abs(q[0] - p[0]), Math.abs(q[1] - p[1]), 1e-6)
+    }
+    const [t] = lu.textes.filter((x) => x.calque === 'EDL-Cotes')
+    assert.equal(t.texte, '5,02 m')
+    prochePoint(t.pos, [250, ECART_TEXTE_COTE * 100])
+    proche(t.rotation, 0)
+    assert.equal(t.alignH, 1)
+    proche(t.hauteur, 12)
+  })
+
+  test('cote verticale tracée vers le bas : texte lisible de bas en haut, à gauche de la ligne', () => {
+    const lu = relire(dxf({ traces: [{ ...coteBas, xa: 0, ya: 4, xb: 0, yb: 0, valeur: null }] }))
+    const [t] = lu.textes.filter((x) => x.calque === 'EDL-Cotes')
+    assert.equal(t.texte, '?')
+    proche(t.rotation, 90)
+    assert.ok(t.pos[0] < 0)
+  })
+
+  test('propositions : écartées par défaut, sur EDL-À valider si demandées', () => {
+    const proposee = { ...liaison, id: 'tr-9', a_valider: true, origine: 'ia' }
+    const valeurProposee = { ...coteBas, valeur: '4,98 m', a_valider: true }
+    const sans = relire(dxf({ traces: [proposee, valeurProposee] }))
+    assert.equal(sans.traits.filter((t) => t.calque === 'EDL-Électricité').length, 0)
+    assert.equal(sans.calques.some((c) => c.nom === CALQUE_A_VALIDER), false)
+    // La cote reste (posée à la main), sans la valeur proposée
+    assert.deepEqual(textesDe(sans, 'EDL-Cotes'), ['?'])
+    const avec = relire(dxf({ traces: [proposee, valeurProposee], inclurePropositions: true }))
+    assert.equal(avec.traits.filter((t) => t.calque === CALQUE_A_VALIDER).length, 4)
+    assert.deepEqual(textesDe(avec, CALQUE_A_VALIDER), ['4,98 m'])
+  })
+
+  test('sans trace (base sans la 084) : le fichier d’avant', () => {
+    const base = { pieces: [sejour, salleDeBain], points, elementsExport: elementsAExporter({ pieces: [sejour, salleDeBain], points, elements }), unitesParMetre: 100 }
+    assert.equal(genererDxfEdl({ ...base, traces: [] }), genererDxfEdl(base))
+    // Les seuls arcs sont ceux des blocs de symboles (calque 0)
+    assert.ok(entitesBrutes(genererDxfEdl(base), 'ARC').every((e) => e.get(8) === '0'))
   })
 })

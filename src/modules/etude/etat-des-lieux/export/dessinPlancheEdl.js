@@ -15,7 +15,7 @@
 import { versMetres } from '../geometrieEdl.js'
 import { EPAISSEUR_TRAIT, dessinerVecteurs } from '../vecteursEdlLogique.js'
 import { COULEUR } from '../../../chantier/comptes-rendus/rapportLogique.js'
-import { DPI_PLANCHE, LEGENDE, TAILLE_SYMBOLE_MM } from './plancheEdl.js'
+import { COTE_PLANCHE, DPI_PLANCHE, LEGENDE, TAILLE_SYMBOLE_MM } from './plancheEdl.js'
 import { placementFond } from './planRapportEdl.js'
 import { COULEUR_PROPOSITION } from './rapportEdlLogique.js'
 import { SYMBOLES, boitePrimitives, largeurTexte, primitivesPlacees } from './symbolesEdl.js'
@@ -31,7 +31,14 @@ export const TRAIT = {
   cadreLegende: 0.5,
   filet: 0.25,
   cadreCartouche: 0.5,
+  // Liaisons et cotes (084) : plus fines que les symboles, qu'elles ne doivent pas noyer
+  commande: 0.25,
+  cote: 0.18,
 }
+// Tirets d'une liaison ou d'une cote proposée par l'analyse
+const TIRETS_TRACE_MM = [1.2, 0.8]
+// Liseré blanc sous la valeur d'une cote : lisible sur les traits du plan
+const HALO_COTE_MM = 0.5
 export const POLICE_MULTIPLE_MM = 2.2
 // Entre le symbole et son « ×n »
 const ECART_MULTIPLE_MM = 0.5
@@ -243,6 +250,68 @@ export function tailleImageSymbole(symbole, pxParMm = PX_PAR_MM) {
   }
 }
 
+// ─── Liaisons et cotes ──────────────────────────────────────────────────────
+
+/** Une liaison de la mise : courbe fine de la couleur électricité (tirets si proposée). */
+function dessinerCommande(ctx, t, p) {
+  ctx.strokeStyle = t.couleur
+  ctx.lineWidth = TRAIT.commande * p
+  ctx.setLineDash?.(t.aValider ? TIRETS_TRACE_MM.map((v) => v * p) : [])
+  ctx.beginPath()
+  ctx.moveTo(t.a[0] * p, t.a[1] * p)
+  ctx.quadraticCurveTo(t.controle[0] * p, t.controle[1] * p, t.b[0] * p, t.b[1] * p)
+  ctx.stroke()
+}
+
+/** Une cote de la mise : ligne, obliques et valeur (« ? » si personne ne l'a donnée). */
+function dessinerCote(ctx, t, p) {
+  ctx.strokeStyle = t.couleur
+  ctx.lineWidth = TRAIT.cote * p
+  ctx.setLineDash?.(t.aValider ? TIRETS_TRACE_MM.map((v) => v * p) : [])
+  ctx.beginPath()
+  ctx.moveTo(t.a[0] * p, t.a[1] * p)
+  ctx.lineTo(t.b[0] * p, t.b[1] * p)
+  ctx.stroke()
+  ctx.setLineDash?.([])
+  ctx.beginPath()
+  for (const [q, r] of t.obliques) {
+    ctx.moveTo(q[0] * p, q[1] * p)
+    ctx.lineTo(r[0] * p, r[1] * p)
+  }
+  ctx.stroke()
+  if (!t.texte.valeur) return
+  const [x, y] = t.texte.position
+  ctx.save()
+  ctx.translate(x * p, y * p)
+  ctx.rotate((t.texte.angle * Math.PI) / 180)
+  ctx.font = police(COTE_PLANCHE.police * p, { gras: true })
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'alphabetic'
+  ctx.lineJoin = 'round'
+  ctx.strokeStyle = BLANC
+  ctx.lineWidth = HALO_COTE_MM * p
+  ctx.strokeText(t.texte.valeur, 0, 0)
+  ctx.fillStyle = t.couleur
+  ctx.fillText(t.texte.valeur, 0, 0)
+  ctx.restore()
+}
+
+/**
+ * Les liaisons et cotes de la mise (`mise.traces`), sous les symboles. Toujours
+ * dessinées, symboles ou non : le fond verrouillé du Word les porte (elles n'y
+ * sont pas déplaçables, seuls les symboles le sont).
+ */
+export function dessinerTraces(ctx, traces, { pxParMm = PX_PAR_MM } = {}) {
+  if (!traces?.length) return
+  ctx.save()
+  ctx.lineCap = 'round'
+  for (const t of traces) {
+    if (t.sorte === 'commande') dessinerCommande(ctx, t, pxParMm)
+    else if (t.sorte === 'cote') dessinerCote(ctx, t, pxParMm)
+  }
+  ctx.restore()
+}
+
 // ─── Légende ────────────────────────────────────────────────────────────────
 
 // Mesures de la légende (mm) ; `LEGENDE` (plancheEdl.js) en donne les
@@ -263,8 +332,33 @@ function symboleLegende(code, couleur) {
   return { code, angle: 0, quantite: 1, aValider: false, couleur, tailleMm: { largeur: b.largeur * f, hauteur: b.hauteur * f, ancre: [-b.xmin * f, b.ymax * f] } }
 }
 
+// Trace d'une entrée de légende, dans la case du symbole (5 × 3,6 mm)
+function traceLegende(ctx, sorte, couleur, [sx, sy], pxParMm) {
+  const [cl, ch] = L.caseSymbole
+  const a = [sx - cl / 2, sy + ch / 4]
+  const b = [sx + cl / 2, sy + ch / 4]
+  ctx.save()
+  ctx.lineCap = 'round'
+  if (sorte === 'cote') {
+    const tic = COTE_PLANCHE.tic * 0.6
+    dessinerCote(ctx, {
+      couleur, aValider: false, a: [a[0], sy], b: [b[0], sy],
+      obliques: [a[0], b[0]].map((x) => [[x - tic / 2 * Math.SQRT1_2, sy + tic / 2 * Math.SQRT1_2], [x + tic / 2 * Math.SQRT1_2, sy - tic / 2 * Math.SQRT1_2]]),
+      texte: { valeur: '', position: [sx, sy], angle: 0 },
+    }, pxParMm)
+  } else {
+    // Courbe bombée vers le haut de la case, comme une liaison posée de gauche à droite
+    dessinerCommande(ctx, { couleur, aValider: sorte === 'proposition', a, b, controle: [sx, sy - ch * 0.75] }, pxParMm)
+  }
+  ctx.restore()
+}
+
 function entreeLegende(ctx, entree, couleur, [sx, sy], pxParMm) {
   const p = pxParMm
+  if (entree.trace) {
+    traceLegende(ctx, entree.trace, couleur, [sx, sy], p)
+    return
+  }
   if (entree.proposition) {
     anneau(ctx, sx * p, sy * p, L.anneau * p, p)
     return
@@ -477,6 +571,8 @@ export function dessinerPlanche(ctx, mise, {
   ctx.fillStyle = BLANC
   ctx.fillRect(0, 0, largeur, hauteur)
   dessinerPlanExistant(ctx, mise, { vecteurs, fond, pxParMm })
+  // Dans le fond du Word aussi (`avecSymboles` faux) : elles n'y bougent pas
+  dessinerTraces(ctx, mise.traces, { pxParMm })
   if (avecSymboles) {
     for (const s of mise.symboles) dessinerSymbole(ctx, s, { centrePx: [s.xMm * pxParMm, s.yMm * pxParMm], pxParMm })
   }

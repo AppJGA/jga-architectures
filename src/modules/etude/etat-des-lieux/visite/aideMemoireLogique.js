@@ -5,11 +5,13 @@
 // rapport soit complet (finitions et leur état, bloc porte, électricité,
 // plomberie, désordres…). Les rubriques se cochent d'elles-mêmes : une
 // finition quand l'analyse l'a remplie, une famille d'équipements dès qu'un
-// point de son calque est posé dans la pièce (ou qu'un élément y est relevé).
+// point de son calque est posé dans la pièce (ou qu'un élément y est relevé),
+// les liaisons et cotes dès qu'il en existe une dans la pièce.
 // Seule liste : la changer ici. Pur, testé (tests/etat-des-lieux-visite.test.js).
 
 import { typeEdl } from '../calquesEdl.js'
 import { porteDe } from '../statutsEdl.js'
+import { tracesDeLaPiece } from './tracesVisiteLogique.js'
 
 const rempli = (v) => v != null && String(v).trim() !== ''
 
@@ -44,6 +46,12 @@ export const AIDE_MEMOIRE = [
     ],
   },
   {
+    // Migration 084 : sans elle, la rubrique n'est pas proposée (rien ne
+    // permettrait de la cocher)
+    cle: 'traces', titre: 'Liaisons et cotes',
+    rubriques: [{ cle: 'traces', libelle: 'Commandes d’éclairage et cotes', aide: 'relier chaque interrupteur à son luminaire, coter entre deux angles', traces: true }],
+  },
+  {
     cle: 'desordres', titre: 'Désordres',
     rubriques: [{ cle: 'desordres', libelle: 'Désordres', aide: 'fissures, humidité, dégradations, matériau suspect : pointer et photographier', calques: ['desordres'] }],
   },
@@ -58,9 +66,11 @@ const calqueDuPoint = (point) => typeEdl(point?.type)?.calque ?? null
  * @param piece { id, fiche, hsp_lue }
  * @param points points de l'étage (seuls ceux de la pièce comptent)
  * @param elements lignes `edl_elements` connues (seules celles de la pièce comptent)
+ * @param traces liaisons et cotes connues ; `tracesDisponibles` faux (pas de
+ *   migration 084) : la rubrique des liaisons et cotes n'est pas proposée
  * @returns { groupes: [{ cle, titre, rubriques: [{ cle, libelle, aide, fait }] }], faites, total }
  */
-export function aideMemoire(piece, { points = [], elements = [] } = {}) {
+export function aideMemoire(piece, { points = [], elements = [], traces = [], tracesDisponibles = false } = {}) {
   const fiche = piece?.fiche ?? null
   const calques = new Set()
   for (const p of points) if (p.piece_id === piece?.id) calques.add(calqueDuPoint(p))
@@ -69,12 +79,17 @@ export function aideMemoire(piece, { points = [], elements = [] } = {}) {
 
   let faites = 0
   let total = 0
-  const groupes = AIDE_MEMOIRE.map((g) => ({
+  const tracesIci = tracesDisponibles ? tracesDeLaPiece(traces, piece?.id, points).length > 0 : false
+  const proposees = AIDE_MEMOIRE
+    .map((g) => ({ ...g, rubriques: g.rubriques.filter((r) => !r.traces || tracesDisponibles) }))
+    .filter((g) => g.rubriques.length > 0)
+  const groupes = proposees.map((g) => ({
     cle: g.cle,
     titre: g.titre,
     rubriques: g.rubriques.map((r) => {
       let fait = false
-      if (r.fiche) fait = r.fiche.some((c) => rempli(fiche?.[c])) || (!!r.hspLue && hspLue)
+      if (r.traces) fait = tracesIci
+      else if (r.fiche) fait = r.fiche.some((c) => rempli(fiche?.[c])) || (!!r.hspLue && hspLue)
       else if (r.porte) fait = Object.values(porteDe(fiche)).some(rempli)
       else if (r.calques) fait = r.calques.some((c) => calques.has(c))
       total++

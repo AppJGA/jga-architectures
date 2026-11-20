@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Camera, Trash2, X } from 'lucide-react'
+import { Camera, Trash2, X, Spline } from 'lucide-react'
 import { libellePoint } from '../calquesEdl'
 import { miniatureLocale } from './photosEdl'
 import { BarreCalques } from './BarreCalques'
@@ -11,6 +11,8 @@ import { BarreCalques } from './BarreCalques'
 // choisi, la barre reste visible, grisée, avec la consigne. Hauteur fixe
 // (HAUTEUR_PANNEAU_POINT) : le plan dessous ne change jamais de taille pendant
 // la visite, une pièce agrandie ou un pincement ne sont pas défaits.
+// « Relier » (interrupteur ou luminaire, migration 084) : `onRelier` absent,
+// le bouton n'est pas montré.
 
 const HAUTEUR_PANNEAU_POINT = 170
 
@@ -35,7 +37,7 @@ function Miniature({ photo, obtenirLiens }) {
     : <span style={{ width: 40, height: 40, borderRadius: 2, background: '#EFEBE4', flexShrink: 0 }} />
 }
 
-export function PanneauPoint({ point, photos, obtenirLiens, inactif, onType, onPhoto, onSupprimer, onFermer }) {
+export function PanneauPoint({ point, photos, obtenirLiens, inactif, onType, onPhoto, onSupprimer, onFermer, onRelier = null, relierEnCours = false }) {
   const entree = useRef(null)
   return (
     <div style={{ height: HAUTEUR_PANNEAU_POINT, boxSizing: 'border-box', overflow: 'hidden', flexShrink: 0, background: 'white', borderBottom: '0.5px solid rgba(0,0,0,0.1)', padding: '8px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -52,6 +54,13 @@ export function PanneauPoint({ point, photos, obtenirLiens, inactif, onType, onP
         )}
         {point && (
           <>
+            {onRelier && (
+              <button type="button" aria-pressed={relierEnCours} disabled={inactif} onClick={onRelier}
+                title="Relier cet interrupteur au luminaire qu’il commande (ou l’inverse)"
+                style={{ ...bouton, color: '#1565C0', ...(relierEnCours ? { borderColor: '#1565C0', background: '#EEF4FB' } : {}) }}>
+                <Spline size={17} /> Relier
+              </button>
+            )}
             <button type="button" style={bouton} disabled={inactif} onClick={() => entree.current?.click()}>
               <Camera size={18} /> Photo{photos.length ? ` (${photos.length})` : ''}
             </button>

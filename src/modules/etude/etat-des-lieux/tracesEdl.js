@@ -115,11 +115,12 @@ export function traceValide(t) {
  * Une trace neuve posée à la main pendant la visite (identifiant décidé sur
  * l'appareil). `commande` : `interrupteur` et `luminaire` (des points, ou
  * leurs ids) ; `cote` : les angles `a` et `b` ([x, y] en mètres) et une
- * `valeur` facultative.
+ * `valeur` facultative. `id` : décidé d'avance si le journal doit déjà le
+ * citer (les angles touchés d'une cote).
  */
-export function nouvelleTrace({ sorte, affaireId, visiteId = null, niveauId, pieceId = null, interrupteur, luminaire, a, b, valeur = null }) {
+export function nouvelleTrace({ id = null, sorte, affaireId, visiteId = null, niveauId, pieceId = null, interrupteur, luminaire, a, b, valeur = null }) {
   const base = {
-    id: crypto.randomUUID(), affaire_id: affaireId, visite_id: visiteId, niveau_id: niveauId, piece_id: pieceId,
+    id: id ?? crypto.randomUUID(), affaire_id: affaireId, visite_id: visiteId, niveau_id: niveauId, piece_id: pieceId,
     sorte, point_a: null, point_b: null, xa: null, ya: null, xb: null, yb: null, valeur: null,
     origine: 'main', a_valider: false, extrait: null,
   }
@@ -127,6 +128,15 @@ export function nouvelleTrace({ sorte, affaireId, visiteId = null, niveauId, pie
     return { ...base, point_a: interrupteur?.id ?? interrupteur ?? null, point_b: luminaire?.id ?? luminaire ?? null }
   }
   return { ...base, xa: a?.[0] ?? null, ya: a?.[1] ?? null, xb: b?.[0] ?? null, yb: b?.[1] ?? null, valeur: valeur ?? null }
+}
+
+/**
+ * Les champs d'une modification de trace tels qu'ils partent. Une valeur
+ * donnée à la main est une valeur relue : `a_valider` repasse à faux, sans
+ * quoi la prochaine analyse retirerait la valeur tapée comme une proposition.
+ */
+export function champsModificationTrace(champs) {
+  return champs && Object.hasOwn(champs, 'valeur') ? { ...champs, a_valider: false } : { ...champs }
 }
 
 /**

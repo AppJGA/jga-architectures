@@ -5,6 +5,7 @@ import { cadrePiece, COULEURS_PIECE, etatPiece, pointProche, ZOOM_MAX_VISITE } f
 import { useVecteursEdl } from '../useVecteursEdl'
 import { zoomMaxVectoriel } from '../vecteursEdlLogique'
 import { COULEUR_IA } from '../../../chantier/comptes-rendus/enregistrement/styleProposition'
+import { courbeCommande, traitsCote, traceProche, extremitesTrace, texteCote, COULEUR_COMMANDE, COULEUR_COTE } from './tracesVisiteLogique'
 
 // ─── Plan de la visite ───────────────────────────────────────────────────────
 //
@@ -18,13 +19,21 @@ import { COULEUR_IA } from '../../../chantier/comptes-rendus/enregistrement/styl
 // `consultation` (relecture au bureau) : aucun point ne se glisse, un appui
 // ne fait que choisir un point ; le point choisi porte un halo bleu, celui
 // des propositions de l'IA, pour se repérer depuis la liste des éléments.
+// Liaisons et cotes (084) : dessinées sous les points, épaisseurs en pixels
+// d'écran ; une proposition de l'IA en tirets bleus. Hors mode, un appui sur
+// une trace (et pas sur un point) la choisit. En mode « Coter », un appui
+// va à l'angle le plus proche de la pièce (`onToucherAngle`), jamais à un
+// point ; les angles sont marqués d'un rond de 44 px, zone sensible comprise.
 
 const ACCENT = 'var(--affaire-accent, #E8602C)'
 // Zone sensible de 44 px au doigt, rond visible plus petit
 const RAYON_TOUCHER = 22
 const SEUIL_GLISSE = 6
 
-export function PlanVisite({ niveau, pieces, points, nbPhotos, visitees, etats = null, piece, pointId, obtenirLiens, onToucher, onChoisirPoint, onDeplacerPoint, consultation = false }) {
+export function PlanVisite({
+  niveau, pieces, points, nbPhotos, visitees, etats = null, piece, pointId, obtenirLiens, onToucher, onChoisirPoint, onDeplacerPoint, consultation = false,
+  traces = [], traceId = null, mode = null, onChoisirTrace, onToucherAngle,
+}) {
   const svg = useRef(null)
   const glisseCourant = useRef(null)
   const pointeurs = useRef(new Set()) // doigts posés sur le plan, glisser compris
@@ -42,6 +51,8 @@ export function PlanVisite({ niveau, pieces, points, nbPhotos, visitees, etats =
   // sont pâlis, mais un appui dessus les choisit au lieu d'en poser un autre
   // par-dessus ; la pièce s'ouvre depuis l'écran, pas d'ici).
   const touchable = (p) => (!piece || p.piece_id === piece.id)
+  // Une trace se touche dans la pièce ouverte, ou toutes sur le plan de l'étage
+  const traceTouchable = (t) => (!piece || t.piece_id === piece.id || points.some((p) => p.piece_id === piece.id && (p.id === t.point_a || p.id === t.point_b)))
 
   // Un point différent, ou plus de glisser : on repart d'un compte de doigts sain
   useEffect(() => { pointeurs.current.clear(); glisseCourant.current = null }, [pointId])
@@ -64,8 +75,12 @@ export function PlanVisite({ niveau, pieces, points, nbPhotos, visitees, etats =
     // pas encore relâché : ce n'est pas un appui qui pose un point
     if (glisseCourant.current || pointeurs.current.size > 0) return
     const m = versMetres(c, [x * niveau.largeur, y * niveau.hauteur])
-    const proche = pointProche(points.filter(touchable), m, toleranceMetres())
-    if (proche) onChoisirPoint(proche.id)
+    const tolerance = toleranceMetres()
+    if (mode?.sorte === 'coter') { onToucherAngle?.(m, tolerance); return }
+    const proche = pointProche(points.filter(touchable), m, tolerance)
+    if (proche) { onChoisirPoint(proche.id); return }
+    const trace = !mode && onChoisirTrace ? traceProche(traces.filter(traceTouchable), points, m, tolerance) : null
+    if (trace) onChoisirTrace(trace.id)
     else onToucher?.(m)
   }
 
@@ -114,6 +129,9 @@ export function PlanVisite({ niveau, pieces, points, nbPhotos, visitees, etats =
     onDeplacerPoint(g.id, g.pos)
   }
 
+  // Un point glissé emporte ses liaisons avec lui
+  const positionsPoints = glisse ? points.map((p) => (p.id === glisse.id ? { ...p, x: glisse.pos[0], y: glisse.pos[1] } : p)) : points
+
   const calque = ({ largeur, hauteur, zoom }) => {
     const enCalque = (p) => {
       const [x, y] = versPixels(c, p)
@@ -141,6 +159,22 @@ export function PlanVisite({ niveau, pieces, points, nbPhotos, visitees, etats =
           if (p.id === piece?.id || etats?.get(p.id) !== 'attente') return null
           const [cx, cy] = enCalque(centre(p.contour))
           return <Sablier key={`s-${p.id}`} x={cx} y={cy} taille={14 / zoom} attenue={!!piece} />
+        })}
+        {traces.map((t) => (
+          <Trace
+            key={t.id} trace={t} points={positionsPoints} enCalque={enCalque} zoom={zoom}
+            choisie={t.id === traceId} attenuee={!!piece && !traceTouchable(t)}
+          />
+        ))}
+        {mode?.sorte === 'coter' && piece && piece.contour.map((angle, i) => {
+          const [ax, ay] = enCalque(angle)
+          const retenu = mode.angles.some((q) => q[0] === angle[0] && q[1] === angle[1])
+          return (
+            <g key={`angle-${i}`} aria-hidden="true" style={{ pointerEvents: 'none' }}>
+              <circle cx={ax} cy={ay} r={RAYON_TOUCHER / zoom} style={{ fill: retenu ? 'rgba(14,116,144,0.35)' : 'rgba(14,116,144,0.08)', stroke: COULEUR_COTE, strokeWidth: (retenu ? 2 : 1) / zoom }} />
+              <circle cx={ax} cy={ay} r={(retenu ? 5 : 3) / zoom} style={{ fill: COULEUR_COTE }} />
+            </g>
+          )
         })}
         {points.map((p) => {
           const pos = glisse?.id === p.id ? glisse.pos : [Number(p.x), Number(p.y)]
@@ -184,6 +218,47 @@ export function PlanVisite({ niveau, pieces, points, nbPhotos, visitees, etats =
         cadre={cadre} zoomMax={dessinFond ? (e) => zoomMaxVectoriel(e, niveau.cadrage?.pxParMetre, ZOOM_MAX_VISITE) : ZOOM_MAX_VISITE} dessinFond={dessinFond} sansPleine={sansPleine}
       />
     </div>
+  )
+}
+
+// Liaison (courbe fine, couleur électricité) ou cote (ligne, obliques,
+// valeur ou « ? »). Calculées en mètres puis portées au calque : la courbe
+// reste à gauche du sens interrupteur → luminaire tel que le plan le montre.
+// Épaisseurs divisées par le zoom : constantes à l'écran.
+function Trace({ trace, points, enCalque, zoom, choisie, attenuee }) {
+  const bouts = extremitesTrace(trace, points)
+  if (!bouts) return null
+  const proposee = !!trace.a_valider
+  const tirets = proposee ? `${6 / zoom} ${4 / zoom}` : undefined
+  const style = { pointerEvents: 'none', opacity: attenuee ? 0.35 : 1 }
+  if (trace.sorte === 'commande') {
+    const courbe = courbeCommande(...bouts)
+    if (!courbe) return null
+    const [a, q, b] = [courbe.a, courbe.controle, courbe.b].map(enCalque)
+    const d = `M ${a[0]} ${a[1]} Q ${q[0]} ${q[1]} ${b[0]} ${b[1]}`
+    return (
+      <g style={style}>
+        {choisie && <path d={d} style={{ fill: 'none', stroke: 'rgba(21,101,192,0.22)', strokeWidth: 10 / zoom, strokeLinecap: 'round' }} />}
+        <path d={d} style={{ fill: 'none', stroke: proposee ? COULEUR_IA : COULEUR_COMMANDE, strokeWidth: (choisie ? 2.5 : 1.5) / zoom, strokeDasharray: tirets }} />
+      </g>
+    )
+  }
+  const [a, b] = bouts.map(enCalque)
+  const t = traitsCote(a, b, { tic: 12 / zoom, decalage: 7 / zoom, yVersLeBas: true })
+  if (!t) return null
+  const couleur = proposee ? COULEUR_IA : COULEUR_COTE
+  const trait = { stroke: couleur, strokeWidth: (choisie ? 2.5 : 1.5) / zoom }
+  const [x, y] = t.texte.position
+  return (
+    <g style={style}>
+      {choisie && <line x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]} style={{ stroke: 'rgba(14,116,144,0.22)', strokeWidth: 10 / zoom, strokeLinecap: 'round' }} />}
+      <line x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]} style={{ ...trait, strokeDasharray: tirets }} />
+      {t.obliques.map(([p, q], i) => <line key={i} x1={p[0]} y1={p[1]} x2={q[0]} y2={q[1]} style={trait} />)}
+      <text
+        x={x} y={y} textAnchor="middle" transform={`rotate(${t.texte.angle} ${x} ${y})`}
+        style={{ fontSize: 12 / zoom, fontWeight: 600, fill: couleur, stroke: 'white', strokeWidth: 3 / zoom, paintOrder: 'stroke', fontFamily: "'JetBrains Mono', monospace" }}
+      >{texteCote(trace)}</text>
+    </g>
   )
 }
 

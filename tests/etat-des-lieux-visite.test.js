@@ -378,7 +378,9 @@ describe('aide-mémoire de la pièce', () => {
   test('rien de relevé : tout à faire, toutes les familles demandées', () => {
     const aide = aideMemoire(piece)
     assert.equal(aide.faites, 0)
-    assert.equal(aide.total, AIDE_MEMOIRE.flatMap((g) => g.rubriques).length)
+    // Sans la 084 (par défaut), la rubrique des liaisons et cotes n'est pas proposée
+    assert.equal(aide.total, AIDE_MEMOIRE.flatMap((g) => g.rubriques).filter((r) => !r.traces).length)
+    assert.equal(cle(aide, 'traces'), undefined)
     for (const c of ['sol', 'murs', 'plafond', 'plinthes', 'hsp', 'porte', 'menuiseries', 'electricite', 'plomberie', 'chauffage', 'securite', 'desordres']) assert.ok(cle(aide, c), c)
   })
 

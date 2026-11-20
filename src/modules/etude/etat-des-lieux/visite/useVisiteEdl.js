@@ -15,7 +15,7 @@ import {
 } from './fileEdlLogique'
 import { numeroSuivant, delaiDepasse } from './visiteLogique'
 import { preparerPhoto } from './photosEdl'
-import { nouvelleTrace, traceValide, TYPES_JOURNAL_TRACES, MESSAGE_TRACES_INDISPONIBLES } from '../tracesEdl'
+import { nouvelleTrace, traceValide, champsModificationTrace, TYPES_JOURNAL_TRACES, MESSAGE_TRACES_INDISPONIBLES } from '../tracesEdl'
 
 // Ce que le journal garde d'une trace posée : de quoi la frise de l'analyse
 // la décrit sans relire la table
@@ -241,11 +241,15 @@ export function useVisiteEdl(affaireId) {
     return trace
   }, [affaireId, executer, noter])
 
-  /** `champs` : ce qui change (par exemple { valeur: '3,45 m', a_valider: false }). */
+  /**
+   * `champs` : ce qui change (par exemple { valeur: '3,45 m' }). Une valeur
+   * donnée ici vaut validation (`champsModificationTrace`).
+   */
   const modifierTrace = useCallback(async (trace, champs, ctx = {}) => {
     exigerTraces(donneesCourantes.current)
-    await executer(TYPES_EDL.traceModifier, { id: trace.id, champs })
-    await noter('trace', { ...ctx, niveauId: trace.niveau_id, pieceId: trace.piece_id, pointId: trace.point_a ?? null }, { traceId: trace.id, sorte: trace.sorte, modification: champs })
+    const envoyes = champsModificationTrace(champs)
+    await executer(TYPES_EDL.traceModifier, { id: trace.id, champs: envoyes })
+    await noter('trace', { ...ctx, niveauId: trace.niveau_id, pieceId: trace.piece_id, pointId: trace.point_a ?? null }, { traceId: trace.id, sorte: trace.sorte, modification: envoyes })
   }, [executer, noter])
 
   const supprimerTrace = useCallback(async (trace, ctx = {}) => {

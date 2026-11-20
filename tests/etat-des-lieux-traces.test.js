@@ -9,7 +9,13 @@ import { test, describe } from 'node:test'
 import {
   SORTES_TRACE, TYPES_INTERRUPTEUR, TYPES_LUMINAIRE, TYPES_JOURNAL_TRACES, liaisonPossible, liaisonExiste,
   angleLePlusProche, longueurCote, valeurCote, texteValeur, traceValide, nouvelleTrace, tracesIndisponibles, lectureTraces,
+  champsModificationTrace,
 } from '../src/modules/etude/etat-des-lieux/tracesEdl.js'
+import {
+  debutRelier, debutCoter, consigneMode, toucherRelier, toucherCoter, courbeCommande, traitsCote, traceProche,
+  extremitesTrace, texteCote, libelleTrace, tracesDeLaPiece, gesteSuppressionPoint, FLECHE_COMMANDE,
+} from '../src/modules/etude/etat-des-lieux/visite/tracesVisiteLogique.js'
+import { aideMemoire } from '../src/modules/etude/etat-des-lieux/visite/aideMemoireLogique.js'
 import { typeEdl } from '../src/modules/etude/etat-des-lieux/calquesEdl.js'
 import {
   TYPES_EDL, operationEdl, appliquerOperationEdl, etatAvecFileEdl, operationInverse, envoyerTrace,
@@ -325,5 +331,228 @@ describe('file de la visite : traces', () => {
     // même règle que les points et le journal
     const err = await insererSansPieceDisparue('edl_traces', cote, base.inserer)
     assert.equal(err?.code, '23505')
+  })
+})
+
+// ─── Visite : modes « Relier » et « Coter », dessin (tâche 2) ───────────────
+
+const proche = (a, b, eps = 1e-9) => Math.abs(a - b) < eps
+const procheP = (p, q, eps = 1e-9) => proche(p[0], q[0], eps) && proche(p[1], q[1], eps)
+
+describe('mode « Relier »', () => {
+  const points = [inter, lum, applique, prise]
+  test('ouvert depuis un interrupteur ou un luminaire seulement', () => {
+    assert.deepEqual(debutRelier(inter), { sorte: 'relier', depuis: 'i1', attendu: 'luminaire', raison: null })
+    assert.equal(debutRelier(applique).attendu, 'interrupteur')
+    assert.equal(debutRelier(prise), null)
+    assert.equal(debutRelier(pt('x', 9, null)), null)
+    assert.equal(consigneMode(debutRelier(inter)), 'Touchez le luminaire à relier')
+    assert.equal(consigneMode(debutRelier(lum)), 'Touchez l’interrupteur à relier')
+    assert.equal(consigneMode(null), null)
+  })
+  test('le toucher d’un point compatible crée la liaison, dans l’ordre interrupteur → luminaire', () => {
+    const r = toucherRelier(debutRelier(lum), inter, { points, traces: [] })
+    assert.equal(r.action, 'creer')
+    assert.equal(r.interrupteur.id, 'i1')
+    assert.equal(r.luminaire.id, 'l1')
+  })
+  test('ailleurs : rien de posé, la raison est dite et le mode reste', () => {
+    const mode = debutRelier(inter)
+    const vide = toucherRelier(mode, null, { points })
+    assert.equal(vide.action, 'refus')
+    assert.equal(vide.mode.depuis, 'i1')
+    assert.match(consigneMode(vide.mode), /Aucun point ici.*luminaire/)
+    assert.match(toucherRelier(mode, prise, { points }).mode.raison, /P4 \(prise de courant\) n’est pas un luminaire/)
+    assert.match(toucherRelier(mode, inter, { points }).mode.raison, /point de départ/)
+    assert.match(toucherRelier(debutRelier(lum), applique, { points }).mode.raison, /n’est pas un interrupteur/)
+    assert.match(toucherRelier({ ...mode, depuis: 'disparu' }, lum, { points }).mode.raison, /n’existe plus/)
+  })
+  test('une liaison existante n’est pas doublée, dans un sens comme dans l’autre', () => {
+    const existante = nouvelleTrace({ sorte: 'commande', affaireId: AFF, niveauId: 'n1', interrupteur: inter, luminaire: lum })
+    const r = toucherRelier(debutRelier(lum), inter, { points, traces: [existante] })
+    assert.equal(r.action, 'refus')
+    assert.match(r.mode.raison, /P1 et P2 sont déjà reliés/)
+    assert.equal(toucherRelier(debutRelier(inter), applique, { points, traces: [existante] }).action, 'creer')
+  })
+})
+
+describe('mode « Coter »', () => {
+  const contour = [[0, 0], [4, 0], [4, 3], [0, 3]]
+  test('l’identifiant de la cote est décidé à l’ouverture ; consignes des deux angles', () => {
+    const m = debutCoter('t-1')
+    assert.deepEqual(m, { sorte: 'coter', traceId: 't-1', angles: [], raison: null })
+    assert.match(debutCoter().traceId, /^[0-9a-f-]{36}$/)
+    assert.equal(consigneMode(m), 'Touchez le premier angle de la cote')
+    assert.equal(consigneMode({ ...m, angles: [[0, 0]] }), 'Touchez le second angle de la cote')
+  })
+  test('deux touchers accrochés aux angles les plus proches donnent la cote', () => {
+    const r1 = toucherCoter(debutCoter('t'), contour, [0.1, -0.05], 0.3)
+    assert.equal(r1.action, 'angle')
+    assert.deepEqual(r1.angle, [0, 0])
+    assert.deepEqual(r1.mode.angles, [[0, 0]])
+    const r2 = toucherCoter(r1.mode, contour, [3.9, 0.2], 0.3)
+    assert.equal(r2.action, 'creer')
+    assert.deepEqual([r2.a, r2.b], [[0, 0], [4, 0]])
+    // la trace qui en sort est valide, longueur 4 m
+    const t = nouvelleTrace({ id: 't', sorte: 'cote', affaireId: AFF, niveauId: 'n1', a: r2.a, b: r2.b })
+    assert.equal(t.id, 't')
+    assert.equal(traceValide(t), true)
+    assert.equal(longueurCote(t), 4)
+  })
+  test('refus : deux fois le même angle, trop loin de tout angle, pièce sans contour', () => {
+    const r1 = toucherCoter(debutCoter('t'), contour, [0, 0])
+    const meme = toucherCoter(r1.mode, contour, [0.05, 0.05])
+    assert.equal(meme.action, 'refus')
+    assert.match(meme.mode.raison, /même angle/)
+    assert.deepEqual(meme.mode.angles, [[0, 0]])
+    const loin = toucherCoter(debutCoter('t'), contour, [2, 1.5], 0.3)
+    assert.equal(loin.action, 'refus')
+    assert.deepEqual(loin.mode.angles, [])
+    assert.match(toucherCoter(debutCoter('t'), [], [0, 0]).mode.raison, /pas de contour/)
+    // sans tolérance : l'angle le plus proche, quel qu'il soit
+    assert.deepEqual(toucherCoter(debutCoter('t'), contour, [2.1, 1.6]).angle, [4, 3])
+  })
+})
+
+describe('dessin : courbe d’une liaison', () => {
+  test('flèche de 20 % de la longueur, à gauche du sens interrupteur → luminaire (y vers le haut)', () => {
+    const c = courbeCommande([0, 0], [10, 0])
+    assert.equal(FLECHE_COMMANDE, 0.2)
+    assert.ok(procheP(c.sommet, [5, 2]))
+    assert.ok(procheP(c.controle, [5, 4]))
+    // Le milieu de la courbe (t = 0,5) est bien le sommet
+    assert.equal(c.points.length, 17)
+    assert.ok(procheP(c.points[8], c.sommet))
+    assert.ok(procheP(c.points[0], [0, 0]) && procheP(c.points[16], [10, 0]))
+    // Sens inverse : de l'autre côté de la corde (toujours à gauche du sens)
+    assert.ok(procheP(courbeCommande([10, 0], [0, 0]).sommet, [5, -2]))
+    // Vers le haut : la gauche est à x négatif
+    assert.ok(procheP(courbeCommande([0, 0], [0, 5]).sommet, [-1, 2.5]))
+  })
+  test('points confondus : pas de courbe ; nombre de traits réglable', () => {
+    assert.equal(courbeCommande([1, 1], [1, 1]), null)
+    assert.equal(courbeCommande([0, 0], [1, 1], { segments: 4 }).points.length, 5)
+  })
+})
+
+describe('dessin : ligne de cote', () => {
+  test('ligne, obliques à 45° centrées sur chaque bout, texte au milieu décalé vers son haut', () => {
+    const t = traitsCote([0, 0], [4, 0], { tic: 2, decalage: 0.5 })
+    assert.deepEqual(t.ligne, [[0, 0], [4, 0]])
+    assert.equal(t.longueur, 4)
+    const [o1, o2] = t.obliques
+    // longueur du trait oblique = tic, à 45° de la ligne, même orientation aux deux bouts
+    assert.ok(proche(Math.hypot(o1[1][0] - o1[0][0], o1[1][1] - o1[0][1]), 2))
+    assert.ok(proche(Math.abs(Math.atan2(o1[1][1] - o1[0][1], o1[1][0] - o1[0][0])), Math.PI / 4))
+    assert.ok(procheP([(o2[0][0] + o2[1][0]) / 2, (o2[0][1] + o2[1][1]) / 2], [4, 0]))
+    assert.ok(procheP([o2[1][0] - o2[0][0], o2[1][1] - o2[0][1]], [o1[1][0] - o1[0][0], o1[1][1] - o1[0][1]]))
+    assert.equal(t.texte.angle, 0)
+    // « / » à l'écran comme sur le DXF : vers le haut en y vers le haut, vers y négatif en y vers le bas
+    assert.ok(o1[1][1] - o1[0][1] > 0 && o1[1][0] - o1[0][0] > 0)
+    const [e1] = traitsCote([0, 0], [4, 0], { tic: 2, yVersLeBas: true }).obliques
+    assert.ok(e1[1][1] - e1[0][1] < 0 && e1[1][0] - e1[0][0] > 0)
+    assert.ok(procheP(t.texte.position, [2, 0.5])) // y vers le haut : au-dessus
+    assert.ok(procheP(traitsCote([0, 0], [4, 0], { decalage: 0.5, yVersLeBas: true }).texte.position, [2, -0.5]))
+  })
+  test('jamais à l’envers : de droite à gauche, le texte est retourné', () => {
+    const t = traitsCote([4, 0], [0, 0], { decalage: 1 })
+    assert.equal(t.texte.angle, 0)
+    assert.ok(procheP(t.texte.position, [2, 1]))
+    for (const [a, b] of [[[0, 0], [-3, 1]], [[0, 0], [-3, -1]], [[2, 2], [-1, 5]], [[0, 0], [3, -3]]]) {
+      for (const yVersLeBas of [false, true]) {
+        const { angle } = traitsCote(a, b, { yVersLeBas }).texte
+        assert.ok(Math.cos((angle * Math.PI) / 180) >= -1e-9, `${a}→${b} ${yVersLeBas} : ${angle}`)
+      }
+    }
+  })
+  test('cote verticale : lue de la droite (de bas en haut) dans les deux repères', () => {
+    assert.equal(traitsCote([0, 0], [0, 3]).texte.angle, 90)
+    assert.equal(traitsCote([0, 3], [0, 0]).texte.angle, 90)
+    assert.equal(traitsCote([0, 0], [0, 3], { yVersLeBas: true }).texte.angle, -90)
+    assert.equal(traitsCote([0, 3], [0, 0], { yVersLeBas: true }).texte.angle, -90)
+    // le haut du texte est à gauche de la ligne
+    assert.ok(traitsCote([0, 0], [0, 3], { decalage: 1 }).texte.position[0] < 0)
+    assert.ok(traitsCote([0, 0], [0, 3], { decalage: 1, yVersLeBas: true }).texte.position[0] < 0)
+  })
+  test('angles confondus : rien', () => {
+    assert.equal(traitsCote([1, 1], [1, 1]), null)
+  })
+})
+
+describe('traces : toucher, libellés, pièce', () => {
+  const points = [inter, lum, applique] // i1 (1,1), l1 (2,1), l2 (3,1)
+  const liaison = nouvelleTrace({ sorte: 'commande', affaireId: AFF, niveauId: 'n1', pieceId: 'p1', interrupteur: inter, luminaire: lum })
+  const cote = nouvelleTrace({ sorte: 'cote', affaireId: AFF, niveauId: 'n1', pieceId: 'p1', a: [0, 5], b: [4, 5], valeur: '3,45 m' })
+  test('extrémités : points de la liaison, angles de la cote ; point disparu : rien', () => {
+    assert.deepEqual(extremitesTrace(liaison, points), [[1, 1], [2, 1]])
+    assert.deepEqual(extremitesTrace(cote, points), [[0, 5], [4, 5]])
+    assert.equal(extremitesTrace(liaison, [inter]), null)
+  })
+  test('toucher une trace : sur la courbe d’une liaison ou la ligne d’une cote, à la tolérance près', () => {
+    // sommet de la courbe i1 → l1 : (1,5 ; 1,2)
+    assert.equal(traceProche([liaison, cote], points, [1.5, 1.21], 0.05)?.id, liaison.id)
+    // sur la corde, pas sur la courbe : trop loin
+    assert.equal(traceProche([liaison], points, [1.5, 1], 0.05), null)
+    assert.equal(traceProche([liaison, cote], points, [2, 5.03], 0.05)?.id, cote.id)
+    assert.equal(traceProche([liaison, cote], points, [2, 3], 0.05), null)
+  })
+  test('libellés : « Liaison P1 → P2 », « Cote 3,45 m », « Cote à préciser » ; « ? » sans valeur', () => {
+    assert.equal(libelleTrace(liaison, points), 'Liaison P1 → P2')
+    assert.equal(libelleTrace(cote, points), 'Cote 3,45 m')
+    assert.equal(libelleTrace({ ...cote, valeur: null }, points), 'Cote à préciser')
+    assert.equal(texteCote({ ...cote, valeur: null }), '?')
+    assert.equal(texteCote({ ...cote, valeur: '345 cm' }), '3,45 m')
+  })
+  test('traces d’une pièce : la sienne, ou une liaison dont un bout y est posé', () => {
+    const ailleurs = { ...pt('i9', 9, 'interrupteur'), piece_id: 'p2' }
+    const traversante = nouvelleTrace({ sorte: 'commande', affaireId: AFF, niveauId: 'n1', pieceId: 'p2', interrupteur: ailleurs, luminaire: lum })
+    const autre = nouvelleTrace({ sorte: 'cote', affaireId: AFF, niveauId: 'n1', pieceId: 'p2', a: [0, 0], b: [1, 0] })
+    const tous = [...points, ailleurs]
+    assert.deepEqual(tracesDeLaPiece([liaison, traversante, autre], 'p1', tous).map((t) => t.id), [liaison.id, traversante.id])
+    assert.deepEqual(tracesDeLaPiece([liaison, traversante, autre], 'p2', tous).map((t) => t.id), [traversante.id, autre.id])
+    assert.deepEqual(tracesDeLaPiece([liaison], null, tous), [])
+  })
+  test('aide-mémoire : rubrique « Commandes d’éclairage et cotes » avec la 084 seulement, cochée dès une trace', () => {
+    const piece = { id: 'p1', fiche: null }
+    const rubrique = (aide) => aide.groupes.flatMap((g) => g.rubriques).find((r) => r.cle === 'traces')
+    const sans = aideMemoire(piece, { points, traces: [liaison] })
+    assert.equal(rubrique(sans), undefined)
+    const vide = aideMemoire(piece, { points, traces: [], tracesDisponibles: true })
+    assert.equal(rubrique(vide).libelle, 'Commandes d’éclairage et cotes')
+    assert.equal(rubrique(vide).fait, false)
+    assert.equal(vide.total, sans.total + 1)
+    assert.equal(rubrique(aideMemoire(piece, { points, traces: [cote], tracesDisponibles: true })).fait, true)
+    assert.equal(rubrique(aideMemoire({ id: 'p3' }, { points, traces: [cote], tracesDisponibles: true })).fait, false)
+  })
+})
+
+describe('visite : règles de l’agence sur les traces', () => {
+  test('une valeur donnée à la main vaut validation (une analyse ne l’effacera pas)', () => {
+    assert.deepEqual(champsModificationTrace({ valeur: '3,45 m' }), { valeur: '3,45 m', a_valider: false })
+    assert.deepEqual(champsModificationTrace({ valeur: null, a_valider: true }), { valeur: null, a_valider: false })
+    assert.deepEqual(champsModificationTrace({ extrait: 'x' }), { extrait: 'x' })
+    // la file l'applique telle quelle : la proposition devient une valeur relue
+    const proposee = { ...nouvelleTrace({ sorte: 'cote', affaireId: AFF, niveauId: 'n1', a: [0, 0], b: [2, 0] }), valeur: '2,10 m', a_valider: true, origine: 'main' }
+    const e = appliquerOperationEdl({ traces: [proposee] }, operationEdl(TYPES_EDL.traceModifier, { id: proposee.id, champs: champsModificationTrace({ valeur: '2,00 m' }) }, { affaireId: AFF }))
+    assert.equal(e.traces[0].valeur, '2,00 m')
+    assert.equal(e.traces[0].a_valider, false)
+  })
+  test('supprimer un point puis « Annuler » : ses photos et ses liaisons reviennent (aller-retour)', () => {
+    const liaison = nouvelleTrace({ sorte: 'commande', affaireId: AFF, niveauId: 'n1', interrupteur: inter, luminaire: lum })
+    const autre = nouvelleTrace({ sorte: 'commande', affaireId: AFF, niveauId: 'n1', interrupteur: inter, luminaire: applique })
+    const cote = nouvelleTrace({ sorte: 'cote', affaireId: AFF, niveauId: 'n1', a: [0, 0], b: [1, 0] })
+    const photo = { id: 'ph1', point_id: 'l1' }
+    const depart = { points: [inter, lum, applique], photos: [photo, { id: 'ph2', point_id: 'i1' }], traces: [liaison, autre, cote] }
+    const geste = gesteSuppressionPoint(lum, depart)
+    assert.deepEqual(geste.traces, [liaison])
+    assert.deepEqual(geste.photos, [photo])
+    const o = { affaireId: AFF }
+    const sans = appliquerOperationEdl(depart, operationEdl(TYPES_EDL.pointSupprimer, { id: lum.id }, o))
+    assert.deepEqual(sans.traces.map((t) => t.id), [autre.id, cote.id])
+    const inverse = operationInverse(geste, sans.points)
+    const rendu = appliquerOperationEdl(sans, operationEdl(inverse.type, inverse.charge, o))
+    assert.deepEqual(rendu.traces.map((t) => t.id).sort(), [liaison.id, autre.id, cote.id].sort())
+    assert.deepEqual(rendu.photos.map((p) => p.id).sort(), ['ph1', 'ph2'])
+    assert.equal(rendu.points.find((p) => p.id === 'l1').numero, lum.numero)
   })
 })

@@ -1,7 +1,7 @@
 // ─── État de l'analyse d'une affaire, pour l'écran ───────────────────────────
 //
-// Pièces (fiche, état de l'analyse), éléments relevés, pièce en cours
-// d'analyse. Relu (jamais réanalysé) quand une analyse avance, quand un
+// Pièces (fiche, état de l'analyse), éléments relevés, liaisons et cotes
+// (migration 084), pièce en cours d'analyse. Relu (jamais réanalysé) quand une analyse avance, quand un
 // morceau est transcrit et au retour du réseau ; les relectures rapprochées
 // se regroupent. Sans réseau, la dernière lecture reste affichée.
 //
@@ -11,13 +11,13 @@
 // signale `jga-analyse-edl`, qui ne relance rien.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { lireEtatAnalyse } from './analyseDonnees'
+import { lireEtatAnalyse, lireTracesAffaire } from './analyseDonnees'
 import { EVENEMENT_TRANSCRIPTION_EDL } from './transcriptionEdl'
 import { EVENEMENT_ANALYSE_EDL, transcrireEtAnalyser, analyserPiece } from './analyseEdl'
 
 const enLigne = () => typeof navigator === 'undefined' || navigator.onLine !== false
 const DELAI_RELECTURE_MS = 400
-const VIDE = { affaireId: null, charge: false, indisponible: false, pieces: new Map(), elements: [] }
+const VIDE = { affaireId: null, charge: false, indisponible: false, pieces: new Map(), elements: [], traces: [], tracesDisponibles: false }
 
 // Ce que l'analyse change sur une pièce : posé par-dessus la pièce de l'écran
 const champsAnalyse = (p) => ({
@@ -35,11 +35,20 @@ export function useAnalyseEdl(affaireId, { lectureSeule = false } = {}) {
     if (!affaireId || !enLigne()) return
     const rang = ++sequence.current
     try {
-      const r = await lireEtatAnalyse(affaireId)
+      // Liaisons et cotes (084) à part : une lecture ratée garde les
+      // précédentes sans priver l'écran du reste de l'analyse
+      const [r, t] = await Promise.all([lireEtatAnalyse(affaireId), lireTracesAffaire(affaireId).catch(() => null)])
       if (rang !== sequence.current) return
-      setLu({
-        affaireId, charge: true, indisponible: r.indisponible,
-        pieces: new Map(r.pieces.map((p) => [p.id, champsAnalyse(p)])), elements: r.elements,
+      // Affichage seul (rien ne s'enregistre d'ici) : la lecture précédente
+      // peut se reprendre dans la fonction de mise à jour
+      setLu((avant) => {
+        const garder = !t && avant.affaireId === affaireId
+        return {
+          affaireId, charge: true, indisponible: r.indisponible,
+          pieces: new Map(r.pieces.map((p) => [p.id, champsAnalyse(p)])), elements: r.elements,
+          traces: t ? t.traces : (garder ? avant.traces : []),
+          tracesDisponibles: t ? t.tracesDisponibles : (garder ? avant.tracesDisponibles : false),
+        }
       })
     } catch {
       // Réseau faible ou lecture refusée : la dernière lecture reste
@@ -94,6 +103,7 @@ export function useAnalyseEdl(affaireId, { lectureSeule = false } = {}) {
   const pieceEnCours = enCours.affaireId === affaireId ? enCours.pieceId : null
   return useMemo(() => ({
     charge: actuel.charge, indisponible: actuel.indisponible, pieces: actuel.pieces, elements: actuel.elements,
+    traces: actuel.traces, tracesDisponibles: actuel.tracesDisponibles,
     enCours: pieceEnCours, relire, lancer, reessayer, relancer,
   }), [actuel, pieceEnCours, relire, lancer, reessayer, relancer])
 }

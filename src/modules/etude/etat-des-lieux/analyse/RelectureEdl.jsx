@@ -5,10 +5,11 @@ import { morceauxEtatsDesLieux, remettreEnFile } from '../../../chantier/comptes
 import { ECHECS_MAX } from '../../../chantier/comptes-rendus/enregistrement/transcription'
 import { PlanVisite } from '../visite/PlanVisite'
 import { COULEURS_PIECE, designationPiece, etatPieceVisite, piecesVisitees } from '../visite/visiteLogique'
-import { validerElement, ecarterElement, ajouterElement, modifierFiche, MESSAGE_ANALYSE_INDISPONIBLE } from './analyseDonnees'
-import { piecesARelire, messageLancement } from './relectureAnalyseLogique'
+import { validerElement, ecarterElement, ajouterElement, modifierFiche, validerTrace, ecarterTrace, MESSAGE_ANALYSE_INDISPONIBLE } from './analyseDonnees'
+import { piecesARelire, messageLancement, tracesRelecture } from './relectureAnalyseLogique'
 import { FicheRelecture } from './FicheRelecture'
 import { ElementsRelecture } from './ElementsRelecture'
+import { TracesRelecture } from './TracesRelecture'
 import { ConfirmationEdl } from './ConfirmationEdl'
 import { morceauxRefuses } from './transcriptionEdlLogique'
 import { EVENEMENT_TRANSCRIPTION_EDL } from './transcriptionEdl'
@@ -18,7 +19,8 @@ import { transcrireEtAnalyser } from './analyseEdl'
 //
 // Par étage, la liste des pièces : à valider d'abord, puis les incomplètes,
 // puis le reste. Une pièce ouverte : son plan agrandi à gauche (points
-// numérotés comme en visite), sa fiche puis ses éléments à droite.
+// numérotés comme en visite, liaisons et cotes dessinées), sa fiche, ses
+// éléments puis ses liaisons et cotes (migration 084) à droite.
 // Chaque écriture est relue par le hook de l'analyse (`analyse.relire`) :
 // rien n'est calculé dans un setState(prev => …), l'écran montre la base.
 // Un refus (0 ligne) remonte « Lecture seule… » des fonctions de données.
@@ -119,7 +121,7 @@ export function RelectureEdl({ affaireId, niveau, pieces, visite, analyse, obten
   const etats = useMemo(() => new Map(fusionnees.map((p) => [
     p.id, etatPieceVisite(p, { visitees, entrees: donnees?.entrees, enCours: analyse.enCours }),
   ])), [fusionnees, visitees, donnees?.entrees, analyse.enCours])
-  const liste = useMemo(() => piecesARelire(fusionnees, analyse.elements, visitees), [fusionnees, analyse.elements, visitees])
+  const liste = useMemo(() => piecesARelire(fusionnees, analyse.elements, visitees, analyse.traces), [fusionnees, analyse.elements, visitees, analyse.traces])
 
   if (analyse.indisponible) return <p style={noteAmbre}>{MESSAGE_ANALYSE_INDISPONIBLE}</p>
   if (!analyse.charge) {
@@ -181,6 +183,7 @@ function VuePiece({ affaireId, niveau, pieces, piece, etats, visitees, visite, a
   const [survol, setSurvol] = useState(null) // point de l'élément sous la souris
   const [elementChoisi, setElementChoisi] = useState(null)
   const [pointChoisi, setPointChoisi] = useState(null) // touché sur le plan
+  const [traceChoisie, setTraceChoisie] = useState(null)
   const [erreur, setErreur] = useState(null)
   const [message, setMessage] = useState(null)
   const [lancement, setLancement] = useState(false)
@@ -193,6 +196,10 @@ function VuePiece({ affaireId, niveau, pieces, piece, etats, visitees, visite, a
     return n
   }, [donnees?.photos])
   const elements = useMemo(() => analyse.elements.filter((e) => e.piece_id === piece.id), [analyse.elements, piece.id])
+  // Liaisons et cotes lues avec l'analyse (la base, pas la copie de la visite)
+  const tracesNiveau = useMemo(() => (analyse.tracesDisponibles ? (analyse.traces ?? []).filter((t) => t.niveau_id === niveau.id) : []),
+    [analyse.tracesDisponibles, analyse.traces, niveau.id])
+  const traces = useMemo(() => tracesRelecture(tracesNiveau, piece.id, points), [tracesNiveau, piece.id, points])
   const pointElement = elements.find((e) => e.id === elementChoisi)?.point_id ?? null
   const pointEnEvidence = survol ?? pointElement ?? pointChoisi
 
@@ -281,7 +288,9 @@ function VuePiece({ affaireId, niveau, pieces, piece, etats, visitees, visite, a
             key={niveau.id}
             niveau={niveau} pieces={pieces} points={points} nbPhotos={nbPhotos} visitees={visitees} etats={etats}
             piece={piece} pointId={pointEnEvidence} obtenirLiens={obtenirLiens} consultation
-            onChoisirPoint={(id) => { setElementChoisi(null); setPointChoisi((c) => (c === id ? null : id)) }}
+            traces={tracesNiveau} traceId={traceChoisie}
+            onChoisirPoint={(id) => { setElementChoisi(null); setTraceChoisie(null); setPointChoisi((c) => (c === id ? null : id)) }}
+            onChoisirTrace={(id) => { setElementChoisi(null); setPointChoisi(null); setTraceChoisie((c) => (c === id ? null : id)) }}
           />
         </div>
         <div style={{ minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 16, paddingRight: 2 }}>
@@ -302,18 +311,26 @@ function VuePiece({ affaireId, niveau, pieces, piece, etats, visitees, visite, a
             piece={piece} elements={elements} points={points} lectureSeule={lectureSeule}
             elementChoisi={elementChoisi} pointChoisi={pointChoisi}
             onSurvol={setSurvol}
-            onChoisir={(id) => { setPointChoisi(null); setElementChoisi((c) => (c === id ? null : id)) }}
+            onChoisir={(id) => { setPointChoisi(null); setTraceChoisie(null); setElementChoisi((c) => (c === id ? null : id)) }}
             onValider={(id, champs) => ecrire(() => validerElement(id, champs))}
             onEcarter={(id) => ecrire(() => ecarterElement(id))}
             onAjouter={(champs) => ecrire(() => ajouterElement({ ...champs, affaire_id: affaireId, niveau_id: piece.niveau_id ?? niveau.id, piece_id: piece.id }))}
           />
+          {analyse.tracesDisponibles && (
+            <TracesRelecture
+              traces={traces} points={points} lectureSeule={lectureSeule} traceChoisie={traceChoisie}
+              onChoisir={(id) => { setElementChoisi(null); setPointChoisi(null); setTraceChoisie((c) => (c === id ? null : id)) }}
+              onValider={(trace, champs) => ecrire(() => validerTrace(trace, champs))}
+              onEcarter={(trace) => ecrire(() => ecarterTrace(trace))}
+            />
+          )}
         </div>
       </div>
 
       {confirmerRelance && (
         <ConfirmationEdl
           titre="Relancer l’analyse de la pièce ?"
-          texte="Claude relit tout ce qui a été dit et fait dans la pièce, toutes visites confondues. Les éléments déjà validés et ceux ajoutés à la main sont gardés, et Claude repart de la fiche telle que vous l’avez corrigée ; les propositions encore à valider sont remplacées par les nouvelles."
+          texte="Claude relit tout ce qui a été dit et fait dans la pièce, toutes visites confondues. Les éléments, liaisons et cotes déjà validés ou ajoutés à la main sont gardés, et Claude repart de la fiche telle que vous l’avez corrigée ; les propositions encore à valider sont remplacées par les nouvelles."
           libelle="Relancer l’analyse" libelleEnCours="Analyse en cours…"
           onAnnuler={() => setConfirmerRelance(false)}
           onConfirmer={() => { setConfirmerRelance(false); return lancer(analyse.relancer) }}

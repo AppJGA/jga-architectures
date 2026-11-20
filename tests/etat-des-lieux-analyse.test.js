@@ -7,6 +7,7 @@ import { test, describe } from 'node:test'
 import {
   analyseIndisponible, ligneEnregistrement, lignesElementsIa, champsValidation,
   ligneElementMain, champsPieceAnalysee, messageErreurAnalyse, LONGUEUR_ERREUR,
+  lignesTracesIa, champsValidationTrace, ecartTrace,
 } from '../src/modules/etude/etat-des-lieux/analyse/analyseDonneesLogique.js'
 
 describe('analyseIndisponible', () => {
@@ -157,5 +158,47 @@ describe('pièce analysée et échec', () => {
     const long = messageErreurAnalyse('x'.repeat(2000))
     assert.equal(long.length, LONGUEUR_ERREUR)
     assert.ok(long.endsWith('…'))
+  })
+})
+
+describe('liaisons et cotes proposées (084)', () => {
+  test('traces non lues : pas de paramètre p_traces', () => {
+    assert.equal(lignesTracesIa({ traces: null }), null)
+    assert.equal(lignesTracesIa({ traces: undefined }), null)
+  })
+
+  test('lues mais rien de proposé : liste vide (les propositions pas encore relues partent)', () => {
+    assert.deepEqual(lignesTracesIa({ traces: { liaisons: [], cotes: [] } }), [])
+  })
+
+  test('format attendu par edl_ecrire_analyse (migration 084)', () => {
+    let n = 0
+    const lignes = lignesTracesIa({
+      traces: {
+        liaisons: [{ point_a: 'i3', point_b: 'l7', extrait: ' il allume ' }, { point_a: 'i4', point_b: 'l7', extrait: '' }],
+        cotes: [{ id: 'c-a', valeur: '3,45 m', extrait: 'trois quarante-cinq' }],
+      },
+      visiteId: 'v1',
+      nouvelId: () => `id${++n}`,
+    })
+    assert.deepEqual(lignes, [
+      { id: 'id1', sorte: 'commande', visite_id: 'v1', point_a: 'i3', point_b: 'l7', extrait: 'il allume' },
+      { id: 'id2', sorte: 'commande', visite_id: 'v1', point_a: 'i4', point_b: 'l7', extrait: null },
+      { id: 'c-a', sorte: 'cote', valeur: '3,45 m', extrait: 'trois quarante-cinq' },
+    ])
+  })
+
+  test('valider : liaison telle quelle, cote avec sa nouvelle valeur', () => {
+    assert.deepEqual(champsValidationTrace({ sorte: 'commande' }, { valeur: '3 m' }), { a_valider: false })
+    assert.deepEqual(champsValidationTrace({ sorte: 'cote' }), { a_valider: false })
+    assert.deepEqual(champsValidationTrace({ sorte: 'cote' }, { valeur: ' 3,40 m ' }), { a_valider: false, valeur: '3,40 m' })
+  })
+
+  test('écarter : la liaison part, la cote garde son tracé et perd la valeur proposée', () => {
+    assert.deepEqual(ecartTrace({ sorte: 'commande', origine: 'ia', a_valider: true }), { supprimer: true })
+    assert.deepEqual(ecartTrace({ sorte: 'cote', origine: 'main', a_valider: true, valeur: '3,45 m' }), { champs: { valeur: null, extrait: null, a_valider: false } })
+    // Trace validée : supprimée entière
+    assert.deepEqual(ecartTrace({ sorte: 'cote', origine: 'main', a_valider: false, valeur: '3,45 m' }), { supprimer: true })
+    assert.deepEqual(ecartTrace({ sorte: 'commande', origine: 'main', a_valider: false }), { supprimer: true })
   })
 })

@@ -229,7 +229,7 @@ export default function EtatDesLieuxModule({ lectureSeule = false }) {
   const piecesDe = (id) => edl.pieces.filter((p) => p.niveau_id === id)
   const aValiderDe = (id) => piecesDe(id).reduce((n, p) => {
     const a = analyse.pieces.get(p.id)
-    return n + (a ? resumePieceRelecture({ ...p, ...a }, analyse.elements).aValider : 0)
+    return n + (a ? resumePieceRelecture({ ...p, ...a }, analyse.elements, analyse.traces).aValider : 0)
   }, 0)
   const aValiderTotal = vueRelecture || relecturePossible ? edl.niveaux.reduce((n, nv) => n + aValiderDe(nv.id), 0) : 0
   const ongletVue = (actif, libelle, compte, onClick) => (

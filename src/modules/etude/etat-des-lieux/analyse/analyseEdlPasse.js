@@ -49,12 +49,13 @@ export const RELANCE_APRES_ARRET_MS = 10 * 60 * 1000
  * @param d dépendances :
  *   enLigne() → booléen ; aSession() → booléen ;
  *   lireSuivi(affaireId) → { indisponible, pieces, evenements, enregistrements } (choix des pièces) ;
- *   lireFrise(affaireId, pieceId) → { indisponible, piece, evenements, points, enregistrements, elementsValides } ;
+ *   lireFrise(affaireId, pieceId) → { indisponible, piece, evenements, points, enregistrements, elementsValides, traces } ;
+ *     (`traces` : liaisons et cotes de la 084, null ou absent si non lues) ;
  *   audioLocal() → { morceaux, tranches } ; gestesEnAttente(affaireId) → [{ creeLe }] ;
  *   reserver(piece) → { etat: 'ok' | 'deja' | 'relire' | 'refus' | 'indisponible', updatedAt } ;
  *   relirePiece(pieceId) → { id, fiche, fiche_a_valider, analyse_le, updated_at } | null ;
  *   appeler(corps) → résultat brut de Claude ;
- *   ecrire({ affaireId, piece, fiche, elements, analyseLe, siMisAJour, garderFiche })
+ *   ecrire({ affaireId, piece, fiche, elements, traces, visiteId, analyseLe, siMisAJour, garderFiche })
  *     → { indisponible, conflit, elementsEcrits, attendu } : une transaction
  *     (edl_ecrire_analyse), à défaut prise, éléments, puis pièce (`conflit` :
  *     la pièce a bougé ; `elementsEcrits` : des éléments restent écrits) ;
@@ -171,9 +172,11 @@ export async function passeAnalyseEdl(affaireId, options = {}, d) {
     if (!decision.tenter) return 'passee'
 
     const intervalles = intervallesPiece(lu.evenements, piece.id)
-    const { lignes, references, dejaReleves } = friseDePiece({
+    const { lignes, references, dejaReleves, lignesTraces, contexteTraces } = friseDePiece({
       piece, intervalles, evenements: lu.evenements, points: lu.points,
       enregistrements: lu.enregistrements, elementsValides: lu.elementsValides,
+      // Liaisons et cotes (084) : null si elles n'ont pas été lues
+      traces: Array.isArray(lu.traces) ? lu.traces : null,
     })
     const corps = {
       piece: pieceDemandee(piece, d.surfaceDessinee?.(piece)),
@@ -181,6 +184,8 @@ export async function passeAnalyseEdl(affaireId, options = {}, d) {
       dejaReleves,
       // Une réanalyse garde ce que l'agence a corrigé au bureau
       ficheActuelle: piece.fiche && typeof piece.fiche === 'object' ? piece.fiche : null,
+      // Absent sans traces lues : la demande est exactement celle d'avant la 084
+      ...(lignesTraces ? { tracesPiece: lignesTraces } : {}),
     }
     const avant = suivis[piece.id] ?? null
     const tentative = suiviTentative(avant, piece, { maintenant: luLe, intervalles })
@@ -227,8 +232,10 @@ export async function passeAnalyseEdl(affaireId, options = {}, d) {
         if (err?.code === 'reseau' || d.estCoupure(err)) return 'reseau'
         return await echouer(piece, err, tentative)
       }
-      const { fiche, elements } = lireAnalyse(resultat, references)
-      const ecriture = { affaireId, piece, fiche, elements, analyseLe: analyseLeApres(luLe, intervalles) }
+      const { fiche, elements, traces } = lireAnalyse(resultat, references, contexteTraces)
+      // Une liaison proposée est rattachée à la dernière visite de la pièce
+      const visiteId = intervalles[intervalles.length - 1]?.visiteId ?? null
+      const ecriture = { affaireId, piece, fiche, elements, traces, visiteId, analyseLe: analyseLeApres(luLe, intervalles) }
       let ecrit
       try {
         ecrit = await d.ecrire({ ...ecriture, siMisAJour: reservation.updatedAt })

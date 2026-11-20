@@ -9,6 +9,7 @@ import {
   MODELE_ANALYSE, SCHEMA_ANALYSE, CONSIGNES_ANALYSE, LIGNES_MAX, DELAI_ABANDON_MS, RUBRIQUES_FICHE,
   intervallesPiece, aAnalyser, heureFrise, friseDePiece, construireDemandeAnalyse, erreurDemandeAnalyse,
   lireAnalyse, completudeFiche, etatAnalysePiece,
+  SCHEMA_ANALYSE_TRACES, CONSIGNES_TRACES, TRACES_MAX, consignesAnalyse, schemaAnalyse, messageEchecAnalyse,
 } from '../src/modules/etude/etat-des-lieux/analyse/analyseEdlLogique.js'
 import { CALQUES_DE_POINT } from '../src/modules/etude/etat-des-lieux/calquesEdl.js'
 
@@ -392,6 +393,8 @@ describe('lireAnalyse', () => {
         statuts: { sol: null, murs: null, plafond: null, plinthes: null, porte: null },
       },
       elements: [],
+      // Sans traces lues (pas de contexte), rien des traces
+      traces: null,
     })
   })
 })
@@ -418,5 +421,209 @@ describe('complétude et état', () => {
     assert.equal(etatAnalysePiece({ ...analysee, fiche: { sol: 'carrelage' } }, { visitee: true }), 'incomplete')
     assert.equal(etatAnalysePiece({ ...analysee, hsp_lue: 2.5, fiche: { ...pleine, hsp: '' } }, { visitee: true }), 'complete')
     assert.equal(etatAnalysePiece({ ...analysee, analyse_erreur: 'reseau' }, { visitee: true, attente: true }), 'echec')
+  })
+})
+
+// ─── Liaisons et cotes (migration 084) ──────────────────────────────────────
+
+describe('liaisons et cotes : frise', () => {
+  const points = [
+    { id: 'i3', piece_id: 'salon', numero: 3, type: 'interrupteur' },
+    { id: 'l7', piece_id: 'salon', numero: 7, type: 'luminaire' },
+    { id: 'a8', piece_id: 'salon', numero: 8, type: 'applique' },
+    { id: 'pr9', piece_id: 'salon', numero: 9, type: 'prise' },
+    { id: 'l20', piece_id: 'cuisine', numero: 20, type: 'luminaire' },
+  ]
+  const cote = (id, champs = {}) => ({ id, sorte: 'cote', piece_id: 'salon', niveau_id: 'n1', xa: 0, ya: 0, xb: 3.42, yb: 0, valeur: null, a_valider: false, origine: 'main', ...champs })
+  const traces = [
+    cote('c-b', { created_at: '2026-11-18T09:03:00Z', valeur: '2,80 m' }),
+    cote('c-a', { created_at: '2026-11-18T09:02:00Z' }),
+    // Valeur seulement proposée : elle sera remplacée, la cote est « sans valeur »
+    cote('c-c', { created_at: '2026-11-18T09:04:00Z', valeur: '4,00 m', a_valider: true }),
+    // Cote d'une autre pièce : pas désignée ici
+    cote('c-x', { piece_id: 'cuisine', created_at: '2026-11-18T09:00:00Z' }),
+    { id: 't1', sorte: 'commande', piece_id: 'salon', point_a: 'i3', point_b: 'l7', a_valider: false, origine: 'main' },
+    // Proposition pas encore relue de cette pièce : remplacée, pas « existante »
+    { id: 't2', sorte: 'commande', piece_id: 'salon', point_a: 'i3', point_b: 'a8', a_valider: true, origine: 'ia' },
+  ]
+  const evenements = [
+    dans('entree', '09:01:00'),
+    dans('point-touche', '09:01:10', { point_id: 'i3', detail: { numero: 3, type: 'interrupteur' } }),
+    dans('point-touche', '09:01:12', { point_id: 'l7', detail: { numero: 7, type: 'luminaire' } }),
+    dans('trace', '09:01:13', { point_id: 'i3', detail: { traceId: 't1', sorte: 'commande', point_a: 'i3', point_b: 'l7' } }),
+    dans('angle-touche', '09:02:00', { detail: { x: 0, y: 0, traceId: 'c-a' } }),
+    dans('angle-touche', '09:02:02', { detail: { x: 3.42, y: 0, traceId: 'c-a' } }),
+    dans('trace', '09:02:02', { detail: { traceId: 'c-a', sorte: 'cote', xa: 0, ya: 0, xb: 3.42, yb: 0, valeur: null } }),
+    dans('trace', '09:03:10', { detail: { traceId: 'c-b', sorte: 'cote', modification: { valeur: '2,80 m', a_valider: false } } }),
+    // Mode Coter quitté avant le second angle : aucune cote ne porte cet id
+    dans('angle-touche', '09:03:30', { detail: { x: 1, y: 1, traceId: 'jamais' } }),
+    dans('trace-supprimee', '09:03:40', { point_id: 'i3', detail: { traceId: 'gone', sorte: 'commande' } }),
+    dans('trace-supprimee', '09:03:50', { detail: { annulation: true, traceId: 'c-c' } }),
+    dans('sortie', '09:05:00'),
+  ]
+  const intervalles = intervallesPiece(evenements, 'salon')
+  const frise = friseDePiece({ piece: { id: 'salon' }, intervalles, evenements, points, traces })
+
+  test('touchers, angles et traces posées nommés dans la frise', () => {
+    assert.deepEqual(frise.lignes, [
+      '— visite du 18/11/2026 —',
+      '[10:01:00] entrée dans la pièce',
+      '[10:01:10] point P3 (Interrupteur) touché',
+      '[10:01:12] point P7 (Luminaire) touché',
+      '[10:01:13] liaison P3 → P7 posée à la main',
+      '[10:02:00] angle touché (cote C1)',
+      '[10:02:02] angle touché (cote C1)',
+      '[10:02:02] cote C1 posée entre deux angles',
+      '[10:03:10] cote C2 : valeur tapée 2,80 m',
+      '[10:03:30] angle touché (cote abandonnée ou retirée depuis)',
+      '[10:03:40] liaison supprimée',
+      '[10:03:50] cote C3 retirée (annulation de la pose)',
+      '[10:05:00] sortie de la pièce',
+    ])
+  })
+
+  test('cotes désignées C<n> dans l’ordre de création, celles de la pièce seulement', () => {
+    assert.deepEqual([...frise.contexteTraces.cotesSansValeur], [['C1', 'c-a'], ['C3', 'c-c']])
+  })
+
+  test('appareils, liaisons existantes et cotes décrits pour Claude', () => {
+    assert.deepEqual(frise.lignesTraces, [
+      'Interrupteurs et luminaires posés dans la pièce : P3 (Interrupteur), P7 (Luminaire), P8 (Point lumineux en applique).',
+      'Liaisons existantes (1) :',
+      '- P3 → P7',
+      'Cotes posées dans la pièce (3) :',
+      '- C1 : sans valeur (longueur dessinée ≈ 3,42 m)',
+      '- C2 : valeur déjà donnée : 2,80 m (longueur dessinée ≈ 3,42 m)',
+      '- C3 : sans valeur (longueur dessinée ≈ 3,42 m)',
+    ])
+  })
+
+  test('pièce sans rien : tout est dit vide', () => {
+    const vide = friseDePiece({ piece: { id: 'bureau' }, intervalles: [], evenements: [], points, traces: [] })
+    assert.deepEqual(vide.lignesTraces, ['Aucun interrupteur ni luminaire posé dans la pièce.', 'Aucune liaison existante.', 'Aucune cote posée dans la pièce.'])
+  })
+
+  test('traces non lues (sans la 084, lecture ratée) : frise d’avant, rien à relire', () => {
+    const sans = friseDePiece({ piece: { id: 'salon' }, intervalles, evenements, points, traces: null })
+    assert.equal(sans.lignesTraces, null)
+    assert.equal(sans.contexteTraces, null)
+    // Les gestes restent nommés, sans numéro de cote ni « retirée depuis »
+    assert.ok(sans.lignes.includes('[10:02:00] angle touché'))
+    assert.ok(sans.lignes.includes('[10:02:02] cote posée entre deux angles'))
+    // Sans traces passées du tout : pareil
+    assert.equal(friseDePiece({ piece: { id: 'salon' }, intervalles, evenements, points }).lignesTraces, null)
+  })
+})
+
+describe('liaisons et cotes : demande et schéma', () => {
+  test('sans traces : consignes et schéma d’avant la 084, à l’identique', () => {
+    const d = construireDemandeAnalyse({ piece: { nom: 'Salon' }, lignes: ['[10:01:00] entrée dans la pièce'] })
+    assert.equal(d.system, CONSIGNES_ANALYSE)
+    assert.equal(d.output_config.format.schema, SCHEMA_ANALYSE)
+    assert.doesNotMatch(d.messages[0].content[0].text, /Liaisons et cotes/)
+    assert.equal(consignesAnalyse(false), CONSIGNES_ANALYSE)
+    assert.equal(schemaAnalyse(false), SCHEMA_ANALYSE)
+    assert.ok(!('liaisons' in SCHEMA_ANALYSE.properties))
+  })
+
+  test('avec traces : consignes ajoutées, lignes avant la frise, schéma fermé', () => {
+    const d = construireDemandeAnalyse({
+      piece: { nom: 'Salon' }, lignes: ['[10:01:00] entrée dans la pièce'], traces: ['Aucune liaison existante.', '- C1 : sans valeur'],
+    })
+    assert.equal(d.system, `${CONSIGNES_ANALYSE}\n\n${CONSIGNES_TRACES}`)
+    assert.equal(d.output_config.format.schema, SCHEMA_ANALYSE_TRACES)
+    const texte = d.messages[0].content[0].text
+    assert.match(texte, /Liaisons et cotes de la pièce :\nAucune liaison existante\.\n- C1 : sans valeur\nFrise de la pièce/)
+    assert.deepEqual(SCHEMA_ANALYSE_TRACES.required, ['fiche', 'elements', 'liaisons', 'cotes'])
+    const ouverts = []
+    const parcourir = (s, chemin) => {
+      if (!s || typeof s !== 'object') return
+      if (s.type === 'object' && s.additionalProperties !== false) ouverts.push(chemin)
+      if (s.type === 'object') assert.deepEqual([...s.required].sort(), Object.keys(s.properties).sort(), chemin)
+      for (const [k, v] of Object.entries(s.properties ?? {})) parcourir(v, `${chemin}.${k}`)
+      parcourir(s.items, `${chemin}[]`)
+      for (const v of s.anyOf ?? []) parcourir(v, chemin)
+    }
+    parcourir(SCHEMA_ANALYSE_TRACES, '$')
+    assert.deepEqual(ouverts, [])
+    assert.deepEqual(SCHEMA_ANALYSE_TRACES.properties.liaisons.items.required, ['interrupteur', 'luminaire', 'extrait'])
+    assert.deepEqual(SCHEMA_ANALYSE_TRACES.properties.cotes.items.required, ['cote', 'valeur', 'extrait'])
+  })
+
+  test('consignes : jamais une liaison existante, valeur seulement pour une cote sans valeur', () => {
+    assert.match(CONSIGNES_TRACES, /Ne propose jamais une liaison déjà existante/)
+    assert.match(CONSIGNES_TRACES, /touchés ou posés à peu d'écart/)
+    assert.match(CONSIGNES_TRACES, /seulement pour une cote listée « sans valeur »/)
+    assert.match(CONSIGNES_TRACES, /juste avant ou juste après ses deux angles/)
+    assert.match(CONSIGNES_TRACES, /jamais d'après la longueur dessinée/)
+  })
+
+  test('contrôle de la demande : lignes des traces facultatives, bornées', () => {
+    assert.equal(erreurDemandeAnalyse({ piece: {}, lignes: [], tracesPiece: ['- C1 : sans valeur'] }), null)
+    assert.equal(erreurDemandeAnalyse({ piece: {}, lignes: [], tracesPiece: 'texte' }), 'traces')
+    assert.equal(erreurDemandeAnalyse({ piece: {}, lignes: [], tracesPiece: [3] }), 'traces')
+    assert.equal(erreurDemandeAnalyse({ piece: {}, lignes: [], tracesPiece: Array(TRACES_MAX + 1).fill('a') }), 'trop-de-traces')
+    assert.equal(erreurDemandeAnalyse({ piece: {}, lignes: ['a'.repeat(200000)], tracesPiece: ['b'.repeat(200000)] }), 'trop-long')
+    assert.match(messageEchecAnalyse({ code: 'demande', detail: 'trop-de-traces' }), /Trop de gestes/)
+  })
+})
+
+describe('liaisons et cotes : lecture de la réponse', () => {
+  const points = new Map([
+    ['i3', { id: 'i3', piece_id: 'salon', numero: 3, type: 'interrupteur' }],
+    ['i4', { id: 'i4', piece_id: 'salon', numero: 4, type: 'interrupteur' }],
+    ['l7', { id: 'l7', piece_id: 'salon', numero: 7, type: 'luminaire' }],
+    ['a8', { id: 'a8', piece_id: 'salon', numero: 8, type: 'applique' }],
+    ['pr9', { id: 'pr9', piece_id: 'salon', numero: 9, type: 'prise' }],
+  ])
+  const references = new Map([['P3', 'i3'], ['P4', 'i4'], ['P7', 'l7'], ['P8', 'a8'], ['P9', 'pr9']])
+  const contexte = {
+    points,
+    existantes: [{ sorte: 'commande', point_a: 'i3', point_b: 'l7' }],
+    cotesSansValeur: new Map([['C1', 'c-a'], ['C3', 'c-c']]),
+  }
+  const resultat = {
+    fiche: {},
+    elements: [],
+    liaisons: [
+      { interrupteur: 'P3', luminaire: 'P8', extrait: 'il allume  l’applique' },
+      // Sens inversé par Claude : rétabli
+      { interrupteur: 'P7', luminaire: 'P4', extrait: 'le second interrupteur commande le plafonnier' },
+      // Déjà existante, en double, types incompatibles, point inconnu : écartées
+      { interrupteur: 'P3', luminaire: 'P7', extrait: '' },
+      { interrupteur: 'p 3', luminaire: '8', extrait: '' },
+      { interrupteur: 'P3', luminaire: 'P9', extrait: '' },
+      { interrupteur: 'P3', luminaire: 'P4', extrait: '' },
+      { interrupteur: 'P3', luminaire: 'P99', extrait: '' },
+      null,
+    ],
+    cotes: [
+      { cote: 'C1', valeur: 'trois mètres', extrait: 'illisible' },
+      { cote: 'c 1', valeur: '3.45', extrait: 'trois quarante-cinq' },
+      { cote: 'C1', valeur: '3,50 m', extrait: 'en double' },
+      // Valeur déjà donnée (C2 absente des cotes sans valeur), cote inconnue
+      { cote: 'C2', valeur: '2,90 m', extrait: '' },
+      { cote: 'C9', valeur: '1 m', extrait: '' },
+      { cote: '3', valeur: '345 cm', extrait: 'trois mètres quarante-cinq' },
+    ],
+  }
+  const lu = lireAnalyse(resultat, references, contexte)
+
+  test('liaisons : types compatibles, sens rétabli, ni existante ni en double', () => {
+    assert.deepEqual(lu.traces.liaisons, [
+      { point_a: 'i3', point_b: 'a8', extrait: 'il allume l’applique' },
+      { point_a: 'i4', point_b: 'l7', extrait: 'le second interrupteur commande le plafonnier' },
+    ])
+  })
+
+  test('cotes : sans valeur seulement, valeur lisible réécrite, une fois par cote', () => {
+    assert.deepEqual(lu.traces.cotes, [
+      { id: 'c-a', valeur: '3,45 m', extrait: 'trois quarante-cinq' },
+      { id: 'c-c', valeur: '3,45 m', extrait: 'trois mètres quarante-cinq' },
+    ])
+  })
+
+  test('réponse sans liaisons ni cotes : listes vides (les propositions seront retirées)', () => {
+    assert.deepEqual(lireAnalyse({ fiche: {}, elements: [] }, references, contexte).traces, { liaisons: [], cotes: [] })
   })
 })

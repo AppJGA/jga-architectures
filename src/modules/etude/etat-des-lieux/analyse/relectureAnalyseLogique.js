@@ -8,6 +8,8 @@
 import { CALQUES, CALQUES_DE_POINT, calqueEdl, typeEdl } from '../calquesEdl.js'
 import { completudeFiche, RUBRIQUES_FICHE } from './analyseEdlLogique.js'
 import { CHAMPS_PORTE, RUBRIQUES_STATUT, codeStatut, porteDe } from '../statutsEdl.js'
+import { valeurCote, texteValeur } from '../tracesEdl.js'
+import { tracesDeLaPiece } from '../visite/tracesVisiteLogique.js'
 
 export const LIBELLES_FICHE = {
   sol: 'Sol', murs: 'Murs', plafond: 'Plafond', plinthes: 'Plinthes', hsp: 'HSP', remarques: 'Remarques',
@@ -20,31 +22,34 @@ export const LIBELLES_FICHE = {
  * @param piece pièce fusionnée avec son état d'analyse (fiche, hsp_lue,
  *   analyse_le, analyse_erreur, fiche_a_valider)
  * @param elements éléments de l'affaire (filtrés ici sur la pièce)
+ * @param traces liaisons et cotes de l'affaire (084) : une proposition de
+ *   Claude (liaison, valeur de cote) compte comme un élément à valider
  */
-export function resumePieceRelecture(piece, elements = []) {
+export function resumePieceRelecture(piece, elements = [], traces = []) {
   const siens = (elements ?? []).filter((e) => e.piece_id === piece?.id)
   const elementsAValider = siens.filter((e) => e.a_valider).length
+  const tracesAValider = (traces ?? []).filter((t) => t.piece_id === piece?.id && t.a_valider).length
   const ficheAValider = piece?.fiche_a_valider === true
   const analysee = !!piece?.analyse_le
   const { complete, manquantes } = completudeFiche(piece?.fiche, { hspLue: piece?.hsp_lue })
   const erreur = piece?.analyse_erreur || null
-  const aValider = elementsAValider + (ficheAValider ? 1 : 0)
+  const aValider = elementsAValider + tracesAValider + (ficheAValider ? 1 : 0)
   // À valider d'abord, puis ce qui reste à compléter (fiche incomplète ou
   // analyse en échec), puis le reste ; une pièce jamais analysée n'a encore
   // rien d'incomplet
   const incomplete = !!erreur || (analysee && !complete)
   const rang = aValider > 0 ? 0 : incomplete ? 1 : 2
-  return { elements: siens.length, elementsAValider, ficheAValider, aValider, analysee, erreur, complete, manquantes, rang }
+  return { elements: siens.length, elementsAValider, tracesAValider, ficheAValider, aValider, analysee, erreur, complete, manquantes, rang }
 }
 
 /**
  * Pièces d'un étage dans l'ordre de la relecture ; l'ordre du plan départage
  * (tri stable). `visitees` : les pièces jamais visitées passent en fin.
  */
-export function piecesARelire(pieces = [], elements = [], visitees = null) {
+export function piecesARelire(pieces = [], elements = [], visitees = null, traces = []) {
   return (pieces ?? [])
     .map((piece, i) => {
-      const resume = resumePieceRelecture(piece, elements)
+      const resume = resumePieceRelecture(piece, elements, traces)
       const visitee = !visitees || visitees.has(piece.id) || resume.elements > 0 || resume.analysee
       return { piece, resume, visitee, i }
     })
@@ -53,8 +58,8 @@ export function piecesARelire(pieces = [], elements = [], visitees = null) {
 }
 
 /** Total « à valider » de l'affaire (badge de l'onglet Relecture). */
-export const totalAValider = (pieces = [], elements = []) =>
-  (pieces ?? []).reduce((n, p) => n + resumePieceRelecture(p, elements).aValider, 0)
+export const totalAValider = (pieces = [], elements = [], traces = []) =>
+  (pieces ?? []).reduce((n, p) => n + resumePieceRelecture(p, elements, traces).aValider, 0)
 
 /** Éléments d'une pièce rangés par calque, dans l'ordre des calques ; un calque inconnu en dernier. */
 export function elementsParCalque(elements = []) {
@@ -154,6 +159,37 @@ export const saisieElement = (element = null) => ({
 /** Libellé d'un élément pour la liste : libellé dit, sinon le type. */
 export function titreElement(e) {
   return texte(e?.libelle) || typeEdl(e?.type)?.libelle || calqueEdl(e?.calque)?.libelle || 'Élément'
+}
+
+// ─── Liaisons et cotes de la pièce (migration 084) ───────────────────────────
+
+/**
+ * Traces montrées avec la pièce : les siennes et les liaisons dont un bout y
+ * est posé ; propositions d'abord, puis liaisons avant cotes, dans l'ordre
+ * de création.
+ */
+export function tracesRelecture(traces = [], pieceId, points = []) {
+  const ordre = (a, b) => (Number(b.a_valider) - Number(a.a_valider))
+    || (Number(a.sorte === 'cote') - Number(b.sorte === 'cote'))
+    || String(a.created_at ?? '').localeCompare(String(b.created_at ?? ''))
+  return [...tracesDeLaPiece(traces, pieceId, points)].sort(ordre)
+}
+
+/** Valeur de cote saisie → « 3,45 m », ou le motif du refus. */
+export function lireSaisieCote(saisie) {
+  const valeur = texteValeur(valeurCote(saisie))
+  return valeur ? { valeur } : { erreur: 'Valeur illisible : tapez par exemple 3,45 (en mètres) ou 345 cm.' }
+}
+
+/** Ce qui se dit d'une trace à la relecture : proposée, validée, posée à la main, à préciser. */
+export function etatTrace(t) {
+  if (t?.a_valider) return t.sorte === 'cote' ? 'valeur proposée' : 'proposée'
+  if (t?.sorte === 'cote') {
+    if (!String(t.valeur ?? '').trim()) return 'valeur à préciser'
+    // L'extrait reste d'une valeur lue par Claude puis validée
+    if (t.extrait) return 'valeur validée'
+  }
+  return t?.origine === 'ia' ? 'validée' : 'posée à la main'
 }
 
 // ─── Fiche de la pièce ───────────────────────────────────────────────────────

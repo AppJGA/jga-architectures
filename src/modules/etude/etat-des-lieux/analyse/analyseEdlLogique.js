@@ -13,6 +13,7 @@
 
 import { CALQUES, CALQUES_DE_POINT, calqueEdl, typeEdl } from '../calquesEdl.js'
 import { CHAMPS_PORTE, CODES_STATUTS_ENREGISTRES, RUBRIQUES_STATUT, codeStatut, porteDe, rubriqueRenseignee } from '../statutsEdl.js'
+import { estInterrupteur, estLuminaire, liaisonPossible, liaisonExiste, longueurCote, texteValeur, valeurCote } from '../tracesEdl.js'
 
 export const MODELE_ANALYSE = 'claude-opus-5-5'
 
@@ -22,6 +23,9 @@ export const MODELE_ANALYSE = 'claude-opus-5-5'
 export const LIGNES_MAX = 2000
 export const LONGUEUR_TOTALE_MAX = 300000
 export const DEJA_RELEVES_MAX = 500
+// Lignes « liaisons et cotes » de la pièce (migration 084) : interrupteurs
+// et luminaires, liaisons existantes, cotes ; une pièce en a quelques dizaines
+export const TRACES_MAX = 500
 const LIGNE_MAX = 1000
 
 // Une visite abandonnée par le bouton Retour du navigateur ne note ni sortie
@@ -188,9 +192,18 @@ function phrasesDuMorceau(enr) {
  * sans elle, une heure qui recule (pièce revue un autre jour) ferait croire
  * à Claude qu'une phrase suit de près un geste d'une autre visite.
  *
- * @returns { lignes: string[], references: Map<string, string>, dejaReleves: string[] }
+ * Liaisons et cotes (migration 084) : `traces` = les traces de l'affaire,
+ * ou null quand elles n'ont pas été lues (base sans la 084, lecture ratée).
+ * Lues, les cotes de la pièce sont désignées `C<n>` (`cotes` : 'C2' → la
+ * trace), la frise nomme les touchers et les traces posées, et
+ * `lignesTraces` décrit interrupteurs, luminaires, liaisons existantes et
+ * cotes ; `contexteTraces` sert à relire la réponse (`lireAnalyse`). Non
+ * lues : `lignesTraces` et `contexteTraces` valent null, et la demande est
+ * celle d'avant la 084.
+ *
+ * @returns { lignes: string[], references: Map<string, string>, dejaReleves: string[], lignesTraces: string[] | null, contexteTraces: object | null }
  */
-export function friseDePiece({ piece, intervalles, evenements = [], points = [], enregistrements = [], elementsValides = [] }) {
+export function friseDePiece({ piece, intervalles, evenements = [], points = [], enregistrements = [], elementsValides = [], traces = null }) {
   const pieceId = piece?.id
   const duPoint = new Map()
   const references = new Map()
@@ -217,6 +230,9 @@ export function friseDePiece({ piece, intervalles, evenements = [], points = [],
     if (e?.point_id && e.piece_id === pieceId && e.type === 'point') pointsDeLaPiece.add(e.point_id)
   }
 
+  const avecTraces = Array.isArray(traces)
+  const nomsTraces = nommerTraces({ traces: avecTraces ? traces : [], evenements, pieceId, avecTraces })
+
   const entrees = []
   for (const e of evenements ?? []) {
     const sienne = e?.piece_id === pieceId
@@ -225,7 +241,7 @@ export function friseDePiece({ piece, intervalles, evenements = [], points = [],
     if (!sienne && (e.type === 'entree' || e.type === 'sortie')) continue
     const t = temps(e.le)
     if (t == null) continue
-    const texte = texteGeste(e, nom, duPoint)
+    const texte = texteGeste(e, nom, duPoint, nomsTraces)
     if (texte) entrees.push({ t, ordre: 0, texte, visite: e.visite_id ?? null })
   }
 
@@ -260,10 +276,100 @@ export function friseDePiece({ piece, intervalles, evenements = [], points = [],
     return `déjà relevé : ${ou}${quoi}${libelle ? ` — ${libelle}` : ''}${cotes ? ` (cotes : ${cotes})` : ''}`
   })
 
-  return { lignes, references, dejaReleves }
+  if (!avecTraces) return { lignes, references, dejaReleves, lignesTraces: null, contexteTraces: null }
+  const { lignesTraces, contexteTraces } = descriptionTraces({ traces, pieceId, points, duPoint, pointsDeLaPiece, nom, nomsTraces })
+  return { lignes, references, dejaReleves, lignesTraces, contexteTraces }
 }
 
-function texteGeste(e, nom, duPoint) {
+// ─── Liaisons et cotes dans la frise (migration 084) ────────────────────────
+
+const parCreation = (a, b) => String(a.created_at ?? '').localeCompare(String(b.created_at ?? '')) || String(a.id).localeCompare(String(b.id))
+
+/**
+ * Noms des traces pour la frise : `C<n>` pour les cotes de la pièce (ordre
+ * de création), et ce que le journal dit des traces disparues depuis (une
+ * liaison supprimée se nomme encore par ses deux points).
+ */
+function nommerTraces({ traces, evenements, pieceId, avecTraces }) {
+  const cotes = new Map()
+  const nomCote = new Map()
+  traces.filter((t) => t?.sorte === 'cote' && t.piece_id === pieceId).sort(parCreation).forEach((t, i) => {
+    cotes.set(`C${i + 1}`, t)
+    nomCote.set(t.id, `C${i + 1}`)
+  })
+  const connues = new Map(traces.filter((t) => t?.id).map((t) => [t.id, t]))
+  for (const e of evenements ?? []) {
+    const d = e?.detail ?? {}
+    if (e?.type === 'trace' && d.traceId && d.sorte && !connues.has(d.traceId)) connues.set(d.traceId, { id: d.traceId, ...d })
+  }
+  return { cotes, nomCote, connues, avecTraces }
+}
+
+function objetTrace(traceId, nom, noms, sorteDuGeste = null) {
+  const t = noms.connues.get(traceId)
+  const sorte = t?.sorte ?? sorteDuGeste
+  if (sorte === 'commande') return t?.point_a && t?.point_b ? `liaison ${nom(t.point_a)} → ${nom(t.point_b)}` : 'liaison'
+  if (sorte === 'cote') {
+    const c = noms.nomCote.get(traceId)
+    if (c) return `cote ${c}`
+    return noms.avecTraces ? 'cote (retirée depuis)' : 'cote'
+  }
+  return 'liaison ou cote'
+}
+
+function texteTrace(e, nom, noms) {
+  const d = e.detail ?? {}
+  const objet = objetTrace(d.traceId, nom, noms, d.sorte)
+  if (e.type === 'trace-supprimee') return d.annulation ? `${objet} retirée (annulation de la pose)` : `${objet} supprimée`
+  if (d.annulation) return `${objet} : dernier geste annulé`
+  if (d.modification) {
+    if (!('valeur' in d.modification)) return `${objet} modifiée`
+    const v = nettoyer(d.modification.valeur, 50)
+    return v ? `${objet} : valeur tapée ${v}` : `${objet} : valeur effacée`
+  }
+  if (d.sorte === 'commande') return `${objet} posée à la main`
+  const v = nettoyer(d.valeur, 50)
+  return `${objet} posée entre deux angles${v ? ` (valeur tapée ${v})` : ''}`
+}
+
+/**
+ * Ce que Claude reçoit des traces de la pièce, et ce qui sert à relire sa
+ * réponse. Une liaison existante est une liaison d'un point de la pièce qui
+ * restera après l'analyse : les propositions pas encore relues de cette
+ * pièce sont remplacées (edl_ecrire_analyse), elles ne comptent pas. Une
+ * cote « a une valeur » si cette valeur a été tapée ou validée ; une valeur
+ * seulement proposée sera remplacée, la cote est donc « sans valeur ».
+ */
+function descriptionTraces({ traces, pieceId, points, duPoint, pointsDeLaPiece, nom, nomsTraces }) {
+  const appareils = (points ?? [])
+    .filter((p) => p?.id && p.piece_id === pieceId && p.numero != null && (estInterrupteur(p) || estLuminaire(p)))
+    .sort((a, b) => a.numero - b.numero)
+  const existantes = traces.filter((t) => t?.sorte === 'commande'
+    && (t.piece_id === pieceId || pointsDeLaPiece.has(t.point_a) || pointsDeLaPiece.has(t.point_b))
+    && !(t.a_valider && t.piece_id === pieceId))
+  const cotes = [...nomsTraces.cotes.entries()]
+  const valeurDonnee = (t) => Boolean(nettoyer(t.valeur, 50)) && !t.a_valider
+
+  const lignesTraces = [
+    appareils.length
+      ? `Interrupteurs et luminaires posés dans la pièce : ${appareils.map((p) => `P${p.numero} (${libelleType(p.type)})`).join(', ')}.`
+      : 'Aucun interrupteur ni luminaire posé dans la pièce.',
+    ...(existantes.length
+      ? [`Liaisons existantes (${existantes.length}) :`, ...existantes.map((t) => `- ${nom(t.point_a)} → ${nom(t.point_b)}${t.a_valider ? ' (proposée, pas encore relue)' : ''}`)]
+      : ['Aucune liaison existante.']),
+    ...(cotes.length
+      ? [`Cotes posées dans la pièce (${cotes.length}) :`, ...cotes.map(([c, t]) => {
+          const dessinee = texteValeur(longueurCote(t))
+          const etat = valeurDonnee(t) ? `valeur déjà donnée : ${nettoyer(t.valeur, 50)}` : 'sans valeur'
+          return `- ${c} : ${etat}${dessinee ? ` (longueur dessinée ≈ ${dessinee})` : ''}`
+        })]
+      : ['Aucune cote posée dans la pièce.']),
+  ]
+  const cotesSansValeur = new Map(cotes.filter(([, t]) => !valeurDonnee(t)).map(([c, t]) => [c, t.id]))
+  return { lignesTraces, contexteTraces: { points: duPoint, existantes, cotesSansValeur } }
+}
+
+function texteGeste(e, nom, duPoint, nomsTraces) {
   const p = nom(e.point_id)
   const d = e.detail ?? {}
   switch (e.type) {
@@ -288,6 +394,19 @@ function texteGeste(e, nom, duPoint) {
       return d.annulation ? `point ${p} retiré (annulation de la pose)` : `point ${p} supprimé`
     case 'photo':
       return `photo du point ${p}`
+    case 'point-touche': {
+      const type = libelleType(d.type ?? duPoint.get(e.point_id)?.type)
+      return `point ${p}${type ? ` (${type})` : ''} touché`
+    }
+    case 'angle-touche': {
+      if (!d.traceId) return 'angle touché'
+      const c = nomsTraces.nomCote.get(d.traceId)
+      if (c) return `angle touché (cote ${c})`
+      return nomsTraces.avecTraces ? 'angle touché (cote abandonnée ou retirée depuis)' : 'angle touché'
+    }
+    case 'trace':
+    case 'trace-supprimee':
+      return texteTrace(e, nom, nomsTraces)
     default:
       return null
   }
@@ -352,6 +471,30 @@ export const SCHEMA_ANALYSE = {
   },
 }
 
+// Avec la 084 seulement (la demande porte alors `traces`) : les liaisons
+// proposées et les valeurs de cotes lues. Sans elle, le schéma d'avant.
+const SCHEMA_LIAISON = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['interrupteur', 'luminaire', 'extrait'],
+  properties: { interrupteur: chaine, luminaire: chaine, extrait: chaine },
+}
+const SCHEMA_VALEUR_COTE = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['cote', 'valeur', 'extrait'],
+  properties: { cote: chaine, valeur: chaine, extrait: chaine },
+}
+export const SCHEMA_ANALYSE_TRACES = {
+  ...SCHEMA_ANALYSE,
+  required: [...SCHEMA_ANALYSE.required, 'liaisons', 'cotes'],
+  properties: {
+    ...SCHEMA_ANALYSE.properties,
+    liaisons: { type: 'array', items: SCHEMA_LIAISON },
+    cotes: { type: 'array', items: SCHEMA_VALEUR_COTE },
+  },
+}
+
 const catalogue = CALQUES_DE_POINT
   .map((c) => `- ${c.code} (${c.nom}) : ${c.types.map((t) => `${t.code} = ${t.libelle}`).join(', ')}`)
   .join('\n')
@@ -387,6 +530,17 @@ Ne rien inventer : ce qui n'est pas dit n'existe pas. Réponds uniquement par le
 Calques et types possibles :
 ${catalogue}`
 
+export const CONSIGNES_TRACES = `Liaisons et cotes (« liaisons », « cotes ») :
+- L'architecte peut toucher un interrupteur puis le luminaire qu'il commande (ou l'inverse) en le disant (« cet interrupteur commande le plafonnier », « il allume les deux appliques ») : lignes « point P3 (Interrupteur) touché », « point P7 (Luminaire) touché ». Propose une liaison seulement quand ce qui est dit relie un interrupteur et un luminaire touchés ou posés à peu d'écart (quelques secondes). « interrupteur » et « luminaire » : leurs points (« P3 », « P7 »), choisis parmi les interrupteurs et luminaires listés dans « Liaisons et cotes de la pièce ». Ne propose jamais une liaison déjà existante (listée), ni deux fois la même, ni une liaison que rien de dit n'établit.
+- Une cote est posée entre deux angles de la pièce : lignes « angle touché (cote C2) ». Sa valeur est dite juste avant ou juste après ses deux angles (« trois mètres quarante-cinq », « 3,45 »). Propose une valeur seulement pour une cote listée « sans valeur », d'après ce qui est dit, en chiffres avec l'unité (« 3,45 m ») ; jamais pour une cote dont la valeur est déjà donnée, et jamais d'après la longueur dessinée, qui sert seulement à reconnaître de quelle cote on parle.
+- « extrait » : les mots entendus, recopiés de la frise. Rien de tel dans la frise : listes vides.`
+
+/** Consignes de l'analyse : celles d'avant la 084, plus les liaisons et cotes quand la demande les porte. */
+export const consignesAnalyse = (avecTraces = false) => (avecTraces ? `${CONSIGNES_ANALYSE}\n\n${CONSIGNES_TRACES}` : CONSIGNES_ANALYSE)
+
+/** Schéma de la réponse : celui d'avant la 084, ou avec liaisons et cotes. */
+export const schemaAnalyse = (avecTraces = false) => (avecTraces ? SCHEMA_ANALYSE_TRACES : SCHEMA_ANALYSE)
+
 function lignesFicheActuelle(fiche) {
   if (!fiche || typeof fiche !== 'object') return []
   const remplies = RUBRIQUES_FICHE
@@ -415,7 +569,8 @@ const surface = (v) => (Number(v) > 0 ? `${String(Math.round(Number(v) * 100) / 
  *   tout ce qui a été dit, mais ne doit pas défaire une correction faite au
  *   bureau (conception § 6, « ce que la pièce avait déjà »)
  */
-export function construireDemandeAnalyse({ piece = {}, lignes = [], dejaReleves = [], ficheActuelle = null }) {
+export function construireDemandeAnalyse({ piece = {}, lignes = [], dejaReleves = [], ficheActuelle = null, traces = null }) {
+  const avecTraces = Array.isArray(traces)
   const designation = [nettoyer(piece.nom, 200) || 'Pièce sans nom', piece.numero ? `n° ${nettoyer(piece.numero, 50)}` : null]
     .filter(Boolean).join(', ')
   const plan = [surface(piece.surface) && `surface ${surface(piece.surface)}`, Number(piece.hsp) > 0 && `hauteur sous plafond ${String(piece.hsp).replace('.', ',')} m`]
@@ -425,13 +580,14 @@ export function construireDemandeAnalyse({ piece = {}, lignes = [], dejaReleves 
     ...lignesFicheActuelle(ficheActuelle),
     dejaReleves.length ? `Éléments déjà relevés et validés (${dejaReleves.length}) :` : 'Aucun élément déjà relevé.',
     ...dejaReleves,
+    ...(avecTraces ? ['Liaisons et cotes de la pièce :', ...traces] : []),
     `Frise de la pièce (${lignes.length} lignes) :`,
     ...(lignes.length ? lignes : ['(rien n’a été dit ni fait dans la pièce)']),
   ].join('\n')
   return {
-    system: CONSIGNES_ANALYSE,
+    system: consignesAnalyse(avecTraces),
     messages: [{ role: 'user', content: [{ type: 'text', text: texte }] }],
-    output_config: { effort: 'medium', format: { type: 'json_schema', schema: SCHEMA_ANALYSE } },
+    output_config: { effort: 'medium', format: { type: 'json_schema', schema: schemaAnalyse(avecTraces) } },
   }
 }
 
@@ -460,7 +616,11 @@ export function erreurDemandeAnalyse(corps) {
   if (!Array.isArray(dejaReleves) || dejaReleves.some((l) => typeof l !== 'string')) return 'deja-releves'
   if (dejaReleves.length > DEJA_RELEVES_MAX) return 'trop-de-releves'
   if (!ficheRecevable(corps.ficheActuelle)) return 'fiche'
-  const longueur = [...lignes, ...dejaReleves].reduce((n, l) => n + l.length, 0)
+  // Facultatif : absent, la demande est celle d'avant la 084
+  const traces = corps.tracesPiece ?? []
+  if (!Array.isArray(traces) || traces.some((l) => typeof l !== 'string')) return 'traces'
+  if (traces.length > TRACES_MAX) return 'trop-de-traces'
+  const longueur = [...lignes, ...dejaReleves, ...traces].reduce((n, l) => n + l.length, 0)
   if (longueur > LONGUEUR_TOTALE_MAX) return 'trop-long'
   return null
 }
@@ -477,10 +637,18 @@ const CALQUES_VALIDES = new Set(CALQUES.map((c) => c.code))
  *
  * @param references Map('P7' → point_id) de `friseDePiece`
  * Statut inconnu (ou « a-preciser ») → null, et null pour une rubrique vide.
+ * @param contexteTraces `contexteTraces` de `friseDePiece` (traces lues) ou
+ *   null : `traces` vaut alors null, et rien des traces ne s'écrit.
  *
- * @returns { fiche: { sol, murs, plafond, plinthes, hsp, remarques, porte, statuts }, elements: [{ point_id, calque, type, libelle, cotes, extrait, a_verifier }] }
+ * Liaisons : deux points de la pièce (`references`), un interrupteur et un
+ * luminaire (`liaisonPossible`, sens rétabli), ni existante ni en double ;
+ * sinon écartée. Valeurs de cotes : une cote encore sans valeur
+ * (`cotesSansValeur`), une valeur lisible (`valeurCote`), réécrite
+ * « 3,45 m » ; une cote à la fois ; sinon écartée.
+ *
+ * @returns { fiche: { sol, murs, plafond, plinthes, hsp, remarques, porte, statuts }, elements: [{ point_id, calque, type, libelle, cotes, extrait, a_verifier }], traces: { liaisons: [{ point_a, point_b, extrait }], cotes: [{ id, valeur, extrait }] } | null }
  */
-export function lireAnalyse(resultat, references = new Map()) {
+export function lireAnalyse(resultat, references = new Map(), contexteTraces = null) {
   const f = resultat?.fiche ?? {}
   const fiche = Object.fromEntries(RUBRIQUES_FICHE.map((r) => [r, nettoyer(f[r], BORNES_FICHE[r])]))
   const porte = f.porte && typeof f.porte === 'object' ? f.porte : {}
@@ -493,9 +661,7 @@ export function lireAnalyse(resultat, references = new Map()) {
     const type = typeEdl(typeof el.type === 'string' ? el.type : null)
     const calque = type?.calque ?? (CALQUES_VALIDES.has(el.calque) ? el.calque : null)
     if (!calque) continue
-    // « p7 », « P 7 », « 7 » : même point
-    let cle = typeof el.point === 'string' ? el.point.replace(/\s+/g, '').toUpperCase() : null
-    if (cle && /^\d+$/.test(cle)) cle = `P${cle}`
+    const cle = cleReference(el.point, 'P')
     elements.push({
       point_id: (cle && references.get(cle)) ?? null,
       calque,
@@ -506,7 +672,41 @@ export function lireAnalyse(resultat, references = new Map()) {
       a_verifier: el.a_verifier === true,
     })
   }
-  return { fiche, elements }
+  return { fiche, elements, traces: contexteTraces ? lireTraces(resultat, references, contexteTraces) : null }
+}
+
+// « p7 », « P 7 », « 7 » : même point (« c2 », « 2 » : même cote)
+function cleReference(v, lettre) {
+  const cle = typeof v === 'string' ? v.replace(/\s+/g, '').toUpperCase() : null
+  if (!cle) return null
+  return /^\d+$/.test(cle) ? `${lettre}${cle}` : cle
+}
+
+function lireTraces(resultat, references, { points, existantes = [], cotesSansValeur }) {
+  const liaisons = []
+  const dejaVues = [...existantes]
+  for (const l of Array.isArray(resultat?.liaisons) ? resultat.liaisons : []) {
+    if (!l || typeof l !== 'object') continue
+    const idA = references.get(cleReference(l.interrupteur, 'P'))
+    const idB = references.get(cleReference(l.luminaire, 'P'))
+    const paire = idA && idB ? liaisonPossible(points.get(idA), points.get(idB)) : null
+    if (!paire) continue
+    const [a, b] = [paire.interrupteur.id, paire.luminaire.id]
+    if (liaisonExiste(dejaVues, a, b)) continue
+    dejaVues.push({ sorte: 'commande', point_a: a, point_b: b })
+    liaisons.push({ point_a: a, point_b: b, extrait: nettoyer(l.extrait, 1000) })
+  }
+  const cotes = []
+  const lues = new Set()
+  for (const c of Array.isArray(resultat?.cotes) ? resultat.cotes : []) {
+    if (!c || typeof c !== 'object') continue
+    const id = cotesSansValeur?.get(cleReference(c.cote, 'C'))
+    const valeur = texteValeur(valeurCote(typeof c.valeur === 'string' ? c.valeur : null))
+    if (!id || !valeur || lues.has(id)) continue
+    lues.add(id)
+    cotes.push({ id, valeur, extrait: nettoyer(c.extrait, 1000) })
+  }
+  return { liaisons, cotes }
 }
 
 // ─── Complétude et état de la pièce ─────────────────────────────────────────
@@ -886,7 +1086,7 @@ export function prochaineRelance({ pieces = [], evenements = [], suivis = {}, ma
 // payé, la pièce n'y est pour rien (session, configuration)
 export const CODES_SANS_APPEL = ['session', 'agence-seule', 'analyse-non-configuree', 'supabase-non-configure', 'methode']
 
-const MOTIFS_TROP_LONG = ['trop-de-lignes', 'trop-long', 'trop-de-releves']
+const MOTIFS_TROP_LONG = ['trop-de-lignes', 'trop-long', 'trop-de-releves', 'trop-de-traces']
 
 export const MESSAGE_FRISE_TROP_LONGUE = 'Trop de gestes et de paroles dans cette pièce pour une seule analyse (plus de 2 000 lignes)'
 

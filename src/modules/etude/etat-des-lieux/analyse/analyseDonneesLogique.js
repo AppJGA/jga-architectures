@@ -130,3 +130,47 @@ export function messageErreurAnalyse(message) {
   const t = String(message ?? '').trim() || 'Analyse impossible.'
   return t.length > LONGUEUR_ERREUR ? `${t.slice(0, LONGUEUR_ERREUR - 1)}…` : t
 }
+
+// ─── Liaisons et cotes proposées (migration 084) ─────────────────────────────
+
+/**
+ * Ce que Claude propose pour les traces de la pièce → `p_traces` de
+ * edl_ecrire_analyse : une ligne par liaison (identifiant décidé ici, la
+ * fonction rattache pièce et étage, origine 'ia', « à valider ») et une par
+ * valeur de cote (désignée par l'id de la cote). `traces` null (traces non
+ * lues) → null : le paramètre n'est pas envoyé, rien des traces n'est touché.
+ * Un tableau vide, lui, retire les propositions pas encore relues.
+ */
+export function lignesTracesIa({ traces, visiteId = null, nouvelId = nouvelIdParDefaut }) {
+  if (!traces) return null
+  return [
+    ...(traces.liaisons ?? []).map((l) => ({
+      id: l.id ?? nouvelId(), sorte: 'commande', visite_id: visiteId ?? null,
+      point_a: l.point_a, point_b: l.point_b, extrait: texteOuNull(l.extrait),
+    })),
+    ...(traces.cotes ?? []).map((c) => ({ id: c.id, sorte: 'cote', valeur: c.valeur, extrait: texteOuNull(c.extrait) })),
+  ]
+}
+
+/**
+ * Valider une trace à la relecture, avec ou sans nouvelle valeur (cote) :
+ * modifier vaut validation. Une liaison n'a rien d'autre à changer.
+ */
+export function champsValidationTrace(trace, champs = {}) {
+  const ligne = { a_valider: false }
+  if (trace?.sorte === 'cote' && 'valeur' in champs) ligne.valeur = texteOuNull(champs.valeur)
+  return ligne
+}
+
+/**
+ * Écarter une proposition : la liaison proposée disparaît ; la cote, posée
+ * à la main, reste, seule la valeur proposée s'en va. Une trace validée se
+ * supprime entière (`supprimer`).
+ * @returns { supprimer: true } | { champs }
+ */
+export function ecartTrace(trace) {
+  if (trace?.sorte === 'cote' && trace.a_valider && trace.origine !== 'ia') {
+    return { champs: { valeur: null, extrait: null, a_valider: false } }
+  }
+  return { supprimer: true }
+}

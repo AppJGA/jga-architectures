@@ -17,10 +17,10 @@ import { bornerDelai, DELAI_LECTURE_MS } from '../visite/visiteLogique'
 import { ecrireAvecReplis } from '../../../../shared/repliColonnes'
 import {
   analyseIndisponible, ligneEnregistrement, lignesElementsIa, champsValidation,
-  ligneElementMain, champsPieceAnalysee, messageErreurAnalyse,
+  ligneElementMain, champsPieceAnalysee, messageErreurAnalyse, lignesTracesIa, champsValidationTrace, ecartTrace,
 } from './analyseDonneesLogique'
 import { memeFiche } from './analyseEdlLogique'
-import { lectureTraces } from '../tracesEdl'
+import { lectureTraces, tracesIndisponibles, MESSAGE_TRACES_INDISPONIBLES } from '../tracesEdl'
 
 export { analyseIndisponible, MESSAGE_ANALYSE_INDISPONIBLE } from './analyseDonneesLogique'
 
@@ -124,17 +124,23 @@ export async function lireSuiviAnalyse(affaireId, { delaiMs = DELAI_LECTURE_MS }
  * Tout ce que la frise d'une pièce demande, relu juste avant l'appel à
  * Claude : la pièce, le journal et les points de l'affaire (un point d'une
  * autre pièce peut y avoir été rattaché), les transcriptions des visites de
- * la pièce, ses éléments déjà validés.
+ * la pièce, ses éléments déjà validés, et les liaisons et cotes de l'affaire
+ * (`traces`, migration 084). `traces` vaut null si elles n'ont pas été lues
+ * — base sans la 084, ou lecture ratée : l'analyse se fait alors comme
+ * avant, sans rien proposer ni retirer des traces (envoyer une liste vide
+ * effacerait des propositions que personne n'a relues).
  */
 export async function lireFriseAnalyse(affaireId, pieceId, { delaiMs = DELAI_LECTURE_MS } = {}) {
   const deLAffaire = (q) => q.eq('affaire_id', affaireId)
   try {
-    const [pieces, evenements, points, elementsValides] = await Promise.all([
+    const [pieces, evenements, points, elementsValides, lectureT] = await Promise.all([
       toutes('edl_pieces', 'synchro_id:id, *', (q) => q.eq('id', pieceId), delaiMs),
       toutes('edl_evenements', 'synchro_id:id, *', deLAffaire, delaiMs),
       toutes('edl_points', 'synchro_id:id, *', deLAffaire, delaiMs),
       toutes('edl_elements', 'synchro_id:id, *', (q) => q.eq('piece_id', pieceId).eq('a_valider', false), delaiMs),
+      lireTracesAffaire(affaireId, { delaiMs }).catch(() => null),
     ])
+    const traces = lectureT?.tracesDisponibles ? lectureT.traces : null
     const piece = pieces[0] ?? null
     // `select('*')` sans la 082 ne dit rien : la colonne manquerait en silence
     if (piece && !('analyse_le' in piece)) return { ...INDISPONIBLE }
@@ -142,7 +148,7 @@ export async function lireFriseAnalyse(affaireId, pieceId, { delaiMs = DELAI_LEC
     const enregistrements = visites.length
       ? await toutes('edl_enregistrements', 'synchro_id:id, *', (q) => deLAffaire(q).in('visite_id', visites), delaiMs)
       : []
-    return { indisponible: false, piece, evenements, points, enregistrements, elementsValides }
+    return { indisponible: false, piece, evenements, points, enregistrements, elementsValides, traces }
   } catch (err) {
     if (analyseIndisponible(err)) return { ...INDISPONIBLE }
     throw err
@@ -229,12 +235,17 @@ export async function enregistrerTranscription(ligne) {
  * `attendu` : l'updated_at sur lequel portait la condition ratée.
  * Sans `siMisAJour` : écriture directe (pas de transaction, un arrêt en
  * route laisse `analyse_le` inchangé et la passe suivante refait tout).
+ *
+ * `traces` (liaisons et valeurs de cotes proposées, `lireAnalyse`) ne
+ * s'écrivent que par la fonction, dans la même transaction (migration
+ * 084) ; null : le paramètre n'est pas envoyé. Le repli sans fonction ne les
+ * écrit pas (base d'avant la 082 : elle n'a pas la 084 non plus).
  */
 export async function ecrireResultatAnalyse({
-  affaireId, piece, fiche, elements, analyseLe = new Date(), siMisAJour = undefined, garderFiche = false,
+  affaireId, piece, fiche, elements, traces = null, visiteId = null, analyseLe = new Date(), siMisAJour = undefined, garderFiche = false,
 }) {
   if (siMisAJour !== undefined) {
-    const r = await ecrireParFonction({ affaireId, piece, fiche, elements, analyseLe, siMisAJour, garderFiche })
+    const r = await ecrireParFonction({ affaireId, piece, fiche, elements, traces, visiteId, analyseLe, siMisAJour, garderFiche })
     if (r) return r
   }
   const champs = champsPieceAnalysee(fiche, analyseLe)
@@ -287,23 +298,33 @@ export async function ecrireResultatAnalyse({
 const fonctionAbsente = (error) => error?.code === 'PGRST202' || error?.code === '42883'
 
 // Écriture transactionnelle ; null si la fonction manque (repli)
-async function ecrireParFonction({ affaireId, piece, fiche, elements, analyseLe, siMisAJour, garderFiche }) {
+async function ecrireParFonction({ affaireId, piece, fiche, elements, traces, visiteId, analyseLe, siMisAJour, garderFiche }) {
   const lignes = lignesElementsIa({ affaireId, piece, elements })
-  const { data, error } = await supabase.rpc('edl_ecrire_analyse', {
+  const parametres = {
     p_piece: piece.id,
     p_version: siMisAJour,
     p_fiche: fiche ?? {},
     p_elements: lignes,
     p_analyse_le: new Date(analyseLe).toISOString(),
     p_garder_fiche: garderFiche === true,
-  })
+  }
+  // Sans traces lues, le paramètre n'est pas envoyé du tout : une base sans
+  // la 084 ne connaît pas `p_traces` et refuserait l'appel entier
+  const pTraces = lignesTracesIa({ traces, visiteId })
+  if (pTraces) parametres.p_traces = pTraces
+  const { data, error } = await supabase.rpc('edl_ecrire_analyse', parametres)
   if (error) {
     if (fonctionAbsente(error)) return null
     if (analyseIndisponible(error)) return INDISPONIBLE
     throw error
   }
   const statut = data?.statut
-  if (statut === 'ok') return { indisponible: false, remplaces: data.remplaces ?? 0, ajoutes: data.ajoutes ?? 0, transaction: true }
+  if (statut === 'ok') {
+    return {
+      indisponible: false, remplaces: data.remplaces ?? 0, ajoutes: data.ajoutes ?? 0, transaction: true,
+      tracesAjoutees: data.traces_ajoutees ?? 0, cotesLues: data.cotes_lues ?? 0,
+    }
+  }
   // 'conflit' ou 'introuvable' (supprimée, ou refusée par les règles) :
   // rien d'écrit, l'appelant relit la pièce pour savoir laquelle
   if (statut === 'conflit' || statut === 'introuvable') {
@@ -434,4 +455,39 @@ export async function modifierFiche(pieceId, fiche, { valider = false } = {}) {
   if (error) throw error
   if (!data?.length) throw new Error(LECTURE_SEULE)
   return { indisponible: sansMarque }
+}
+
+// ─── Liaisons et cotes à la relecture (migration 084) ───────────────────────
+// Au bureau, en ligne : écrites directement, comme les éléments (le journal
+// de la visite ne peut rien noter hors d'une visite). Sans la 084, le
+// message le dit ; un refus (0 ligne) rend « Lecture seule ».
+
+function erreurTraces(error) {
+  if (tracesIndisponibles(error)) return Object.assign(new Error(MESSAGE_TRACES_INDISPONIBLES), { indisponible: true })
+  return error
+}
+
+/** Valider une liaison ou une cote proposée ; `champs.valeur` change la valeur d'une cote (modifier vaut validation). */
+export async function validerTrace(trace, champs = {}) {
+  const { data, error } = await supabase
+    .from('edl_traces').update(champsValidationTrace(trace, champs)).eq('id', trace.id).select('*')
+  if (error) throw erreurTraces(error)
+  if (!data?.length) throw new Error(LECTURE_SEULE)
+  return { trace: data[0] }
+}
+
+/**
+ * Écarter une proposition ou supprimer une trace validée : une liaison
+ * proposée et toute trace validée disparaissent ; une cote dont seule la
+ * valeur était proposée garde son tracé et perd la valeur (`ecartTrace`).
+ */
+export async function ecarterTrace(trace) {
+  const ecart = ecartTrace(trace)
+  const requete = ecart.supprimer
+    ? supabase.from('edl_traces').delete().eq('id', trace.id)
+    : supabase.from('edl_traces').update(ecart.champs).eq('id', trace.id)
+  const { data, error } = await requete.select('id')
+  if (error) throw erreurTraces(error)
+  if (!data?.length) throw new Error(LECTURE_SEULE)
+  return { supprimee: ecart.supprimer === true }
 }

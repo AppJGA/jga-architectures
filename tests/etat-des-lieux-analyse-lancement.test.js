@@ -1112,3 +1112,66 @@ describe('Correctifs (vague finale)', () => {
     assert.equal(decisionAnalyse({ ...base, evenements: marge }).raison, 'echec-definitif')
   })
 })
+
+describe('passeAnalyseEdl : liaisons et cotes (084)', () => {
+  const avecTraces = (m, traces) => {
+    const lire = m.d.lireFrise
+    m.d.lireFrise = async (...args) => ({ ...(await lire(...args)), traces })
+    m.base.points = [
+      { id: 'p1', piece_id: 'salon', numero: 1, type: 'interrupteur' },
+      { id: 'p2', piece_id: 'salon', numero: 2, type: 'luminaire' },
+    ]
+  }
+
+  test('sans traces lues : demande et écriture d’avant la 084', async () => {
+    const m = monde()
+    await m.passe()
+    assert.equal('tracesPiece' in m.appels[0], false)
+    assert.equal(m.ecritures[0].traces, null)
+  })
+
+  test('traces lues : décrites à Claude, propositions relues puis écrites avec la visite', async () => {
+    const m = monde()
+    const cote = { id: 'c1', sorte: 'cote', piece_id: 'salon', niveau_id: 'n1', xa: 0, ya: 0, xb: 3, yb: 0, valeur: null, a_valider: false, origine: 'main' }
+    avecTraces(m, [cote])
+    m.reponse = () => ({
+      fiche: { sol: 'parquet' }, elements: [],
+      liaisons: [{ interrupteur: 'P2', luminaire: 'P1', extrait: 'il allume le plafonnier' }, { interrupteur: 'P1', luminaire: 'P1', extrait: '' }],
+      cotes: [{ cote: 'C1', valeur: '3,05', extrait: 'trois mètres cinq' }],
+    })
+    await m.passe()
+    assert.deepEqual(m.appels[0].tracesPiece, [
+      'Interrupteurs et luminaires posés dans la pièce : P1 (Interrupteur), P2 (Luminaire).',
+      'Aucune liaison existante.',
+      'Cotes posées dans la pièce (1) :',
+      '- C1 : sans valeur (longueur dessinée ≈ 3,00 m)',
+    ])
+    assert.deepEqual(m.ecritures[0].traces, {
+      liaisons: [{ point_a: 'p1', point_b: 'p2', extrait: 'il allume le plafonnier' }],
+      cotes: [{ id: 'c1', valeur: '3,05 m', extrait: 'trois mètres cinq' }],
+    })
+    assert.equal(m.ecritures[0].visiteId, 'v1')
+  })
+
+  test('traces lues, rien de proposé : listes vides écrites (propositions remplacées)', async () => {
+    const m = monde()
+    avecTraces(m, [])
+    await m.passe()
+    assert.deepEqual(m.ecritures[0].traces, { liaisons: [], cotes: [] })
+  })
+
+  test('après un conflit, la seconde écriture garde les traces', async () => {
+    const m = monde()
+    avecTraces(m, [])
+    let une = true
+    m.entreEtapes = async (etape) => {
+      // Le bureau corrige la fiche pendant l'appel : la fiche de l'agence est gardée
+      if (etape === 'transaction' && une) { une = false; Object.assign(m.base.pieces[0], { fiche: { sol: 'corrigé' }, updated_at: H('10:40:00') }) }
+    }
+    m.reponse = () => ({ fiche: {}, elements: [], liaisons: [{ interrupteur: 'P1', luminaire: 'P2', extrait: '' }], cotes: [] })
+    await m.passe()
+    assert.equal(m.ecritures.length, 2)
+    assert.equal(m.ecritures[1].garderFiche, true)
+    assert.deepEqual(m.ecritures[1].traces, { liaisons: [{ point_a: 'p1', point_b: 'p2', extrait: '' }], cotes: [] })
+  })
+})

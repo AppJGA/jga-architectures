@@ -10,6 +10,7 @@ import {
   resumePieceRelecture, piecesARelire, totalAValider, elementsParCalque, optionsType, valeurType, lireValeurType,
   pointsProposes, erreurSaisieElement, champsElementSaisis, saisieElement, titreElement, brouillonFiche,
   ficheDepuisBrouillon, ficheModifiee, rubriquesManquantes, messageLancement, suiteFicheRecue,
+  tracesRelecture, lireSaisieCote, etatTrace,
 } from '../src/modules/etude/etat-des-lieux/analyse/relectureAnalyseLogique.js'
 import { champsValidation } from '../src/modules/etude/etat-des-lieux/analyse/analyseDonneesLogique.js'
 import { CALQUES_DE_POINT } from '../src/modules/etude/etat-des-lieux/calquesEdl.js'
@@ -245,5 +246,55 @@ describe('messageLancement', () => {
     assert.match(messageLancement({ analysees: 0, echecs: 0, raison: 'refus' }), /Lecture seule/)
     assert.match(messageLancement({ analysees: 0, echecs: 0, raison: 'indisponible' }), /migration 082/)
     assert.match(messageLancement({ analysees: 0, echecs: 0, raison: 'bizarre' }), /bizarre/)
+  })
+})
+
+describe('liaisons et cotes à la relecture (084)', () => {
+  const points = [
+    { id: 'i3', piece_id: 'salon', numero: 3, type: 'interrupteur' },
+    { id: 'l7', piece_id: 'salon', numero: 7, type: 'luminaire' },
+    { id: 'l20', piece_id: 'cuisine', numero: 20, type: 'luminaire' },
+  ]
+  const traces = [
+    { id: 'c1', sorte: 'cote', piece_id: 'salon', a_valider: false, valeur: null, created_at: '2026-11-18T09:01:00Z' },
+    { id: 't1', sorte: 'commande', piece_id: 'salon', point_a: 'i3', point_b: 'l7', a_valider: false, origine: 'main', created_at: '2026-11-18T09:00:00Z' },
+    { id: 't2', sorte: 'commande', piece_id: 'salon', point_a: 'i3', point_b: 'l7', a_valider: true, origine: 'ia', created_at: '2026-11-18T09:05:00Z' },
+    { id: 'c2', sorte: 'cote', piece_id: 'salon', a_valider: true, valeur: '3,45 m', extrait: 'trois quarante-cinq', created_at: '2026-11-18T09:02:00Z' },
+    // Liaison rangée dans la cuisine, mais dont l'interrupteur est au salon
+    { id: 't3', sorte: 'commande', piece_id: 'cuisine', point_a: 'i3', point_b: 'l20', a_valider: false, origine: 'main', created_at: '2026-11-18T09:03:00Z' },
+    { id: 'c9', sorte: 'cote', piece_id: 'cuisine', a_valider: true, valeur: '2 m', created_at: '2026-11-18T09:00:00Z' },
+  ]
+
+  test('traces de la pièce : propositions d’abord, liaisons avant cotes', () => {
+    assert.deepEqual(tracesRelecture(traces, 'salon', points).map((t) => t.id), ['t2', 'c2', 't1', 't3', 'c1'])
+  })
+
+  test('une proposition de liaison ou de valeur compte « à valider » dans sa pièce', () => {
+    const p = piece('salon')
+    const r = resumePieceRelecture(p, [], traces)
+    assert.equal(r.tracesAValider, 2)
+    assert.equal(r.aValider, 2)
+    assert.equal(r.rang, 0)
+    assert.equal(resumePieceRelecture(p, []).aValider, 0)
+    assert.equal(totalAValider([piece('salon'), piece('cuisine')], [], traces), 3)
+    assert.deepEqual(piecesARelire([piece('cuisine'), piece('salon'), piece('bureau')], [], null, traces).map((l) => l.piece.id), ['cuisine', 'salon', 'bureau'])
+  })
+
+  test('valeur saisie lue comme à la visite', () => {
+    assert.deepEqual(lireSaisieCote('3,4'), { valeur: '3,40 m' })
+    assert.deepEqual(lireSaisieCote('345 cm'), { valeur: '3,45 m' })
+    assert.deepEqual(lireSaisieCote('3,45 m'), { valeur: '3,45 m' })
+    assert.ok(lireSaisieCote('trois mètres').erreur)
+    assert.ok(lireSaisieCote('').erreur)
+  })
+
+  test('état dit de chaque trace', () => {
+    assert.equal(etatTrace(traces[2]), 'proposée')
+    assert.equal(etatTrace(traces[3]), 'valeur proposée')
+    assert.equal(etatTrace(traces[0]), 'valeur à préciser')
+    assert.equal(etatTrace(traces[1]), 'posée à la main')
+    assert.equal(etatTrace({ sorte: 'commande', origine: 'ia', a_valider: false }), 'validée')
+    assert.equal(etatTrace({ sorte: 'cote', valeur: '3,45 m', extrait: 'trois quarante-cinq', a_valider: false }), 'valeur validée')
+    assert.equal(etatTrace({ sorte: 'cote', valeur: '3,45 m', a_valider: false, origine: 'main' }), 'posée à la main')
   })
 })

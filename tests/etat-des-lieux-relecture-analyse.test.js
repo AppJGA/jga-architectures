@@ -11,6 +11,7 @@ import {
   pointsProposes, erreurSaisieElement, champsElementSaisis, saisieElement, titreElement, brouillonFiche,
   ficheDepuisBrouillon, ficheModifiee, rubriquesManquantes, messageLancement, suiteFicheRecue,
   tracesRelecture, lireSaisieCote, etatTrace, choixLiaisonRelecture, erreurLiaisonRelecture,
+  suppressionPoint, suiteEcartElement, pointsSansElement,
 } from '../src/modules/etude/etat-des-lieux/analyse/relectureAnalyseLogique.js'
 import { champsValidation } from '../src/modules/etude/etat-des-lieux/analyse/analyseDonneesLogique.js'
 import { CALQUES_DE_POINT } from '../src/modules/etude/etat-des-lieux/calquesEdl.js'
@@ -332,5 +333,60 @@ describe('« Ajouter une liaison » à la relecture', () => {
     assert.match(erreurLiaisonRelecture('', 'p4', []), /Choisissez/)
     assert.match(erreurLiaisonRelecture('p3', 'p4', [{ sorte: 'commande', point_a: 'p4', point_b: 'p3' }]), /déjà reliés/)
     assert.equal(erreurLiaisonRelecture('p3', 'p4', [{ sorte: 'cote', point_a: null, point_b: null }]), null)
+  })
+})
+
+describe('écarter le dernier élément d’un point : le point part aussi', () => {
+  const points = [
+    { id: 'p1', piece_id: 'ch2', numero: 1, type: null },
+    { id: 'p2', piece_id: 'ch2', numero: 2, type: 'interrupteur' },
+    { id: 'p3', piece_id: 'ch2', numero: 3, type: null },
+    { id: 'p9', piece_id: 'sdb', numero: 9, type: null },
+  ]
+  const photos = [{ id: 'f1', point_id: 'p3' }, { id: 'f2', point_id: 'p3' }, { id: 'f3', point_id: 'p2' }]
+  const traces = [
+    { id: 't1', sorte: 'commande', point_a: 'p2', point_b: 'p3' },
+    { id: 'c1', sorte: 'cote', point_a: null, point_b: null },
+  ]
+  const elements = [
+    { id: 'e3', point_id: 'p3', piece_id: 'ch2', a_valider: true },
+    { id: 'e2a', point_id: 'p2', piece_id: 'ch2', a_valider: false },
+    { id: 'e2b', point_id: 'p2', piece_id: 'ch2', a_valider: true },
+    // Un élément d'une autre pièce peut désigner un point de celle-ci
+    { id: 'e9', point_id: 'p1', piece_id: 'sdb', a_valider: false },
+    { id: 'e0', point_id: null, piece_id: 'ch2', a_valider: false },
+  ]
+  const ctx = { elements, points, photos, traces }
+
+  test('dernier élément du point : point, photos et liaisons comptés et dits', () => {
+    assert.deepEqual(suiteEcartElement(elements[0], ctx), {
+      pointId: 'p3', numero: 3, photos: 2, liaisons: 1,
+      texte: 'Le point P3 disparaîtra du plan, avec ses 2 photos et sa liaison.',
+    })
+  })
+
+  test('un autre élément reste sur le point (proposition, ou autre pièce) : seul l’élément part', () => {
+    assert.equal(suiteEcartElement(elements[1], ctx), null)
+    assert.equal(suiteEcartElement({ id: 'e1', point_id: 'p1' }, ctx), null)
+    // Élément sans point, ou point inconnu
+    assert.equal(suiteEcartElement(elements[4], ctx), null)
+    assert.equal(suiteEcartElement({ id: 'x', point_id: 'absent' }, ctx), null)
+  })
+
+  test('phrase de la confirmation selon ce qui part', () => {
+    assert.equal(suppressionPoint(points[0], { photos, traces }).texte, 'Le point P1 disparaîtra du plan.')
+    assert.equal(suppressionPoint(points[1], { photos, traces }).texte, 'Le point P2 disparaîtra du plan, avec sa photo et sa liaison.')
+    const beaucoup = suppressionPoint(points[2], {
+      photos: [...photos, { id: 'f4', point_id: 'p3' }],
+      traces: [...traces, { id: 't2', sorte: 'commande', point_a: 'p8', point_b: 'p3' }],
+    })
+    assert.equal(beaucoup.texte, 'Le point P3 disparaîtra du plan, avec ses 3 photos et ses 2 liaisons.')
+    assert.equal(suppressionPoint(points[2], { photos: [], traces: [traces[0]] }).texte, 'Le point P3 disparaîtra du plan, avec sa liaison.')
+  })
+
+  test('points de la pièce sans élément, par numéro', () => {
+    const restants = elements.filter((e) => e.id !== 'e3')
+    assert.deepEqual(pointsSansElement(points, restants, 'ch2').map((p) => p.id), ['p3'])
+    assert.deepEqual(pointsSansElement(points, [], 'ch2').map((p) => p.id), ['p1', 'p2', 'p3'])
   })
 })

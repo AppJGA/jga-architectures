@@ -5,8 +5,8 @@ import { morceauxEtatsDesLieux, remettreEnFile } from '../../../chantier/comptes
 import { ECHECS_MAX } from '../../../chantier/comptes-rendus/enregistrement/transcription'
 import { PlanVisite } from '../visite/PlanVisite'
 import { COULEURS_PIECE, designationPiece, etatPieceVisite, piecesVisitees } from '../visite/visiteLogique'
-import { validerElement, ecarterElement, ajouterElement, modifierFiche, validerTrace, ecarterTrace, ajouterLiaison, MESSAGE_ANALYSE_INDISPONIBLE } from './analyseDonnees'
-import { piecesARelire, messageLancement, tracesRelecture, choixLiaisonRelecture } from './relectureAnalyseLogique'
+import { validerElement, ecarterElement, ajouterElement, modifierFiche, validerTrace, ecarterTrace, ajouterLiaison, supprimerPoint, MESSAGE_ANALYSE_INDISPONIBLE } from './analyseDonnees'
+import { piecesARelire, messageLancement, tracesRelecture, choixLiaisonRelecture, suiteEcartElement, suppressionPoint, pointsSansElement } from './relectureAnalyseLogique'
 import { avecTypeEffectif } from '../tracesEdl'
 import { FicheRelecture } from './FicheRelecture'
 import { ElementsRelecture } from './ElementsRelecture'
@@ -207,6 +207,16 @@ function VuePiece({ affaireId, niveau, pieces, piece, etats, visitees, visite, a
   const choixLiaison = useMemo(() => choixLiaisonRelecture({ points, elements: analyse.elements, pieceId: piece.id }),
     [points, analyse.elements, piece.id])
   const pointElement = elements.find((e) => e.id === elementChoisi)?.point_id ?? null
+  // Écarter le dernier élément d'un point emporte le point (photos et
+  // liaisons comprises) ; les points déjà sans élément se suppriment à la main
+  const photos = donnees?.photos
+  const suiteEcart = useCallback(
+    (element) => suiteEcartElement(element, { elements: analyse.elements, points, photos, traces: tracesNiveau }),
+    [analyse.elements, points, photos, tracesNiveau],
+  )
+  const pointsSeuls = useMemo(() => pointsSansElement(points, analyse.elements, piece.id)
+    .map((p) => ({ point: p, suppression: suppressionPoint(p, { photos, traces: tracesNiveau }) })),
+  [points, analyse.elements, piece.id, photos, tracesNiveau])
   const pointEnEvidence = survol ?? pointElement ?? pointChoisi
 
   const enAnalyse = analyse.enCours === piece.id || lancement
@@ -226,6 +236,17 @@ function VuePiece({ affaireId, niveau, pieces, piece, etats, visitees, visite, a
       return false
     } finally {
       await analyse.relire()
+    }
+  }
+
+  // Le point part de la base ; la copie de la visite (relue en ligne,
+  // instantané remplacé) suit, sans quoi la pastille resterait sur le plan
+  const retirerPoint = async (pointId, options) => {
+    try {
+      return await supprimerPoint(pointId, options)
+    } finally {
+      if (pointChoisi === pointId) setPointChoisi(null)
+      await visite.recharger?.()
     }
   }
 
@@ -319,7 +340,13 @@ function VuePiece({ affaireId, niveau, pieces, piece, etats, visitees, visite, a
             onSurvol={setSurvol}
             onChoisir={(id) => { setPointChoisi(null); setTraceChoisie(null); setElementChoisi((c) => (c === id ? null : id)) }}
             onValider={(id, champs) => ecrire(() => validerElement(id, champs))}
-            onEcarter={(id) => ecrire(() => ecarterElement(id))}
+            onEcarter={(id, suite) => ecrire(async () => {
+              const r = await ecarterElement(id)
+              if (!r?.indisponible && suite) await retirerPoint(suite.pointId, { siSansElement: true })
+              return r
+            })}
+            suiteEcart={suiteEcart} pointsSeuls={pointsSeuls}
+            onSupprimerPoint={(suppression) => ecrire(() => retirerPoint(suppression.pointId))}
             onAjouter={(champs) => ecrire(() => ajouterElement({ ...champs, affaire_id: affaireId, niveau_id: piece.niveau_id ?? niveau.id, piece_id: piece.id }))}
           />
           {analyse.tracesDisponibles && (

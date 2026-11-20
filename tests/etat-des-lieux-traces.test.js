@@ -20,7 +20,7 @@ import { aideMemoire } from '../src/modules/etude/etat-des-lieux/visite/aideMemo
 import { typeEdl } from '../src/modules/etude/etat-des-lieux/calquesEdl.js'
 import {
   TYPES_EDL, operationEdl, appliquerOperationEdl, etatAvecFileEdl, operationInverse, envoyerTrace,
-  erreurTracesIndisponibles, journalSansMigration, insererSansPieceDisparue,
+  erreurTracesIndisponibles, journalSansMigration, insererSansPieceDisparue, pointDisparu,
 } from '../src/modules/etude/etat-des-lieux/visite/fileEdlLogique.js'
 
 const AFF = 'aff-1'
@@ -315,6 +315,19 @@ describe('file de la visite : traces', () => {
     await envoyerTrace(op(TYPES_EDL.traceCreer, { trace: cote }, 1), base)
     await assert.rejects(envoyerTrace(op(TYPES_EDL.traceModifier, { id: cote.id, champs: { valeur: '1,00 m' } }, 2), base), /rien modifié/)
     await assert.rejects(envoyerTrace(op(TYPES_EDL.traceSupprimer, { id: cote.id }, 3), base), /pas supprimé/)
+  })
+  test('point supprimé au bureau pendant l’attente : liaison et modification tenues pour faites', async () => {
+    const base = baseSimulee()
+    const inserer = base.inserer
+    base.inserer = async (ligne) => (ligne.point_b === 'disparu'
+      ? { code: '23503', message: 'insert or update on table "edl_traces" violates foreign key constraint "edl_traces_point_b_fkey"', details: 'Key (point_b)=(disparu) is not present in table "edl_points".' }
+      : inserer(ligne))
+    await envoyerTrace(op(TYPES_EDL.traceCreer, { trace: { ...commande, point_b: 'disparu' } }, 1), base)
+    assert.equal(base.lignes.size, 0)
+    // La trace est partie en cascade avec son point : rien à modifier
+    await envoyerTrace(op(TYPES_EDL.traceModifier, { id: 'partie', champs: { valeur: '1,00 m' } }, 2), base)
+    assert.equal(pointDisparu({ code: '23503', details: 'Key (point_a)=(x) is not present' }), true)
+    assert.equal(pointDisparu({ code: '23503', details: 'Key (piece_id)=(x) is not present' }), false)
   })
   test('table absente (sans la 084) : refus définitif, l’opération est mise de côté d’emblée', async () => {
     const base = baseSimulee({ sansTable: true })

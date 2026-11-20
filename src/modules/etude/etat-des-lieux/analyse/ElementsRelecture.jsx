@@ -13,7 +13,9 @@ import { ConfirmationEdl } from './ConfirmationEdl'
 // propositions de l'IA des comptes rendus, avec ce qui a été entendu :
 // Valider, Modifier (modifier vaut validation), Écarter (confirmé). Survoler
 // ou toucher un élément met son point en évidence sur le plan ; toucher un
-// point du plan met ses éléments en évidence ici.
+// point du plan met ses éléments en évidence ici. Écarter le dernier élément
+// d'un point retire aussi le point (`suiteEcart`, la confirmation le dit) ;
+// un point resté sans élément est listé à part, avec « Supprimer le point ».
 
 const AMBRE = { fond: '#FFFBEB', trait: '#F59E0B', texte: '#92400E' }
 const bouton = { display: 'inline-flex', alignItems: 'center', gap: 6, minHeight: 44, padding: '0 12px', borderRadius: 3, fontSize: 13, cursor: 'pointer', border: '0.5px solid rgba(0,0,0,0.15)', background: 'white', color: '#1F1B17' }
@@ -164,9 +166,12 @@ function CarteElement({ element: e, numeroPoint, pieceId, points, lectureSeule, 
 
 export function ElementsRelecture({
   piece, elements, points, lectureSeule, elementChoisi, pointChoisi, onSurvol, onChoisir, onValider, onEcarter, onAjouter,
+  suiteEcart = () => null, pointsSeuls = [], onSupprimerPoint = null,
 }) {
   const [ajout, setAjout] = useState(false)
   const [aEcarter, setAEcarter] = useState(null)
+  const [pointASupprimer, setPointASupprimer] = useState(null)
+  const suite = aEcarter ? suiteEcart(aEcarter) : null
   const groupes = useMemo(() => elementsParCalque(elements), [elements])
   const numeros = useMemo(() => new Map((points ?? []).map((p) => [p.id, p.numero])), [points])
   const aValider = elements.filter((e) => e.a_valider).length
@@ -202,6 +207,40 @@ export function ElementsRelecture({
         </div>
       ))}
 
+      {pointsSeuls.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <h4 style={{ margin: 0, fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#9C9591' }}>
+            Points sans élément · {pointsSeuls.length}
+          </h4>
+          <ul style={{ margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {pointsSeuls.map(({ point: p, suppression }) => (
+              <li key={p.id}
+                onMouseEnter={() => onSurvol(p.id)} onMouseLeave={() => onSurvol(null)}
+                style={{
+                  listStyle: 'none', display: 'flex', alignItems: 'center', gap: 8, padding: '0 0 0 12px', minHeight: 44,
+                  background: 'white', border: '0.5px solid rgba(0,0,0,0.1)', borderRadius: 3,
+                  ...(pointChoisi === p.id ? { outline: '2px solid var(--affaire-accent, #E8602C)', outlineOffset: 2 } : null),
+                }}>
+                <span style={{ flex: 1, minWidth: 0, fontSize: 13, color: '#1F1B17', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <strong>P{p.numero ?? '?'}</strong>
+                  <span style={{ color: '#5E5854' }}>
+                    {' · '}{typeEdl(p.type)?.libelle ?? 'sans type'}
+                    {suppression.photos ? ` · ${suppression.photos} photo${suppression.photos > 1 ? 's' : ''}` : ''}
+                    {suppression.liaisons ? ` · ${suppression.liaisons} liaison${suppression.liaisons > 1 ? 's' : ''}` : ''}
+                  </span>
+                </span>
+                {!lectureSeule && onSupprimerPoint && (
+                  <button type="button" onClick={() => setPointASupprimer(suppression)}
+                    style={{ ...bouton, border: 'none', background: 'none', color: '#B8412C', flexShrink: 0 }}>
+                    <Trash2 size={14} /> Supprimer le point
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {!lectureSeule && (ajout ? (
         <div style={{ padding: 12, background: 'white', border: '0.5px solid rgba(0,0,0,0.1)', borderRadius: 3 }}>
           <h4 style={{ margin: '0 0 10px', fontSize: 13, fontWeight: 600, color: '#1F1B17' }}>Nouvel élément</h4>
@@ -221,10 +260,21 @@ export function ElementsRelecture({
         <ConfirmationEdl
           danger
           titre={aEcarter.a_valider ? 'Écarter cette proposition ?' : 'Supprimer cet élément ?'}
-          texte={`« ${titreElement(aEcarter)} » sera retiré de la pièce. ${aEcarter.a_valider ? 'Une nouvelle analyse pourra le proposer à nouveau si la visite en parle.' : 'Cet élément avait été validé.'}`}
+          texte={`« ${titreElement(aEcarter)} » sera retiré de la pièce. ${aEcarter.a_valider ? 'Une nouvelle analyse pourra le proposer à nouveau si la visite en parle.' : 'Cet élément avait été validé.'}${suite ? ` ${suite.texte}` : ''}`}
           libelle={aEcarter.a_valider ? 'Écarter' : 'Supprimer'} libelleEnCours="Suppression…"
           onAnnuler={() => setAEcarter(null)}
-          onConfirmer={async () => { await onEcarter(aEcarter.id); setAEcarter(null) }}
+          onConfirmer={async () => { await onEcarter(aEcarter.id, suite); setAEcarter(null) }}
+        />
+      )}
+
+      {pointASupprimer && (
+        <ConfirmationEdl
+          danger
+          titre={`Supprimer le point P${pointASupprimer.numero ?? '?'} ?`}
+          texte={pointASupprimer.texte}
+          libelle="Supprimer le point" libelleEnCours="Suppression…"
+          onAnnuler={() => setPointASupprimer(null)}
+          onConfirmer={async () => { await onSupprimerPoint(pointASupprimer); setPointASupprimer(null) }}
         />
       )}
     </section>

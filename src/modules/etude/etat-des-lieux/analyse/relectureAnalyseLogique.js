@@ -161,6 +161,52 @@ export function titreElement(e) {
   return texte(e?.libelle) || typeEdl(e?.type)?.libelle || calqueEdl(e?.calque)?.libelle || 'Élément'
 }
 
+// ─── Points de la pièce : un point sans élément n'a plus rien à dire ─────────
+//
+// Demande de l'agence (2026-11-20) : écarter le dernier élément d'un point
+// retire aussi le point du plan (sa pastille), ses photos et ses liaisons
+// (parties par cascade, 079 et 084). Un point qui garde un autre élément
+// reste ; un point déjà sans élément se supprime à la main.
+
+// « sa photo », « ses 2 photos »
+const sesN = (n, un, plusieurs) => (n === 1 ? un : `ses ${n} ${plusieurs}`)
+
+/**
+ * Ce que la suppression d'un point emporte : ses photos et ses liaisons, et
+ * la phrase de la confirmation (« Le point P3 disparaîtra du plan, avec ses
+ * 2 photos et sa liaison. »).
+ */
+export function suppressionPoint(point, { photos = [], traces = [] } = {}) {
+  const nbPhotos = (photos ?? []).filter((ph) => ph?.point_id === point.id).length
+  const nbLiaisons = (traces ?? []).filter((t) => t?.sorte === 'commande' && (t.point_a === point.id || t.point_b === point.id)).length
+  const avec = [
+    nbPhotos ? sesN(nbPhotos, 'sa photo', 'photos') : null,
+    nbLiaisons ? sesN(nbLiaisons, 'sa liaison', 'liaisons') : null,
+  ].filter(Boolean)
+  const texte = `Le point P${point.numero ?? '?'} disparaîtra du plan${avec.length ? `, avec ${avec.join(' et ')}` : ''}.`
+  return { pointId: point.id, numero: point.numero ?? null, photos: nbPhotos, liaisons: nbLiaisons, texte }
+}
+
+/**
+ * Écarter cet élément emporte-t-il son point ? Oui s'il n'en reste aucun
+ * autre sur ce point (`elements` : ceux de l'affaire, propositions
+ * comprises — un élément d'une autre pièce peut désigner le point). Rend
+ * `suppressionPoint`, ou null : seul l'élément part.
+ */
+export function suiteEcartElement(element, { elements = [], points = [], photos = [], traces = [] } = {}) {
+  if (!element?.point_id) return null
+  if ((elements ?? []).some((e) => e?.id !== element.id && e?.point_id === element.point_id)) return null
+  const point = (points ?? []).find((p) => p?.id === element.point_id)
+  return point ? suppressionPoint(point, { photos, traces }) : null
+}
+
+/** Points de la pièce qu'aucun élément ne désigne, par numéro. */
+export function pointsSansElement(points = [], elements = [], pieceId) {
+  const designes = new Set((elements ?? []).map((e) => e?.point_id).filter(Boolean))
+  return (points ?? []).filter((p) => p?.id && p.piece_id === pieceId && !designes.has(p.id))
+    .sort((a, b) => (Number(a.numero) || 0) - (Number(b.numero) || 0))
+}
+
 // ─── Liaisons et cotes de la pièce (migration 084) ───────────────────────────
 
 /**

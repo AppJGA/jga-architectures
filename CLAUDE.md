@@ -1042,7 +1042,15 @@ lot 1 : `docs/superpowers/plans/2026-11-17-etat-des-lieux-lot1-preparer.md`.
   éléments de la même réponse comptent aussi. En relecture, « Ajouter une
   liaison » (interrupteurs de l'étage, luminaires de la pièce,
   `choixLiaisonRelecture`, `ajouterLiaison` : main, relue, lignes
-  comptées). **Exports** : `tracesAExporter`, seule
+  comptées). **Écarter le dernier élément d'un point supprime le point**
+  (demande de l'agence, `suiteEcartElement`, `supprimerPoint`) : photos et
+  liaisons par cascade, fichiers des photos retirés (lus avant, échec non
+  bloquant), la confirmation le dit (« Le point P3 disparaîtra du plan,
+  avec ses 2 photos et sa liaison. ») ; « Points sans élément » de la
+  pièce avec « Supprimer le point ». La copie de la visite est relue
+  (instantané remplacé) ; un geste en attente sur un point disparu
+  (modification, photo, liaison 23503 — `pointDisparu`) est tenu pour fait.
+  **Exports** : `tracesAExporter`, seule
   lecture (liaison proposée écartée sauf « Inclure les propositions »,
   liaison dont un point manque ou change d'étage omise, cote dont seule la
   valeur est proposée partie avec « ? » — la fenêtre le signale) ; DXF :

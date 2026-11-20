@@ -48,8 +48,8 @@ async function fichierEnStockage(chemin) {
 // copie de l'appareil effacée en dernier. Plus de copie sur l'appareil : soit
 // l'envoi précédent est allé jusqu'au bout (la ligne existe, succès), soit
 // la photo est perdue — refus, comme les CR (horsLigne/envoi.js), jamais une
-// ligne sans fichier. Un point qui n'existe plus (supprimé depuis) : refus
-// avant tout envoi, sans fichier orphelin ni ligne orpheline.
+// ligne sans fichier. Un point qui n'existe plus (supprimé depuis) : rien
+// n'est envoyé, sans fichier orphelin ni ligne orpheline.
 // `restauration` : le point vient d'être rendu par « Annuler », sa ligne photo
 // est partie en cascade ; sans copie sur l'appareil, le fichier déjà en
 // stockage suffit pour la reposer.
@@ -63,7 +63,13 @@ async function envoyerPhoto(photo, { restauration = false } = {}) {
     }
     throw new Error('La photo n’est plus dans la mémoire de l’appareil.')
   }
-  if (!(await existe('edl_points', photo.point_id))) throw new Error('Le point de cette photo n’existe plus : photo non envoyée.')
+  // Point supprimé depuis (« Supprimer », ou au bureau à la relecture) : la
+  // photo n'a plus de place, le geste est tenu pour fait — refusé, il
+  // resterait coincé dans la file
+  if (!(await existe('edl_points', photo.point_id))) {
+    await effacer(MAGASINS_EDL.fichiers, photo.id).catch(() => {})
+    return
+  }
   const stockage = supabase.storage.from(BUCKET_EDL)
   for (const [chemin, blob] of [[photo.chemin, fichier.photo], [photo.chemin_miniature, fichier.miniature]]) {
     const { error } = await stockage.upload(chemin, blob, { contentType: blob.type, cacheControl: '31536000', upsert: true })
@@ -121,9 +127,14 @@ export async function envoyerOperationEdl(op) {
         }
       }
       return
-    case TYPES_EDL.pointModifier:
-      await modifier('edl_points', c.id, c.champs)
+    case TYPES_EDL.pointModifier: {
+      // Point supprimé au bureau pendant l'attente : rien à modifier, geste
+      // tenu pour fait ; encore là sans ligne touchée = refus (droits)
+      const { data, error } = await supabase.from('edl_points').update(c.champs).eq('id', c.id).select('id')
+      if (error) throw error
+      if (!data?.length && await existe('edl_points', c.id)) throw new Error('La base n’a rien modifié (droits insuffisants).')
       return
+    }
     case TYPES_EDL.pointSupprimer: {
       // Les fichiers des photos restent : « Annuler » rend le point intact ;
       // « Nettoyer le stockage » les reprend s'il n'est pas rendu (079)

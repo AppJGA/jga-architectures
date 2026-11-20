@@ -13,6 +13,7 @@
 // on compte les lignes.
 
 import { supabase } from '../../../../core/supabase/client'
+import { BUCKET_EDL } from '../edlConstantes'
 import { bornerDelai, DELAI_LECTURE_MS } from '../visite/visiteLogique'
 import { ecrireAvecReplis } from '../../../../shared/repliColonnes'
 import {
@@ -416,6 +417,38 @@ export async function ecarterElement(id) {
   }
   if (!data?.length) throw new Error(LECTURE_SEULE)
   return { indisponible: false }
+}
+
+/**
+ * Supprimer un point depuis la relecture (son dernier élément écarté, ou
+ * point resté sans élément) : ses photos et ses liaisons partent par
+ * cascade (079, 084), ses éléments éventuels perdent leur point (082). Les
+ * chemins des photos sont lus avant : après, plus rien ne les désigne. Un
+ * fichier qui résiste au nettoyage n'arrête rien : « Nettoyer le stockage »
+ * (`fichiers_orphelins()`) le reprend. Un refus RLS ne rend pas d'erreur,
+ * seulement aucune ligne : « Lecture seule ». Aucun journal : il demande une
+ * visite. `siSansElement` : le point reste s'il a reçu un élément entre-temps.
+ */
+export async function supprimerPoint(pointId, { siSansElement = false } = {}) {
+  if (siSansElement) {
+    const { data: restants, error: e } = await supabase.from('edl_elements').select('synchro_id:id, id').eq('point_id', pointId).limit(1)
+    if (e && !analyseIndisponible(e)) throw e
+    if (restants?.length) return { supprime: false }
+  }
+  const { data: photos } = await supabase.from('edl_photos').select('synchro_id:id, chemin, chemin_miniature').eq('point_id', pointId)
+  const { data, error } = await supabase.from('edl_points').delete().eq('id', pointId).select('id')
+  if (error) throw error
+  if (!data?.length) throw new Error(LECTURE_SEULE)
+  const chemins = [...new Set((photos ?? []).flatMap((p) => [p.chemin, p.chemin_miniature]).filter(Boolean))]
+  if (chemins.length) {
+    try {
+      const { error: e } = await supabase.storage.from(BUCKET_EDL).remove(chemins)
+      if (e) console.warn('État des lieux, photos du point supprimé :', e)
+    } catch (err) {
+      console.warn('État des lieux, photos du point supprimé :', err)
+    }
+  }
+  return { supprime: true }
 }
 
 /**

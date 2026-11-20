@@ -112,6 +112,12 @@ const TABLES_A_PIECE = new Set(['edl_points', 'edl_evenements', 'edl_traces'])
 export const pieceDisparue = (error) =>
   error?.code === '23503' && /piece_id/.test(`${error.message ?? ''} ${error.details ?? ''}`)
 
+// Point supprimé au bureau (relecture) pendant que le geste attendait : une
+// liaison qui le désigne n'a plus d'objet. Le geste est tenu pour fait, sans
+// quoi il serait refusé à chaque essai et resterait coincé dans la file.
+export const pointDisparu = (error) =>
+  error?.code === '23503' && /point_a|point_b|point_id/.test(`${error.message ?? ''} ${error.details ?? ''}`)
+
 /**
  * Insère par `inserer(ligne)` (rend l'erreur de la base ou null), une seconde
  * fois sans pièce si la pièce n'existe plus. Rend l'erreur du dernier essai.
@@ -203,8 +209,10 @@ export const journalSansMigration = (evenement, error) =>
  *   supprimer(id) → { error, nombre }
  *   existe(id) → booléen
  * Un doublon (envoi rejoué) est un succès, une suppression qui ne trouve
- * rien aussi ; une modification qui ne touche rien est un refus (droits, ou
- * trace disparue). Table absente : erreur définitive.
+ * rien aussi ; une liaison dont un point a été supprimé au bureau (23503) et
+ * la modification d'une trace qui n'existe plus (partie avec son point) sont
+ * tenues pour faites ; une modification qui ne touche rien d'une trace
+ * encore là est un refus (droits). Table absente : erreur définitive.
  */
 export async function envoyerTrace(op, base) {
   const echec = (error) => (tracesIndisponibles(error) ? erreurTracesIndisponibles() : error)
@@ -212,13 +220,13 @@ export async function envoyerTrace(op, base) {
   switch (op.type) {
     case TYPES_EDL.traceCreer: {
       const error = await insererSansPieceDisparue('edl_traces', c.trace, base.inserer)
-      if (error && error.code !== DOUBLON) throw echec(error)
+      if (error && error.code !== DOUBLON && !pointDisparu(error)) throw echec(error)
       return
     }
     case TYPES_EDL.traceModifier: {
       const { error, nombre } = await base.modifier(c.id, c.champs)
       if (error) throw echec(error)
-      if (!nombre) throw new Error('La base n’a rien modifié (trace absente ou droits insuffisants).')
+      if (!nombre && await base.existe(c.id)) throw new Error('La base n’a rien modifié (droits insuffisants).')
       return
     }
     case TYPES_EDL.traceSupprimer: {

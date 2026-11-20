@@ -5,8 +5,9 @@ import { morceauxEtatsDesLieux, remettreEnFile } from '../../../chantier/comptes
 import { ECHECS_MAX } from '../../../chantier/comptes-rendus/enregistrement/transcription'
 import { PlanVisite } from '../visite/PlanVisite'
 import { COULEURS_PIECE, designationPiece, etatPieceVisite, piecesVisitees } from '../visite/visiteLogique'
-import { validerElement, ecarterElement, ajouterElement, modifierFiche, validerTrace, ecarterTrace, MESSAGE_ANALYSE_INDISPONIBLE } from './analyseDonnees'
-import { piecesARelire, messageLancement, tracesRelecture } from './relectureAnalyseLogique'
+import { validerElement, ecarterElement, ajouterElement, modifierFiche, validerTrace, ecarterTrace, ajouterLiaison, MESSAGE_ANALYSE_INDISPONIBLE } from './analyseDonnees'
+import { piecesARelire, messageLancement, tracesRelecture, choixLiaisonRelecture } from './relectureAnalyseLogique'
+import { avecTypeEffectif } from '../tracesEdl'
 import { FicheRelecture } from './FicheRelecture'
 import { ElementsRelecture } from './ElementsRelecture'
 import { TracesRelecture } from './TracesRelecture'
@@ -200,6 +201,11 @@ function VuePiece({ affaireId, niveau, pieces, piece, etats, visitees, visite, a
   const tracesNiveau = useMemo(() => (analyse.tracesDisponibles ? (analyse.traces ?? []).filter((t) => t.niveau_id === niveau.id) : []),
     [analyse.tracesDisponibles, analyse.traces, niveau.id])
   const traces = useMemo(() => tracesRelecture(tracesNiveau, piece.id, points), [tracesNiveau, piece.id, points])
+  // Un point posé sans type prend celui de son élément relevé : les liaisons
+  // le nomment ainsi et « Ajouter une liaison » le propose
+  const pointsTypes = useMemo(() => avecTypeEffectif(points, analyse.elements), [points, analyse.elements])
+  const choixLiaison = useMemo(() => choixLiaisonRelecture({ points, elements: analyse.elements, pieceId: piece.id }),
+    [points, analyse.elements, piece.id])
   const pointElement = elements.find((e) => e.id === elementChoisi)?.point_id ?? null
   const pointEnEvidence = survol ?? pointElement ?? pointChoisi
 
@@ -318,10 +324,14 @@ function VuePiece({ affaireId, niveau, pieces, piece, etats, visitees, visite, a
           />
           {analyse.tracesDisponibles && (
             <TracesRelecture
-              traces={traces} points={points} lectureSeule={lectureSeule} traceChoisie={traceChoisie}
+              traces={traces} points={pointsTypes} lectureSeule={lectureSeule} traceChoisie={traceChoisie}
               onChoisir={(id) => { setElementChoisi(null); setPointChoisi(null); setTraceChoisie((c) => (c === id ? null : id)) }}
               onValider={(trace, champs) => ecrire(() => validerTrace(trace, champs))}
               onEcarter={(trace) => ecrire(() => ecarterTrace(trace))}
+              choix={choixLiaison}
+              onRelier={(interrupteurId, luminaireId) => ecrire(() => ajouterLiaison({
+                affaireId, niveauId: piece.niveau_id ?? niveau.id, pieceId: piece.id, interrupteurId, luminaireId,
+              }))}
             />
           )}
         </div>

@@ -10,7 +10,7 @@ import {
   resumePieceRelecture, piecesARelire, totalAValider, elementsParCalque, optionsType, valeurType, lireValeurType,
   pointsProposes, erreurSaisieElement, champsElementSaisis, saisieElement, titreElement, brouillonFiche,
   ficheDepuisBrouillon, ficheModifiee, rubriquesManquantes, messageLancement, suiteFicheRecue,
-  tracesRelecture, lireSaisieCote, etatTrace,
+  tracesRelecture, lireSaisieCote, etatTrace, choixLiaisonRelecture, erreurLiaisonRelecture,
 } from '../src/modules/etude/etat-des-lieux/analyse/relectureAnalyseLogique.js'
 import { champsValidation } from '../src/modules/etude/etat-des-lieux/analyse/analyseDonneesLogique.js'
 import { CALQUES_DE_POINT } from '../src/modules/etude/etat-des-lieux/calquesEdl.js'
@@ -296,5 +296,41 @@ describe('liaisons et cotes à la relecture (084)', () => {
     assert.equal(etatTrace({ sorte: 'commande', origine: 'ia', a_valider: false }), 'validée')
     assert.equal(etatTrace({ sorte: 'cote', valeur: '3,45 m', extrait: 'trois quarante-cinq', a_valider: false }), 'valeur validée')
     assert.equal(etatTrace({ sorte: 'cote', valeur: '3,45 m', a_valider: false, origine: 'main' }), 'posée à la main')
+  })
+})
+
+describe('« Ajouter une liaison » à la relecture', () => {
+  const points = [
+    { id: 'p3', piece_id: 'sejour', numero: 3, type: null },
+    { id: 'p4', piece_id: 'sejour', numero: 4, type: null },
+    { id: 'p5', piece_id: 'sejour', numero: 5, type: null },
+    { id: 'p6', piece_id: 'sejour', numero: 6, type: 'luminaire' },
+    { id: 'p1', piece_id: 'couloir', numero: 1, type: 'interrupteur' },
+    { id: 'p2', piece_id: 'couloir', numero: 2, type: 'luminaire' },
+  ]
+  const elements = [
+    { id: 'e3', point_id: 'p3', piece_id: 'sejour', type: 'interrupteur', libelle: 'Interrupteur à l’entrée de la pièce', a_valider: false },
+    { id: 'e4', point_id: 'p4', piece_id: 'sejour', type: 'applique', libelle: '', a_valider: true },
+  ]
+
+  test('interrupteurs de l’étage (la pièce d’abord), luminaires de la pièce, d’après le type effectif', () => {
+    const choix = choixLiaisonRelecture({ points, elements, pieceId: 'sejour' })
+    assert.deepEqual(choix.interrupteurs, [
+      { id: 'p3', libelle: 'P3 · Interrupteur à l’entrée de la pièce' },
+      { id: 'p1', libelle: 'P1 · Interrupteur' },
+    ])
+    assert.deepEqual(choix.luminaires.map((o) => o.id), ['p4', 'p6'])
+    assert.match(choix.luminaires[0].libelle, /^P4 · /)
+  })
+
+  test('rien de typé : listes vides', () => {
+    const choix = choixLiaisonRelecture({ points: points.filter((p) => p.piece_id === 'sejour' && !p.type), elements: [], pieceId: 'sejour' })
+    assert.deepEqual(choix, { interrupteurs: [], luminaires: [] })
+  })
+
+  test('choix incomplet ou liaison existante refusés', () => {
+    assert.match(erreurLiaisonRelecture('', 'p4', []), /Choisissez/)
+    assert.match(erreurLiaisonRelecture('p3', 'p4', [{ sorte: 'commande', point_a: 'p4', point_b: 'p3' }]), /déjà reliés/)
+    assert.equal(erreurLiaisonRelecture('p3', 'p4', [{ sorte: 'cote', point_a: null, point_b: null }]), null)
   })
 })

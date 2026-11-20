@@ -8,7 +8,7 @@
 import { CALQUES, CALQUES_DE_POINT, calqueEdl, typeEdl } from '../calquesEdl.js'
 import { completudeFiche, RUBRIQUES_FICHE } from './analyseEdlLogique.js'
 import { CHAMPS_PORTE, RUBRIQUES_STATUT, codeStatut, porteDe } from '../statutsEdl.js'
-import { valeurCote, texteValeur } from '../tracesEdl.js'
+import { valeurCote, texteValeur, avecTypeEffectif, estInterrupteur, estLuminaire, liaisonExiste } from '../tracesEdl.js'
 import { tracesDeLaPiece } from '../visite/tracesVisiteLogique.js'
 
 export const LIBELLES_FICHE = {
@@ -173,6 +173,39 @@ export function tracesRelecture(traces = [], pieceId, points = []) {
     || (Number(a.sorte === 'cote') - Number(b.sorte === 'cote'))
     || String(a.created_at ?? '').localeCompare(String(b.created_at ?? ''))
   return [...tracesDeLaPiece(traces, pieceId, points)].sort(ordre)
+}
+
+/**
+ * Ce que propose « Ajouter une liaison » d'une pièce : les interrupteurs de
+ * l'étage (ceux de la pièce d'abord, un interrupteur du couloir peut
+ * commander la pièce) et les luminaires de la pièce, d'après leur type
+ * effectif (`avecTypeEffectif` : type du geste, sinon de l'élément relevé).
+ * Libellé « P3 · Interrupteur à l'entrée de la pièce » : le libellé de
+ * l'élément du point s'il y en a un, sinon le type.
+ *
+ * @param points points de l'étage ; elements : ceux de l'affaire
+ * @returns { interrupteurs: [{ id, libelle }], luminaires: [{ id, libelle }] }
+ */
+export function choixLiaisonRelecture({ points = [], elements = [], pieceId }) {
+  const effectifs = avecTypeEffectif(points, elements).filter((p) => p?.id)
+  const libelleDuPoint = (p) => {
+    const siens = (elements ?? []).filter((e) => e?.point_id === p.id && texte(e.libelle))
+    const element = siens.find((e) => !e.a_valider) ?? siens[0]
+    return `P${p.numero ?? '?'} · ${element ? texte(element.libelle) : typeEdl(p.type)?.libelle ?? p.type}`
+  }
+  const parNumero = (a, b) => (Number(a.numero) || 0) - (Number(b.numero) || 0)
+  const interrupteurs = effectifs.filter(estInterrupteur)
+    .sort((a, b) => Number(b.piece_id === pieceId) - Number(a.piece_id === pieceId) || parNumero(a, b))
+  const luminaires = effectifs.filter((p) => estLuminaire(p) && p.piece_id === pieceId).sort(parNumero)
+  const option = (p) => ({ id: p.id, libelle: libelleDuPoint(p) })
+  return { interrupteurs: interrupteurs.map(option), luminaires: luminaires.map(option) }
+}
+
+/** Ce qui empêche de relier ces deux points à la relecture, ou null. */
+export function erreurLiaisonRelecture(interrupteurId, luminaireId, traces = []) {
+  if (!interrupteurId || !luminaireId) return 'Choisissez l’interrupteur et le luminaire à relier.'
+  if (liaisonExiste(traces, interrupteurId, luminaireId)) return 'Ces deux points sont déjà reliés.'
+  return null
 }
 
 /** Valeur de cote saisie → « 3,45 m », ou le motif du refus. */

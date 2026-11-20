@@ -1035,7 +1035,14 @@ lot 1 : `docs/superpowers/plans/2026-11-17-etat-des-lieux-lot1-preparer.md`.
   jamais une valeur tapée ou validée. **Relecture** : section « Liaisons et
   cotes » (`TracesRelecture.jsx`), propositions en bleu avec l'extrait,
   Valider / Modifier (cote) / Écarter (liaison supprimée, valeur retirée),
-  comptées dans « à valider ». **Exports** : `tracesAExporter`, seule
+  comptées dans « à valider ». **Type effectif** (`typeEffectif`,
+  `avecTypeEffectif`) : un point posé sans type prend celui d'un élément
+  relevé sur lui (validé avant proposition) — « Relier » de la visite,
+  frise (« Points sans type : … ») et lecture de la réponse, où les
+  éléments de la même réponse comptent aussi. En relecture, « Ajouter une
+  liaison » (interrupteurs de l'étage, luminaires de la pièce,
+  `choixLiaisonRelecture`, `ajouterLiaison` : main, relue, lignes
+  comptées). **Exports** : `tracesAExporter`, seule
   lecture (liaison proposée écartée sauf « Inclure les propositions »,
   liaison dont un point manque ou change d'étage omise, cote dont seule la
   valeur est proposée partie avec « ? » — la fenêtre le signale) ; DXF :

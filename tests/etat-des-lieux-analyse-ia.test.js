@@ -627,3 +627,82 @@ describe('liaisons et cotes : lecture de la réponse', () => {
     assert.deepEqual(lireAnalyse({ fiche: {}, elements: [] }, references, contexte).traces, { liaisons: [], cotes: [] })
   })
 })
+
+// Cas vu sur le terrain : points posés sans type, dits à voix haute, puis
+// touchés l'un après l'autre en disant que l'un allume l'autre
+describe('liaisons sur des points posés sans type', () => {
+  const points = [
+    { id: 'p3', piece_id: 'chambre', numero: 3, type: null },
+    { id: 'p4', piece_id: 'chambre', numero: 4, type: null },
+    { id: 'p5', piece_id: 'chambre', numero: 5, type: null },
+    { id: 'p6', piece_id: 'chambre', numero: 6, type: 'prise' },
+  ]
+  const ici = (type, hms, champs = {}) => ev(type, hms, { piece_id: 'chambre', ...champs })
+  const evenements = [
+    ici('entree', '14:00:00'),
+    ici('point', '14:00:05', { point_id: 'p3', detail: { numero: 3 } }),
+    ici('point', '14:00:12', { point_id: 'p4', detail: { numero: 4 } }),
+    ici('point-touche', '14:00:20', { point_id: 'p3', detail: { numero: 3, type: null } }),
+    ici('point-touche', '14:00:22', { point_id: 'p4', detail: { numero: 4, type: null } }),
+    ici('sortie', '14:01:00'),
+  ]
+  const intervalles = intervallesPiece(evenements, 'chambre')
+  const resultat = (elements) => ({
+    fiche: {}, elements,
+    liaisons: [{ interrupteur: 'P3', luminaire: 'P4', extrait: 'cet interrupteur permet d’allumer ce luminaire' }],
+    cotes: [],
+  })
+  const elementsRecus = [
+    { point: 'P3', calque: 'electricite', type: 'interrupteur', libelle: 'interrupteur à l’entrée', cotes: '', extrait: 'interrupteur à l’entrée de la pièce', a_verifier: false },
+    { point: 'P4', calque: 'electricite', type: 'applique', libelle: 'applique murale', cotes: '', extrait: 'luminaire en applique', a_verifier: false },
+  ]
+
+  test('Claude apprend quels points n’ont pas de type, et que les éléments de sa réponse peuvent les typer', () => {
+    const frise = friseDePiece({ piece: { id: 'chambre' }, intervalles, evenements, points, traces: [] })
+    assert.deepEqual(frise.lignesTraces.slice(0, 2), [
+      'Aucun interrupteur ni luminaire posé dans la pièce.',
+      'Points sans type : P3, P4, P5.',
+    ])
+    assert.match(CONSIGNES_TRACES, /« Points sans type » peut aussi être relié/)
+    assert.match(CONSIGNES_TRACES, /applique, dalle, reglette/)
+  })
+
+  test('liaison acceptée quand les éléments de la même réponse typent les deux points', () => {
+    const frise = friseDePiece({ piece: { id: 'chambre' }, intervalles, evenements, points, traces: [] })
+    const lu = lireAnalyse(resultat(elementsRecus), frise.references, frise.contexteTraces)
+    assert.deepEqual(lu.traces.liaisons, [{ point_a: 'p3', point_b: 'p4', extrait: 'cet interrupteur permet d’allumer ce luminaire' }])
+    // Les points eux-mêmes ne changent pas
+    assert.equal(points[0].type, null)
+  })
+
+  test('éléments déjà validés : points listés avec leur type, touchers nommés', () => {
+    const elementsValides = [
+      { id: 'e3', point_id: 'p3', calque: 'electricite', type: 'interrupteur', libelle: 'interrupteur à l’entrée', a_valider: false },
+      { id: 'e4', point_id: 'p4', calque: 'electricite', type: 'applique', libelle: 'applique murale', a_valider: false },
+    ]
+    const frise = friseDePiece({ piece: { id: 'chambre' }, intervalles, evenements, points, traces: [], elementsValides })
+    assert.equal(frise.lignesTraces[0], 'Interrupteurs et luminaires posés dans la pièce : P3 (Interrupteur), P4 (Point lumineux en applique).')
+    assert.equal(frise.lignesTraces[1], 'Points sans type : P5.')
+    assert.ok(frise.lignes.includes('[15:00:20] point P3 (Interrupteur) touché'))
+    // La pose garde ce qui a été choisi au geste : rien
+    assert.ok(frise.lignes.includes('[15:00:05] point P3 posé'))
+    const lu = lireAnalyse(resultat([]), frise.references, frise.contexteTraces)
+    assert.deepEqual(lu.traces.liaisons.map((l) => [l.point_a, l.point_b]), [['p3', 'p4']])
+  })
+
+  test('point resté sans type (aucun élément ne le type) : liaison écartée', () => {
+    const frise = friseDePiece({ piece: { id: 'chambre' }, intervalles, evenements, points, traces: [] })
+    // P4 typé, P3 non
+    const lu = lireAnalyse(resultat([elementsRecus[1]]), frise.references, frise.contexteTraces)
+    assert.deepEqual(lu.traces.liaisons, [])
+    // Un type qui n'est ni interrupteur ni luminaire ne relie pas non plus
+    const radiateur = { ...elementsRecus[0], calque: 'chauffage', type: 'radiateur' }
+    assert.deepEqual(lireAnalyse(resultat([radiateur, elementsRecus[1]]), frise.references, frise.contexteTraces).traces.liaisons, [])
+  })
+
+  test('traces non lues (sans la 084) : rien de changé', () => {
+    const frise = friseDePiece({ piece: { id: 'chambre' }, intervalles, evenements, points, traces: null })
+    assert.equal(frise.lignesTraces, null)
+    assert.equal(lireAnalyse(resultat(elementsRecus), frise.references, frise.contexteTraces).traces, null)
+  })
+})

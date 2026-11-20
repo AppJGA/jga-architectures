@@ -396,7 +396,7 @@ export function VisiteEdl({ affaireId, visite, analyse = null, obtenirLiens, onF
   }
 
   const commencerRelier = () => {
-    const m = debutRelier(point)
+    const m = debutRelier(point, elementsAnalyse ?? [])
     if (!m) return
     // Second appui sur « Relier » : on quitte le mode
     if (modeCourant.current?.sorte === 'relier' && modeCourant.current.depuis === point.id) { changerMode(null); return }
@@ -417,7 +417,7 @@ export function VisiteEdl({ affaireId, visite, analyse = null, obtenirLiens, onF
     const md = modeCourant.current
     if (!md || md.sorte !== 'relier') return
     if (cible) noterTouche(cible)
-    const r = toucherRelier(md, cible, { points, traces: toutesTraces })
+    const r = toucherRelier(md, cible, { points, traces: toutesTraces, elements: elementsAnalyse ?? [] })
     if (r.action === 'refus') { changerMode(r.mode); return }
     changerMode(null)
     setPointId(cible.id)
@@ -752,7 +752,7 @@ export function VisiteEdl({ affaireId, visite, analyse = null, obtenirLiens, onF
       <PanneauPoint
         point={point} photos={photosDuPoint} obtenirLiens={obtenirLiens} inactif={!actif}
         onType={choisirType} onPhoto={photographier} onSupprimer={supprimer} onFermer={() => setPointId(null)}
-        onRelier={tracesOk && debutRelier(point) ? commencerRelier : null}
+        onRelier={tracesOk && debutRelier(point, elementsAnalyse ?? []) ? commencerRelier : null}
         relierEnCours={mode?.sorte === 'relier' && mode.depuis === point?.id}
       />
       <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>

@@ -1,10 +1,10 @@
 import { useState } from 'react'
-import { Check, Pencil, Trash2 } from 'lucide-react'
+import { Check, Pencil, Spline, Trash2 } from 'lucide-react'
 import { styleProposition, COULEUR_IA } from '../../../chantier/comptes-rendus/enregistrement/styleProposition'
 import { typeEdl } from '../calquesEdl'
 import { longueurCote, texteValeur } from '../tracesEdl'
 import { libelleTrace, COULEUR_COMMANDE, COULEUR_COTE } from '../visite/tracesVisiteLogique'
-import { etatTrace, lireSaisieCote } from './relectureAnalyseLogique'
+import { etatTrace, lireSaisieCote, erreurLiaisonRelecture } from './relectureAnalyseLogique'
 import { ConfirmationEdl } from './ConfirmationEdl'
 
 // ─── Liaisons et cotes d'une pièce, à la relecture (migration 084) ───────────
@@ -14,7 +14,10 @@ import { ConfirmationEdl } from './ConfirmationEdl'
 // Modifier (la valeur d'une cote seulement ; une liaison se valide ou
 // s'écarte) — modifier vaut validation —, Écarter (confirmé). Les traces
 // validées restent listées et se suppriment (confirmé). Toucher une carte
-// met la trace en évidence sur le plan, et inversement.
+// met la trace en évidence sur le plan, et inversement. « Ajouter une
+// liaison » relie à la main un interrupteur et un luminaire déjà typés
+// (au geste ou par un élément relevé) : `choix` vient de
+// `choixLiaisonRelecture`.
 
 const ROUGE = '#B8412C'
 const bouton = { display: 'inline-flex', alignItems: 'center', gap: 6, minHeight: 44, padding: '0 12px', borderRadius: 3, fontSize: 13, cursor: 'pointer', border: '0.5px solid rgba(0,0,0,0.15)', background: 'white', color: '#1F1B17' }
@@ -119,6 +122,64 @@ function CarteTrace({ trace: t, points, lectureSeule, enEvidence, onChoisir, onV
   )
 }
 
+const menu = {
+  flex: '1 1 0', minWidth: 0, boxSizing: 'border-box', minHeight: 44, padding: '0 8px', fontSize: 13, color: '#1F1B17',
+  border: '0.5px solid rgba(0,0,0,0.18)', borderRadius: 2, background: 'white', fontFamily: 'inherit',
+}
+
+function AjoutLiaison({ choix, traces, onRelier }) {
+  const [interrupteur, setInterrupteur] = useState('')
+  const [luminaire, setLuminaire] = useState('')
+  const [erreur, setErreur] = useState(null)
+  const [enCours, setEnCours] = useState(false)
+  // Un choix qui n'est plus proposé (type changé, point supprimé) ne part pas
+  const interrupteurId = choix.interrupteurs.some((o) => o.id === interrupteur) ? interrupteur : ''
+  const luminaireId = choix.luminaires.some((o) => o.id === luminaire) ? luminaire : ''
+
+  const manque = !choix.interrupteurs.length ? 'interrupteur' : !choix.luminaires.length ? 'luminaire' : null
+  if (manque) {
+    return (
+      <p style={{ margin: 0, fontSize: 12, color: '#9C9591' }}>
+        {manque === 'interrupteur'
+          ? 'Aucun interrupteur relevé dans la pièce : donnez d’abord leur type.'
+          : 'Aucun luminaire relevé dans la pièce : donnez d’abord leur type.'}
+      </p>
+    )
+  }
+
+  const relier = async () => {
+    const motif = erreurLiaisonRelecture(interrupteurId, luminaireId, traces)
+    if (motif) { setErreur(motif); return }
+    setErreur(null)
+    setEnCours(true)
+    try {
+      if (await onRelier(interrupteurId, luminaireId)) { setInterrupteur(''); setLuminaire('') }
+    } finally { setEnCours(false) }
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 10, borderRadius: 3, border: '0.5px dashed rgba(0,0,0,0.2)' }}>
+      <span style={{ fontSize: 12, fontWeight: 600, color: '#5E5854' }}>Ajouter une liaison</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <select aria-label="Interrupteur" value={interrupteurId} onChange={(e) => { setInterrupteur(e.target.value); setErreur(null) }} style={menu}>
+          <option value="">Interrupteur…</option>
+          {choix.interrupteurs.map((o) => <option key={o.id} value={o.id}>{o.libelle}</option>)}
+        </select>
+        <span aria-hidden style={{ color: '#9C9591', flexShrink: 0 }}>→</span>
+        <select aria-label="Luminaire" value={luminaireId} onChange={(e) => { setLuminaire(e.target.value); setErreur(null) }} style={menu}>
+          <option value="">Luminaire…</option>
+          {choix.luminaires.map((o) => <option key={o.id} value={o.id}>{o.libelle}</option>)}
+        </select>
+        <button type="button" onClick={relier} disabled={enCours}
+          style={{ ...bouton, flexShrink: 0, color: COULEUR_COMMANDE, opacity: enCours ? 0.6 : 1 }}>
+          <Spline size={15} /> {enCours ? 'Envoi…' : 'Relier'}
+        </button>
+      </div>
+      {erreur && <p role="alert" style={{ margin: 0, fontSize: 12, color: ROUGE }}>{erreur}</p>}
+    </div>
+  )
+}
+
 // Ce que la confirmation dit de ce qui part
 function texteEcart(t, points) {
   const nom = libelleTrace(t, points)
@@ -127,7 +188,7 @@ function texteEcart(t, points) {
   return `« ${nom} » sera supprimée du plan de la pièce.`
 }
 
-export function TracesRelecture({ traces, points, lectureSeule, traceChoisie, onChoisir, onValider, onEcarter }) {
+export function TracesRelecture({ traces, points, lectureSeule, traceChoisie, onChoisir, onValider, onEcarter, choix = null, onRelier = null }) {
   const [aEcarter, setAEcarter] = useState(null)
   const aValider = traces.filter((t) => t.a_valider).length
 
@@ -153,6 +214,8 @@ export function TracesRelecture({ traces, points, lectureSeule, traceChoisie, on
           ))}
         </ul>
       )}
+
+      {!lectureSeule && choix && onRelier && <AjoutLiaison choix={choix} traces={traces} onRelier={onRelier} />}
 
       {aEcarter && (
         <ConfirmationEdl

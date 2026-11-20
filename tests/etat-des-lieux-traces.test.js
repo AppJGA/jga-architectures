@@ -9,7 +9,7 @@ import { test, describe } from 'node:test'
 import {
   SORTES_TRACE, TYPES_INTERRUPTEUR, TYPES_LUMINAIRE, TYPES_JOURNAL_TRACES, liaisonPossible, liaisonExiste,
   angleLePlusProche, longueurCote, valeurCote, texteValeur, traceValide, nouvelleTrace, tracesIndisponibles, lectureTraces,
-  champsModificationTrace, tracesAExporter,
+  champsModificationTrace, tracesAExporter, typeEffectif, avecTypeEffectif,
 } from '../src/modules/etude/etat-des-lieux/tracesEdl.js'
 import {
   debutRelier, debutCoter, consigneMode, toucherRelier, toucherCoter, courbeCommande, traitsCote, traceProche,
@@ -693,5 +693,49 @@ describe('cote décalée dans la pièce', () => {
     assert.equal(traceProche([cote], [], [2.5, 0.6], 0.1, { ecartCote: 0.6, contourDe })?.id, 'c')
     assert.equal(traceProche([cote], [], [2.5, 0.05], 0.1, { ecartCote: 0.6, contourDe })?.id, 'c')
     assert.equal(COULEUR_TRAIT_COTE, '#3A3632')
+  })
+})
+
+// ─── Type effectif : point posé sans type, typé par l'analyse ───────────────
+
+describe('type effectif d’un point', () => {
+  const sansType = { id: 'p3', piece_id: 'sejour', numero: 3, type: null }
+  const element = (point_id, type, a_valider = false) => ({ id: `e-${point_id}-${type}`, point_id, type, a_valider })
+
+  test('le type du geste d’abord, puis l’élément validé, puis la proposition', () => {
+    assert.equal(typeEffectif({ ...sansType, type: 'prise' }, [element('p3', 'interrupteur')]), 'prise')
+    assert.equal(typeEffectif(sansType, [element('p3', 'applique', true), element('p3', 'interrupteur')]), 'interrupteur')
+    assert.equal(typeEffectif(sansType, [element('p3', 'applique', true)]), 'applique')
+    // Tout type est rendu, pas seulement ceux des liaisons
+    assert.equal(typeEffectif(sansType, [element('p3', 'radiateur')]), 'radiateur')
+    assert.equal(typeEffectif(sansType, [element('p9', 'interrupteur'), { point_id: 'p3', type: null }]), null)
+    assert.equal(typeEffectif(null, []), null)
+  })
+
+  test('avecTypeEffectif : copies, seul le type change', () => {
+    const points = [sansType, { id: 'p4', numero: 4, type: 'luminaire' }, { id: 'p5', numero: 5, type: null }]
+    const elements = [element('p3', 'applique', true), element('p3', 'interrupteur'), element('p4', 'interrupteur')]
+    const r = avecTypeEffectif(points, elements)
+    assert.deepEqual(r.map((p) => p.type), ['interrupteur', 'luminaire', null])
+    assert.equal(r[0].numero, 3)
+    assert.notEqual(r[0], sansType)
+    assert.equal(sansType.type, null)
+  })
+
+  test('« Relier » sur des points typés par l’analyse seulement', () => {
+    const p3 = { id: 'p3', piece_id: 'sejour', numero: 3, type: null }
+    const p4 = { id: 'p4', piece_id: 'sejour', numero: 4, type: null }
+    const p5 = { id: 'p5', piece_id: 'sejour', numero: 5, type: null }
+    const elements = [element('p3', 'interrupteur'), element('p4', 'applique', true)]
+    assert.equal(debutRelier(p3), null)
+    assert.equal(debutRelier(p3, elements).attendu, 'luminaire')
+    assert.equal(debutRelier(p5, elements), null)
+    const r = toucherRelier(debutRelier(p4, elements), p3, { points: [p3, p4, p5], traces: [], elements })
+    assert.equal(r.action, 'creer')
+    assert.deepEqual([r.interrupteur.id, r.luminaire.id], ['p3', 'p4'])
+    // Un point resté sans type ne se relie pas
+    const refus = toucherRelier(debutRelier(p3, elements), p5, { points: [p3, p4, p5], traces: [], elements })
+    assert.equal(refus.action, 'refus')
+    assert.match(refus.mode.raison, /P5 \(sans type\) n’est pas un luminaire/)
   })
 })

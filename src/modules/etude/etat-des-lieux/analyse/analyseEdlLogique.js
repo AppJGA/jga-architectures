@@ -13,7 +13,7 @@
 
 import { CALQUES, CALQUES_DE_POINT, calqueEdl, typeEdl } from '../calquesEdl.js'
 import { CHAMPS_PORTE, CODES_STATUTS_ENREGISTRES, RUBRIQUES_STATUT, codeStatut, porteDe, rubriqueRenseignee } from '../statutsEdl.js'
-import { estInterrupteur, estLuminaire, liaisonPossible, liaisonExiste, longueurCote, texteValeur, valeurCote } from '../tracesEdl.js'
+import { estInterrupteur, estLuminaire, liaisonPossible, liaisonExiste, longueurCote, texteValeur, valeurCote, avecTypeEffectif } from '../tracesEdl.js'
 
 export const MODELE_ANALYSE = 'claude-opus-5-5'
 
@@ -232,6 +232,9 @@ export function friseDePiece({ piece, intervalles, evenements = [], points = [],
 
   const avecTraces = Array.isArray(traces)
   const nomsTraces = nommerTraces({ traces: avecTraces ? traces : [], evenements, pieceId, avecTraces })
+  // Type pour les liaisons : celui du geste, sinon celui d'un élément validé
+  // du point (un point posé sans type, dit « interrupteur » à voix haute)
+  const effectifs = new Map(avecTypeEffectif((points ?? []).filter((p) => p?.id), elementsValides).map((p) => [p.id, p]))
 
   const entrees = []
   for (const e of evenements ?? []) {
@@ -241,7 +244,7 @@ export function friseDePiece({ piece, intervalles, evenements = [], points = [],
     if (!sienne && (e.type === 'entree' || e.type === 'sortie')) continue
     const t = temps(e.le)
     if (t == null) continue
-    const texte = texteGeste(e, nom, duPoint, nomsTraces)
+    const texte = texteGeste(e, nom, duPoint, nomsTraces, effectifs)
     if (texte) entrees.push({ t, ordre: 0, texte, visite: e.visite_id ?? null })
   }
 
@@ -277,7 +280,7 @@ export function friseDePiece({ piece, intervalles, evenements = [], points = [],
   })
 
   if (!avecTraces) return { lignes, references, dejaReleves, lignesTraces: null, contexteTraces: null }
-  const { lignesTraces, contexteTraces } = descriptionTraces({ traces, pieceId, points, duPoint, pointsDeLaPiece, nom, nomsTraces })
+  const { lignesTraces, contexteTraces } = descriptionTraces({ traces, pieceId, effectifs, pointsDeLaPiece, nom, nomsTraces })
   return { lignes, references, dejaReleves, lignesTraces, contexteTraces }
 }
 
@@ -340,10 +343,14 @@ function texteTrace(e, nom, noms) {
  * cote « a une valeur » si cette valeur a été tapée ou validée ; une valeur
  * seulement proposée sera remplacée, la cote est donc « sans valeur ».
  */
-function descriptionTraces({ traces, pieceId, points, duPoint, pointsDeLaPiece, nom, nomsTraces }) {
-  const appareils = (points ?? [])
-    .filter((p) => p?.id && p.piece_id === pieceId && p.numero != null && (estInterrupteur(p) || estLuminaire(p)))
+function descriptionTraces({ traces, pieceId, effectifs, pointsDeLaPiece, nom, nomsTraces }) {
+  const numerotes = [...effectifs.values()]
+    .filter((p) => p.piece_id === pieceId && p.numero != null)
     .sort((a, b) => a.numero - b.numero)
+  const appareils = numerotes.filter((p) => estInterrupteur(p) || estLuminaire(p))
+  // Un point sans type peut devenir interrupteur ou luminaire par les
+  // éléments de cette même réponse (`lireTraces`) : Claude doit le savoir
+  const sansType = numerotes.filter((p) => !p.type)
   const existantes = traces.filter((t) => t?.sorte === 'commande'
     && (t.piece_id === pieceId || pointsDeLaPiece.has(t.point_a) || pointsDeLaPiece.has(t.point_b))
     && !(t.a_valider && t.piece_id === pieceId))
@@ -354,6 +361,7 @@ function descriptionTraces({ traces, pieceId, points, duPoint, pointsDeLaPiece, 
     appareils.length
       ? `Interrupteurs et luminaires posés dans la pièce : ${appareils.map((p) => `P${p.numero} (${libelleType(p.type)})`).join(', ')}.`
       : 'Aucun interrupteur ni luminaire posé dans la pièce.',
+    ...(sansType.length ? [`Points sans type : ${sansType.map((p) => `P${p.numero}`).join(', ')}.`] : []),
     ...(existantes.length
       ? [`Liaisons existantes (${existantes.length}) :`, ...existantes.map((t) => `- ${nom(t.point_a)} → ${nom(t.point_b)}${t.a_valider ? ' (proposée, pas encore relue)' : ''}`)]
       : ['Aucune liaison existante.']),
@@ -366,10 +374,10 @@ function descriptionTraces({ traces, pieceId, points, duPoint, pointsDeLaPiece, 
       : ['Aucune cote posée dans la pièce.']),
   ]
   const cotesSansValeur = new Map(cotes.filter(([, t]) => !valeurDonnee(t)).map(([c, t]) => [c, t.id]))
-  return { lignesTraces, contexteTraces: { points: duPoint, existantes, cotesSansValeur } }
+  return { lignesTraces, contexteTraces: { points: effectifs, existantes, cotesSansValeur } }
 }
 
-function texteGeste(e, nom, duPoint, nomsTraces) {
+function texteGeste(e, nom, duPoint, nomsTraces, effectifs) {
   const p = nom(e.point_id)
   const d = e.detail ?? {}
   switch (e.type) {
@@ -395,7 +403,7 @@ function texteGeste(e, nom, duPoint, nomsTraces) {
     case 'photo':
       return `photo du point ${p}`
     case 'point-touche': {
-      const type = libelleType(d.type ?? duPoint.get(e.point_id)?.type)
+      const type = libelleType(d.type ?? effectifs.get(e.point_id)?.type)
       return `point ${p}${type ? ` (${type})` : ''} touché`
     }
     case 'angle-touche': {
@@ -531,7 +539,7 @@ Calques et types possibles :
 ${catalogue}`
 
 export const CONSIGNES_TRACES = `Liaisons et cotes (« liaisons », « cotes ») :
-- L'architecte peut toucher un interrupteur puis le luminaire qu'il commande (ou l'inverse) en le disant (« cet interrupteur commande le plafonnier », « il allume les deux appliques ») : lignes « point P3 (Interrupteur) touché », « point P7 (Luminaire) touché ». Propose une liaison seulement quand ce qui est dit relie un interrupteur et un luminaire touchés ou posés à peu d'écart (quelques secondes). « interrupteur » et « luminaire » : leurs points (« P3 », « P7 »), choisis parmi les interrupteurs et luminaires listés dans « Liaisons et cotes de la pièce ». Ne propose jamais une liaison déjà existante (listée), ni deux fois la même, ni une liaison que rien de dit n'établit.
+- L'architecte peut toucher un interrupteur puis le luminaire qu'il commande (ou l'inverse) en le disant (« cet interrupteur commande le plafonnier », « il allume les deux appliques ») : lignes « point P3 (Interrupteur) touché », « point P7 (Luminaire) touché ». Propose une liaison seulement quand ce qui est dit relie un interrupteur et un luminaire touchés ou posés à peu d'écart (quelques secondes). « interrupteur » et « luminaire » : leurs points (« P3 », « P7 »), choisis parmi les interrupteurs et luminaires listés dans « Liaisons et cotes de la pièce ». Un point listé dans « Points sans type » peut aussi être relié, à condition que tes « elements » de cette réponse lui donnent un type d'interrupteur (interrupteur) ou de luminaire (luminaire, applique, dalle, reglette) ; sinon, aucune liaison pour lui. Ne propose jamais une liaison déjà existante (listée), ni deux fois la même, ni une liaison que rien de dit n'établit.
 - Une cote est posée entre deux angles de la pièce : lignes « angle touché (cote C2) ». Sa valeur est dite juste avant ou juste après ses deux angles (« trois mètres quarante-cinq », « 3,45 »). Propose une valeur seulement pour une cote listée « sans valeur », d'après ce qui est dit, en chiffres avec l'unité (« 3,45 m ») ; jamais pour une cote dont la valeur est déjà donnée, et jamais d'après la longueur dessinée, qui sert seulement à reconnaître de quelle cote on parle.
 - « extrait » : les mots entendus, recopiés de la frise. Rien de tel dans la frise : listes vides.`
 
@@ -642,9 +650,11 @@ const CALQUES_VALIDES = new Set(CALQUES.map((c) => c.code))
  *
  * Liaisons : deux points de la pièce (`references`), un interrupteur et un
  * luminaire (`liaisonPossible`, sens rétabli), ni existante ni en double ;
- * sinon écartée. Valeurs de cotes : une cote encore sans valeur
- * (`cotesSansValeur`), une valeur lisible (`valeurCote`), réécrite
- * « 3,45 m » ; une cote à la fois ; sinon écartée.
+ * sinon écartée. Le type d'un point : celui du geste, sinon d'un élément
+ * validé, sinon d'un élément de cette même réponse (point posé sans type).
+ * Valeurs de cotes : une cote encore sans valeur (`cotesSansValeur`), une
+ * valeur lisible (`valeurCote`), réécrite « 3,45 m » ; une cote à la fois ;
+ * sinon écartée.
  *
  * @returns { fiche: { sol, murs, plafond, plinthes, hsp, remarques, porte, statuts }, elements: [{ point_id, calque, type, libelle, cotes, extrait, a_verifier }], traces: { liaisons: [{ point_a, point_b, extrait }], cotes: [{ id, valeur, extrait }] } | null }
  */
@@ -672,7 +682,7 @@ export function lireAnalyse(resultat, references = new Map(), contexteTraces = n
       a_verifier: el.a_verifier === true,
     })
   }
-  return { fiche, elements, traces: contexteTraces ? lireTraces(resultat, references, contexteTraces) : null }
+  return { fiche, elements, traces: contexteTraces ? lireTraces(resultat, references, contexteTraces, elements) : null }
 }
 
 // « p7 », « P 7 », « 7 » : même point (« c2 », « 2 » : même cote)
@@ -682,14 +692,24 @@ function cleReference(v, lettre) {
   return /^\d+$/.test(cle) ? `${lettre}${cle}` : cle
 }
 
-function lireTraces(resultat, references, { points, existantes = [], cotesSansValeur }) {
+// Type d'un point pour les liaisons : celui du geste ou d'un élément validé
+// (`contexteTraces.points`), à défaut celui que les éléments de cette même
+// réponse lui donnent
+function lireTraces(resultat, references, { points, existantes = [], cotesSansValeur }, elementsRecus = []) {
+  const typeRecu = new Map()
+  for (const el of elementsRecus) if (el.point_id && el.type && !typeRecu.has(el.point_id)) typeRecu.set(el.point_id, el.type)
+  const point = (id) => {
+    const p = points.get(id)
+    if (!p || p.type || !typeRecu.has(id)) return p
+    return { ...p, type: typeRecu.get(id) }
+  }
   const liaisons = []
   const dejaVues = [...existantes]
   for (const l of Array.isArray(resultat?.liaisons) ? resultat.liaisons : []) {
     if (!l || typeof l !== 'object') continue
     const idA = references.get(cleReference(l.interrupteur, 'P'))
     const idB = references.get(cleReference(l.luminaire, 'P'))
-    const paire = idA && idB ? liaisonPossible(points.get(idA), points.get(idB)) : null
+    const paire = idA && idB ? liaisonPossible(point(idA), point(idB)) : null
     if (!paire) continue
     const [a, b] = [paire.interrupteur.id, paire.luminaire.id]
     if (liaisonExiste(dejaVues, a, b)) continue

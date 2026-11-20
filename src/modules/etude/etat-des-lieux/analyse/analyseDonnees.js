@@ -20,7 +20,7 @@ import {
   ligneElementMain, champsPieceAnalysee, messageErreurAnalyse, lignesTracesIa, champsValidationTrace, ecartTrace,
 } from './analyseDonneesLogique'
 import { memeFiche } from './analyseEdlLogique'
-import { lectureTraces, tracesIndisponibles, MESSAGE_TRACES_INDISPONIBLES } from '../tracesEdl'
+import { lectureTraces, tracesIndisponibles, MESSAGE_TRACES_INDISPONIBLES, nouvelleTrace, traceValide } from '../tracesEdl'
 
 export { analyseIndisponible, MESSAGE_ANALYSE_INDISPONIBLE } from './analyseDonneesLogique'
 
@@ -474,6 +474,20 @@ export async function validerTrace(trace, champs = {}) {
   if (error) throw erreurTraces(error)
   if (!data?.length) throw new Error(LECTURE_SEULE)
   return { trace: data[0] }
+}
+
+/**
+ * Une liaison posée à la relecture (« Ajouter une liaison ») : posée à la
+ * main, donc relue, hors de toute visite. Un refus RLS ne rend pas d'erreur,
+ * seulement aucune ligne : « Lecture seule ».
+ */
+export async function ajouterLiaison({ affaireId, niveauId, pieceId, interrupteurId, luminaireId }) {
+  const trace = nouvelleTrace({ sorte: 'commande', affaireId, niveauId, pieceId, interrupteur: interrupteurId, luminaire: luminaireId })
+  if (!traceValide(trace)) throw new Error('Liaison incomplète : rien n’a été enregistré.')
+  const { data, error } = await supabase.from('edl_traces').insert(trace).select('id')
+  if (error) throw erreurTraces(error)
+  if (!data?.length) throw new Error(LECTURE_SEULE)
+  return { trace }
 }
 
 /**

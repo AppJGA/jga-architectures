@@ -24,6 +24,40 @@ export const estInterrupteur = (point) => TYPES_INTERRUPTEUR.includes(point?.typ
 export const estLuminaire = (point) => TYPES_LUMINAIRE.includes(point?.type)
 
 /**
+ * Le type d'un point pour les liaisons : celui choisi au geste, sinon celui
+ * qu'un élément relevé sur ce point lui donne (l'architecte pose souvent un
+ * point sans type et le dit à voix haute : l'analyse en fait un élément
+ * « interrupteur » ou « applique »). Un élément validé passe avant une
+ * proposition ; null si rien ne le dit.
+ */
+export function typeEffectif(point, elements = []) {
+  if (!point) return null
+  if (point.type) return point.type
+  let propose = null
+  for (const el of elements ?? []) {
+    if (!el?.type || el.point_id == null || el.point_id !== point.id) continue
+    if (!el.a_valider) return el.type
+    propose ??= el.type
+  }
+  return propose
+}
+
+/** Les points avec leur type effectif (`typeEffectif`), en copies ; les autres champs ne changent pas. */
+export function avecTypeEffectif(points = [], elements = []) {
+  const parPoint = new Map()
+  for (const el of elements ?? []) {
+    if (!el?.type || el.point_id == null) continue
+    const deja = parPoint.get(el.point_id)
+    // Le premier validé l'emporte, sinon la première proposition
+    if (!deja || (deja.a_valider && !el.a_valider)) parPoint.set(el.point_id, el)
+  }
+  return (points ?? []).map((p) => {
+    if (!p || p.type) return p ? { ...p } : p
+    return { ...p, type: parPoint.get(p.id)?.type ?? null }
+  })
+}
+
+/**
  * Deux points peuvent-ils être reliés ? Un interrupteur et un luminaire,
  * touchés dans un sens ou dans l'autre. Rend { interrupteur, luminaire }
  * remis dans l'ordre de la base, ou null.

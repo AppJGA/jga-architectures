@@ -12,7 +12,7 @@
 // (ligne de cote, traits obliques, texte jamais à l'envers).
 // Pur, testé (tests/etat-des-lieux-traces.test.js).
 
-import { estInterrupteur, estLuminaire, liaisonPossible, liaisonExiste, angleLePlusProche, texteValeur, valeurCote } from '../tracesEdl.js'
+import { estInterrupteur, estLuminaire, liaisonPossible, liaisonExiste, angleLePlusProche, texteValeur, valeurCote, typeEffectif } from '../tracesEdl.js'
 import { typeEdl } from '../calquesEdl.js'
 import { pointDansPolygone } from '../geometrieEdl.js'
 
@@ -33,12 +33,18 @@ const nomType = (point) => typeEdl(point?.type)?.libelle?.toLowerCase() ?? 'sans
 
 // ─── Modes ───────────────────────────────────────────────────────────────────
 
+// Le point avec son type effectif : celui du geste, sinon celui d'un élément
+// relevé sur lui par l'analyse (`typeEffectif`)
+const effectif = (point, elements) => (point && !point.type && elements?.length ? { ...point, type: typeEffectif(point, elements) } : point)
+
 /**
  * Le mode « Relier » ouvert depuis ce point, ou null s'il n'est ni un
- * interrupteur ni un luminaire. `attendu` : ce que le toucher suivant doit
- * désigner.
+ * interrupteur ni un luminaire — d'après son type, ou à défaut celui que
+ * l'analyse lui a donné (`elements`). `attendu` : ce que le toucher suivant
+ * doit désigner.
  */
-export function debutRelier(point) {
+export function debutRelier(pointDuGeste, elements = []) {
+  const point = effectif(pointDuGeste, elements)
   if (estInterrupteur(point)) return { sorte: 'relier', depuis: point.id, attendu: 'luminaire', raison: null }
   if (estLuminaire(point)) return { sorte: 'relier', depuis: point.id, attendu: 'interrupteur', raison: null }
   return null
@@ -64,12 +70,14 @@ export function consigneMode(mode) {
 
 /**
  * Toucher pendant « Relier ». `cible` : le point touché, ou null (le plan,
- * une pièce). Rend :
+ * une pièce) ; `elements` : ceux de l'analyse, qui typent un point posé sans
+ * type. Rend :
  *   { action: 'creer', interrupteur, luminaire }   la liaison à créer ;
  *   { action: 'refus', mode }                      rien de posé, `mode.raison` dit pourquoi.
  */
-export function toucherRelier(mode, cible, { points = [], traces = [] } = {}) {
-  const depuis = points.find((p) => p.id === mode.depuis) ?? null
+export function toucherRelier(mode, pointTouche, { points = [], traces = [], elements = [] } = {}) {
+  const depuis = effectif(points.find((p) => p.id === mode.depuis) ?? null, elements)
+  const cible = effectif(pointTouche, elements)
   const attendu = mode.attendu === 'luminaire' ? 'le luminaire' : 'l’interrupteur'
   const refus = (raison) => ({ action: 'refus', mode: { ...mode, raison } })
   if (!depuis) return refus('Le point de départ n’existe plus : Annuler, puis recommencez.')

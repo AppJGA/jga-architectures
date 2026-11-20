@@ -5,7 +5,7 @@ import { useRevuePiece } from './analyse/useRevuePiece'
 import { RevuePiece } from './analyse/RevuePiece'
 import { SonRefuse } from './analyse/RelectureEdl'
 import { piecesARelire, libellePointRelecture } from './analyse/relectureAnalyseLogique'
-import { dessinPointRelecture } from './analyse/symbolesRelectureLogique'
+import { dessinPointRelecture, pxParMetreEcran } from './analyse/symbolesRelectureLogique'
 import { TracePlan, PointPlan, ECART_COTE_PX, RAYON_TOUCHER_PX } from './visite/DessinsPlanEdl'
 import { debutRelier, toucherRelier, consigneMode, COULEUR_COMMANDE } from './visite/tracesVisiteLogique'
 import { piecesVisitees } from './visite/visiteLogique'
@@ -133,6 +133,7 @@ export function PlansEdl({
 
   const dessin = ({ enCalque, zoom }) => {
     const choisieId = adresse.pieceId
+    const pxParMetre = pxParMetreEcran(enCalque)
     return (
       <>
         {traces.map((t) => (
@@ -146,7 +147,7 @@ export function PlansEdl({
           const [cx, cy] = enCalque([Number(p.x), Number(p.y)])
           return (
             <PointPlan
-              key={p.id} point={p} cx={cx} cy={cy} zoom={zoom} dessin={symboles.get(p.id)} halo
+              key={p.id} point={p} cx={cx} cy={cy} zoom={zoom} dessin={symboles.get(p.id)} halo pxParMetre={pxParMetre}
               choisi={p.id === revue.pointEnEvidence} photos={nbPhotos.get(p.id) ?? 0} opacite={opacitePoint(p, choisieId)}
             />
           )

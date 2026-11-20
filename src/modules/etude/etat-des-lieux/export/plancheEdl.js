@@ -13,7 +13,7 @@ import { CALQUES, calqueEdl, typeEdl } from '../calquesEdl.js'
 import { boite } from '../geometrieEdl.js'
 import { MARGE_PLAN_M } from './planRapportEdl.js'
 import { COULEUR_PROPOSITION, couleurCalque, dateIso, elementsDeLEtage, texteLatin } from './rapportEdlLogique.js'
-import { RAYON_SANS_SYMBOLE, SYMBOLES, boitePrimitives, boiteSymbole, emplacementsDuPoint, largeurTexte, primitivesPlacees, quantiteElement } from './symbolesEdl.js'
+import { RAYON_SANS_SYMBOLE, SYMBOLES, boitePrimitives, boiteSymbole, emplacementsDuPoint, largeurTexte, primitivesPlacees, quantiteElement, tailleSymboleMm as tailleDuTableau } from './symbolesEdl.js'
 import { COULEUR_TRAIT_COTE, courbeCommande, placerValeurCote, sensInterieurCote, traitsCote } from '../visite/tracesVisiteLogique.js'
 
 export const FORMAT_A3 = { nom: 'A3', largeur: 420, hauteur: 297 }
@@ -21,8 +21,8 @@ export const MARGE_PLANCHE = 8
 export const HAUTEUR_CARTOUCHE = 24
 export const ECHELLES = [100, 200, 250, 500, 1000]
 // Un symbole à taille fixe garde la même taille imprimée à toutes les
-// échelles : au 1/500, ses 0,30 m ne feraient plus que 0,6 mm
-export const TAILLE_SYMBOLE_MM = 4.5
+// échelles (au 1/500, ses 0,30 m ne feraient plus que 0,6 mm) : celle de
+// `TAILLES_SYMBOLE_MM` (symbolesEdl.js), relevée sur l'exemple de l'agence
 // Élément sans type : un losange de quoi le situer
 export const TAILLE_SANS_TYPE_MM = 3
 export const DPI_PLANCHE = 200
@@ -90,14 +90,15 @@ export function echellePlanche(emprise, zone) {
 
 // ─── Symboles ───────────────────────────────────────────────────────────────
 
-// Taille papier d'un symbole : un à taille fixe a 4,5 mm pour le plus grand
-// côté de sa boîte non tournée, un à taille réelle suit l'échelle
+// Taille papier d'un symbole : un à taille fixe a sa taille du tableau
+// (`tailleDuTableau`) pour le plus grand côté de sa boîte non tournée, un à
+// taille réelle suit l'échelle
 function mmParMetreSymbole(code, mmParMetre) {
   const s = SYMBOLES[code]
   if (!s) return null
   if (s.taille === 'reelle') return mmParMetre
   const b = boiteSymbole(code)
-  return TAILLE_SYMBOLE_MM / Math.max(b.largeur, b.hauteur)
+  return tailleDuTableau(code) / Math.max(b.largeur, b.hauteur)
 }
 
 /** Boîte papier d'un symbole tourné, et place du point d'insertion dans la boîte. */

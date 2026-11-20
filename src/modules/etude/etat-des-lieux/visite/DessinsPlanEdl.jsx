@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { COULEUR_IA } from '../../../chantier/comptes-rendus/enregistrement/styleProposition'
-import { symboleEcran, TAILLE_SYMBOLE_PX, RAYON_DISQUE_PX } from '../analyse/symbolesRelectureLogique'
+import { symboleEcran, taillesPointEcran, texteCoteEcran, pxParMetreEcran } from '../analyse/symbolesRelectureLogique'
 import { courbeCommande, traitsCote, extremitesTrace, texteCote, sensInterieurCote, COULEUR_COMMANDE, COULEUR_TRAIT_COTE } from './tracesVisiteLogique'
 
 // ─── Ce que les plans de l'état des lieux dessinent par-dessus l'étage ───────
@@ -9,7 +9,12 @@ import { courbeCommande, traitsCote, extremitesTrace, texteCote, sensInterieurCo
 // visite (`PlanVisite`) et l'onglet « Plans » du module (`EditeurPieces`,
 // via `PlansEdl`). Tout est rendu dans le `calque` de `VisionneusePlan`, à la
 // taille de l'écran (règle Safari) : épaisseurs et écarts divisés par `zoom`
-// (1 dans ce calque) restent constants à l'écran.
+// (1 dans ce calque) restent constants à l'écran. Symboles, disques,
+// pastilles et valeurs de cotes, eux, sont à l'échelle du plan (`pxParMetre`,
+// pixels d'écran par mètre, `pxParMetreEcran` de symbolesRelectureLogique) : ils grandissent et
+// rapetissent avec lui, comme sur un plan au 1/100 (demande de l'agence,
+// 2026-11-20). Sans échelle fiable, les tailles d'écran d'avant. Les zones
+// du doigt ne changent pas (22 px).
 
 const ACCENT = 'var(--affaire-accent, #E8602C)'
 // Zone sensible de 44 px au doigt, rond visible plus petit
@@ -25,6 +30,7 @@ export const ECART_COTE_PX = 18
  * cote du côté intérieur de sa pièce. Une proposition de l'IA en tirets bleus.
  */
 export function TracePlan({ trace, points, enCalque, zoom, choisie, attenuee, contour = null }) {
+  const hauteurTexte = texteCoteEcran(pxParMetreEcran(enCalque)) / zoom
   const bouts = extremitesTrace(trace, points)
   if (!bouts) return null
   const proposee = !!trace.a_valider
@@ -44,7 +50,7 @@ export function TracePlan({ trace, points, enCalque, zoom, choisie, attenuee, co
   }
   const sens = sensInterieurCote(bouts[0], bouts[1], contour)
   const [a, b] = bouts.map(enCalque)
-  const t = traitsCote(a, b, { tic: 12 / zoom, decalage: 4 / zoom, yVersLeBas: true, sens, ecart: ECART_COTE_PX / zoom, jeu: 3 / zoom, hauteurTexte: 9 / zoom })
+  const t = traitsCote(a, b, { tic: 12 / zoom, decalage: 4 / zoom, yVersLeBas: true, sens, ecart: ECART_COTE_PX / zoom, jeu: 3 / zoom, hauteurTexte: hauteurTexte * 0.75 })
   if (!t) return null
   const couleur = proposee ? COULEUR_IA : COULEUR_TRAIT_COTE
   const trait = { stroke: couleur, strokeWidth: (choisie ? 2.5 : 1.5) / zoom }
@@ -59,7 +65,7 @@ export function TracePlan({ trace, points, enCalque, zoom, choisie, attenuee, co
       {t.obliques.map(([p, q], i) => <line key={i} x1={p[0]} y1={p[1]} x2={q[0]} y2={q[1]} style={trait} />)}
       <text
         x={x} y={y} textAnchor="middle" transform={`rotate(${t.texte.angle} ${x} ${y})`}
-        style={{ fontSize: 12 / zoom, fontWeight: 600, fill: couleur, stroke: 'white', strokeWidth: 3 / zoom, paintOrder: 'stroke', fontFamily: "'JetBrains Mono', monospace" }}
+        style={{ fontSize: hauteurTexte, fontWeight: 600, fill: couleur, stroke: 'white', strokeWidth: 3 / zoom, paintOrder: 'stroke', fontFamily: "'JetBrains Mono', monospace" }}
       >{texteCote(trace)}</text>
     </g>
   )
@@ -72,42 +78,44 @@ export function TracePlan({ trace, points, enCalque, zoom, choisie, attenuee, co
  * choisi porte le halo bleu des propositions (repère depuis la liste des
  * éléments) ; sinon `children`, la poignée que la visite glisse au doigt.
  */
-export function PointPlan({ point, cx, cy, zoom, dessin = null, choisi, halo = false, photos = 0, opacite = 1, children = null }) {
+export function PointPlan({ point, cx, cy, zoom, dessin = null, choisi, halo = false, photos = 0, opacite = 1, pxParMetre = null, children = null }) {
   if (dessin?.sorte === 'symbole') {
-    return <SymbolePoint dessin={dessin} cx={cx} cy={cy} zoom={zoom} choisi={choisi} photos={photos} opacite={opacite} />
+    return <SymbolePoint dessin={dessin} cx={cx} cy={cy} zoom={zoom} choisi={choisi} photos={photos} opacite={opacite} pxParMetre={pxParMetre} />
   }
-  const r = (choisi ? 13 : 11) / zoom
+  // Pastille de 0,35 m dans le plan (11 px sans échelle), un peu plus grande choisie
+  const r = (taillesPointEcran(null, pxParMetre).rayonPastille * (choisi ? 13 / 11 : 1)) / zoom
   return (
     <g style={{ pointerEvents: 'none', opacity: opacite }}>
       {choisi && halo && (
-        <circle cx={cx} cy={cy} r={22 / zoom} style={{ fill: 'rgba(47,111,181,0.18)', stroke: COULEUR_IA, strokeWidth: 2.5 / zoom }} />
+        <circle cx={cx} cy={cy} r={Math.max(22 / zoom, r + 6 / zoom)} style={{ fill: 'rgba(47,111,181,0.18)', stroke: COULEUR_IA, strokeWidth: 2.5 / zoom }} />
       )}
       {choisi && !halo && children}
       <circle cx={cx} cy={cy} r={r} style={{ fill: point.piece_id ? ACCENT : '#5E5854', stroke: choisi ? '#1F1B17' : 'white', strokeWidth: (choisi ? 3 : 2) / zoom }} />
-      <text x={cx} y={cy} dy="0.35em" textAnchor="middle" style={{ fontSize: 10 / zoom, fontWeight: 700, fill: 'white', fontFamily: "'JetBrains Mono', monospace" }}>
+      <text x={cx} y={cy} dy="0.35em" textAnchor="middle" style={{ fontSize: r * 0.9, fontWeight: 700, fill: 'white', fontFamily: "'JetBrains Mono', monospace" }}>
         {point.numero}
       </text>
       {photos > 0 && (
-        <circle cx={cx + r * 0.9} cy={cy - r * 0.9} r={4 / zoom} style={{ fill: '#1F1B17', stroke: 'white', strokeWidth: 1 / zoom }} />
+        <circle cx={cx + r * 0.9} cy={cy - r * 0.9} r={r * 0.36} style={{ fill: '#1F1B17', stroke: 'white', strokeWidth: 1 / zoom }} />
       )}
     </g>
   )
 }
 
 // Symbole d'un point : disque de la famille (cible du doigt), anneau
-// pointillé bleu pour une proposition, symbole des planches à taille
-// d'écran constante, numéro en petit (les listes disent « P3 »)
-function SymbolePoint({ dessin, cx, cy, zoom, choisi, photos, opacite }) {
-  const elements = useMemo(() => symboleEcran(dessin.code, dessin.angle, TAILLE_SYMBOLE_PX), [dessin.code, dessin.angle])
+// pointillé bleu pour une proposition, symbole des planches à l'échelle du
+// plan, numéro en petit (les listes disent « P3 »), à l'échelle du disque
+function SymbolePoint({ dessin, cx, cy, zoom, choisi, photos, opacite, pxParMetre }) {
+  const tailles = taillesPointEcran(dessin.code, pxParMetre)
+  const elements = useMemo(() => symboleEcran(dessin.code, dessin.angle, tailles.symbole), [dessin.code, dessin.angle, tailles.symbole])
   const k = 1 / zoom
   const trait = { fill: 'none', stroke: dessin.couleur, strokeWidth: 1.5 * k, strokeLinejoin: 'round', strokeLinecap: 'round' }
-  const R = RAYON_DISQUE_PX * k
+  const R = tailles.rayonDisque * k
   return (
     <g style={{ pointerEvents: 'none', opacity: opacite }}>
       {choisi && <circle cx={cx} cy={cy} r={R + 5 * k} style={{ fill: 'rgba(47,111,181,0.14)', stroke: COULEUR_IA, strokeWidth: 2.5 * k }} />}
       <circle cx={cx} cy={cy} r={R} style={{ fill: dessin.couleur, fillOpacity: 0.2, stroke: dessin.couleur, strokeOpacity: 0.45, strokeWidth: 0.5 * k }} />
       {dessin.proposition && (
-        <circle cx={cx} cy={cy} r={R - 1.5 * k} style={{ fill: 'none', stroke: COULEUR_IA, strokeWidth: 1.2 * k, strokeDasharray: `${3 * k} ${2.5 * k}` }} />
+        <circle cx={cx} cy={cy} r={R * 0.92} style={{ fill: 'none', stroke: COULEUR_IA, strokeWidth: 1.2 * k, strokeDasharray: `${3 * k} ${2.5 * k}` }} />
       )}
       <g transform={`translate(${cx} ${cy}) scale(${k})`}>
         {elements.map((e, i) => {
@@ -128,10 +136,10 @@ function SymbolePoint({ dessin, cx, cy, zoom, choisi, photos, opacite }) {
         })}
       </g>
       <text x={cx + R * 0.78} y={cy - R * 0.78} textAnchor="start"
-        style={{ fontSize: 9 * k, fontWeight: 600, fill: '#5E5854', stroke: 'white', strokeWidth: 2.5 * k, paintOrder: 'stroke', fontFamily: "'JetBrains Mono', monospace" }}>
+        style={{ fontSize: R * 0.45, fontWeight: 600, fill: '#5E5854', stroke: 'white', strokeWidth: 2.5 * k, paintOrder: 'stroke', fontFamily: "'JetBrains Mono', monospace" }}>
         {dessin.numero}
       </text>
-      {photos > 0 && <circle cx={cx - R * 0.78} cy={cy - R * 0.78} r={3.5 * k} style={{ fill: '#1F1B17', stroke: 'white', strokeWidth: 1 * k }} />}
+      {photos > 0 && <circle cx={cx - R * 0.78} cy={cy - R * 0.78} r={R * 0.18} style={{ fill: '#1F1B17', stroke: 'white', strokeWidth: 1 * k }} />}
     </g>
   )
 }

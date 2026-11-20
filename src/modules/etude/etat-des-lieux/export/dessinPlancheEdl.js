@@ -15,10 +15,10 @@
 import { versMetres } from '../geometrieEdl.js'
 import { EPAISSEUR_TRAIT, dessinerVecteurs } from '../vecteursEdlLogique.js'
 import { COULEUR } from '../../../chantier/comptes-rendus/rapportLogique.js'
-import { COTE_PLANCHE, DPI_PLANCHE, LEGENDE, TAILLE_SYMBOLE_MM } from './plancheEdl.js'
+import { COTE_PLANCHE, DPI_PLANCHE, LEGENDE } from './plancheEdl.js'
 import { placementFond } from './planRapportEdl.js'
 import { COULEUR_PROPOSITION } from './rapportEdlLogique.js'
-import { SYMBOLES, boitePrimitives, largeurTexte, primitivesPlacees } from './symbolesEdl.js'
+import { SYMBOLES, TAILLE_SYMBOLE_DEFAUT_MM, boitePrimitives, largeurTexte, primitivesPlacees } from './symbolesEdl.js'
 
 export const PX_PAR_MM = DPI_PLANCHE / 25.4
 
@@ -88,7 +88,7 @@ function mmParMetreDe(symbole, primitives) {
   const b = boitePrimitives(primitives)
   const cote = b ? Math.max(b.largeur, b.hauteur) : 0
   const voulu = Math.max(symbole.tailleMm?.largeur ?? 0, symbole.tailleMm?.hauteur ?? 0)
-  return cote > 0 && voulu > 0 ? voulu / cote : TAILLE_SYMBOLE_MM / 0.3
+  return cote > 0 && voulu > 0 ? voulu / cote : TAILLE_SYMBOLE_DEFAUT_MM / 0.3
 }
 
 // Boîte du symbole autour de son point d'insertion (mm, y vers le bas)

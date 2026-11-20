@@ -6,6 +6,7 @@ import { useVecteursEdl } from '../useVecteursEdl'
 import { zoomMaxVectoriel } from '../vecteursEdlLogique'
 import { traceProche, COULEUR_COTE } from './tracesVisiteLogique'
 import { TracePlan, PointPlan, RAYON_TOUCHER_PX as RAYON_TOUCHER, ECART_COTE_PX } from './DessinsPlanEdl'
+import { pxParMetreEcran } from '../analyse/symbolesRelectureLogique'
 
 // ─── Plan de la visite ───────────────────────────────────────────────────────
 //
@@ -140,6 +141,8 @@ export function PlanVisite({
       const [x, y] = versPixels(c, p)
       return [(x / niveau.largeur) * largeur, (y / niveau.hauteur) * hauteur]
     }
+    // Pastilles à l'échelle du plan, zone du doigt constante (22 px)
+    const pxParMetre = pxParMetreEcran(enCalque)
     return (
       <svg ref={svg} width={largeur} height={hauteur} style={{ position: 'absolute', left: 0, top: 0, overflow: 'visible', pointerEvents: 'none' }}>
         {pieces.map((p) => {
@@ -185,7 +188,7 @@ export function PlanVisite({
           const [cx, cy] = enCalque(pos)
           return (
             <PointPlan
-              key={p.id} point={p} cx={cx} cy={cy} zoom={zoom} choisi={p.id === pointId} photos={nbPhotos.get(p.id) ?? 0}
+              key={p.id} point={p} cx={cx} cy={cy} zoom={zoom} choisi={p.id === pointId} photos={nbPhotos.get(p.id) ?? 0} pxParMetre={pxParMetre}
               opacite={piece ? (touchable(p) ? 1 : 0.35) : (p.piece_id ? 0.55 : 1)}
             >
               {/* Seule poignée qui capture le doigt */}

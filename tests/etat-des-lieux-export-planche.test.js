@@ -6,12 +6,12 @@ import assert from 'node:assert/strict'
 import { test, describe } from 'node:test'
 
 import { elementsAExporter } from '../src/modules/etude/etat-des-lieux/export/exportDxfEdl.js'
-import { orientationElement, quantiteElement } from '../src/modules/etude/etat-des-lieux/export/symbolesEdl.js'
+import { orientationElement, quantiteElement, tailleSymboleMm, TAILLES_SYMBOLE_MM, TAILLE_SYMBOLE_DEFAUT_MM } from '../src/modules/etude/etat-des-lieux/export/symbolesEdl.js'
 import { tracesAExporter } from '../src/modules/etude/etat-des-lieux/tracesEdl.js'
 import { courbeCommande } from '../src/modules/etude/etat-des-lieux/visite/tracesVisiteLogique.js'
 import { COULEUR_PROPOSITION, couleurCalque } from '../src/modules/etude/etat-des-lieux/export/rapportEdlLogique.js'
 import {
-  COTE_PLANCHE, DPI_PLANCHE, ECHELLES, FORMAT_A3, HAUTEUR_CARTOUCHE, MARGE_PLANCHE, TAILLE_SYMBOLE_MM,
+  COTE_PLANCHE, DPI_PLANCHE, ECHELLES, FORMAT_A3, HAUTEUR_CARTOUCHE, MARGE_PLANCHE,
   dateCartouche, echellePlanche, misePlanche, versMmPlanche,
 } from '../src/modules/etude/etat-des-lieux/export/plancheEdl.js'
 import {
@@ -124,7 +124,7 @@ describe('planche : format, zone, échelle', () => {
 describe('planche : symboles', () => {
   const salle = piece('p1', rect(0, 0, 30, 20))
 
-  test('symbole à taille fixe : 4,5 mm à toutes les échelles ; réglette à l’échelle', () => {
+  test('symbole à taille fixe : sa taille du tableau (prise 3,1 mm) à toutes les échelles ; réglette à l’échelle', () => {
     for (const [cote, echelle] of [[30, 100], [60, 200], [150, 500]]) {
       const pc = piece('p1', rect(0, 0, cote, 20))
       const m = mise({
@@ -135,10 +135,29 @@ describe('planche : symboles', () => {
       assert.equal(m.echelle, echelle)
       const prise = m.symboles.find((s) => s.code === 'prise')
       assert.equal(prise.angle, 0)
-      proche(Math.max(prise.tailleMm.largeur, prise.tailleMm.hauteur), TAILLE_SYMBOLE_MM, 1e-3)
+      proche(Math.max(prise.tailleMm.largeur, prise.tailleMm.hauteur), 3.1, 1e-3)
       const reglette = m.symboles.find((s) => s.code === 'reglette')
       proche(reglette.tailleMm.largeur, (0.9 * 1000) / echelle, 1e-3)
       proche(reglette.tailleMm.hauteur, (0.15 * 1000) / echelle, 1e-3)
+    }
+  })
+
+  test('chaque type à sa taille de l’exemple de l’agence, 3,8 mm sinon', () => {
+    const types = [
+      ['interrupteur', 3.2], ['rj45', 3.2], ['prise', 3.1], ['detecteur-fumee', 3.8], ['applique', 4.1], ['dalle', 4.5],
+      ['thermostat', TAILLE_SYMBOLE_DEFAUT_MM], ['extincteur', TAILLE_SYMBOLE_DEFAUT_MM],
+    ]
+    const pts = types.map(([, ], i) => point(`p${i}`, 'p1', i + 1, 2 + 3 * i, 10))
+    const els = types.map(([code], i) => element(`e${i}`, 'p1', `p${i}`, 'electricite', code, code))
+    const m = mise({ pieces: [salle], points: pts, elements: els })
+    for (const [code, mm] of types) {
+      const sy = m.symboles.find((x) => x.code === code)
+      assert.ok(sy, code)
+      assert.equal(tailleSymboleMm(code), mm)
+      // Boîte tournée : le plus grand côté de la boîte non tournée vaut au moins sa taille, au plus ×√2
+      const plus = Math.max(sy.tailleMm.largeur, sy.tailleMm.hauteur)
+      assert.ok(plus >= mm * 0.7 - 1e-3 && plus <= mm * Math.SQRT2 + 1e-3, `${code} : ${plus}`)
+      if (sy.angle % 90 === 0) proche(plus, mm, 1e-3)
     }
   })
 
@@ -154,7 +173,7 @@ describe('planche : symboles', () => {
     assert.equal(s.couleur, couleurCalque('electricite'))
     assert.equal(s.cle, 'prise|0|1|0')
     // Prise : demi-cercle de 0,09 m au-dessus, trait de 0,10 m dessous
-    const f = TAILLE_SYMBOLE_MM / 0.19
+    const f = 3.1 / 0.19
     proche(s.tailleMm.ancre[0], 0.09 * f, 1e-3)
     proche(s.tailleMm.ancre[1], 0.09 * f, 1e-3)
   })
@@ -170,7 +189,7 @@ describe('planche : symboles', () => {
     assert.equal(prise.angle, 90)
     assert.equal(prise.cle, 'prise|90|3|0')
     // Tournée d'un quart de tour : sa boîte aussi
-    proche(prise.tailleMm.largeur, TAILLE_SYMBOLE_MM, 1e-3)
+    proche(prise.tailleMm.largeur, 3.1, 1e-3)
     const inter = m.symboles.find((s) => s.code === 'interrupteur')
     assert.equal(inter.angle, 0)
     assert.equal(inter.quantite, 1)

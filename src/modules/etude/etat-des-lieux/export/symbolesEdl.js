@@ -351,6 +351,45 @@ export function boitePrimitives(primitives) {
 
 export const boiteSymbole = (code) => (SYMBOLES[code] ? boitePrimitives(SYMBOLES[code].primitives) : null)
 
+// ─── Taille imprimée des symboles à taille fixe ────────────────────────────
+//
+// Mesurée par l'agence sur sa planche d'exemple au 1/100 (2026-11-20) : le
+// plus grand côté de la boîte non tournée, en mm du papier (« ×n » d'une
+// prise non compris). Seul tableau des tailles : planches A3 et Word (par
+// `misePlanche`, la même taille à toutes les échelles) et écran (taille
+// réelle d'après le 1/100 : 3,2 mm → 0,32 m dans le plan). Un symbole à
+// taille réelle (appareils, réglette, goulotte, baie) n'y figure pas : sa
+// boîte du catalogue fait foi. Le DXF insère les blocs du catalogue à
+// l'échelle 1 et ne lit pas ce tableau.
+export const TAILLE_SYMBOLE_DEFAUT_MM = 3.8
+export const TAILLES_SYMBOLE_MM = {
+  interrupteur: 3.2,
+  rj45: 3.2,
+  prise: 3.1,
+  'detecteur-fumee': 3.8,
+  applique: 4.1,
+  dalle: 4.5,
+}
+
+/** Taille imprimée (mm, plus grand côté) d'un symbole à taille fixe ; null : taille réelle ou pas de symbole. */
+export function tailleSymboleMm(code) {
+  const s = SYMBOLES[code]
+  if (!s || s.taille === 'reelle') return null
+  return TAILLES_SYMBOLE_MM[code] ?? TAILLE_SYMBOLE_DEFAUT_MM
+}
+
+/**
+ * Plus grande dimension (m) d'un symbole dans le plan, comme dessiné au
+ * 1/100 : taille réelle du catalogue, ou celle du tableau (mm / 10). Null
+ * sans symbole.
+ */
+export function tailleSymboleMetres(code) {
+  const b = boiteSymbole(code)
+  if (!b) return null
+  const mm = tailleSymboleMm(code)
+  return mm == null ? Math.max(b.largeur, b.hauteur) : mm / 10
+}
+
 const deuxDecimales = (v) => v.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 // « 0,60 × 0,45 m · taille réelle » : ce que la planche montre à l'agence

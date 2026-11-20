@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 1837 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans, gestion de l'application, état des lieux)
+npm test         # 1904 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans, gestion de l'application, état des lieux)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -1095,9 +1095,17 @@ lot 1 : `docs/superpowers/plans/2026-11-17-etat-des-lieux-lot1-preparer.md`.
   `DessinsPlanEdl.jsx` dans l'onglet « Plans » — la visite garde ses
   pastilles) : un point typé montre le symbole des
   planches de son type effectif (un seul par point), même angle
-  (`orientationElement`) et couleur de famille, 28 px à l'écran, sur un
-  disque de sa famille (40 px, la cible), anneau pointillé bleu s'il n'a
-  que des propositions, numéro en petit ; sans type, la pastille. Toucher
+  (`orientationElement`) et couleur de famille, sur un disque de sa
+  famille (1,5 fois le symbole), anneau pointillé bleu s'il n'a que des
+  propositions, numéro en petit ; sans type, la pastille (0,35 m).
+  **À l'échelle du plan** (demande de l'agence, 2026-11-20 : lisible au
+  dézoom), visite comprise : symboles, disques, pastilles et valeurs de
+  cotes (0,22 m) sont en mètres du plan, convertis en pixels d'écran par
+  `pxParMetreEcran` (`taillesPointEcran`, `texteCoteEcran`, testés) ;
+  traits, écart de la ligne de cote et zones du doigt (22 px) restent
+  constants à l'écran ; sans échelle fiable (`cadrage.pxParMetre`), les
+  anciennes tailles d'écran (28 / 40 / 22 px). Un appareil à taille réelle
+  garde le disque d'un symbole de 3,8 mm. Toucher
   un point ouvre un panneau en haut du plan (« P3 · … », fermé par ✕) ;
   « Relier » (interrupteur / luminaire, 084) puis toucher un point
   compatible de l'étage : mêmes règles que la visite
@@ -1158,7 +1166,14 @@ lot 1 : `docs/superpowers/plans/2026-11-17-etat-des-lieux-lot1-preparer.md`.
     le 2026-11-19 d'après sa légende « report relevé ») : appareils de
     plomberie et chauffage à leur taille réelle, ainsi que réglette,
     goulotte et baie de brassage, dont la longueur compte ; autres symboles
-    à taille fixe (~0,30 m) ; primitives R12 seulement (ligne, polyligne,
+    à taille fixe (~0,30 m dans le catalogue, tel quel dans le DXF) ;
+    **taille imprimée d'un symbole fixe** : `TAILLES_SYMBOLE_MM` (seul
+    tableau, mesuré sur la planche d'exemple de l'agence au 1/100 :
+    interrupteur et RJ45 3,2 mm, prise 3,1 mm sans son « ×n », détecteur
+    de fumée 3,8, applique 4,1, dalle 4,5, tous les autres 3,8 —
+    `tailleSymboleMm`), lu par les planches et le Word (via `misePlanche`)
+    et par l'écran (`tailleSymboleMetres` : mm / 10 en mètres du plan) ;
+    primitives R12 seulement (ligne, polyligne,
     cercle, arc, texte centré). Changer un symbole = modifier son entrée.
     Types ajoutés le 2026-11-19 (`calquesEdl.js`, seule liste : consignes de
     Claude et barre de la visite suivent) : `rj45`, `applique`, `dalle`,
@@ -1186,8 +1201,8 @@ lot 1 : `docs/superpowers/plans/2026-11-17-etat-des-lieux-lot1-preparer.md`.
       échelle (1/100, 1/200, 1/250… la première qui fait tenir pièces,
       relevés hors pièces et 1,5 m de marge), repère mètres → mm papier
       (`versMmPlanche`, y vers le bas), symboles **seuls** (ni « P7 » ni
-      texte : le plan d'origine porte noms, surfaces et HSP) à 4,5 mm sur le
-      papier quelle que soit l'échelle (les symboles à taille réelle restent
+      texte : le plan d'origine porte noms, surfaces et HSP) à leur taille de
+      `TAILLES_SYMBOLE_MM` sur le papier quelle que soit l'échelle (les symboles à taille réelle restent
       à l'échelle), « ×n » pour les prises, proposition entourée d'un cercle
       pointillé bleu ; légende encadrée des seuls types présents (entrée
       « à valider » s'il y a lieu), posée dans le coin qui couvre le moins

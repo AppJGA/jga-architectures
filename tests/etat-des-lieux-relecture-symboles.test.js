@@ -5,7 +5,13 @@
 import assert from 'node:assert/strict'
 import { test, describe } from 'node:test'
 
-import { dessinPointRelecture, symboleEcran, TAILLE_SYMBOLE_PX } from '../src/modules/etude/etat-des-lieux/analyse/symbolesRelectureLogique.js'
+import {
+  dessinPointRelecture, symboleEcran, TAILLE_SYMBOLE_PX, RAYON_DISQUE_PX, RAYON_PASTILLE_PX, TEXTE_COTE_PX,
+  pxParMetreEcran, taillesPointEcran, texteCoteEcran,
+} from '../src/modules/etude/etat-des-lieux/analyse/symbolesRelectureLogique.js'
+import {
+  TAILLES_SYMBOLE_MM, TAILLE_SYMBOLE_DEFAUT_MM, tailleSymboleMm, tailleSymboleMetres, boiteSymbole, SYMBOLES,
+} from '../src/modules/etude/etat-des-lieux/export/symbolesEdl.js'
 import { libellePointRelecture } from '../src/modules/etude/etat-des-lieux/analyse/relectureAnalyseLogique.js'
 import { orientationElement, boitePrimitives } from '../src/modules/etude/etat-des-lieux/export/symbolesEdl.js'
 import { couleurCalque } from '../src/modules/etude/etat-des-lieux/export/rapportEdlLogique.js'
@@ -100,5 +106,72 @@ describe('« Relier » en touchant deux symboles', () => {
     assert.match(deja.mode.raison, /déjà reliés/)
     assert.equal(toucherRelier(mode, null, { points, traces: [], elements }).action, 'refus')
     assert.equal(debutRelier(p6, elements), null)
+  })
+})
+
+describe('tailles des symboles : le tableau de l’exemple de l’agence', () => {
+  test('les tailles relevées au 1/100, 3,8 mm pour les autres symboles fixes', () => {
+    assert.deepEqual(TAILLES_SYMBOLE_MM, { interrupteur: 3.2, rj45: 3.2, prise: 3.1, 'detecteur-fumee': 3.8, applique: 4.1, dalle: 4.5 })
+    assert.equal(TAILLE_SYMBOLE_DEFAUT_MM, 3.8)
+    assert.equal(tailleSymboleMm('thermostat'), 3.8)
+    assert.equal(tailleSymboleMm('inconnu'), null)
+  })
+
+  test('chaque code du tableau a un symbole à taille fixe', () => {
+    for (const code of Object.keys(TAILLES_SYMBOLE_MM)) {
+      assert.ok(SYMBOLES[code], code)
+      assert.equal(SYMBOLES[code].taille, 'fixe', code)
+    }
+  })
+
+  test('dans le plan : mm du 1/100 → mètres ; taille réelle gardée', () => {
+    assert.equal(tailleSymboleMetres('interrupteur'), 0.32)
+    assert.equal(tailleSymboleMetres('dalle'), 0.45)
+    assert.equal(tailleSymboleMm('reglette'), null)
+    const b = boiteSymbole('reglette')
+    assert.equal(tailleSymboleMetres('reglette'), Math.max(b.largeur, b.hauteur))
+    assert.equal(tailleSymboleMetres('inconnu'), null)
+  })
+})
+
+describe('tailles à l’écran : à l’échelle du plan', () => {
+  // 50 px d'écran par mètre (le calque est à la taille de l'écran)
+  const enCalque = ([x, y]) => [100 + 50 * x, 400 - 50 * y]
+
+  test('pixels d’écran par mètre lus sur la conversion mètres → calque', () => {
+    assert.equal(pxParMetreEcran(enCalque), 50)
+    assert.equal(pxParMetreEcran(([x, y]) => [x * 0.5 * 3, y]), 1.5)
+  })
+
+  test('sans échelle fiable (pxParMetre absent : NaN) : null', () => {
+    assert.equal(pxParMetreEcran(() => [NaN, NaN]), null)
+    assert.equal(pxParMetreEcran(() => [0, 0]), null)
+    assert.equal(pxParMetreEcran(null), null)
+  })
+
+  test('symbole, disque de 1,5 fois, pastille de 0,35 m', () => {
+    const t = taillesPointEcran('interrupteur', 50)
+    assert.ok(Math.abs(t.symbole - 16) < 1e-9)
+    assert.ok(Math.abs(t.rayonDisque - 12) < 1e-9)
+    assert.ok(Math.abs(t.rayonPastille - 8.75) < 1e-9)
+    // Le double de pixels par mètre (zoom ×2) : tout double
+    const z = taillesPointEcran('interrupteur', 100)
+    assert.ok(Math.abs(z.symbole - 32) < 1e-9 && Math.abs(z.rayonDisque - 24) < 1e-9)
+  })
+
+  test('un appareil à taille réelle garde sa taille, sous le disque d’un symbole de 3,8 mm', () => {
+    const b = boiteSymbole('baignoire')
+    const t = taillesPointEcran('baignoire', 50)
+    assert.ok(Math.abs(t.symbole - Math.max(b.largeur, b.hauteur) * 50) < 1e-9)
+    assert.ok(Math.abs(t.rayonDisque - (1.5 * 0.38 * 50) / 2) < 1e-9)
+  })
+
+  test('sans échelle : les tailles d’écran d’avant', () => {
+    assert.deepEqual(taillesPointEcran('prise', null), { symbole: TAILLE_SYMBOLE_PX, rayonDisque: RAYON_DISQUE_PX, rayonPastille: RAYON_PASTILLE_PX })
+    assert.equal(texteCoteEcran(null), TEXTE_COTE_PX)
+  })
+
+  test('valeur d’une cote : 0,22 m du plan', () => {
+    assert.ok(Math.abs(texteCoteEcran(50) - 11) < 1e-9)
   })
 })

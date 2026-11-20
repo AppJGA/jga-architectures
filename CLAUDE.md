@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 1904 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans, gestion de l'application, état des lieux)
+npm test         # 1956 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans, gestion de l'application, état des lieux)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -192,7 +192,7 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
   Toujours lire par `referencesCadastre` (repli sur les anciennes colonnes) ;
   l'enregistrement (`colonnesCadastre`) tient aussi à jour `cadastre_section`
   / `cadastre_parcelle` (première ligne) et `cadastre_superficie` (total).
-- **Base** : `supabase/migrations/`, numérotées, 84 fichiers, **passées à la
+- **Base** : `supabase/migrations/`, numérotées, 85 fichiers, **passées à la
   main** dans le SQL Editor de Supabase : un code qui dépend d'une nouvelle
   colonne doit tolérer son absence tant que la migration n'est pas faite.
   **Toute table créée depuis le 2026-10-30 doit recevoir ses droits d'API
@@ -1040,13 +1040,13 @@ lot 1 : `docs/superpowers/plans/2026-11-17-etat-des-lieux-lot1-preparer.md`.
   (`trace.creer|modifier|supprimer`, 23505 = succès), instantané `traces` ;
   un point supprimé emporte ses liaisons (cascade) et « Annuler » les remet
   (`gesteSuppressionPoint`). **Sans la 084** : lecture → `[]` et
-  `tracesDisponibles` faux, « Relier » / « Coter » masqués, ni dessin ni
+  `tracesDisponibles` faux, « Relier » masqué, pas de cote aux angles, ni dessin ni
   rubrique de l'aide-mémoire, journal sans les nouveaux types, analyse et
   exports comme avant (`p_traces` jamais envoyé). **Gestes** : « Relier »
   (panneau d'un interrupteur ou d'un luminaire) puis toucher le point
   compatible — un toucher ailleurs ne pose rien et dit pourquoi, jamais deux
-  fois la même liaison ; « Coter » (barre de la pièce) : deux touchers
-  accrochés aux angles du contour (44 px, aucun point posé), puis champ
+  fois la même liaison ; **plus de bouton « Coter »** (2026-11-20, voir
+  la puce suivante) : deux angles touchés pile, puis champ
   « Cote (m) » en haut (Valider / Plus tard ; `valeurCote` lit « 3,45 »,
   « 345 cm », « 3 m 45 ») ; toucher une trace l'ouvre (Modifier la valeur,
   Supprimer), ⌘Z défait chaque geste ; une valeur tapée repasse
@@ -1063,8 +1063,8 @@ lot 1 : `docs/superpowers/plans/2026-11-17-etat-des-lieux-lot1-preparer.md`.
   (`placerValeurCote` : glissée le long de la ligne par pas de 5 mm sur la
   planche, 0,50 m au DXF, centrée si rien n'est libre) ; une cote se touche
   aussi sur sa ligne décalée (`traceProche`, `ecartCote`). **Journal** : `point-touche` (tout point existant touché),
-  `angle-touche` (`detail.traceId` = la future cote, décidé à l'ouverture
-  du mode), `trace`, `trace-supprimee`. **Analyse** : la frise montre ces
+  `angle-touche` (`detail.traceId` = la future cote, décidé au premier
+  angle), `trace`, `trace-supprimee`. **Analyse** : la frise montre ces
   touchers à leur heure (« point P3 (Interrupteur) touché », « angle touché
   (cote C2) »), cotes de la pièce en `C<n>` ; Claude propose `liaisons`
   (deux points de la pièce, ni existante ni en double) et la `valeur` des
@@ -1128,6 +1128,75 @@ lot 1 : `docs/superpowers/plans/2026-11-17-etat-des-lieux-lot1-preparer.md`.
   donc dans le **fond verrouillé** du Word (non déplaçables) ; légende
   « Commande d'éclairage », « Cote », « Liaison ou cote proposée »
   seulement si présentes.
+- **Finitions de murs, cotes sans bouton, textes d'aide** (2026-11-20,
+  migration 085, plan
+  `docs/superpowers/plans/2026-11-20-etat-des-lieux-murs-cotes-gestes.md` ;
+  testés dans `etat-des-lieux-murs.test.js` et
+  `etat-des-lieux-murs-export.test.js`). **Gestes de la visite, sans bouton
+  de mode** (`cibleToucher`, `tracesVisiteLogique.js`) : dans la pièce
+  ouverte, un toucher va à un **angle** s'il tombe pile sur un sommet du
+  contour, sinon à un **mur** s'il tombe pile sur un côté, sinon comme
+  avant (point existant choisi, trace choisie, point posé). « Pile » :
+  `TOLERANCE_PILE_PX` = 12 px, plus fin que les 22 px des points (un
+  interrupteur près d'un mur reste un point) ; un point existant l'emporte
+  s'il est plus près du doigt que l'angle ou le mur. **Angle** : le premier
+  s'allume ~20 s (`toucherAngle`, `DUREE_PREMIER_ANGLE_MS` ; id de la future
+  cote décidé là, noté par `angle-touche`), le second crée la cote tout de
+  suite (« ? ») et ouvre le champ de sa valeur ; le même angle deux fois ne
+  crée rien ; tout autre toucher (mur, point, trace) l'éteint ; Échap aussi.
+  **Mur** : surbrillance ~5 s ; avec la 085, `mur-touche` au journal
+  (`detailMurTouche` : extrémités, côté, longueur) ; rien d'autre n'est
+  créé — seule la finition **dite** juste avant ou après devient, à
+  l'analyse, une finition de mur. **Textes d'aide** validés par l'agence
+  (`texteAide` : entrée, angle, cote, mur, point posé, point touché,
+  « Relier » — dans la barre de la pièce —, liaison, point hors pièce) :
+  bandeau posé par-dessus le plan sous les alertes (ancre de hauteur nulle :
+  les panneaux ne bougent pas), qui ne capte pas le doigt, effacé seul après
+  ~4 s (celui du premier angle tant qu'il est allumé), jamais sur le voile ;
+  celui de la cote est dans le champ de sa valeur. Aide-mémoire « Murs » :
+  « touchez le mur et dites-la », coché aussi par une finition de mur.
+  **Données (085)** : `edl_traces.sorte = 'finition'` (le mur `xa..yb`,
+  `valeur` = la finition dite, nouvelle colonne `statut` — conserver /
+  rafraichir / deposer ou null), journal `mur-touche`, `edl_ecrire_analyse`
+  (même signature) écrit les finitions de `p_traces` « à valider »
+  (remplacées comme les liaisons ; sans texte, mur nul ou déjà relevée
+  sur le même mur : ignorée ; statut inconnu → null). Contraintes `sorte`
+  et types du journal recopiés en entier. **Sans la 085** (sonde
+  `sonde_finitions:statut` à la lecture des traces,
+  `lectureTracesEtFinitions`, `finitionsDisponibles` de la visite et de
+  l'analyse) : un mur touché n'est que mis en surbrillance (ni journal, ni
+  bandeau, ni erreur), demande et schéma de l'analyse ceux de la 084, ni
+  section ni finition nulle part. **Analyse** : murs touchés nommés `M<n>`
+  dans la frise (« mur M2 touché (3,20 m) »), listés avec les finitions
+  déjà relevées ; `CONSIGNES_FINITIONS` (une finition seulement si ce qui
+  est dit juste avant ou après un mur touché la décrit, statut d'après ce
+  qui est dit, null sinon, jamais sans mur touché) ; schéma
+  `finitionsMurs: [{ mur, finition, statut, extrait }]` (fermé, statut en
+  `anyOf` null), drapeau `finitionsMurs: true` de la demande ; `lireAnalyse`
+  : mur connu, finition non vide (`finitionPropre`), statut par
+  `codeStatut`, ni doublon ni déjà relevée. **Couleurs** (`FINITIONS_MUR`,
+  `finitionMur` / `couleurFinition` d'après les mots de la finition) :
+  faïence `#C62828` (« Faïence murale »), crédence, lambris, carrelage
+  mural, peinture spécifique, autre — teintes loin de celles des familles
+  de symboles ; même couleur partout. **Dessin** commun
+  (`decalageFinition`, côté intérieur par `sensInterieurCote`) : écran
+  5 px à 4 px du mur (`TracePlan`, proposition pâlie en tirets doublée de
+  bleu), planche 1,2 mm à 1 mm (sous les autres traces et les symboles,
+  donc dans le fond du Word), DXF polyligne de largeur constante (codes
+  40 / 41, 5 cm, axe à 4 cm) sur `EDL-Finitions`, propositions sur
+  `EDL-À valider`. **Exports** par `tracesAExporter` (propositions
+  exclues par défaut) : légende « Finitions » avec une entrée par
+  finition présente, de sa couleur, « Finition de mur proposée » dans
+  « À valider » ; tableaux, colonne « Mur » sous la finition générale :
+  « Faïence : 2 murs (toute hauteur) » avec son statut
+  (`lignesFinitionsMur`) ; fenêtre d'export : finitions à valider
+  signalées. **Relecture** : section « Finitions de murs »
+  (`FinitionsRelecture.jsx`, `finitionsRelecture`) — propositions en bleu
+  avec l'extrait, Valider / Modifier (texte et statut, vaut validation) /
+  Écarter ; une finition validée se modifie ou se supprime ; dans l'onglet
+  « Plans », toucher une finition la choisit (`traceProche`), en visite
+  jamais (le toucher va au mur) ; la section « Liaisons et cotes » ne les
+  montre pas (`tracesRelecture`).
 - **Export (lot 4)** (`export/`, plan
   `docs/superpowers/plans/2026-11-18-etat-des-lieux-lot4-exporter.md`, aucune
   migration, aucun appel payant) : bouton « Exporter » du module → **fenêtre

@@ -340,3 +340,30 @@ Chaque lot est livré, poussé et documenté dans `CLAUDE.md` avant le suivant.
 - Géolocalisation.
 - Reconstruire les pièces à partir du tracé des murs (trop fragile sur des
   plans plus ou moins précis).
+
+## Avenant du 2026-11-20 : finitions de murs, cotes sans bouton, textes d'aide
+
+Décisions de l'agence (plan
+`docs/superpowers/plans/2026-11-20-etat-des-lieux-murs-cotes-gestes.md`,
+migration 085) :
+
+- **Plus de bouton de mode pour coter.** Dans la pièce ouverte, un toucher
+  va d'abord à un angle (pile sur un sommet du contour, ≈ 1 cm au doigt),
+  puis à un mur (pile sur un côté), sinon à un point comme avant. Le
+  premier angle reste allumé ~20 s ; le second crée la cote aussitôt,
+  avec le champ de sa valeur ; tout autre toucher éteint le premier angle.
+- **Finitions de murs.** Toucher un mur l'allume quelques secondes et le
+  note au journal ; la finition dite juste avant ou après (« faïence toute
+  hauteur ») est lue à l'analyse et devient une finition de mur proposée
+  (rien de dit : rien de créé). Elle se relit comme les autres
+  propositions (Valider, Modifier le texte et le statut, Écarter) et se
+  dessine partout de la même couleur (faïence en rouge) : trait épais le
+  long du mur, décalé dans la pièce, à l'écran, sur les planches (avec une
+  entrée de légende par finition présente) et dans le Word, polyligne
+  épaisse sur `EDL-Finitions` dans le DXF ; les tableaux disent
+  « Faïence : 2 murs (toute hauteur) » sous la finition générale des murs.
+- **Textes d'aide.** Un bandeau discret en haut du plan dit quoi faire
+  après chaque geste (textes validés par l'agence), s'efface seul et ne
+  gêne aucun toucher.
+- Sans la migration 085, un mur touché n'est que mis en surbrillance ;
+  l'analyse et les exports restent ceux de la 084.

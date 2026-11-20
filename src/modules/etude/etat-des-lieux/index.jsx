@@ -7,14 +7,14 @@ import { garderImages } from '../../chantier/comptes-rendus/horsLigne/images'
 import { useEtatDesLieux } from './useEtatDesLieux'
 import { BUCKET_EDL, enregistrerPieces, supprimerEtat } from './edlDonnees'
 import { ImportEdl } from './ImportEdl'
-import { EditeurPieces } from './EditeurPieces'
+import { PlansEdl } from './PlansEdl'
+import { lireVueEdl, ecrireVueEdl, ouvrirPiece, VUE_LISTE, VUE_PLANS } from './plansEdlLogique'
 import { useVisiteEdl } from './visite/useVisiteEdl'
 import { VisiteEdl } from './visite/VisiteEdl'
 import { visiteEnCours, perteRemplacement } from './visite/visiteLogique'
 import { oublierEdlLocal } from './visite/synchroEdl'
 import { useAnalyseEdl } from './analyse/useAnalyseEdl'
 import { RelectureEdl } from './analyse/RelectureEdl'
-import { RevuePiece } from './analyse/RevuePiece'
 import { resumePieceRelecture } from './analyse/relectureAnalyseLogique'
 import { COULEUR_IA } from '../../chantier/comptes-rendus/enregistrement/styleProposition'
 import { morceauxEtatsDesLieux } from '../../chantier/comptes-rendus/enregistrement/audioLocal'
@@ -36,11 +36,14 @@ const ExportEdl = lazy(() => import('./export/ExportEdl'))
 // chaque ouverture avec du réseau. « Remplacer les plans » reste proposé
 // après une visite (demande de l'agence, 2026-11-18) : la fenêtre dit tout ce
 // qui sera supprimé, visites, points et photos compris (migration 080).
-// Lot 3 : « Relecture », à côté de « Pièces » dès qu'une visite existe, pour
-// relire au bureau ce que Claude a tiré de chaque pièce. La vue et la pièce
-// ouverte sont dans l'adresse (?vue=relecture&piece=…) : un rechargement y
-// ramène. Depuis « Fond de plans », la pièce choisie montre aussi sa fiche
-// et ses éléments (`RevuePiece`, le même bloc), sans changer d'onglet.
+// Lot 3 : un seul plan, l'onglet « Plans » (`PlansEdl`) : l'éditeur des
+// pièces et, dès qu'une visite existe, les relevés dessinés dessus, la
+// pièce choisie relue dans le panneau (fiche, éléments, liaisons et cotes).
+// À côté, « État des lieux » (mis en valeur) : la liste des pièces de
+// l'étage ; en toucher une revient au plan, la pièce choisie et cadrée.
+// Vue, pièce choisie et pièce cadrée sont dans l'adresse
+// (?vue=liste | ?vue=plans&piece=…&cadre=…, plansEdlLogique.js) : un
+// rechargement y ramène ; les anciens liens ?vue=relecture marchent encore.
 // Lot 4 : « Exporter » (dès qu'il y a des étages, lecture seule comprise :
 // l'export ne modifie rien) ouvre la fenêtre d'export avec son aperçu.
 
@@ -123,23 +126,19 @@ export default function EtatDesLieuxModule({ lectureSeule = false }) {
   const relecturePossible = aEuUneVisite || analyse.elements.length > 0
     || [...analyse.pieces.values()].some((p) => p.analyse_le)
   // Tant que la visite n'est pas lue, l'adresse fait foi : pas de saut vers
-  // « Pièces » au rechargement
-  const vueRelecture = params.get('vue') === 'relecture' && (relecturePossible || !visite.charge)
-  const pieceRelue = vueRelecture ? params.get('piece') : null
-  const changerAdresse = (modifier) => setParams((p) => { const n = new URLSearchParams(p); modifier(n); return n })
-  const choisirVue = (relecture) => changerAdresse((n) => {
-    if (relecture) n.set('vue', 'relecture')
-    else n.delete('vue')
-    n.delete('piece')
-  })
-  const ouvrirPiece = (id) => changerAdresse((n) => { if (id) n.set('piece', id); else n.delete('piece') })
+  // « Plans » au rechargement
+  const adresse = lireVueEdl(params)
+  const vueListe = adresse.vue === VUE_LISTE && (relecturePossible || !visite.charge)
+  const allerA = (a, options) => setParams((p) => ecrireVueEdl(p, a), options)
+  const choisirVue = (liste) => allerA({ vue: liste ? VUE_LISTE : VUE_PLANS })
   const choisirNiveau = (id) => {
     setNiveauId(id)
-    if (pieceRelue) ouvrirPiece(null)
+    if (adresse.pieceId || adresse.cadreId) allerA({ vue: adresse.vue }, { replace: true })
   }
 
-  // Une pièce ouverte depuis l'adresse impose son étage (rechargement)
-  const niveauDeLaPiece = pieceRelue ? edl.pieces.find((p) => p.id === pieceRelue)?.niveau_id : null
+  // Une pièce de l'adresse impose son étage (rechargement)
+  const pieceAdresse = vueListe ? null : (adresse.pieceId ?? adresse.cadreId)
+  const niveauDeLaPiece = pieceAdresse ? edl.pieces.find((p) => p.id === pieceAdresse)?.niveau_id : null
   const niveau = edl.niveaux.find((n) => n.id === niveauId)
     ?? edl.niveaux.find((n) => n.id === niveauDeLaPiece)
     ?? edl.niveaux[0]
@@ -233,10 +232,10 @@ export default function EtatDesLieuxModule({ lectureSeule = false }) {
     const a = analyse.pieces.get(p.id)
     return n + (a ? resumePieceRelecture({ ...p, ...a }, analyse.elements, analyse.traces).aValider : 0)
   }, 0)
-  const aValiderTotal = vueRelecture || relecturePossible ? edl.niveaux.reduce((n, nv) => n + aValiderDe(nv.id), 0) : 0
-  // « État des lieux » (la relecture, ce qui sera rendu) un peu mis en
-  // valeur à côté de « Fond de plans » (l'outil de préparation), à la
-  // demande de l'agence : fond teinté, icône, couleur de la phase
+  const aValiderTotal = relecturePossible ? edl.niveaux.reduce((n, nv) => n + aValiderDe(nv.id), 0) : 0
+  // « État des lieux » (la liste des pièces, ce qui sera rendu) un peu mis
+  // en valeur à côté de « Plans », à la demande de l'agence : fond teinté,
+  // icône, couleur de la phase
   const ongletVue = (actif, libelle, compte, onClick, { enValeur = false } = {}) => (
     <button type="button" role="tab" aria-selected={actif} onClick={onClick}
       style={{
@@ -282,10 +281,10 @@ export default function EtatDesLieuxModule({ lectureSeule = false }) {
         )}
       </div>
 
-      {(relecturePossible || vueRelecture) && (
+      {(relecturePossible || vueListe) && (
         <div role="tablist" aria-label="Vue" style={{ display: 'flex', alignItems: 'center', gap: 4, borderBottom: '0.5px solid rgba(0,0,0,0.1)' }}>
-          {ongletVue(!vueRelecture, 'Fond de plans', 0, () => choisirVue(false))}
-          {ongletVue(vueRelecture, 'État des lieux', aValiderTotal, () => choisirVue(true), { enValeur: true })}
+          {ongletVue(!vueListe, 'Plans', 0, () => choisirVue(false))}
+          {ongletVue(vueListe, 'État des lieux', aValiderTotal, () => choisirVue(true), { enValeur: true })}
         </div>
       )}
 
@@ -293,7 +292,7 @@ export default function EtatDesLieuxModule({ lectureSeule = false }) {
         <div role="tablist" aria-label="Étages" style={{ display: 'flex', alignItems: 'center', gap: 4, flex: 1, flexWrap: 'wrap' }}>
           {edl.niveaux.map((n) => {
             const actif = n.id === niveau?.id
-            const aValider = vueRelecture ? aValiderDe(n.id) : 0
+            const aValider = relecturePossible ? aValiderDe(n.id) : 0
             return (
               <button key={n.id} type="button" role="tab" aria-selected={actif} onClick={() => choisirNiveau(n.id)}
                 style={{
@@ -308,7 +307,7 @@ export default function EtatDesLieuxModule({ lectureSeule = false }) {
             )
           })}
         </div>
-        {!lectureSeule && niveau && !vueRelecture && (
+        {!lectureSeule && niveau && !vueListe && (
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#5E5854', paddingBottom: 4 }}>
             Nom de l’étage
             <input
@@ -326,31 +325,26 @@ export default function EtatDesLieuxModule({ lectureSeule = false }) {
           <button type="button" onClick={() => edl.setErreur(null)} style={{ border: 'none', background: 'none', color: '#B8412C', cursor: 'pointer', fontSize: 12 }}>Fermer</button>
         </p>
       )}
-      {niveau && vueRelecture && (
+      {niveau && vueListe && (
         <div style={{ flex: 1, minHeight: 0 }}>
           <RelectureEdl
-            affaireId={affaireId} niveau={niveau} pieces={piecesDe(niveau.id)} visite={visite} analyse={analyse}
-            obtenirLiens={obtenirLiens} lectureSeule={lectureSeule} pieceId={pieceRelue} onOuvrirPiece={ouvrirPiece}
+            affaireId={affaireId} pieces={piecesDe(niveau.id)} visite={visite} analyse={analyse}
+            lectureSeule={lectureSeule} onOuvrirPiece={(id) => allerA(ouvrirPiece(id))}
           />
         </div>
       )}
-      {niveau && !vueRelecture && (
+      {niveau && !vueListe && (
         <div style={{ flex: 1, minHeight: 0 }}>
-          <EditeurPieces
+          <PlansEdl
             key={niveau.id}
-            niveau={niveau}
-            pieces={piecesDe(niveau.id)}
-            points={(visite.donnees?.points ?? []).filter((p) => p.niveau_id === niveau.id)}
-            obtenirLiens={obtenirLiens}
-            lectureSeule={lectureSeule}
+            affaireId={affaireId} niveau={niveau} pieces={piecesDe(niveau.id)} visite={visite} analyse={analyse}
+            obtenirLiens={obtenirLiens} lectureSeule={lectureSeule} releve={relecturePossible}
+            adresse={adresse} onAdresse={allerA}
             onModifier={edl.modifierPiece}
             onAjouter={edl.ajouterPiece}
             onSupprimer={edl.supprimerPiece}
             onAjouterPlusieurs={async (niveauIdCible, pieces) => { await enregistrerPieces(affaireId, niveauIdCible, pieces); edl.recharger() }}
             onRelecture={(relecture) => edl.enregistrerRelecture(niveau.id, relecture)}
-            panneauPiece={relecturePossible ? (p) => (
-              <RevuePiece key={p.id} affaireId={affaireId} niveau={niveau} piece={p} visite={visite} analyse={analyse} lectureSeule={lectureSeule} />
-            ) : null}
           />
         </div>
       )}

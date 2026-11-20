@@ -1,28 +1,22 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, ChevronRight, RefreshCw, Spline, X } from 'lucide-react'
+import { ChevronRight, RefreshCw } from 'lucide-react'
 import { COULEUR_IA } from '../../../chantier/comptes-rendus/enregistrement/styleProposition'
 import { morceauxEtatsDesLieux, remettreEnFile } from '../../../chantier/comptes-rendus/enregistrement/audioLocal'
 import { ECHECS_MAX } from '../../../chantier/comptes-rendus/enregistrement/transcription'
-import { PlanVisite } from '../visite/PlanVisite'
 import { COULEURS_PIECE, designationPiece, etatPieceVisite, piecesVisitees } from '../visite/visiteLogique'
 import { MESSAGE_ANALYSE_INDISPONIBLE } from './analyseDonnees'
-import { piecesARelire, libellePointRelecture } from './relectureAnalyseLogique'
-import { dessinPointRelecture } from './symbolesRelectureLogique'
-import { debutRelier, toucherRelier, consigneMode, COULEUR_COMMANDE } from '../visite/tracesVisiteLogique'
-import { useRevuePiece } from './useRevuePiece'
-import { EtatAnalyseRevue, AvisRevue, ContenuRevue, ConfirmationRelance } from './RevuePiece'
+import { piecesARelire } from './relectureAnalyseLogique'
 import { morceauxRefuses } from './transcriptionEdlLogique'
 import { EVENEMENT_TRANSCRIPTION_EDL } from './transcriptionEdl'
 import { transcrireEtAnalyser } from './analyseEdl'
 
-// ─── Relecture au bureau des pièces analysées (lot 3) ────────────────────────
+// ─── Onglet « État des lieux » : la liste des pièces de l'étage (lot 3) ──────
 //
-// Par étage, la liste des pièces : à valider d'abord, puis les incomplètes,
-// puis le reste. Une pièce ouverte : son plan agrandi à gauche (points
-// numérotés comme en visite, liaisons et cotes dessinées), sa fiche, ses
-// éléments puis ses liaisons et cotes (migration 084) à droite — ce bloc de
-// droite est celui de `RevuePiece.jsx`, le même que dans le panneau de
-// « Fond de plans » (état et écritures dans `useRevuePiece.js`).
+// À valider d'abord, puis les incomplètes, puis le reste, chacune avec son
+// état et ce qu'elle attend. Toucher une pièce ouvre l'onglet « Plans » sur
+// elle (choisie et cadrée, `onOuvrirPiece`) : il n'y a plus qu'un plan, où
+// se relisent fiche, éléments, liaisons et cotes (demande de l'agence,
+// 2026-11-20).
 
 const AMBRE = { fond: '#FFFBEB', trait: '#F59E0B', texte: '#92400E' }
 const ROUGE = '#B8412C'
@@ -46,7 +40,7 @@ function statutPiece({ resume, etat }) {
 // Son de l'affaire mis de côté sur cet appareil (refusé ECHECS_MAX fois) :
 // il n'est plus retenté de lui-même et sa parole manque à l'analyse. Seul
 // ce geste le reprend : échecs remis à zéro, transcription, puis analyse.
-function SonRefuse({ affaireId, analyse }) {
+export function SonRefuse({ affaireId, analyse }) {
   const [refuses, setRefuses] = useState({ affaireId: null, ids: [] })
   const [enCours, setEnCours] = useState(false)
   const [message, setMessage] = useState(null)
@@ -108,7 +102,7 @@ const Pastille = ({ etat }) => (
   }} />
 )
 
-export function RelectureEdl({ affaireId, niveau, pieces, visite, analyse, obtenirLiens, lectureSeule, pieceId, onOuvrirPiece }) {
+export function RelectureEdl({ affaireId, pieces, visite, analyse, lectureSeule, onOuvrirPiece }) {
   const donnees = visite.donnees
   const visitees = useMemo(() => piecesVisitees(donnees?.entrees), [donnees?.entrees])
   // L'état de l'analyse lu en ligne posé sur les pièces du plan
@@ -124,25 +118,6 @@ export function RelectureEdl({ affaireId, niveau, pieces, visite, analyse, obten
   if (analyse.indisponible) return <p style={noteAmbre}>{MESSAGE_ANALYSE_INDISPONIBLE}</p>
   if (!analyse.charge) {
     return <p style={{ margin: 0, fontSize: 13, color: '#9C9591' }}>{enLigne() ? 'Lecture de l’analyse…' : 'Sans réseau, l’analyse n’a pas pu être lue.'}</p>
-  }
-
-  const piece = fusionnees.find((p) => p.id === pieceId) ?? null
-  if (piece) {
-    const rang = liste.findIndex((l) => l.piece.id === piece.id)
-    const suivante = liste[rang + 1]?.piece ?? null
-    return (
-      <div style={colonne}>
-        {!lectureSeule && <SonRefuse affaireId={affaireId} analyse={analyse} />}
-        <div style={{ flex: 1, minHeight: 0 }}>
-          <VuePiece
-            key={piece.id}
-            affaireId={affaireId} niveau={niveau} pieces={fusionnees} piece={piece} etats={etats} visitees={visitees}
-            visite={visite} analyse={analyse} obtenirLiens={obtenirLiens} lectureSeule={lectureSeule}
-            suivante={suivante} onOuvrirPiece={onOuvrirPiece}
-          />
-        </div>
-      </div>
-    )
   }
 
   if (!liste.length) return <p style={{ margin: 0, fontSize: 13, color: '#9C9591' }}>Aucune pièce sur cet étage.</p>
@@ -172,117 +147,6 @@ export function RelectureEdl({ affaireId, niveau, pieces, visite, analyse, obten
           )
         })}
       </ul>
-    </div>
-  )
-}
-
-function VuePiece({ affaireId, niveau, pieces, piece, etats, visitees, visite, analyse, obtenirLiens, lectureSeule, suivante, onOuvrirPiece }) {
-  const donnees = visite.donnees
-  // Fiche, éléments, liaisons et cotes : le même bloc que le panneau de
-  // « Fond de plans » (RevuePiece) ; le plan de la pièce est propre à cette vue
-  const revue = useRevuePiece({ affaireId, niveau, piece, visite, analyse })
-  const { points, tracesNiveau, pointChoisi, setPointChoisi } = revue
-  // Mode « Relier » (tracesVisiteLogique, le même que la visite) : ouvert
-  // depuis le panneau du point choisi, fermé par Annuler ou la liaison posée
-  const [relier, setRelier] = useState(null)
-
-  const nbPhotos = useMemo(() => {
-    const n = new Map()
-    for (const ph of donnees?.photos ?? []) n.set(ph.point_id, (n.get(ph.point_id) ?? 0) + 1)
-    return n
-  }, [donnees?.photos])
-  // Le symbole de chaque point typé à la place de sa pastille
-  const symboles = useMemo(() => {
-    const parId = new Map(pieces.map((pc) => [pc.id, pc]))
-    return new Map(points.map((p) => [p.id, dessinPointRelecture(p, { elements: analyse.elements, piece: parId.get(p.piece_id) ?? null })]))
-  }, [points, pieces, analyse.elements])
-  const pointPanneau = pointChoisi ? points.find((p) => p.id === pointChoisi) ?? null : null
-  const peutRelier = (p) => !!p && analyse.tracesDisponibles && !lectureSeule && !!debutRelier(p, analyse.elements)
-
-  // Toucher pendant « Relier » : le point compatible crée la liaison (même
-  // écriture que « Ajouter une liaison ») ; ailleurs, rien, et le motif
-  const relierA = (cible) => {
-    if (!relier) return
-    const r = toucherRelier(relier, cible, { points, traces: tracesNiveau, elements: analyse.elements })
-    if (r.action === 'refus') { setRelier(r.mode); return }
-    setRelier(null)
-    setPointChoisi(cible.id)
-    revue.relier(r.interrupteur.id, r.luminaire.id)
-  }
-  const choisirPoint = (id) => {
-    if (relier) { relierA(points.find((p) => p.id === id) ?? null); return }
-    revue.setElementChoisi(null)
-    revue.setTraceChoisie(null)
-    setPointChoisi(id)
-  }
-
-  const etat = etats.get(piece.id)
-
-  return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', gap: 10, minHeight: 0 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <button type="button" onClick={() => onOuvrirPiece(null)} style={bouton}><ArrowLeft size={15} /> Pièces de l’étage</button>
-        <Pastille etat={etat} />
-        <h2 style={{ margin: 0, fontSize: 15, fontWeight: 600, color: '#1F1B17' }}>{designationPiece(piece)}</h2>
-        <span style={{ flex: 1 }} />
-        <EtatAnalyseRevue revue={revue} lectureSeule={lectureSeule} />
-        {suivante && (
-          <button type="button" onClick={() => onOuvrirPiece(suivante.id)} style={bouton}>Pièce suivante <ChevronRight size={15} /></button>
-        )}
-      </div>
-
-      <AvisRevue revue={revue} lectureSeule={lectureSeule} />
-
-      {/* Pas de flex-wrap autour du plan : une longue liste d'éléments
-          étirerait la rangée et le plan sortirait de l'écran */}
-      <div style={{ flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(340px, 440px)', gap: 12 }}>
-        <div style={{ minHeight: 0, position: 'relative', border: '0.5px solid rgba(0,0,0,0.1)', borderRadius: 3, overflow: 'hidden' }}>
-          <PlanVisite
-            key={niveau.id}
-            niveau={niveau} pieces={pieces} points={points} nbPhotos={nbPhotos} visitees={visitees} etats={etats}
-            piece={piece} pointId={revue.pointEnEvidence} obtenirLiens={obtenirLiens} consultation symboles={symboles}
-            traces={tracesNiveau} traceId={revue.traceChoisie} mode={relier}
-            onChoisirPoint={choisirPoint}
-            onToucher={relier ? () => relierA(null) : undefined}
-            onChoisirTrace={revue.choisirTrace}
-          />
-          {(relier || pointPanneau) && (
-            <div style={{
-              position: 'absolute', top: 8, left: 8, right: 8, display: 'flex', alignItems: 'center', gap: 8, padding: '0 0 0 12px',
-              background: 'white', border: `0.5px solid ${relier ? COULEUR_COMMANDE : 'rgba(0,0,0,0.15)'}`, borderRadius: 3, boxShadow: '0 4px 14px -6px rgba(31,27,23,0.35)',
-            }}>
-              {relier ? (
-                <>
-                  <span role="status" style={{ flex: 1, minWidth: 0, fontSize: 13, color: relier.raison ? ROUGE : COULEUR_COMMANDE, fontWeight: 600 }}>{consigneMode(relier)}</span>
-                  <button type="button" onClick={() => setRelier(null)} style={{ ...bouton, border: 'none' }}>Annuler</button>
-                </>
-              ) : (
-                <>
-                  <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 600, color: '#1F1B17', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {libellePointRelecture(pointPanneau, analyse.elements)}
-                  </span>
-                  {peutRelier(pointPanneau) && (
-                    <button type="button" onClick={() => setRelier(debutRelier(pointPanneau, analyse.elements))}
-                      title="Relier cet interrupteur au luminaire qu’il commande (ou l’inverse)"
-                      style={{ ...bouton, color: COULEUR_COMMANDE }}>
-                      <Spline size={15} /> Relier
-                    </button>
-                  )}
-                  <button type="button" aria-label="Fermer" onClick={() => setPointChoisi(null)}
-                    style={{ ...bouton, border: 'none', width: 44, padding: 0, justifyContent: 'center' }}>
-                    <X size={16} />
-                  </button>
-                </>
-              )}
-            </div>
-          )}
-        </div>
-        <div style={{ minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 16, paddingRight: 2 }}>
-          <ContenuRevue revue={revue} lectureSeule={lectureSeule} />
-        </div>
-      </div>
-
-      <ConfirmationRelance revue={revue} />
     </div>
   )
 }

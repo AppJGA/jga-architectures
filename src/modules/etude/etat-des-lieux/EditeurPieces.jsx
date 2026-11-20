@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Trash2, PenLine, Sparkles, X, Undo2 } from 'lucide-react'
 import { VisionneusePlan } from '../../chantier/comptes-rendus/VisionneusePlan'
 import {
-  aire, pointDansPolygone, ecartSurface, SEUIL_ECART, versPixels, versMetres,
+  aire, ecartSurface, SEUIL_ECART, versPixels, versMetres,
   deplacerSommet, insererSommet, retirerSommet, ecartEchelle, pieceChevauchee, retirerSuperpositions,
 } from './geometrieEdl'
 import { imageIaDepuisUrl } from './renduNiveau'
@@ -13,6 +13,7 @@ import { relireNiveau } from './relectureIa'
 import { PanneauRelecture } from './PanneauRelecture'
 import { useVecteursEdl } from './useVecteursEdl'
 import { zoomMaxVectoriel } from './vecteursEdlLogique'
+import { pieceSous } from './visite/visiteLogique'
 
 // Plafond de zoom de l'image d'un étage (sans fichier vectoriel), celui de la visionneuse
 const ZOOM_MAX_IMAGE = 12
@@ -27,6 +28,8 @@ const ZOOM_MAX_IMAGE = 12
 // écrite est signalée. Deux pièces ne se superposent jamais : un geste qui en
 // ferait chevaucher une autre n'est pas enregistré. « Annuler » (⌘Z / Ctrl+Z)
 // défait les derniers gestes : contour modifié, pièce dessinée, pièce supprimée.
+// C'est le plan de l'onglet « Plans » (`PlansEdl`), qui tient la pièce
+// choisie (dans l'adresse) et y pose les relevés de la visite.
 
 const COULEUR = 'var(--affaire-accent, #E8602C)'
 const champ = { height: 34, minHeight: 0, padding: '0 8px', fontSize: 13, border: '0.5px solid rgba(0,0,0,0.18)', borderRadius: 2, background: 'white', width: '100%', boxSizing: 'border-box' }
@@ -43,12 +46,26 @@ const HISTORIQUE_MAX = 50
 
 const designation = (p) => [p.numero, p.nom].filter(Boolean).join(' · ') || 'une autre pièce'
 
-// `panneauPiece(piece)` (facultatif) : ce que le panneau montre sous la
-// pièce choisie — la fiche et les éléments relevés de l'état des lieux,
-// fournis par le module (l'éditeur ne sait rien de l'analyse).
-export function EditeurPieces({ niveau, pieces, points = [], obtenirLiens, lectureSeule, onModifier, onAjouter, onSupprimer, onAjouterPlusieurs, onRelecture, panneauPiece = null }) {
-  const [choisie, setChoisie] = useState(null)
+// L'éditeur ne sait rien de la visite ni de l'analyse ; `PlansEdl` lui passe :
+//   `choisie` / `onChoisir(id)`  la pièce choisie (tenue au-dessus) ;
+//   `cadre`                      la pièce agrandie (fractions de l'image), ou null ;
+//   `superposition`              { dessin({ enCalque, zoom }), toucher(m, toleranceM),
+//                                  bandeau, masquerPoignees } : relevés dessinés
+//                                  sous les poignées, appui bref sur le plan, panneau
+//                                  ancré en haut du plan ;
+//   `panneauPiece(piece)`        ce que le panneau montre sous la pièce choisie ;
+//   `actions`                    boutons en tête du panneau (« Voir tout l'étage »…).
+export function EditeurPieces({
+  niveau, pieces, obtenirLiens, lectureSeule, onModifier, onAjouter, onSupprimer, onAjouterPlusieurs, onRelecture,
+  choisie = null, onChoisir, cadre = null, superposition = null, panneauPiece = null, actions = null,
+}) {
   const [sommet, setSommet] = useState(null) // dernier sommet touché de la pièce choisie
+  // Une autre pièce choisie (ici ou par le plan) : le sommet touché ne vaut plus
+  const [choisieVue, setChoisieVue] = useState(choisie)
+  if (choisieVue !== choisie) {
+    setChoisieVue(choisie)
+    setSommet(null)
+  }
   const [trace, setTrace] = useState(null) // contour en cours de dessin (mètres)
   const [glisse, setGlisse] = useState(null) // { id, contour, index } pendant un déplacement
   // Le dernier déplacement peut arriver juste avant le lâcher, dans le même
@@ -57,7 +74,7 @@ export function EditeurPieces({ niveau, pieces, points = [], obtenirLiens, lectu
   const [attente, setAttente] = useState(null)
   const [erreur, setErreur] = useState(null)
   const svg = useRef(null)
-  const brouillon = useRef({}) // saisie du nom / numéro pas encore enregistrée
+  const brouillon = useRef({}) // { pieceId, champs } : saisie du nom / numéro pas encore enregistrée
   const termine = useRef(false) // garde contre un double appui sur « Terminer »
   // Gestes à défaire, du plus ancien au plus récent : { type: 'contour', id,
   // avant } | { type: 'ajout', id } | { type: 'suppression', piece }
@@ -86,18 +103,31 @@ export function EditeurPieces({ niveau, pieces, points = [], obtenirLiens, lectu
 
   // Une saisie en cours ne doit pas se perdre si on touche une autre pièce :
   // le blur n'arrive pas toujours avant le démontage du champ sur tablette.
+  // Elle porte sa pièce : la pièce choisie peut changer par le plan (un
+  // point, une autre pièce) ou en quittant l'onglet, sans passer par ici.
   const enregistrerBrouillon = () => {
-    const saisie = brouillon.current
+    const { pieceId, champs: saisie = {} } = brouillon.current
     brouillon.current = {}
-    if (!piece || lectureSeule) return
+    const cible = pieces.find((q) => q.id === pieceId)
+    if (!cible || lectureSeule) return
     const champs = {}
     for (const [nomChamp, brut] of Object.entries(saisie)) {
       const valeur = brut.trim()
-      if (valeur !== (piece[nomChamp] ?? '')) champs[nomChamp] = valeur || (nomChamp === 'nom' ? '' : null)
+      if (valeur !== (cible[nomChamp] ?? '')) champs[nomChamp] = valeur || (nomChamp === 'nom' ? '' : null)
     }
-    if (Object.keys(champs).length) onModifier(piece.id, { ...champs, a_verifier: false })
+    if (Object.keys(champs).length) onModifier(cible.id, { ...champs, a_verifier: false })
   }
-  const choisir = (id) => { enregistrerBrouillon(); setChoisie(id); setSommet(null) }
+  const saisir = (nomChamp, valeur) => {
+    if (brouillon.current.pieceId !== choisie) brouillon.current = { pieceId: choisie, champs: {} }
+    brouillon.current.champs[nomChamp] = valeur
+  }
+  const enregistrerSaisie = useRef(enregistrerBrouillon)
+  useEffect(() => { enregistrerSaisie.current = enregistrerBrouillon })
+  useEffect(() => {
+    if (brouillon.current.pieceId && brouillon.current.pieceId !== choisie) enregistrerSaisie.current()
+  }, [choisie])
+  useEffect(() => () => enregistrerSaisie.current(), [])
+  const choisir = (id) => { enregistrerBrouillon(); onChoisir?.(id) }
 
   // Règle de l'agence : jamais deux pièces superposées. Le geste refusé
   // n'écrit rien ; l'écran revient au contour enregistré.
@@ -172,13 +202,22 @@ export function EditeurPieces({ niveau, pieces, points = [], obtenirLiens, lectu
     return () => window.removeEventListener('keydown', touche)
   })
 
-  // Appui bref sur le plan : un angle de plus en dessin, sinon la plus petite
-  // pièce qui contient le point
+  // 44 px à l'écran, en mètres : la largeur affichée du calque (zoom compris)
+  // couvre toute l'image, soit largeur / pxParMetre mètres
+  const toleranceMetres = () => {
+    const largeurEcran = svg.current?.getBoundingClientRect().width
+    if (!largeurEcran || !c?.pxParMetre) return 0
+    return (RAYON_TOUCHER * (niveau.largeur / c.pxParMetre)) / largeurEcran
+  }
+
+  // Appui bref sur le plan : un angle de plus en dessin ; sinon les relevés
+  // décident (point, trace, puis pièce : `resoudreToucher`), et sans eux la
+  // plus petite pièce qui contient le point
   const toucher = ({ x, y }) => {
     const point = versMetres(c, [x * niveau.largeur, y * niveau.hauteur])
     if (trace) { setTrace((t) => [...t, point]); return }
-    const sous = pieces.filter((p) => pointDansPolygone(point, p.contour))
-    choisir(sous.length ? sous.reduce((a, b) => (aire(b.contour) < aire(a.contour) ? b : a)).id : null)
+    if (superposition?.toucher) { superposition.toucher(point, toleranceMetres()); return }
+    choisir(pieceSous(pieces, point)?.id ?? null)
   }
 
   const debutGlisse = (p, i, insertion) => (e) => {
@@ -284,22 +323,10 @@ export function EditeurPieces({ niveau, pieces, points = [], obtenirLiens, lectu
             }}
           />
         ))}
-        {/* Points relevés en visite, pour situer ce qui a été vu : en
-            consultation seulement (ils se déplacent dans la visite), sous les
-            poignées de la pièce choisie et sans capter le doigt */}
-        {points.filter((pt) => Number.isFinite(pt.x) && Number.isFinite(pt.y)).map((pt) => {
-          const [cx, cy] = enCalque([pt.x, pt.y])
-          const r = 8 / zoom
-          return (
-            <g key={`pt-${pt.id}`} style={visible} opacity={choisie && pt.piece_id !== choisie ? 0.45 : 0.9}>
-              <circle cx={cx} cy={cy} r={r} style={{ fill: pt.piece_id ? COULEUR : '#5E5854', stroke: 'white', strokeWidth: 1.5 / zoom }} />
-              {pt.numero != null && (
-                <text x={cx} y={cy} dy="0.35em" textAnchor="middle" style={{ fontSize: 8 / zoom, fontWeight: 700, fill: 'white', fontFamily: "'JetBrains Mono', monospace" }}>{pt.numero}</text>
-              )}
-            </g>
-          )
-        })}
-        {piece && !lectureSeule && !trace && (() => {
+        {/* Relevés de la visite (symboles, liaisons, cotes) : sous les
+            poignées de la pièce choisie, sans capter le doigt */}
+        {superposition?.dessin?.({ enCalque, zoom })}
+        {piece && !lectureSeule && !trace && !superposition?.masquerPoignees && (() => {
           const contour = contourDe(piece)
           const pts = contour.map(enCalque)
           const gestes = { onPointerMove: pendantGlisse, onPointerUp: finGlisse, onPointerCancel: finGlisse }
@@ -350,7 +377,7 @@ export function EditeurPieces({ niveau, pieces, points = [], obtenirLiens, lectu
   return (
     <div style={{ display: 'flex', gap: 16, height: '100%', minHeight: 0 }}>
       <div style={{ flex: '1 1 520px', minWidth: 0, minHeight: 420, border: '0.5px solid rgba(0,0,0,0.1)', overflow: 'hidden', position: 'relative' }}>
-        <VisionneusePlan version={version} obtenirLiens={obtenirLiens} onToucher={toucher} calque={calque} dessinFond={dessinFond} sansPleine={sansPleine} zoomMax={dessinFond ? (e) => zoomMaxVectoriel(e, niveau.cadrage?.pxParMetre, ZOOM_MAX_IMAGE) : ZOOM_MAX_IMAGE} />
+        <VisionneusePlan version={version} obtenirLiens={obtenirLiens} onToucher={toucher} calque={calque} cadre={cadre} dessinFond={dessinFond} sansPleine={sansPleine} zoomMax={dessinFond ? (e) => zoomMaxVectoriel(e, niveau.cadrage?.pxParMetre, ZOOM_MAX_IMAGE) : ZOOM_MAX_IMAGE} />
         {trace && (
           <div style={{ position: 'absolute', top: 12, left: 12, right: 12, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', background: 'white', padding: '8px 10px', borderTop: `3px solid ${COULEUR}`, boxShadow: '0 8px 24px -12px rgba(31,27,23,0.45)' }}>
             <span style={{ flex: 1, fontSize: 13, color: '#1F1B17' }}>Touchez les angles de la pièce, un à un <span style={{ color: '#9C9591' }}>({trace.length})</span></span>
@@ -360,18 +387,22 @@ export function EditeurPieces({ niveau, pieces, points = [], obtenirLiens, lectu
             <button type="button" style={petitBouton} onClick={() => { setTrace(null); setErreur(null) }}><X size={14} />Abandonner</button>
           </div>
         )}
+        {!trace && superposition?.bandeau}
       </div>
 
       {/* Plus large avec la revue de la pièce (fiche, éléments) : largeur
           fixe dès qu'elle est proposée, pour que le plan ne se recadre pas
           à chaque pièce choisie */}
       <div style={{ flex: panneauPiece ? '0 1 400px' : '0 1 300px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 10, minHeight: 0, maxHeight: '100%', overflowY: 'auto', overflowX: 'hidden' }}>
-        {!lectureSeule && (
+        {(!lectureSeule || actions) && (
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {actions}
+            {!lectureSeule && <>
             <button type="button" style={petitBouton} disabled={!!trace} onClick={() => { choisir(null); setTrace([]) }}><PenLine size={14} />Dessiner une pièce</button>
             <button type="button" style={{ ...petitBouton, opacity: historique.length && !trace ? 1 : 0.5 }} disabled={!historique.length || !!trace} onClick={annuler}
               title="Annuler le dernier geste (⌘Z / Ctrl+Z)" aria-label="Annuler le dernier geste"><Undo2 size={14} />Annuler{historique.length > 1 ? ` (${historique.length})` : ''}</button>
             {pieces.length === 0 && <button type="button" style={petitBouton} disabled={!!attente} onClick={fairePropose}><Sparkles size={14} />Faire proposer par Claude</button>}
+            </>}
           </div>
         )}
         {echelle != null && (
@@ -390,8 +421,8 @@ export function EditeurPieces({ niveau, pieces, points = [], obtenirLiens, lectu
 
         {piece && (
           <div style={{ background: 'white', border: '0.5px solid rgba(0,0,0,0.1)', borderTop: `3px solid ${piece.a_verifier ? BLEU_CLAUDE : COULEUR}`, padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <input key={`${piece.id}-nom`} style={champ} disabled={lectureSeule} defaultValue={piece.nom} placeholder="Nom de la pièce" onChange={(e) => { brouillon.current.nom = e.target.value }} onBlur={enregistrerBrouillon} />
-            <input key={`${piece.id}-numero`} style={champ} disabled={lectureSeule} defaultValue={piece.numero ?? ''} placeholder="Numéro" onChange={(e) => { brouillon.current.numero = e.target.value }} onBlur={enregistrerBrouillon} />
+            <input key={`${piece.id}-nom`} style={champ} disabled={lectureSeule} defaultValue={piece.nom} placeholder="Nom de la pièce" onChange={(e) => saisir('nom', e.target.value)} onBlur={enregistrerBrouillon} />
+            <input key={`${piece.id}-numero`} style={champ} disabled={lectureSeule} defaultValue={piece.numero ?? ''} placeholder="Numéro" onChange={(e) => saisir('numero', e.target.value)} onBlur={enregistrerBrouillon} />
             <p style={{ margin: 0, fontSize: 12, color: '#5E5854' }}>
               Dessinée : {fmtM2(aire(piece.contour))}{piece.surface_lue ? ` · écrite : ${fmtM2(Number(piece.surface_lue))}` : ''}
               {piece.hsp_lue ? ` · HSP ${Number(piece.hsp_lue).toLocaleString('fr-FR')} m` : ''}

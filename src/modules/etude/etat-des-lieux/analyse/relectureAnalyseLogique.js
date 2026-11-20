@@ -383,12 +383,12 @@ export function messageLancement(r) {
   return MESSAGES_LANCEMENT[r.raison] ?? `L’analyse n’est pas partie (${r.raison}).`
 }
 
-// ─── Revue d'une pièce depuis « Fond de plans » ──────────────────────────────
+// ─── Revue d’une pièce depuis « Plans » ───────────────────────────────────────
 
 /**
  * Vrai quand une pièce n'a encore rien à relire : ni visitée, ni analysée
  * (ou en échec), sans fiche, sans élément, sans point ni liaison ou cote.
- * Le panneau de « Fond de plans » se réduit alors à « Pas encore visitée »
+ * Le panneau de « Plans » se réduit alors à « Pas encore visitée »
  * (la liste des pièces reste à portée) ; dès qu'il y a quelque chose, il
  * montre la même revue que l'onglet « État des lieux ».
  *

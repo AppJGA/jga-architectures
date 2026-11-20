@@ -965,26 +965,43 @@ lot 1 : `docs/superpowers/plans/2026-11-17-etat-des-lieux-lot1-preparer.md`.
     sien (un seul résultat s'écrit).
   - **Écran** : pièces grises (non visitées), sablier (en attente), vertes
     (fiche complète), ambre (rubrique manquante, `completudeFiche`), rouge
-    pâle (échec) ; pense-bête coché d'après la fiche. **Relecture**
-    (`RelectureEdl.jsx`, onglet « État des lieux », mis en valeur, à côté de « Fond de plans » — anciens « Relecture » et « Pièces », renommés à la demande de l’agence le 2026-11-20 —, `?vue=relecture&piece=`)
-    : pièces à valider d'abord ; plan de la pièce (`PlanVisite` en
-    `consultation`), fiche modifiable (bleue tant que `fiche_a_valider`,
-    modifier vaut validation ; un brouillon modifié survit à une nouvelle
-    analyse, `suiteFicheRecue`), éléments par calque en bleu avec l'extrait
-    entendu : Valider / Modifier / Écarter (confirmation), « Ajouter un
-    élément », « Relancer l'analyse » (confirmée : elle se paie).
-    **Même revue depuis « Fond de plans »** (demande de l'agence,
-    2026-11-20) : la pièce choisie dans l'éditeur montre sous son nom la
-    section « État des lieux de la pièce » — fiche, éléments, points sans
-    élément, liaisons et cotes, « Relancer l'analyse ». Un seul bloc
-    (`analyse/RevuePiece.jsx`, état et écritures dans `useRevuePiece.js`),
-    rendu par `RelectureEdl` à côté du plan de la pièce et passé par le
-    module à `EditeurPieces` (`panneauPiece`, l'éditeur ne lit rien de
-    l'analyse) dès que l'onglet « État des lieux » existe ; panneau élargi
-    à 400 px. Une pièce sans rien à relire (`pieceSansRevue`, testé : ni
-    visitée, ni analysée, ni fiche, élément, point ou trace) n'y montre que
-    « Pas encore visitée ». Rien sur le plan de l'éditeur : on modifie dans
-    le panneau.
+    pâle (échec) ; pense-bête coché d'après la fiche. **Deux onglets**
+    (demande de l'agence, 2026-11-20 : « un seul visionnage de plans ») :
+    **« Plans »** (`PlansEdl.jsx`, anciennement « Fond de plans ») est le
+    seul plan — l'éditeur des pièces (`EditeurPieces` : contour, nom,
+    numéro, dessin, suppression, ⌘Z) et, dès qu'une visite a laissé quelque
+    chose (`releve`), les relevés dessinés comme à la relecture : symbole
+    sur disque, pastille d'un point sans type, liaisons, cotes, propositions
+    en bleu (`visite/DessinsPlanEdl.jsx`, le même dessin que la visite).
+    Un appui (`resoudreToucher`, `plansEdlLogique.js`, testé dans
+    `etat-des-lieux-plans.test.js`) : un point (même d'une autre pièce,
+    pâlie — sa pièce est choisie avec lui), sinon une liaison ou une cote,
+    sinon la plus petite pièce ; les poignées du contour choisi passent
+    avant tout (elles captent le doigt). L'éditeur ne lit rien de
+    l'analyse : `PlansEdl` lui passe `choisie` / `onChoisir`, `cadre`,
+    `superposition` (dessin, appui, panneau du point, poignées masquées
+    pendant « Relier ») et `panneauPiece`. Panneau de la pièce choisie :
+    nom et numéro, puis « État des lieux de la pièce » (`RevuePiece`,
+    état dans `useRevuePiece.js`, tenu par `PlansEdl` pour la pièce
+    choisie, vide sans pièce) — fiche modifiable (bleue tant que
+    `fiche_a_valider`, modifier vaut validation ; un brouillon modifié
+    survit à une nouvelle analyse, `suiteFicheRecue`), éléments par calque
+    en bleu avec l'extrait entendu : Valider / Modifier / Écarter
+    (confirmation), « Ajouter un élément », points sans élément, liaisons
+    et cotes, « Relancer l'analyse » (confirmée : elle se paie) ; une pièce
+    sans rien à relire (`pieceSansRevue`) n'y montre que « Pas encore
+    visitée ». Le nom en cours de saisie porte sa pièce et s'enregistre
+    quand la pièce choisie change par le plan ou qu'on quitte l'onglet.
+    **« État des lieux »** (`analyse/RelectureEdl.jsx`, mis en valeur,
+    seulement quand il y a des relevés) n'est plus que la **liste des
+    pièces** de l'étage, à valider d'abord ; en toucher une ouvre « Plans »
+    sur elle, choisie et **cadrée** (`cadre` de `VisionneusePlan`). Plan
+    cadré : le cadre suit la pièce touchée et reste hors des pièces ;
+    « Voir tout l'étage » le retire, « Pièce suivante » suit l'ordre de la
+    liste. Adresse : `?vue=liste`, ou `?vue=plans&piece=<choisie>&cadre=<cadrée>`
+    (`lireVueEdl` / `ecrireVueEdl`) ; un ancien lien
+    `?vue=relecture&piece=` ouvre la pièce cadrée, `?vue=relecture` la
+    liste.
   - **Statuts et bloc porte** (2026-11-19, **aucune migration** : dans le
     jsonb `edl_pieces.fiche`) : `porte: { huisserie, vantail, quincaillerie }`
     et `statuts: { sol, murs, plafond, plinthes, porte }`, codes de
@@ -1062,18 +1079,20 @@ lot 1 : `docs/superpowers/plans/2026-11-17-etat-des-lieux-lot1-preparer.md`.
   pièce avec « Supprimer le point ». La copie de la visite est relue
   (instantané remplacé) ; un geste en attente sur un point disparu
   (modification, photo, liaison 23503 — `pointDisparu`) est tenu pour fait.
-  **Symboles sur le plan de la relecture** (demande de l'agence,
-  `symbolesRelectureLogique.js`, prop `symboles` de `PlanVisite` — la
-  visite garde ses pastilles) : un point typé montre le symbole des
+  **Symboles sur le plan** (demande de l'agence,
+  `symbolesRelectureLogique.js`, dessinés par `PointPlan` de
+  `DessinsPlanEdl.jsx` dans l'onglet « Plans » — la visite garde ses
+  pastilles) : un point typé montre le symbole des
   planches de son type effectif (un seul par point), même angle
   (`orientationElement`) et couleur de famille, 28 px à l'écran, sur un
   disque de sa famille (40 px, la cible), anneau pointillé bleu s'il n'a
   que des propositions, numéro en petit ; sans type, la pastille. Toucher
   un point ouvre un panneau en haut du plan (« P3 · … », fermé par ✕) ;
   « Relier » (interrupteur / luminaire, 084) puis toucher un point
-  compatible **de la pièce** : mêmes règles que la visite
+  compatible de l'étage : mêmes règles que la visite
   (`debutRelier` / `toucherRelier`), même écriture qu'« Ajouter une
-  liaison ».
+  liaison » ; la liaison prend la pièce du luminaire, à défaut celle de
+  l'interrupteur (`pieceDeLiaison`).
   **Exports** : `tracesAExporter`, seule
   lecture (liaison proposée écartée sauf « Inclure les propositions »,
   liaison dont un point manque ou change d'étage omise, cote dont seule la

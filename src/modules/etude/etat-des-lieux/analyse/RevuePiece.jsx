@@ -1,8 +1,6 @@
-import { useMemo } from 'react'
 import { RefreshCw, Sparkles } from 'lucide-react'
 import { COULEUR_IA } from '../../../chantier/comptes-rendus/enregistrement/styleProposition'
 import { validerElement, ecarterElement, ajouterElement, modifierFiche, validerTrace, ecarterTrace, MESSAGE_ANALYSE_INDISPONIBLE } from './analyseDonnees'
-import { useRevuePiece } from './useRevuePiece'
 import { FicheRelecture } from './FicheRelecture'
 import { ElementsRelecture } from './ElementsRelecture'
 import { TracesRelecture } from './TracesRelecture'
@@ -10,11 +8,9 @@ import { ConfirmationEdl } from './ConfirmationEdl'
 
 // ─── Revue d'une pièce : fiche, éléments, liaisons et cotes ──────────────────
 //
-// Le bloc commun aux deux endroits où l'on relit une pièce : l'onglet
-// « État des lieux » (RelectureEdl, à côté du plan de la pièce) et le
-// panneau de la pièce choisie dans « Fond de plans » (demande de l'agence,
-// 2026-11-20 : retrouver la pièce dans l'autre onglet était fastidieux).
-// Un seul état (`useRevuePiece.js`) et les mêmes écritures des deux côtés.
+// Le panneau de la pièce choisie dans l'onglet « Plans » (PlansEdl), sous
+// son nom et son numéro. L'état (`useRevuePiece.js`) est tenu par PlansEdl :
+// le plan y lit le point, l'élément ou la trace en évidence.
 
 const AMBRE = { fond: '#FFFBEB', trait: '#F59E0B', texte: '#92400E' }
 const ROUGE = '#B8412C'
@@ -132,16 +128,13 @@ export function ConfirmationRelance({ revue }) {
 }
 
 /**
- * La revue d'une pièce dans le panneau de « Fond de plans » : `piece` est
- * la pièce de l'éditeur, les champs de l'analyse sont posés par-dessus ici.
- * Une pièce qui n'a encore rien à relire (`pieceSansRevue`) se réduit à
- * « Pas encore visitée » ; sans la migration 082, le même message que
- * l'onglet « État des lieux ».
+ * La revue de la pièce choisie dans « Plans » (`revue` : `useRevuePiece`,
+ * pièce déjà fusionnée avec son analyse). Une pièce qui n'a encore rien à
+ * relire (`pieceSansRevue`) se réduit à « Pas encore visitée » ; sans la
+ * migration 082, le même message que l'onglet « État des lieux ».
  */
-export function RevuePiece({ affaireId, niveau, piece: brute, visite, analyse, lectureSeule }) {
-  const a = analyse.pieces.get(brute.id)
-  const piece = useMemo(() => (a ? { ...brute, ...a } : brute), [brute, a])
-  const revue = useRevuePiece({ affaireId, niveau, piece, visite, analyse })
+export function RevuePiece({ revue, lectureSeule }) {
+  const { analyse } = revue
 
   let contenu
   if (analyse.indisponible) contenu = <p style={noteAmbre}>{MESSAGE_ANALYSE_INDISPONIBLE}</p>

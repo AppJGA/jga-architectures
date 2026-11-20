@@ -133,7 +133,7 @@ export function FicheRelecture({ piece, lectureSeule, onEnregistrer }) {
   const blocPorte = (
     <fieldset key="porte" style={{ gridColumn: '1 / -1', margin: 0, padding: '10px 12px 12px', border: '0.5px solid rgba(0,0,0,0.12)', borderRadius: 2, minWidth: 0 }}>
       <legend style={{ padding: '0 4px', fontSize: 12, color: '#5E5854' }}>Bloc porte</legend>
-      {/* Dans le panneau étroit de « Fond de plans », le statut passe sous
+      {/* Dans le panneau étroit de « Plans », le statut passe sous
           les champs plutôt que de les pousser hors de la carte */}
       <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
         <div style={{ flex: '1 1 140px', minWidth: 0, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(140px, 100%), 1fr))', gap: 10 }}>

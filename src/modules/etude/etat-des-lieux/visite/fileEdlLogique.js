@@ -11,7 +11,7 @@
 
 import { ESSAIS_MAX, estEnEchec, aEnvoyer } from '../../../chantier/comptes-rendus/horsLigne/fileLogique'
 import { numeroPourRestauration } from './visiteLogique'
-import { tracesIndisponibles, TYPES_JOURNAL_TRACES, MESSAGE_TRACES_INDISPONIBLES } from '../tracesEdl'
+import { tracesIndisponibles, TYPES_JOURNAL_TRACES, TYPES_JOURNAL_FINITIONS, MESSAGE_TRACES_INDISPONIBLES } from '../tracesEdl'
 
 export { ESSAIS_MAX, estEnEchec, aEnvoyer }
 
@@ -195,12 +195,12 @@ export function erreurTracesIndisponibles() {
 }
 
 /**
- * Une ligne de journal propre à la 084 (un toucher, une trace) refusée par
- * l'ancienne contrainte de type : elle ne sert qu'à l'analyse, on la laisse
- * tomber plutôt que de bloquer la file.
+ * Une ligne de journal propre à la 084 (un toucher, une trace) ou à la 085
+ * (un mur touché) refusée par l'ancienne contrainte de type : elle ne sert
+ * qu'à l'analyse, on la laisse tomber plutôt que de bloquer la file.
  */
 export const journalSansMigration = (evenement, error) =>
-  error?.code === CONTRAINTE && TYPES_JOURNAL_TRACES.includes(evenement?.type)
+  error?.code === CONTRAINTE && (TYPES_JOURNAL_TRACES.includes(evenement?.type) || TYPES_JOURNAL_FINITIONS.includes(evenement?.type))
 
 /**
  * Envoie une opération de trace par `base` :

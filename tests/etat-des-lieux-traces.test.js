@@ -12,7 +12,7 @@ import {
   champsModificationTrace, tracesAExporter, typeEffectif, avecTypeEffectif,
 } from '../src/modules/etude/etat-des-lieux/tracesEdl.js'
 import {
-  debutRelier, debutCoter, consigneMode, toucherRelier, toucherCoter, courbeCommande, traitsCote, traceProche,
+  debutRelier, consigneMode, toucherRelier, courbeCommande, traitsCote, traceProche,
   extremitesTrace, texteCote, libelleTrace, tracesDeLaPiece, gesteSuppressionPoint, FLECHE_COMMANDE,
   sensInterieurCote, placerValeurCote, COULEUR_TRAIT_COTE,
 } from '../src/modules/etude/etat-des-lieux/visite/tracesVisiteLogique.js'
@@ -389,44 +389,6 @@ describe('mode « Relier »', () => {
     assert.equal(r.action, 'refus')
     assert.match(r.mode.raison, /P1 et P2 sont déjà reliés/)
     assert.equal(toucherRelier(debutRelier(inter), applique, { points, traces: [existante] }).action, 'creer')
-  })
-})
-
-describe('mode « Coter »', () => {
-  const contour = [[0, 0], [4, 0], [4, 3], [0, 3]]
-  test('l’identifiant de la cote est décidé à l’ouverture ; consignes des deux angles', () => {
-    const m = debutCoter('t-1')
-    assert.deepEqual(m, { sorte: 'coter', traceId: 't-1', angles: [], raison: null })
-    assert.match(debutCoter().traceId, /^[0-9a-f-]{36}$/)
-    assert.equal(consigneMode(m), 'Touchez le premier angle de la cote')
-    assert.equal(consigneMode({ ...m, angles: [[0, 0]] }), 'Touchez le second angle de la cote')
-  })
-  test('deux touchers accrochés aux angles les plus proches donnent la cote', () => {
-    const r1 = toucherCoter(debutCoter('t'), contour, [0.1, -0.05], 0.3)
-    assert.equal(r1.action, 'angle')
-    assert.deepEqual(r1.angle, [0, 0])
-    assert.deepEqual(r1.mode.angles, [[0, 0]])
-    const r2 = toucherCoter(r1.mode, contour, [3.9, 0.2], 0.3)
-    assert.equal(r2.action, 'creer')
-    assert.deepEqual([r2.a, r2.b], [[0, 0], [4, 0]])
-    // la trace qui en sort est valide, longueur 4 m
-    const t = nouvelleTrace({ id: 't', sorte: 'cote', affaireId: AFF, niveauId: 'n1', a: r2.a, b: r2.b })
-    assert.equal(t.id, 't')
-    assert.equal(traceValide(t), true)
-    assert.equal(longueurCote(t), 4)
-  })
-  test('refus : deux fois le même angle, trop loin de tout angle, pièce sans contour', () => {
-    const r1 = toucherCoter(debutCoter('t'), contour, [0, 0])
-    const meme = toucherCoter(r1.mode, contour, [0.05, 0.05])
-    assert.equal(meme.action, 'refus')
-    assert.match(meme.mode.raison, /même angle/)
-    assert.deepEqual(meme.mode.angles, [[0, 0]])
-    const loin = toucherCoter(debutCoter('t'), contour, [2, 1.5], 0.3)
-    assert.equal(loin.action, 'refus')
-    assert.deepEqual(loin.mode.angles, [])
-    assert.match(toucherCoter(debutCoter('t'), [], [0, 0]).mode.raison, /pas de contour/)
-    // sans tolérance : l'angle le plus proche, quel qu'il soit
-    assert.deepEqual(toucherCoter(debutCoter('t'), contour, [2.1, 1.6]).angle, [4, 3])
   })
 })
 

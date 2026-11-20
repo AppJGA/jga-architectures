@@ -49,8 +49,9 @@ export const RELANCE_APRES_ARRET_MS = 10 * 60 * 1000
  * @param d dépendances :
  *   enLigne() → booléen ; aSession() → booléen ;
  *   lireSuivi(affaireId) → { indisponible, pieces, evenements, enregistrements } (choix des pièces) ;
- *   lireFrise(affaireId, pieceId) → { indisponible, piece, evenements, points, enregistrements, elementsValides, traces } ;
- *     (`traces` : liaisons et cotes de la 084, null ou absent si non lues) ;
+ *   lireFrise(affaireId, pieceId) → { indisponible, piece, evenements, points, enregistrements, elementsValides, traces, finitions } ;
+ *     (`traces` : liaisons et cotes de la 084, null ou absent si non lues ;
+ *     `finitions` : vrai si la base a la 085) ;
  *   audioLocal() → { morceaux, tranches } ; gestesEnAttente(affaireId) → [{ creeLe }] ;
  *   reserver(piece) → { etat: 'ok' | 'deja' | 'relire' | 'refus' | 'indisponible', updatedAt } ;
  *   relirePiece(pieceId) → { id, fiche, fiche_a_valider, analyse_le, updated_at } | null ;
@@ -177,6 +178,8 @@ export async function passeAnalyseEdl(affaireId, options = {}, d) {
       enregistrements: lu.enregistrements, elementsValides: lu.elementsValides,
       // Liaisons et cotes (084) : null si elles n'ont pas été lues
       traces: Array.isArray(lu.traces) ? lu.traces : null,
+      // Murs touchés et finitions (085) : seulement si la base les connaît
+      finitions: lu.finitions === true,
     })
     const corps = {
       piece: pieceDemandee(piece, d.surfaceDessinee?.(piece)),
@@ -186,6 +189,8 @@ export async function passeAnalyseEdl(affaireId, options = {}, d) {
       ficheActuelle: piece.fiche && typeof piece.fiche === 'object' ? piece.fiche : null,
       // Absent sans traces lues : la demande est exactement celle d'avant la 084
       ...(lignesTraces ? { tracesPiece: lignesTraces } : {}),
+      // Absent sans la 085 : la demande est exactement celle de la 084
+      ...(contexteTraces?.murs ? { finitionsMurs: true } : {}),
     }
     const avant = suivis[piece.id] ?? null
     const tentative = suiviTentative(avant, piece, { maintenant: luLe, intervalles })

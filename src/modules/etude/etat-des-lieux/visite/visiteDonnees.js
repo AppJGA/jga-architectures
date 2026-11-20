@@ -21,7 +21,7 @@ import { MAGASINS_EDL, ecrire } from './baseEdl'
 import { sousVerrouEdl } from './synchroEdl'
 import { bornerDelai, DELAI_LECTURE_MS } from './visiteLogique'
 import { analyseIndisponible } from '../analyse/analyseDonneesLogique'
-import { lectureTraces } from '../tracesEdl'
+import { lectureTracesEtFinitions, SONDE_FINITIONS } from '../tracesEdl'
 
 const FRAIS = 'synchro_id:id, *'
 const COLONNES_ETAT = 'synchro_id:id, id, affaire_id'
@@ -86,14 +86,19 @@ export async function lireToutEdl(affaireId, { delaiMs = DELAI_LECTURE_MS } = {}
   )
   if (error) throw error
   // Traces (084) lues à part : sans la migration, aucune trace et
-  // `tracesDisponibles` faux (« Relier » et « Coter » masqués), le reste intact
-  const [niveaux, pieces, points, photos, entrees, { traces, tracesDisponibles }] = await Promise.all([
+  // `tracesDisponibles` faux (« Relier » masqué, ni cote ni mur noté), le
+  // reste intact. La colonne de sonde dit si la base a la 085
+  // (`finitionsDisponibles` : un mur touché est noté au journal).
+  const [niveaux, pieces, points, photos, entrees, { traces, tracesDisponibles, finitionsDisponibles }] = await Promise.all([
     lireNiveaux(deLAffaire, delaiMs),
     lirePieces(deLAffaire, delaiMs),
     toutes('edl_points', FRAIS, deLAffaire, delaiMs),
     toutes('edl_photos', FRAIS, deLAffaire, delaiMs),
     toutes('edl_evenements', 'synchro_id:id, id, visite_id, niveau_id, piece_id, type, le', (q) => deLAffaire(q).eq('type', 'entree'), delaiMs),
-    lectureTraces(() => toutes('edl_traces', FRAIS, deLAffaire, delaiMs)),
+    lectureTracesEtFinitions(
+      () => toutes('edl_traces', `${FRAIS}, ${SONDE_FINITIONS}`, deLAffaire, delaiMs),
+      () => toutes('edl_traces', FRAIS, deLAffaire, delaiMs),
+    ),
   ])
   return {
     indisponible: false,
@@ -107,6 +112,7 @@ export async function lireToutEdl(affaireId, { delaiMs = DELAI_LECTURE_MS } = {}
       entrees,
       traces,
       tracesDisponibles,
+      finitionsDisponibles,
     },
   }
 }

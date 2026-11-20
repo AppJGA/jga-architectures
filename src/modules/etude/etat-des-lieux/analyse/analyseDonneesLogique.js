@@ -137,7 +137,8 @@ export function messageErreurAnalyse(message) {
  * Ce que Claude propose pour les traces de la pièce → `p_traces` de
  * edl_ecrire_analyse : une ligne par liaison (identifiant décidé ici, la
  * fonction rattache pièce et étage, origine 'ia', « à valider ») et une par
- * valeur de cote (désignée par l'id de la cote). `traces` null (traces non
+ * valeur de cote (désignée par l'id de la cote), et une par finition de mur
+ * proposée (085 : extrémités du mur, finition, statut). `traces` null (traces non
  * lues) → null : le paramètre n'est pas envoyé, rien des traces n'est touché.
  * Un tableau vide, lui, retire les propositions pas encore relues.
  */
@@ -149,6 +150,11 @@ export function lignesTracesIa({ traces, visiteId = null, nouvelId = nouvelIdPar
       point_a: l.point_a, point_b: l.point_b, extrait: texteOuNull(l.extrait),
     })),
     ...(traces.cotes ?? []).map((c) => ({ id: c.id, sorte: 'cote', valeur: c.valeur, extrait: texteOuNull(c.extrait) })),
+    // Finitions de murs (085) : le mur touché, la finition dite et son statut
+    ...(traces.finitions ?? []).map((f) => ({
+      id: f.id ?? nouvelId(), sorte: 'finition', visite_id: visiteId ?? null,
+      xa: f.xa, ya: f.ya, xb: f.xb, yb: f.yb, valeur: f.valeur, statut: f.statut ?? null, extrait: texteOuNull(f.extrait),
+    })),
   ]
 }
 

@@ -1,21 +1,34 @@
-// ─── Traces de l'état des lieux : liaisons et cotes (migration 084) ──────────
+// ─── Traces de l'état des lieux : liaisons, cotes, finitions de murs ─────────
 //
 // Une trace se dessine sur le plan d'un étage, à côté des points :
 //   · 'commande' — un interrupteur (point_a) relié au luminaire qu'il commande
 //     (point_b), toujours dans cet ordre ;
 //   · 'cote'     — une cote entre deux angles d'une pièce, en mètres, repère
 //     du plan d'origine (xa, ya) → (xb, yb), et sa valeur telle que dite ou
-//     tapée (« 3,45 m »), nulle tant que personne ne l'a donnée.
+//     tapée (« 3,45 m »), nulle tant que personne ne l'a donnée ;
+//   · 'finition' (migration 085) — la finition d'un mur (un côté du contour
+//     de la pièce, de (xa, ya) à (xb, yb)) telle que dite (« Faïence toute
+//     hauteur ») dans `valeur`, et son `statut` (codes de statutsEdl.js, ou
+//     null). Seule l'analyse les crée, d'après un mur touché et ce qui en est
+//     dit : rien de dit, rien de créé.
 // Visite, analyse, relecture et exports lisent les mêmes règles ici. Pur,
-// testé (tests/etat-des-lieux-traces.test.js).
+// testé (tests/etat-des-lieux-traces.test.js, etat-des-lieux-murs.test.js).
+
+import { codeStatut } from './statutsEdl.js'
 
 export const SORTES_TRACE = ['commande', 'cote']
+// Avec la 085 : les sortes que la base accepte
+export const SORTES_TRACE_FINITIONS = [...SORTES_TRACE, 'finition']
 export const TYPES_INTERRUPTEUR = ['interrupteur']
 export const TYPES_LUMINAIRE = ['luminaire', 'applique', 'dalle', 'reglette']
 
 // Ce que le journal de la visite note en plus avec la 084 ; sans elle, la
 // base refuse ces types (contrainte de la 079) : ils ne sont pas notés.
 export const TYPES_JOURNAL_TRACES = ['point-touche', 'angle-touche', 'trace', 'trace-supprimee']
+
+// Avec la 085 seulement : un mur touché. Sans elle, il n'est pas noté (la
+// surbrillance seule reste à l'écran).
+export const TYPES_JOURNAL_FINITIONS = ['mur-touche']
 
 export const MESSAGE_TRACES_INDISPONIBLES =
   'Les liaisons et les cotes demandent la migration 084 (à passer dans le SQL Editor de Supabase).'
@@ -94,6 +107,153 @@ export function angleLePlusProche(contour, [x, y]) {
 }
 
 const nombre = (v) => (v === null || v === undefined || v === '' ? NaN : Number(v))
+
+const distanceAuSegment = ([px, py], [ax, ay], [bx, by]) => {
+  const dx = bx - ax
+  const dy = by - ay
+  const l2 = dx * dx + dy * dy
+  const t = l2 > 0 ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / l2)) : 0
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy))
+}
+
+/**
+ * Le sommet du contour sous le doigt : le plus proche de `position`, s'il
+ * est à `tolerance` mètres au plus (« pile » sur l'angle). Rend
+ * { angle: [x, y], index, distance } ou null.
+ */
+export function angleSous(contour, position, tolerance) {
+  let meilleur = null
+  for (const [index, sommet] of (contour ?? []).entries()) {
+    const distance = Math.hypot(sommet[0] - position[0], sommet[1] - position[1])
+    if (distance <= tolerance && (!meilleur || distance < meilleur.distance)) {
+      meilleur = { angle: [sommet[0], sommet[1]], index, distance }
+    }
+  }
+  return meilleur
+}
+
+/**
+ * Le mur (côté du contour) le plus proche de `position`, s'il est à
+ * `tolerance` mètres au plus. Le côté `index` va du sommet `index` au
+ * suivant (le dernier referme le contour). Rend { a, b, index, distance,
+ * longueur } ou null ; un côté de longueur nulle n'est pas un mur.
+ */
+export function murLePlusProche(contour, position, tolerance) {
+  const pts = contour ?? []
+  let meilleur = null
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i]
+    const b = pts[(i + 1) % pts.length]
+    const longueur = Math.hypot(b[0] - a[0], b[1] - a[1])
+    if (!(longueur > 0)) continue
+    const distance = distanceAuSegment(position, a, b)
+    if (distance <= tolerance && (!meilleur || distance < meilleur.distance)) {
+      meilleur = { a: [a[0], a[1]], b: [b[0], b[1]], index: i, distance, longueur }
+    }
+  }
+  return meilleur
+}
+
+/**
+ * Même mur ? Mêmes extrémités, dans un sens ou dans l'autre, au millimètre
+ * (les contours sont arrondis au millimètre).
+ */
+export function memeMur(m1, m2) {
+  const v1 = [m1?.xa, m1?.ya, m1?.xb, m1?.yb].map(nombre)
+  const v2 = [m2?.xa, m2?.ya, m2?.xb, m2?.yb].map(nombre)
+  if (![...v1, ...v2].every(Number.isFinite)) return false
+  const egal = (p, q) => Math.abs(p - q) < 0.0005
+  const direct = egal(v1[0], v2[0]) && egal(v1[1], v2[1]) && egal(v1[2], v2[2]) && egal(v1[3], v2[3])
+  const inverse = egal(v1[0], v2[2]) && egal(v1[1], v2[3]) && egal(v1[2], v2[0]) && egal(v1[3], v2[1])
+  return direct || inverse
+}
+
+// ─── Finitions de murs (migration 085) ──────────────────────────────────────
+
+/**
+ * Les finitions de murs et leur couleur, la même partout (plan de la visite,
+ * onglet « Plans », planches, Word, DXF, légende) : faïence en rouge, comme
+ * l'exemple « Faïence murale » de l'agence, les autres d'une petite palette
+ * fixe. Reconnues d'après les mots de la finition dite (`mots`, sans
+ * accents ni majuscules), dans l'ordre de la liste ; « autre » sinon.
+ */
+export const FINITIONS_MUR = [
+  { code: 'faience', libelle: 'Faïence murale', couleur: '#C62828', mots: ['faience'] },
+  { code: 'credence', libelle: 'Crédence', couleur: '#E65100', mots: ['credence'] },
+  { code: 'lambris', libelle: 'Lambris', couleur: '#8D5A2B', mots: ['lambris'] },
+  { code: 'carrelage-mural', libelle: 'Carrelage mural', couleur: '#AD1457', mots: ['carrelage', 'carreau', 'mosaique'] },
+  { code: 'peinture', libelle: 'Peinture spécifique', couleur: '#2E7D32', mots: ['peinture', 'laque', 'enduit', 'papier peint', 'toile de verre'] },
+  { code: 'autre', libelle: 'Autre finition de mur', couleur: '#5D6B78', mots: [] },
+]
+
+const sansAccents = (v) => String(v ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+
+/** L'entrée de `FINITIONS_MUR` d'une finition dite (« Faïence toute hauteur » → faïence), « autre » à défaut. */
+export function finitionMur(texte) {
+  const t = sansAccents(texte)
+  return FINITIONS_MUR.find((f) => f.mots.some((m) => t.includes(m))) ?? FINITIONS_MUR[FINITIONS_MUR.length - 1]
+}
+
+/** Couleur d'une finition dite : celle de son entrée de `FINITIONS_MUR`. */
+export const couleurFinition = (texte) => finitionMur(texte).couleur
+
+/**
+ * Une finition proposée telle qu'elle part dans `p_traces` : texte borné,
+ * première lettre en capitale, statut lu par `codeStatut` (inconnu → null).
+ * null si la finition est vide ou le mur incomplet.
+ */
+export function finitionPropre({ xa, ya, xb, yb, valeur, statut = null, extrait = null }) {
+  const v = String(valeur ?? '').replace(/\s+/g, ' ').trim().slice(0, 200)
+  const coords = [xa, ya, xb, yb].map(nombre)
+  if (!v || !coords.every(Number.isFinite) || !(Math.hypot(coords[2] - coords[0], coords[3] - coords[1]) > 0)) return null
+  return {
+    xa: coords[0], ya: coords[1], xb: coords[2], yb: coords[3],
+    valeur: v.charAt(0).toUpperCase() + v.slice(1),
+    statut: codeStatut(statut),
+    extrait: extrait == null ? null : String(extrait).replace(/\s+/g, ' ').trim().slice(0, 1000) || null,
+  }
+}
+
+/**
+ * La base n'a pas la 085 : la colonne `statut` des traces est inconnue
+ * (42703 de PostgreSQL, PGRST204 du cache de PostgREST).
+ */
+export function finitionsIndisponibles(error) {
+  if (!error) return false
+  const texte = `${error.message ?? ''} ${error.details ?? ''} ${error.hint ?? ''}`
+  return (error.code === '42703' || error.code === 'PGRST204') && /statut/.test(texte)
+}
+
+/** Colonne de sonde des lectures de traces : elle n'existe qu'avec la 085. */
+export const SONDE_FINITIONS = 'sonde_finitions:statut'
+
+/**
+ * Lit les traces en sondant la 085 : `lireAvecSonde()` lit avec la colonne
+ * `SONDE_FINITIONS`, `lireSans()` sans elle. Rend { traces,
+ * tracesDisponibles, finitionsDisponibles } — sans la 084, ni traces ni
+ * finitions ; sans la 085, les traces de la 084 et `finitionsDisponibles`
+ * faux. La colonne de sonde est retirée des lignes.
+ */
+export async function lectureTracesEtFinitions(lireAvecSonde, lireSans) {
+  try {
+    const lignes = (await lireAvecSonde()) ?? []
+    const traces = lignes.map((l) => {
+      const copie = { ...l }
+      delete copie.sonde_finitions
+      return copie
+    })
+    return { traces, tracesDisponibles: true, finitionsDisponibles: true }
+  } catch (err) {
+    // La colonne d'abord : « column edl_traces.statut does not exist » se lirait
+    // aussi comme une table absente
+    if (!finitionsIndisponibles(err)) {
+      if (tracesIndisponibles(err)) return { traces: [], tracesDisponibles: false, finitionsDisponibles: false }
+      throw err
+    }
+  }
+  const { traces, tracesDisponibles } = await lectureTraces(lireSans)
+  return { traces, tracesDisponibles, finitionsDisponibles: false }
+}
 
 /** Longueur dessinée d'une cote, en mètres ; null pour une liaison ou une cote incomplète. */
 export function longueurCote(trace) {
@@ -229,6 +389,7 @@ export function tracesAExporter({ traces = [], points = [], inclurePropositions 
   const parId = new Map((points ?? []).map((p) => [p.id, p]))
   const sortie = []
   for (const t of traces ?? []) {
+    // Les finitions de murs (085), absentes de `SORTES_TRACE`, ne partent pas encore
     if (!t || !SORTES_TRACE.includes(t.sorte)) continue
     const niveauId = t.niveau_id ?? null
     const proposee = !!t.a_valider

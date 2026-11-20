@@ -15,10 +15,10 @@ import { PanneauPoint } from './PanneauPoint'
 import { AideMemoireEdl } from './AideMemoireEdl'
 import { aideMemoire, memoriserOuverture, ouvrirAChaqueEntree } from './aideMemoireLogique'
 import {
-  debutRelier, debutCoter, consigneMode, toucherRelier, toucherCoter, libelleTrace, gesteSuppressionPoint,
-  COULEUR_COMMANDE, COULEUR_COTE,
+  debutRelier, toucherRelier, libelleTrace, gesteSuppressionPoint, toucherAngle, detailMurTouche, texteAide,
+  COULEUR_COMMANDE, COULEUR_COTE, DUREE_MUR_ALLUME_MS, DUREE_AIDE_MS,
 } from './tracesVisiteLogique'
-import { valeurCote, texteValeur } from '../tracesEdl'
+import { valeurCote, texteValeur, typeEffectif } from '../tracesEdl'
 
 // ─── Visite d'un état des lieux, sur la tablette ─────────────────────────────
 //
@@ -38,12 +38,22 @@ import { valeurCote, texteValeur } from '../tracesEdl'
 // retour du réseau (moteur de synchro de l'app).
 //
 // Liaisons et cotes (migration 084, masquées sans elle) : « Relier » depuis
-// le panneau d'un interrupteur ou d'un luminaire, « Coter » depuis la barre
-// de la pièce. Pendant un mode, la barre de la pièce dit quoi toucher (et
-// pourquoi un toucher n'a rien donné) ; Annuler ou Échap le quittent. Tout
-// toucher d'un point existant est noté au journal (`point-touche`), chaque
-// angle de cote aussi (`angle-touche`) : l'analyse les rapproche de ce qui
-// est dit. Une trace créée, modifiée ou supprimée s'annule comme un point.
+// le panneau d'un interrupteur ou d'un luminaire ; pendant ce mode, la barre
+// de la pièce dit quoi toucher (et pourquoi un toucher n'a rien donné) ;
+// Annuler ou Échap le quittent. Plus de bouton « Coter » (agence,
+// 2026-11-20) : toucher pile un angle de la pièce l'allume (~20 s), un
+// second angle crée la cote aussitôt et ouvre le champ de sa valeur ; tout
+// autre toucher éteint le premier angle. Toucher pile un mur l'allume
+// quelques secondes et, avec la 085, le note (`mur-touche`) : la finition
+// dite autour est lue à l'analyse, rien n'est créé ici. Tout toucher d'un
+// point existant est noté au journal (`point-touche`), chaque angle de cote
+// aussi (`angle-touche`) : l'analyse les rapproche de ce qui est dit. Une
+// trace créée, modifiée ou supprimée s'annule comme un point.
+//
+// Textes d'aide (`texteAide`, validés par l'agence) : un bandeau discret en
+// haut du plan, qui ne capte pas le doigt et s'efface seul (celui du premier
+// angle tant qu'il est allumé) ; jamais par-dessus le voile gris ni les
+// bandeaux d'alerte.
 //
 // Barre de la pièce et panneau du point restent toujours montés, à hauteur
 // fixe, et les messages s'affichent par-dessus le plan : la visionneuse ne
@@ -65,6 +75,8 @@ const HISTORIQUE_MAX = 50
 const fmtM2 = (v) => `${v.toLocaleString('fr-FR', { maximumFractionDigits: 1 })} m²`
 const heure = (iso) => new Date(iso).toLocaleString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })
 const texteErreur = (err) => err?.message ?? String(err)
+// L'heure d'un geste, lue dans les gestionnaires (jamais pendant le rendu)
+const maintenant = () => Date.now()
 
 function ConfirmerFin({ onConfirmer, onAnnuler }) {
   useEffect(() => {
@@ -104,7 +116,7 @@ const panneauPlan = {
   boxShadow: '0 6px 20px rgba(0,0,0,0.12)', padding: '8px 8px 10px 14px', display: 'flex', flexDirection: 'column', gap: 8,
 }
 
-function SaisieCote({ saisie, onTexte, onValider, onPlusTard }) {
+function SaisieCote({ saisie, aide = null, onTexte, onValider, onPlusTard }) {
   return (
     <section aria-label="Valeur de la cote" style={{ ...panneauPlan, borderTop: `3px solid ${COULEUR_COTE}` }}>
       <form onSubmit={(e) => { e.preventDefault(); onValider() }} style={{ display: 'flex', alignItems: 'center', gap: 8, margin: 0 }}>
@@ -119,7 +131,7 @@ function SaisieCote({ saisie, onTexte, onValider, onPlusTard }) {
       </form>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <p style={{ flex: 1, margin: 0, fontSize: 12, color: saisie.erreur ? '#B8412C' : '#5E5854' }}>
-          {saisie.erreur ?? 'Ou dites-la : elle sera lue dans l’enregistrement.'}
+          {saisie.erreur ?? aide ?? 'Ou dites-la : elle sera lue dans l’enregistrement.'}
         </p>
         <button type="button" style={bouton} onClick={onPlusTard}>Plus tard</button>
       </div>
@@ -178,12 +190,25 @@ export function VisiteEdl({ affaireId, visite, analyse = null, obtenirLiens, onF
   const [fermeture, setFermeture] = useState(false)
   const annulation = useRef(false)
   const contexte = useRef({ visiteId: null, niveauId: null, pieceId: null })
-  // Mode « Relier » / « Coter » : lu par les touchers depuis la référence,
-  // tenue à jour en même temps que l'état (deux touchers rapides ne doivent
-  // pas voir le même mode)
+  // Mode « Relier » : lu par les touchers depuis la référence, tenue à jour
+  // en même temps que l'état (deux touchers rapides ne doivent pas voir le
+  // même mode)
   const [mode, setMode] = useState(null)
   const modeCourant = useRef(null)
   const changerMode = (m) => { modeCourant.current = m; setMode(m) }
+  // Premier angle d'une cote, allumé : { angle, traceId, jusqua } — même
+  // règle que le mode (référence lue par les touchers)
+  const [premierAngle, setPremierAngle] = useState(null)
+  const premierCourant = useRef(null)
+  const changerPremier = (p) => { premierCourant.current = p; setPremierAngle(p) }
+  // Mur touché, en surbrillance : { a, b, jusqua }
+  const [murAllume, setMurAllume] = useState(null)
+  // Texte d'aide du bandeau : { texte, jusqua }
+  const [aide, setAide] = useState(null)
+  const montrerAide = (evenement, jusqua = maintenant() + DUREE_AIDE_MS) => {
+    const texte = texteAide(evenement)
+    setAide(texte ? { texte, jusqua } : null)
+  }
   const [traceId, setTraceId] = useState(null)
   const [confirmerSuppressionTrace, setConfirmerSuppressionTrace] = useState(false)
   // Valeur d'une cote à taper : { traceId, texte, erreur }
@@ -211,6 +236,8 @@ export function VisiteEdl({ affaireId, visite, analyse = null, obtenirLiens, onF
   }, [donnees?.photos])
   // Sans la 084, rien à dessiner ni à toucher
   const tracesOk = visite.tracesDisponibles
+  // Sans la 085, un mur touché n'est que mis en surbrillance
+  const finitionsOk = visite.finitionsDisponibles
   const toutesTraces = useMemo(() => (tracesOk ? donnees?.traces ?? [] : []), [tracesOk, donnees?.traces])
   const niveauAffiche = niveau?.id ?? null
   const traces = useMemo(() => toutesTraces.filter((t) => t.niveau_id === niveauAffiche), [toutesTraces, niveauAffiche])
@@ -225,11 +252,29 @@ export function VisiteEdl({ affaireId, visite, analyse = null, obtenirLiens, onF
 
   useEffect(() => { contexte.current = { visiteId, niveauId: niveau?.id ?? null, pieceId: piece?.id ?? null } })
   const elementsAnalyse = analyse?.elements
-  const aide = useMemo(
-    () => aideMemoire(piece, { points, elements: elementsAnalyse ?? [], traces: toutesTraces, tracesDisponibles: tracesOk }),
-    [piece, points, elementsAnalyse, toutesTraces, tracesOk],
+  const memoire = useMemo(
+    () => aideMemoire(piece, { points, elements: elementsAnalyse ?? [], traces: toutesTraces, tracesDisponibles: tracesOk, finitionsDisponibles: finitionsOk }),
+    [piece, points, elementsAnalyse, toutesTraces, tracesOk, finitionsOk],
   )
   const changerAideAuto = (oui) => { setAideAuto(oui); memoriserOuverture(oui) }
+
+  // Premier angle, mur allumé et texte d'aide s'éteignent seuls à leur heure
+  // (un plus récent les a peut-être déjà remplacés : rien n'est alors touché)
+  useEffect(() => {
+    if (!premierAngle) return undefined
+    const id = setTimeout(() => { if (premierCourant.current === premierAngle) changerPremier(null) }, Math.max(0, premierAngle.jusqua - Date.now()))
+    return () => clearTimeout(id)
+  }, [premierAngle])
+  useEffect(() => {
+    if (!murAllume) return undefined
+    const id = setTimeout(() => setMurAllume((m) => (m === murAllume ? null : m)), Math.max(0, murAllume.jusqua - Date.now()))
+    return () => clearTimeout(id)
+  }, [murAllume])
+  useEffect(() => {
+    if (!aide) return undefined
+    const id = setTimeout(() => setAide((a) => (a === aide ? null : a)), Math.max(0, aide.jusqua - Date.now()))
+    return () => clearTimeout(id)
+  }, [aide])
 
   // Pause, coupure, reprise : notées au journal avec la pièce où l'on est
   const surEtat = useCallback((nouveau, ancien) => {
@@ -318,6 +363,7 @@ export function VisiteEdl({ affaireId, visite, analyse = null, obtenirLiens, onF
     setPieceId(p.id)
     setPointId(choisir)
     oublierTraces()
+    if (!choisir) montrerAide({ sorte: 'entree', piece: designationPiece(p), angles: tracesOk })
     try {
       const notes = [rec.couper()]
       // Passage direct d'une pièce à une autre : la sortie de la première d'abord
@@ -340,6 +386,7 @@ export function VisiteEdl({ affaireId, visite, analyse = null, obtenirLiens, onF
     setPointId(null)
     setAideOuverte(false)
     oublierTraces()
+    setAide(null)
     try {
       await Promise.all([rec.couper(), visite.noter('sortie', ctx)])
       analyserApres(ctx.visiteId)
@@ -353,6 +400,9 @@ export function VisiteEdl({ affaireId, visite, analyse = null, obtenirLiens, onF
     if (md?.sorte === 'relier') { relierA(null); return }
     if (md) return
     setTraceId(null)
+    // Tout toucher hors d'un angle éteint le premier angle d'une cote
+    changerPremier(null)
+    setMurAllume(null)
     if (!piece) {
       const sous = pieceSous(pieces, m)
       if (sous) { entrer(sous); return }
@@ -363,6 +413,7 @@ export function VisiteEdl({ affaireId, visite, analyse = null, obtenirLiens, onF
       })
       setPointId(nouveau.id)
       noterGeste({ type: 'pose', point: nouveau })
+      montrerAide(piece ? { sorte: 'point-pose', point: nouveau } : { sorte: 'hors-piece' })
     } catch (err) { echouer(err) }
   }
 
@@ -376,10 +427,14 @@ export function VisiteEdl({ affaireId, visite, analyse = null, obtenirLiens, onF
     if (!p) return
     if (modeCourant.current?.sorte === 'relier') { relierA(p); return }
     setTraceId(null)
+    changerPremier(null)
+    setMurAllume(null)
     const sienne = p.piece_id ? pieces.find((q) => q.id === p.piece_id) : null
     if (sienne && sienne.id !== piece?.id) entrer(sienne, id)
     else setPointId(id)
     noterTouche(p)
+    const elements = elementsAnalyse ?? []
+    montrerAide({ sorte: 'point-touche', point: { ...p, type: typeEffectif(p, elements) }, relier: tracesOk && !!debutRelier(p, elements) })
   }
 
   const noterTouche = (p) => {
@@ -390,6 +445,8 @@ export function VisiteEdl({ affaireId, visite, analyse = null, obtenirLiens, onF
   // ─── Liaisons et cotes ─────────────────────────────────────────────────────
   const oublierTraces = () => {
     changerMode(null)
+    changerPremier(null)
+    setMurAllume(null)
     setTraceId(null)
     setConfirmerSuppressionTrace(false)
     setSaisieCote(null)
@@ -401,15 +458,11 @@ export function VisiteEdl({ affaireId, visite, analyse = null, obtenirLiens, onF
     // Second appui sur « Relier » : on quitte le mode
     if (modeCourant.current?.sorte === 'relier' && modeCourant.current.depuis === point.id) { changerMode(null); return }
     setTraceId(null)
+    changerPremier(null)
+    setMurAllume(null)
+    // La consigne est dans la barre de la pièce, pas dans le bandeau
+    setAide(null)
     changerMode(m)
-  }
-
-  const commencerCoter = () => {
-    if (!piece) return
-    setPointId(null)
-    setTraceId(null)
-    setSaisieCote(null)
-    changerMode(debutCoter())
   }
 
   // `cible` : le point touché, ou null (ailleurs sur le plan)
@@ -427,30 +480,53 @@ export function VisiteEdl({ affaireId, visite, analyse = null, obtenirLiens, onF
         interrupteur: r.interrupteur, luminaire: r.luminaire,
       }, contexte.current)
       noterGeste({ type: 'trace-creation', trace: t })
+      montrerAide({ sorte: 'liaison', interrupteur: r.interrupteur, luminaire: r.luminaire })
     } catch (err) { echouer(err) }
   }
 
-  // « Coter » : l'appui va à l'angle le plus proche, à 44 px près
-  const toucherAngle = async (m, tolerance) => {
-    const md = modeCourant.current
-    if (!actif || !visiteId || md?.sorte !== 'coter' || !piece) return
-    const r = toucherCoter(md, piece.contour, m, tolerance)
-    if (r.action === 'refus') { changerMode(r.mode); return }
-    visite.noter('angle-touche', { ...contexte.current }, { x: r.angle[0], y: r.angle[1], traceId: md.traceId }).catch(() => {})
-    if (r.action === 'angle') { changerMode(r.mode); return }
-    changerMode(null)
+  // Angle touché pile (sans la 084, `PlanVisite` ne les propose pas) : le
+  // premier s'allume, le second crée la cote et ouvre le champ de sa valeur
+  const toucherUnAngle = async (angle) => {
+    if (!actif || !visiteId || !piece || !tracesOk || modeCourant.current) return
+    const r = toucherAngle(premierCourant.current, angle, { maintenant: maintenant() })
+    setPointId(null)
+    setTraceId(null)
+    setMurAllume(null)
+    setSaisieCote(null)
+    if (r.action === 'meme') { changerPremier(r.premier); montrerAide({ sorte: 'angle' }, r.premier.jusqua); return }
+    const traceDuGeste = r.action === 'creer' ? r.traceId : r.premier.traceId
+    visite.noter('angle-touche', { ...contexte.current }, { x: angle[0], y: angle[1], traceId: traceDuGeste }).catch(() => {})
+    if (r.action === 'premier') { changerPremier(r.premier); montrerAide({ sorte: 'angle' }, r.premier.jusqua); return }
+    changerPremier(null)
+    setAide(null)
     try {
       const t = await visite.creerTrace({
-        id: md.traceId, sorte: 'cote', visiteId, niveauId: niveau.id, pieceId: piece.id, a: r.a, b: r.b,
+        id: r.traceId, sorte: 'cote', visiteId, niveauId: niveau.id, pieceId: piece.id, a: r.a, b: r.b,
       }, contexte.current)
       noterGeste({ type: 'trace-creation', trace: t })
       setTraceId(t.id)
-      setSaisieCote({ traceId: t.id, texte: '', erreur: null })
+      setSaisieCote({ traceId: t.id, texte: '', erreur: null, nouvelle: true })
     } catch (err) { echouer(err) }
+  }
+
+  // Mur touché pile : en surbrillance quelques secondes, noté avec la 085
+  // seulement ; rien d'autre n'est créé (la finition dite est lue à l'analyse)
+  const toucherUnMur = (mur) => {
+    if (!actif || !visiteId || !piece || modeCourant.current) return
+    changerPremier(null)
+    setPointId(null)
+    setTraceId(null)
+    setMurAllume({ a: mur.a, b: mur.b, jusqua: maintenant() + DUREE_MUR_ALLUME_MS })
+    if (!finitionsOk) { setAide(null); return }
+    montrerAide({ sorte: 'mur' })
+    visite.noter('mur-touche', { ...contexte.current }, detailMurTouche(mur)).catch(() => {})
   }
 
   const choisirTrace = (id) => {
     if (!actif || modeCourant.current) return
+    changerPremier(null)
+    setMurAllume(null)
+    setAide(null)
     setPointId(null)
     setConfirmerSuppressionTrace(false)
     setTraceId(id)
@@ -558,10 +634,11 @@ export function VisiteEdl({ affaireId, visite, analyse = null, obtenirLiens, onF
 
   // Échap quitte le mode, puis la saisie de la cote, puis la trace choisie
   useEffect(() => {
-    if (!enCours || confirmerFin || (!mode && !saisieCote && !traceId)) return undefined
+    if (!enCours || confirmerFin || (!mode && !saisieCote && !traceId && !premierAngle)) return undefined
     const touche = (e) => {
       if (e.key !== 'Escape') return
       if (modeCourant.current) changerMode(null)
+      else if (premierCourant.current) { changerPremier(null); setAide(null) }
       else if (saisieCote) setSaisieCote(null)
       else { setTraceId(null); setConfirmerSuppressionTrace(false) }
     }
@@ -714,15 +791,13 @@ export function VisiteEdl({ affaireId, visite, analyse = null, obtenirLiens, onF
         background: mode?.raison ? '#FFFBEB' : 'white',
       }}>
         {mode && (<>
-          {mode.sorte === 'relier'
-            ? <Spline size={18} color={COULEUR_COMMANDE} style={{ flexShrink: 0 }} />
-            : <Ruler size={18} color={COULEUR_COTE} style={{ flexShrink: 0 }} />}
+          <Spline size={18} color={COULEUR_COMMANDE} style={{ flexShrink: 0 }} />
           <p role="status" style={{
             flex: 1, minWidth: 0, margin: 0, fontSize: 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-            color: mode.raison ? '#92400E' : (mode.sorte === 'relier' ? COULEUR_COMMANDE : COULEUR_COTE),
-          }}>{consigneMode(mode)}</p>
+            color: mode.raison ? '#92400E' : COULEUR_COMMANDE,
+          }}>{mode.raison ?? texteAide({ sorte: 'relier', attendu: mode.attendu })}</p>
           <button type="button" style={bouton} onClick={() => changerMode(null)}
-            aria-label={mode.sorte === 'relier' ? 'Quitter « Relier »' : 'Quitter « Coter »'} title="Annuler (Échap)">
+            aria-label="Quitter « Relier »" title="Annuler (Échap)">
             <X size={16} /> Annuler
           </button>
         </>)}
@@ -737,15 +812,9 @@ export function VisiteEdl({ affaireId, visite, analyse = null, obtenirLiens, onF
             <p style={{ margin: 0, fontSize: 15, fontWeight: 600, color: '#1F1B17', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{designationPiece(piece)}</p>
             <p style={{ margin: 0, fontSize: 12, color: '#9C9591' }}>{fmtM2(aire(piece.contour))}</p>
           </div>
-          {tracesOk && (
-            <button type="button" disabled={!actif} onClick={commencerCoter} title="Coter entre deux angles de la pièce"
-              style={{ ...bouton, marginLeft: 'auto', color: COULEUR_COTE, opacity: actif ? 1 : 0.45 }}>
-              <Ruler size={17} /> Coter
-            </button>
-          )}
           <button type="button" aria-pressed={aideOuverte} onClick={() => setAideOuverte((o) => !o)}
-            style={{ ...bouton, marginLeft: tracesOk ? 0 : 'auto', flexShrink: 0, ...(aide.faites === aide.total ? { color: '#2A8A4E', borderColor: '#2A8A4E' } : {}) }}>
-            <ListChecks size={17} /> Aide-mémoire · {aide.faites}/{aide.total}
+            style={{ ...bouton, marginLeft: 'auto', flexShrink: 0, ...(memoire.faites === memoire.total ? { color: '#2A8A4E', borderColor: '#2A8A4E' } : {}) }}>
+            <ListChecks size={17} /> Aide-mémoire · {memoire.faites}/{memoire.total}
           </button>
         </>)}
       </div>
@@ -762,7 +831,9 @@ export function VisiteEdl({ affaireId, visite, analyse = null, obtenirLiens, onF
             niveau={niveau} pieces={pieces} points={points} nbPhotos={nbPhotos} visitees={visitees} etats={etats}
             piece={piece} pointId={pointId} obtenirLiens={obtenirLiens}
             onToucher={toucher} onChoisirPoint={choisirPoint} onDeplacerPoint={deplacer}
-            traces={traces} traceId={traceId} mode={mode} onChoisirTrace={choisirTrace} onToucherAngle={toucherAngle}
+            traces={traces} traceId={traceId} mode={mode} onChoisirTrace={choisirTrace}
+            anglesActifs={tracesOk} premierAngle={premierAngle?.angle ?? null} murAllume={murAllume}
+            onToucherAngle={toucherUnAngle} onToucherMur={toucherUnMur}
           />
         )}
         {/* Par-dessus le plan, jamais au-dessus : sa taille ne bouge pas. Hors
@@ -782,9 +853,18 @@ export function VisiteEdl({ affaireId, visite, analyse = null, obtenirLiens, onF
               {erreurLecture}
             </div>
           )}
+          {/* Bandeau d'aide : sous les alertes, jamais sur le voile ; ne capte pas le doigt */}
+          {actif && aide && (
+            <p role="status" style={{
+              position: 'relative', zIndex: 7, alignSelf: 'flex-start', flexShrink: 0, margin: '8px 8px 0', maxWidth: 'calc(100% - 16px)', boxSizing: 'border-box',
+              pointerEvents: 'none', padding: '8px 12px', fontSize: 13, fontWeight: 600, color: '#1F1B17',
+              background: 'rgba(255,255,255,0.94)', borderLeft: `3px solid ${ACCENT}`, borderRadius: 2, boxShadow: '0 4px 14px -6px rgba(31,27,23,0.35)',
+            }}>{aide.texte}</p>
+          )}
           {actif && traceSaisie && (
             <SaisieCote
-              saisie={saisieCote} onTexte={(texte) => setSaisieCote({ ...saisieCote, texte, erreur: null })}
+              saisie={saisieCote} aide={saisieCote.nouvelle ? texteAide({ sorte: 'cote' }) : null}
+              onTexte={(texte) => setSaisieCote({ ...saisieCote, texte, erreur: null })}
               onValider={validerCote} onPlusTard={() => setSaisieCote(null)}
             />
           )}
@@ -797,7 +877,7 @@ export function VisiteEdl({ affaireId, visite, analyse = null, obtenirLiens, onF
             />
           )}
           {piece && aideOuverte && actif && (
-            <AideMemoireEdl titre={designationPiece(piece)} aide={aide} ouvrirAuto={aideAuto} onOuvrirAuto={changerAideAuto} onFermer={() => setAideOuverte(false)} />
+            <AideMemoireEdl titre={designationPiece(piece)} aide={memoire} ouvrirAuto={aideAuto} onOuvrirAuto={changerAideAuto} onFermer={() => setAideOuverte(false)} />
           )}
           {!actif && (
             <div style={{ flex: 1, minHeight: 0, background: 'rgba(60,56,52,0.6)', display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 48, paddingLeft: 16, paddingRight: 16, gap: 14, textAlign: 'center', overflowY: 'auto' }}>

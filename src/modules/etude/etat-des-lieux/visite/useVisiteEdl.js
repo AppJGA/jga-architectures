@@ -15,7 +15,7 @@ import {
 } from './fileEdlLogique'
 import { numeroSuivant, delaiDepasse } from './visiteLogique'
 import { preparerPhoto } from './photosEdl'
-import { nouvelleTrace, traceValide, champsModificationTrace, TYPES_JOURNAL_TRACES, MESSAGE_TRACES_INDISPONIBLES } from '../tracesEdl'
+import { nouvelleTrace, traceValide, champsModificationTrace, TYPES_JOURNAL_TRACES, TYPES_JOURNAL_FINITIONS, MESSAGE_TRACES_INDISPONIBLES } from '../tracesEdl'
 
 // Ce que le journal garde d'une trace posée : de quoi la frise de l'analyse
 // la décrit sans relire la table
@@ -147,11 +147,16 @@ export function useVisiteEdl(affaireId) {
   }, [affaireId, relire])
 
   // `traces` toujours présent (un instantané d'avant la 084 n'en a pas) ;
-  // `tracesDisponibles` n'est vrai que lu en ligne sur une base qui a la 084
+  // `tracesDisponibles` n'est vrai que lu en ligne sur une base qui a la 084,
+  // `finitionsDisponibles` sur une base qui a la 085
   const donnees = useMemo(() => {
     if (!garde?.donnees) return null
     const etat = etatAvecFileEdl(garde.donnees, file)
-    return { ...etat, traces: etat.traces ?? [], tracesDisponibles: etat.tracesDisponibles === true }
+    const tracesDisponibles = etat.tracesDisponibles === true
+    return {
+      ...etat, traces: etat.traces ?? [], tracesDisponibles,
+      finitionsDisponibles: tracesDisponibles && etat.finitionsDisponibles === true,
+    }
   }, [garde, file])
   useEffect(() => { donneesCourantes.current = donnees })
 
@@ -167,9 +172,11 @@ export function useVisiteEdl(affaireId) {
   }, [affaireId])
 
   // Sans la 084, la base refuse les types de journal des traces (touchers
-  // compris) : ils ne sont pas notés du tout. Rend null dans ce cas.
+  // compris), sans la 085 le mur touché : ils ne sont pas notés du tout.
+  // Rend null dans ce cas.
   const noter = useCallback(async (type, ctx, detail = {}, le = new Date()) => {
     if (TYPES_JOURNAL_TRACES.includes(type) && donneesCourantes.current?.tracesDisponibles !== true) return null
+    if (TYPES_JOURNAL_FINITIONS.includes(type) && donneesCourantes.current?.finitionsDisponibles !== true) return null
     return executer(TYPES_EDL.evenement, { evenement: evenementEdl(type, { ...ctx, affaireId, detail }, le) })
   }, [affaireId, executer])
 
@@ -294,6 +301,7 @@ export function useVisiteEdl(affaireId) {
     ...statut, sansMemoire, donnees, prepareLe: garde?.prepareLe ?? null, file, resume: resumeFileEdl(file),
     disponible: statut.charge && !statut.indisponible && !sansMemoire && !!donnees?.etat,
     tracesDisponibles: donnees?.tracesDisponibles === true,
+    finitionsDisponibles: donnees?.finitionsDisponibles === true,
     recharger, commencer, terminer, noter, poserPoint, modifierPoint, supprimerPoint, ajouterPhoto,
     creerTrace, modifierTrace, supprimerTrace, annuler, rejouer, abandonner,
   }), [statut, sansMemoire, donnees, garde, file, recharger, commencer, terminer, noter, poserPoint, modifierPoint, supprimerPoint, ajouterPhoto,

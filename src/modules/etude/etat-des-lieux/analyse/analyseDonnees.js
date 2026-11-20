@@ -21,7 +21,7 @@ import {
   ligneElementMain, champsPieceAnalysee, messageErreurAnalyse, lignesTracesIa, champsValidationTrace, ecartTrace,
 } from './analyseDonneesLogique'
 import { memeFiche } from './analyseEdlLogique'
-import { lectureTraces, tracesIndisponibles, MESSAGE_TRACES_INDISPONIBLES, nouvelleTrace, traceValide } from '../tracesEdl'
+import { lectureTracesEtFinitions, SONDE_FINITIONS, tracesIndisponibles, MESSAGE_TRACES_INDISPONIBLES, nouvelleTrace, traceValide } from '../tracesEdl'
 
 export { analyseIndisponible, MESSAGE_ANALYSE_INDISPONIBLE } from './analyseDonneesLogique'
 
@@ -73,14 +73,18 @@ export async function lireAnalyse(affaireId, { delaiMs = DELAI_LECTURE_MS } = {}
 }
 
 /**
- * Liaisons et cotes (migration 084) d'une affaire, ou d'une pièce
- * (`pieceId`) : { traces, tracesDisponibles }. Lues à part des autres
- * lectures : sans la 084, aucune trace et le drapeau faux, sans rendre
- * l'analyse indisponible.
+ * Liaisons, cotes (migration 084) et finitions de murs (085) d'une affaire,
+ * ou d'une pièce (`pieceId`) : { traces, tracesDisponibles,
+ * finitionsDisponibles }. Lues à part des autres lectures : sans la 084,
+ * aucune trace et les drapeaux faux ; sans la 085, `finitionsDisponibles`
+ * faux — sans rendre l'analyse indisponible.
  */
 export function lireTracesAffaire(affaireId, { pieceId = null, delaiMs = DELAI_LECTURE_MS } = {}) {
   const filtrer = (q) => (pieceId ? q.eq('affaire_id', affaireId).eq('piece_id', pieceId) : q.eq('affaire_id', affaireId))
-  return lectureTraces(() => toutes('edl_traces', 'synchro_id:id, *', filtrer, delaiMs))
+  return lectureTracesEtFinitions(
+    () => toutes('edl_traces', `synchro_id:id, *, ${SONDE_FINITIONS}`, filtrer, delaiMs),
+    () => toutes('edl_traces', 'synchro_id:id, *', filtrer, delaiMs),
+  )
 }
 
 // Ce que la visite et le tableau des pièces affichent : fiche, état de
@@ -129,7 +133,8 @@ export async function lireSuiviAnalyse(affaireId, { delaiMs = DELAI_LECTURE_MS }
  * (`traces`, migration 084). `traces` vaut null si elles n'ont pas été lues
  * — base sans la 084, ou lecture ratée : l'analyse se fait alors comme
  * avant, sans rien proposer ni retirer des traces (envoyer une liste vide
- * effacerait des propositions que personne n'a relues).
+ * effacerait des propositions que personne n'a relues). `finitions` : vrai
+ * si la base a la 085 (murs touchés et finitions de murs dans la frise).
  */
 export async function lireFriseAnalyse(affaireId, pieceId, { delaiMs = DELAI_LECTURE_MS } = {}) {
   const deLAffaire = (q) => q.eq('affaire_id', affaireId)
@@ -142,6 +147,8 @@ export async function lireFriseAnalyse(affaireId, pieceId, { delaiMs = DELAI_LEC
       lireTracesAffaire(affaireId, { delaiMs }).catch(() => null),
     ])
     const traces = lectureT?.tracesDisponibles ? lectureT.traces : null
+    // Murs touchés et finitions (085) : seulement si la base les connaît
+    const finitions = !!traces && lectureT?.finitionsDisponibles === true
     const piece = pieces[0] ?? null
     // `select('*')` sans la 082 ne dit rien : la colonne manquerait en silence
     if (piece && !('analyse_le' in piece)) return { ...INDISPONIBLE }
@@ -149,7 +156,7 @@ export async function lireFriseAnalyse(affaireId, pieceId, { delaiMs = DELAI_LEC
     const enregistrements = visites.length
       ? await toutes('edl_enregistrements', 'synchro_id:id, *', (q) => deLAffaire(q).in('visite_id', visites), delaiMs)
       : []
-    return { indisponible: false, piece, evenements, points, enregistrements, elementsValides, traces }
+    return { indisponible: false, piece, evenements, points, enregistrements, elementsValides, traces, finitions }
   } catch (err) {
     if (analyseIndisponible(err)) return { ...INDISPONIBLE }
     throw err
@@ -323,7 +330,7 @@ async function ecrireParFonction({ affaireId, piece, fiche, elements, traces, vi
   if (statut === 'ok') {
     return {
       indisponible: false, remplaces: data.remplaces ?? 0, ajoutes: data.ajoutes ?? 0, transaction: true,
-      tracesAjoutees: data.traces_ajoutees ?? 0, cotesLues: data.cotes_lues ?? 0,
+      tracesAjoutees: data.traces_ajoutees ?? 0, cotesLues: data.cotes_lues ?? 0, finitionsAjoutees: data.finitions_ajoutees ?? 0,
     }
   }
   // 'conflit' ou 'introuvable' (supprimée, ou refusée par les règles) :

@@ -22,7 +22,11 @@ export const AIDE_MEMOIRE = [
     cle: 'finitions', titre: 'Finitions et leur état',
     rubriques: [
       { cle: 'sol', libelle: 'Sol', aide: 'matériau, état', fiche: ['sol'] },
-      { cle: 'murs', libelle: 'Murs', aide: 'revêtement, faïence, état', fiche: ['murs'] },
+      // Avec la 085, la finition d'un mur se dit en touchant le mur
+      {
+        cle: 'murs', libelle: 'Murs', aide: 'revêtement, faïence, état', fiche: ['murs'], finitions: true,
+        aideFinitions: 'revêtement, état ; finitions particulières (faïence…) : touchez le mur et dites-la',
+      },
       { cle: 'plafond', libelle: 'Plafond', aide: 'matériau, dalles à remplacer (combien)', fiche: ['plafond'] },
       { cle: 'plinthes', libelle: 'Plinthes', aide: 'matériau, état', fiche: ['plinthes'] },
       { cle: 'hsp', libelle: 'Hauteur sous plafond', aide: 'si elle n’est pas sur le plan', fiche: ['hsp'], hspLue: true },
@@ -68,9 +72,11 @@ const calqueDuPoint = (point) => typeEdl(point?.type)?.calque ?? null
  * @param elements lignes `edl_elements` connues (seules celles de la pièce comptent)
  * @param traces liaisons et cotes connues ; `tracesDisponibles` faux (pas de
  *   migration 084) : la rubrique des liaisons et cotes n'est pas proposée
+ * @param finitionsDisponibles migration 085 : la rubrique des murs dit de
+ *   toucher le mur, et une finition de mur de la pièce la coche
  * @returns { groupes: [{ cle, titre, rubriques: [{ cle, libelle, aide, fait }] }], faites, total }
  */
-export function aideMemoire(piece, { points = [], elements = [], traces = [], tracesDisponibles = false } = {}) {
+export function aideMemoire(piece, { points = [], elements = [], traces = [], tracesDisponibles = false, finitionsDisponibles = false } = {}) {
   const fiche = piece?.fiche ?? null
   const calques = new Set()
   for (const p of points) if (p.piece_id === piece?.id) calques.add(calqueDuPoint(p))
@@ -79,7 +85,9 @@ export function aideMemoire(piece, { points = [], elements = [], traces = [], tr
 
   let faites = 0
   let total = 0
-  const tracesIci = tracesDisponibles ? tracesDeLaPiece(traces, piece?.id, points).length > 0 : false
+  const deLaPiece = tracesDisponibles ? tracesDeLaPiece(traces, piece?.id, points) : []
+  const tracesIci = deLaPiece.some((t) => t.sorte !== 'finition')
+  const finitionIci = finitionsDisponibles && deLaPiece.some((t) => t.sorte === 'finition')
   const proposees = AIDE_MEMOIRE
     .map((g) => ({ ...g, rubriques: g.rubriques.filter((r) => !r.traces || tracesDisponibles) }))
     .filter((g) => g.rubriques.length > 0)
@@ -89,12 +97,13 @@ export function aideMemoire(piece, { points = [], elements = [], traces = [], tr
     rubriques: g.rubriques.map((r) => {
       let fait = false
       if (r.traces) fait = tracesIci
-      else if (r.fiche) fait = r.fiche.some((c) => rempli(fiche?.[c])) || (!!r.hspLue && hspLue)
+      else if (r.fiche) fait = r.fiche.some((c) => rempli(fiche?.[c])) || (!!r.hspLue && hspLue) || (!!r.finitions && finitionIci)
       else if (r.porte) fait = Object.values(porteDe(fiche)).some(rempli)
       else if (r.calques) fait = r.calques.some((c) => calques.has(c))
       total++
       if (fait) faites++
-      return { cle: r.cle, libelle: r.libelle, aide: r.aide, fait }
+      const aide = r.aideFinitions && finitionsDisponibles ? r.aideFinitions : r.aide
+      return { cle: r.cle, libelle: r.libelle, aide, fait }
     }),
   }))
   return { groupes, faites, total }

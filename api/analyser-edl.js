@@ -4,8 +4,9 @@
 // Le navigateur envoie une pièce (nom, numéro, surface, HSP lue), sa fiche
 // actuelle et sa frise — gestes du journal et phrases transcrites,
 // intercalés par leur heure — et, avec la migration 084, ses liaisons et
-// cotes ; Claude rend la fiche de la pièce, les éléments relevés et, s'il y
-// a lieu, liaisons et valeurs de cotes proposées, en JSON (schéma imposé).
+// cotes, avec la 085 ses murs touchés ; Claude rend la fiche de la pièce,
+// les éléments relevés et, s'il y a lieu, liaisons, valeurs de cotes et
+// finitions de murs proposées, en JSON (schéma imposé).
 // La clé Anthropic ne vit qu'ici (variable Vercel ANTHROPIC_API_KEY,
 // organisation « JGA's Individual Org » : crédits mensuels du forfait Max).
 // Consignes et schéma viennent d'analyseEdlLogique.js : depuis le navigateur,
@@ -51,6 +52,8 @@ export default async function handler(req, res) {
         ficheActuelle: corps.ficheActuelle ?? null,
         // Liaisons et cotes (084) : absentes, consignes et schéma d'avant
         traces: Array.isArray(corps.tracesPiece) ? corps.tracesPiece : null,
+        // Murs touchés (085) : absents, consignes et schéma de la 084
+        finitions: corps.finitionsMurs === true,
       }),
     }).finalMessage()
     // Compté avant tout contrôle : une réponse refusée ou tronquée se paie aussi

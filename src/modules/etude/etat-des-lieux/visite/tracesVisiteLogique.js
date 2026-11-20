@@ -1,23 +1,29 @@
-// ─── Liaisons et cotes pendant la visite : modes et dessin (logique pure) ───
+// ─── Liaisons, cotes et murs pendant la visite : gestes et dessin (pur) ────
 //
-// Deux modes de la visite (migration 084) :
-//   · « Relier » — ouvert depuis le panneau d'un interrupteur ou d'un
-//     luminaire ; le toucher suivant sur un point compatible crée la liaison,
-//     un toucher ailleurs ne pose rien et dit pourquoi ;
-//   · « Coter » — ouvert depuis la barre de la pièce ; les deux touchers
-//     suivants s'accrochent aux angles du contour de la pièce, aucun point
-//     n'est posé.
+// Gestes de la visite, sans bouton de mode (décisions de l'agence du
+// 2026-11-20, migration 085) — dans la pièce ouverte, un toucher va :
+//   · à un **angle** s'il tombe pile sur un sommet du contour : le premier
+//     s'allume (~20 s), le second crée la cote tout de suite (084) ;
+//   · sinon à un **mur** s'il tombe pile sur un côté : le mur s'allume et le
+//     toucher est noté (`mur-touche`) ; la finition dite autour est lue à
+//     l'analyse (rien de dit, rien de créé) ;
+//   · sinon comme avant : un point existant se choisit, ou un point se pose.
+// « Pile » : `TOLERANCE_PILE_PX` (≈ 1 cm au doigt), plus fin que les points
+// (22 px), pour qu'un interrupteur posé près d'un mur reste un point.
+// « Relier » reste un mode, ouvert depuis le panneau d'un interrupteur ou
+// d'un luminaire. `texteAide` donne les textes d'aide du bandeau.
 // Et la géométrie du dessin, commune à l'écran, au DXF et aux planches :
-// `courbeCommande` (trait courbe du dessin électrique) et `traitsCote`
-// (ligne de cote, traits obliques, texte jamais à l'envers).
-// Pur, testé (tests/etat-des-lieux-traces.test.js).
+// `courbeCommande` (trait courbe du dessin électrique), `traitsCote` (ligne
+// de cote, traits obliques, texte jamais à l'envers) et `decalageFinition`
+// (trait d'une finition de mur, décalé dans la pièce).
+// Pur, testé (tests/etat-des-lieux-traces.test.js, etat-des-lieux-murs.test.js).
 
-import { estInterrupteur, estLuminaire, liaisonPossible, liaisonExiste, angleLePlusProche, texteValeur, valeurCote, typeEffectif } from '../tracesEdl.js'
+import { estInterrupteur, estLuminaire, liaisonPossible, liaisonExiste, texteValeur, valeurCote, typeEffectif, angleSous, murLePlusProche } from '../tracesEdl.js'
 import { typeEdl } from '../calquesEdl.js'
 import { pointDansPolygone } from '../geometrieEdl.js'
 
 // Couleurs : électricité pour les liaisons ; bleu canard pour ce qui touche
-// aux cotes dans l'interface (mode « Coter », boutons, ronds d'angle) ; le
+// aux cotes dans l'interface (angle allumé, champ de la valeur) ; le
 // trait de cote lui-même à l'encre, convention du dessin d'architecture
 // (le bleu canard est aussi celui de la plomberie sur les planches). Les
 // propositions de l'IA se dessinent en tirets de leur bleu.
@@ -50,21 +56,11 @@ export function debutRelier(pointDuGeste, elements = []) {
   return null
 }
 
-/**
- * Le mode « Coter ». L'identifiant de la future cote est décidé dès
- * l'ouverture : les deux touchers d'angle notés au journal le portent, la
- * frise de l'analyse les rattache ainsi à leur cote.
- */
-export function debutCoter(traceId = crypto.randomUUID()) {
-  return { sorte: 'coter', traceId, angles: [], raison: null }
-}
-
 /** Ce que la barre de la pièce affiche pendant un mode (la raison d'un refus d'abord). */
 export function consigneMode(mode) {
   if (!mode) return null
   if (mode.raison) return mode.raison
   if (mode.sorte === 'relier') return mode.attendu === 'luminaire' ? 'Touchez le luminaire à relier' : 'Touchez l’interrupteur à relier'
-  if (mode.sorte === 'coter') return mode.angles.length ? 'Touchez le second angle de la cote' : 'Touchez le premier angle de la cote'
   return null
 }
 
@@ -94,27 +90,124 @@ export function toucherRelier(mode, pointTouche, { points = [], traces = [], ele
   return { action: 'creer', interrupteur: liaison.interrupteur, luminaire: liaison.luminaire }
 }
 
+// ─── Angles et murs : toucher sans bouton (085) ─────────────────────────────
+
+// Zone « pile » d'un angle ou d'un mur, en pixels d'écran (≈ 1 cm au doigt)
+export const TOLERANCE_PILE_PX = 12
+// Le premier angle d'une cote reste allumé ce temps-là
+export const DUREE_PREMIER_ANGLE_MS = 20_000
+// Un mur touché reste en surbrillance quelques secondes
+export const DUREE_MUR_ALLUME_MS = 5_000
+// Un texte d'aide s'efface seul (sauf celui du premier angle, tant qu'il est allumé)
+export const DUREE_AIDE_MS = 4_000
+
 const memeAngle = (a, b) => !!a && !!b && Math.abs(a[0] - b[0]) < 1e-9 && Math.abs(a[1] - b[1]) < 1e-9
 
 /**
- * Toucher pendant « Coter » : accroché à l'angle le plus proche du contour
- * de la pièce, à `toleranceM` près (zone sensible de 44 px autour de chaque
- * angle ; sans tolérance, l'angle le plus proche quel qu'il soit). Rend :
- *   { action: 'angle', angle, mode }     premier angle retenu ;
- *   { action: 'creer', angle, a, b }     second angle : la cote à créer ;
- *   { action: 'refus', mode }            rien de retenu, `mode.raison` dit pourquoi.
+ * Où va un toucher dans la pièce ouverte, priorité angle > mur > le reste.
+ * `contour` : celui de la pièce ouverte (null : plan de l'étage, ni angle ni
+ * mur) ; `tolerance` : la zone « pile » en mètres ; `avecAngles` faux (base
+ * sans la 084) : un angle n'est que le bout de ses deux murs. `pointExistant`
+ * ({ point, distance }) : le point existant le plus proche dans sa zone du
+ * doigt — il l'emporte sur l'angle ou le mur seulement s'il est plus près du
+ * doigt qu'eux (un point déjà posé contre un mur se choisit en touchant son
+ * centre ; toucher le mur lui-même va au mur).
+ * Rend { sorte: 'angle', angle, index } | { sorte: 'mur', mur } |
+ * { sorte: 'point', point } | { sorte: 'plan' } (rien de tout cela : la
+ * suite d'avant, trace ou point posé).
  */
-export function toucherCoter(mode, contour, position, toleranceM = Infinity) {
-  const refus = (raison) => ({ action: 'refus', mode: { ...mode, raison } })
-  const angle = angleLePlusProche(contour, position)
-  if (!angle) return refus('Cette pièce n’a pas de contour : rien à coter.')
-  if (Math.hypot(angle[0] - position[0], angle[1] - position[1]) > toleranceM) {
-    return refus('Touchez plus près d’un angle de la pièce (rond bleu).')
+export function cibleToucher({ contour = null, position, tolerance, pointExistant = null, avecAngles = true }) {
+  const angle = contour && avecAngles ? angleSous(contour, position, tolerance) : null
+  const mur = contour && !angle ? murLePlusProche(contour, position, tolerance) : null
+  const pile = angle ?? mur
+  if (pointExistant?.point && (!pile || pointExistant.distance < pile.distance)) return { sorte: 'point', point: pointExistant.point }
+  if (angle) return { sorte: 'angle', angle: angle.angle, index: angle.index }
+  if (mur) return { sorte: 'mur', mur }
+  return { sorte: 'plan' }
+}
+
+/** Le premier angle d'une cote est-il encore allumé à `maintenant` ? */
+export const premierAngleActif = (premier, maintenant) => !!premier && maintenant < premier.jusqua
+
+/**
+ * Toucher pile sur un angle. `premier` : le premier angle allumé
+ * ({ angle, traceId, jusqua }) ou null. Rend :
+ *   { action: 'premier', premier }        l'angle s'allume (identifiant de la
+ *                                          future cote décidé ici : le journal
+ *                                          des deux angles le porte) ;
+ *   { action: 'creer', a, b, traceId }    second angle : la cote à créer ;
+ *   { action: 'meme', premier }           le même angle : rien de créé, il
+ *                                          reste allumé (délai relancé).
+ * Un premier angle éteint (délai passé) compte pour rien.
+ */
+export function toucherAngle(premier, angle, { maintenant, traceId = null } = {}) {
+  const jusqua = maintenant + DUREE_PREMIER_ANGLE_MS
+  if (premierAngleActif(premier, maintenant)) {
+    if (memeAngle(premier.angle, angle)) return { action: 'meme', premier: { ...premier, jusqua } }
+    return { action: 'creer', a: premier.angle, b: [angle[0], angle[1]], traceId: premier.traceId }
   }
-  const [premier] = mode.angles
-  if (!premier) return { action: 'angle', angle, mode: { ...mode, angles: [angle], raison: null } }
-  if (memeAngle(premier, angle)) return refus('C’est le même angle : touchez le second angle de la cote.')
-  return { action: 'creer', angle, a: premier, b: angle }
+  return { action: 'premier', premier: { angle: [angle[0], angle[1]], traceId: traceId ?? crypto.randomUUID(), jusqua } }
+}
+
+/**
+ * Ce que le journal garde d'un mur touché (`mur-touche`) : ses extrémités
+ * en mètres, le côté du contour (`index`) et sa longueur — de quoi la frise
+ * de l'analyse le nomme (`M<n>`) et y rattache la finition dite.
+ */
+export function detailMurTouche(mur) {
+  const r = (v) => Math.round(v * 1000) / 1000
+  return { xa: r(mur.a[0]), ya: r(mur.a[1]), xb: r(mur.b[0]), yb: r(mur.b[1]), index: mur.index, longueur: r(mur.longueur) }
+}
+
+// ─── Textes d'aide (validés par l'agence, 2026-11-20) ───────────────────────
+
+const libelleTypePoint = (point) => typeEdl(point?.type)?.libelle ?? null
+
+/**
+ * Le texte d'aide du bandeau après un geste, ou null.
+ *   { sorte: 'entree', piece: 'Cuisine', angles? }   entrée dans une pièce
+ *     (`angles` faux sans la 084 : « touchez un angle » n'y est pas) ;
+ *   { sorte: 'angle' }                                premier angle ;
+ *   { sorte: 'cote' }                                 second angle, cote créée ;
+ *   { sorte: 'mur' }                                  mur touché ;
+ *   { sorte: 'point-pose', point }                    point posé dans la pièce ;
+ *   { sorte: 'hors-piece' }                           point posé hors des pièces ;
+ *   { sorte: 'point-touche', point, relier? }         point existant (`relier` :
+ *                                                      interrupteur ou luminaire) ;
+ *   { sorte: 'relier', attendu }                      « Relier » ouvert ;
+ *   { sorte: 'liaison', interrupteur, luminaire }     liaison créée.
+ */
+export function texteAide(evenement) {
+  const e = evenement ?? {}
+  switch (e.sorte) {
+    case 'entree':
+      return e.angles === false
+        ? `${e.piece} · touchez un mur, ou posez un point`
+        : `${e.piece} · touchez un angle, un mur, ou posez un point`
+    case 'angle':
+      return 'Angle choisi · touchez un 2ᵉ angle pour coter'
+    case 'cote':
+      return 'Cote créée · dites la dimension ou tapez-la'
+    case 'mur':
+      return 'Mur choisi · dites sa finition (ex. faïence toute hauteur) — sans rien dire, rien n’est enregistré'
+    case 'point-pose':
+      return `Point ${court(e.point)} posé · dites ce que c’est ou choisissez son type`
+    case 'hors-piece':
+      return 'Point posé hors pièce · il est rattaché à l’étage'
+    case 'point-touche': {
+      const type = libelleTypePoint(e.point)
+      const actions = e.relier ? 'dites ce qui change, photographiez ou reliez' : 'dites ce qui change ou photographiez'
+      return `${court(e.point)}${type ? ` · ${type}` : ''} · ${actions}`
+    }
+    case 'relier':
+      return e.attendu === 'interrupteur'
+        ? 'Touchez l’interrupteur qui commande ce luminaire'
+        : 'Touchez le luminaire commandé par cet interrupteur'
+    case 'liaison':
+      return `Liaison ${court(e.interrupteur)} → ${court(e.luminaire)} créée`
+    default:
+      return null
+  }
 }
 
 // ─── Dessin ──────────────────────────────────────────────────────────────────
@@ -249,6 +342,33 @@ export function traitsCote(a, b, { tic = 1, decalage = 1, yVersLeBas = false, se
     longueur,
     normale,
   }
+}
+
+/**
+ * Trait d'une finition de mur : le mur de `a` à `b`, décalé de `ecart` vers
+ * l'intérieur de la pièce (`sens` de `sensInterieurCote`, calculé en mètres
+ * y vers le haut puis reporté tel quel), pour se lire à côté du trait du mur
+ * au lieu de le recouvrir. Dans les unités du repère reçu ; `yVersLeBas` :
+ * écran ou papier. Même convention que `traitsCote` : écran, planche et DXF
+ * placent la finition du même côté. Rend { a, b, normale } ou null.
+ */
+export function decalageFinition(a, b, { sens = 1, ecart = 0, yVersLeBas = false } = {}) {
+  const dx = b[0] - a[0]
+  const dy = b[1] - a[1]
+  const longueur = Math.hypot(dx, dy)
+  if (!(longueur > 0)) return null
+  const ux = dx / longueur
+  const uy = dy / longueur
+  const s = sens === -1 ? -1 : 1
+  const normale = yVersLeBas ? [uy * s, -ux * s] : [-uy * s, ux * s]
+  const pousser = (p) => [p[0] + normale[0] * ecart + 0, p[1] + normale[1] * ecart + 0]
+  return { a: pousser(a), b: pousser(b), normale: normale.map((v) => v + 0) }
+}
+
+/** Les deux bouts d'une finition de mur en mètres ([a, b]), ou null. */
+export function extremitesFinition(trace) {
+  const v = [trace?.xa, trace?.ya, trace?.xb, trace?.yb].map((x) => (x === null || x === undefined || x === '' ? NaN : Number(x)))
+  return trace?.sorte === 'finition' && v.every(Number.isFinite) ? [[v[0], v[1]], [v[2], v[3]]] : null
 }
 
 /**

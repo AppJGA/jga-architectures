@@ -1,11 +1,14 @@
 import { useMemo } from 'react'
 import { COULEUR_IA } from '../../../chantier/comptes-rendus/enregistrement/styleProposition'
 import { symboleEcran, taillesPointEcran, texteCoteEcran, pxParMetreEcran } from '../analyse/symbolesRelectureLogique'
-import { courbeCommande, traitsCote, extremitesTrace, texteCote, sensInterieurCote, COULEUR_COMMANDE, COULEUR_TRAIT_COTE } from './tracesVisiteLogique'
+import {
+  courbeCommande, traitsCote, extremitesTrace, texteCote, sensInterieurCote, decalageFinition, extremitesFinition, COULEUR_COMMANDE, COULEUR_TRAIT_COTE,
+} from './tracesVisiteLogique'
+import { couleurFinition } from '../tracesEdl'
 
 // ─── Ce que les plans de l'état des lieux dessinent par-dessus l'étage ───────
 //
-// Un seul dessin des points, des liaisons et des cotes pour l'écran de la
+// Un seul dessin des points, des liaisons, des cotes et des finitions de murs pour l'écran de la
 // visite (`PlanVisite`) et l'onglet « Plans » du module (`EditeurPieces`,
 // via `PlansEdl`). Tout est rendu dans le `calque` de `VisionneusePlan`, à la
 // taille de l'écran (règle Safari) : épaisseurs et écarts divisés par `zoom`
@@ -21,6 +24,9 @@ const ACCENT = 'var(--affaire-accent, #E8602C)'
 export const RAYON_TOUCHER_PX = 22
 // Ligne de cote à 18 px de son mur, à tout zoom
 export const ECART_COTE_PX = 18
+// Finition de mur : trait épais de sa couleur, juste à l'intérieur du mur
+export const EPAISSEUR_FINITION_PX = 5
+export const ECART_FINITION_PX = 4
 
 /**
  * Liaison (courbe fine, couleur électricité) ou cote (ligne d'encre décalée
@@ -30,6 +36,7 @@ export const ECART_COTE_PX = 18
  * cote du côté intérieur de sa pièce. Une proposition de l'IA en tirets bleus.
  */
 export function TracePlan({ trace, points, enCalque, zoom, choisie, attenuee, contour = null }) {
+  if (trace.sorte === 'finition') return <FinitionPlan trace={trace} enCalque={enCalque} zoom={zoom} choisie={choisie} attenuee={attenuee} contour={contour} />
   const hauteurTexte = texteCoteEcran(pxParMetreEcran(enCalque)) / zoom
   const bouts = extremitesTrace(trace, points)
   if (!bouts) return null
@@ -67,6 +74,37 @@ export function TracePlan({ trace, points, enCalque, zoom, choisie, attenuee, co
         x={x} y={y} textAnchor="middle" transform={`rotate(${t.texte.angle} ${x} ${y})`}
         style={{ fontSize: hauteurTexte, fontWeight: 600, fill: couleur, stroke: 'white', strokeWidth: 3 / zoom, paintOrder: 'stroke', fontFamily: "'JetBrains Mono', monospace" }}
       >{texteCote(trace)}</text>
+    </g>
+  )
+}
+
+/**
+ * Finition de mur (085) : trait épais de la couleur de la finition
+ * (`couleurFinition`), le long du mur, décalé vers l'intérieur de la pièce
+ * (`decalageFinition`, côté calculé en mètres comme pour une cote). Une
+ * proposition de l'IA : trait pâli en tirets, doublé d'un fil bleu.
+ */
+function FinitionPlan({ trace, enCalque, zoom, choisie, attenuee, contour }) {
+  const bouts = extremitesFinition(trace)
+  if (!bouts) return null
+  const sens = sensInterieurCote(bouts[0], bouts[1], contour)
+  const [a, b] = bouts.map(enCalque)
+  const f = decalageFinition(a, b, { sens, ecart: ECART_FINITION_PX / zoom, yVersLeBas: true })
+  if (!f) return null
+  const proposee = !!trace.a_valider
+  const couleur = couleurFinition(trace.valeur)
+  const ligne = { x1: f.a[0], y1: f.a[1], x2: f.b[0], y2: f.b[1] }
+  return (
+    <g style={{ pointerEvents: 'none', opacity: attenuee ? 0.35 : 1 }}>
+      {choisie && <line {...ligne} style={{ stroke: 'rgba(31,27,23,0.18)', strokeWidth: (EPAISSEUR_FINITION_PX + 8) / zoom, strokeLinecap: 'round' }} />}
+      <line
+        {...ligne}
+        style={{
+          stroke: couleur, strokeWidth: EPAISSEUR_FINITION_PX / zoom, strokeLinecap: 'butt',
+          strokeOpacity: proposee ? 0.55 : 1, strokeDasharray: proposee ? `${8 / zoom} ${4 / zoom}` : undefined,
+        }}
+      />
+      {proposee && <line {...ligne} style={{ stroke: COULEUR_IA, strokeWidth: 1.2 / zoom, strokeDasharray: `${6 / zoom} ${4 / zoom}` }} />}
     </g>
   )
 }

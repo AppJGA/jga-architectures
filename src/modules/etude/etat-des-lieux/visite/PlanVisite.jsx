@@ -4,7 +4,7 @@ import { versPixels, versMetres, centre } from '../geometrieEdl'
 import { cadrePiece, COULEURS_PIECE, etatPiece, pointProche, ZOOM_MAX_VISITE } from './visiteLogique'
 import { useVecteursEdl } from '../useVecteursEdl'
 import { zoomMaxVectoriel } from '../vecteursEdlLogique'
-import { traceProche, COULEUR_COTE } from './tracesVisiteLogique'
+import { traceProche, cibleToucher, TOLERANCE_PILE_PX, COULEUR_COTE } from './tracesVisiteLogique'
 import { TracePlan, PointPlan, RAYON_TOUCHER_PX as RAYON_TOUCHER, ECART_COTE_PX } from './DessinsPlanEdl'
 import { pxParMetreEcran } from '../analyse/symbolesRelectureLogique'
 
@@ -17,20 +17,25 @@ import { pxParMetreEcran } from '../analyse/symbolesRelectureLogique'
 // 44 px) ou en pose un nouveau ; seul le point choisi capture le doigt et se
 // glisse. Un second doigt ou un `pointercancel` annulent le glisser (règle du
 // projet : rien d'enregistré).
-// Liaisons et cotes (084) : dessinées sous les points, épaisseurs en pixels
-// d'écran ; une proposition de l'IA en tirets bleus. Hors mode, un appui sur
-// une trace (et pas sur un point) la choisit. En mode « Coter », un appui
-// va à l'angle le plus proche de la pièce (`onToucherAngle`), jamais à un
-// point ; les angles sont marqués d'un rond de 44 px, zone sensible comprise.
-// Points, liaisons et cotes : le dessin commun de `DessinsPlanEdl.jsx`, le
-// même que l'onglet « Plans » du module (qui y ajoute les symboles).
+// Liaisons, cotes et finitions de murs (084, 085) : dessinées sous les
+// points, épaisseurs en pixels d'écran ; une proposition de l'IA en tirets
+// bleus. Dans la pièce ouverte, sans bouton de mode (`cibleToucher`) : un
+// appui pile sur un angle du contour (12 px) va à `onToucherAngle`, pile sur
+// un mur à `onToucherMur`, sinon comme avant — un point existant se choisit
+// (il l'emporte sur l'angle ou le mur s'il est plus près du doigt), une
+// trace se choisit, ou un point se pose. Angle allumé (`premierAngle`) et
+// mur touché (`murAllume`) sont dessinés en surbrillance.
+// Points, liaisons, cotes et finitions : le dessin commun de
+// `DessinsPlanEdl.jsx`, le même que l'onglet « Plans » du module (qui y
+// ajoute les symboles).
 
 const ACCENT = 'var(--affaire-accent, #E8602C)'
 const SEUIL_GLISSE = 6
 
 export function PlanVisite({
   niveau, pieces, points, nbPhotos, visitees, etats = null, piece, pointId, obtenirLiens, onToucher, onChoisirPoint, onDeplacerPoint,
-  traces = [], traceId = null, mode = null, onChoisirTrace, onToucherAngle,
+  traces = [], traceId = null, mode = null, onChoisirTrace,
+  anglesActifs = false, premierAngle = null, murAllume = null, onToucherAngle, onToucherMur,
 }) {
   const svg = useRef(null)
   const glisseCourant = useRef(null)
@@ -74,11 +79,24 @@ export function PlanVisite({
     if (glisseCourant.current || pointeurs.current.size > 0) return
     const m = versMetres(c, [x * niveau.largeur, y * niveau.hauteur])
     const tolerance = toleranceMetres()
-    if (mode?.sorte === 'coter') { onToucherAngle?.(m, tolerance); return }
     const proche = pointProche(points.filter(touchable), m, tolerance)
-    if (proche) { onChoisirPoint(proche.id); return }
+    // « Relier » : seul un point compte (ailleurs, la visite dit pourquoi)
+    if (mode) {
+      if (proche) onChoisirPoint(proche.id)
+      else onToucher?.(m)
+      return
+    }
+    // Angle et mur « pile » : zone de 12 px, plus fine que celle des points
+    const cible = cibleToucher({
+      contour: piece?.contour ?? null, position: m, tolerance: (tolerance * TOLERANCE_PILE_PX) / RAYON_TOUCHER,
+      pointExistant: proche ? { point: proche, distance: Math.hypot(Number(proche.x) - m[0], Number(proche.y) - m[1]) } : null,
+      avecAngles: anglesActifs,
+    })
+    if (cible.sorte === 'angle') { onToucherAngle?.(cible.angle); return }
+    if (cible.sorte === 'mur') { onToucherMur?.(cible.mur); return }
+    if (cible.sorte === 'point') { onChoisirPoint(cible.point.id); return }
     // La ligne de cote est dessinée à 18 px de son mur (tolérance = 22 px)
-    const trace = !mode && onChoisirTrace
+    const trace = onChoisirTrace
       ? traceProche(traces.filter(traceTouchable), points, m, tolerance, {
         ecartCote: (tolerance * ECART_COTE_PX) / RAYON_TOUCHER,
         contourDe: (t) => pieces?.find((pc) => pc.id === t.piece_id)?.contour ?? null,
@@ -169,17 +187,28 @@ export function PlanVisite({
         {traces.map((t) => (
           <TracePlan
             key={t.id} trace={t} points={positionsPoints} enCalque={enCalque} zoom={zoom}
-            contour={t.sorte === 'cote' ? pieces?.find((pc) => pc.id === t.piece_id)?.contour : null}
+            contour={t.sorte !== 'commande' ? pieces?.find((pc) => pc.id === t.piece_id)?.contour : null}
             choisie={t.id === traceId} attenuee={!!piece && !traceTouchable(t)}
           />
         ))}
-        {mode?.sorte === 'coter' && piece && piece.contour.map((angle, i) => {
+        {/* Mur touché : surbrillance le long du mur, quelques secondes */}
+        {murAllume && piece && (() => {
+          const [a, b] = [murAllume.a, murAllume.b].map(enCalque)
+          return (
+            <line
+              aria-hidden="true" x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]}
+              style={{ pointerEvents: 'none', stroke: ACCENT, strokeOpacity: 0.45, strokeWidth: 12 / zoom, strokeLinecap: 'round' }}
+            />
+          )
+        })()}
+        {/* Angles de la pièce ouverte : un repère discret, l'angle choisi allumé */}
+        {anglesActifs && piece && piece.contour.map((angle, i) => {
           const [ax, ay] = enCalque(angle)
-          const retenu = mode.angles.some((q) => q[0] === angle[0] && q[1] === angle[1])
+          const allume = !!premierAngle && premierAngle[0] === angle[0] && premierAngle[1] === angle[1]
           return (
             <g key={`angle-${i}`} aria-hidden="true" style={{ pointerEvents: 'none' }}>
-              <circle cx={ax} cy={ay} r={RAYON_TOUCHER / zoom} style={{ fill: retenu ? 'rgba(14,116,144,0.35)' : 'rgba(14,116,144,0.08)', stroke: COULEUR_COTE, strokeWidth: (retenu ? 2 : 1) / zoom }} />
-              <circle cx={ax} cy={ay} r={(retenu ? 5 : 3) / zoom} style={{ fill: COULEUR_COTE }} />
+              {allume && <circle cx={ax} cy={ay} r={RAYON_TOUCHER / zoom} style={{ fill: 'rgba(14,116,144,0.3)', stroke: COULEUR_COTE, strokeWidth: 2 / zoom }} />}
+              <circle cx={ax} cy={ay} r={(allume ? 5 : 2.5) / zoom} style={{ fill: COULEUR_COTE, fillOpacity: allume ? 1 : 0.55 }} />
             </g>
           )
         })}

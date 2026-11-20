@@ -218,7 +218,8 @@ export function tracesRelecture(traces = [], pieceId, points = []) {
   const ordre = (a, b) => (Number(b.a_valider) - Number(a.a_valider))
     || (Number(a.sorte === 'cote') - Number(b.sorte === 'cote'))
     || String(a.created_at ?? '').localeCompare(String(b.created_at ?? ''))
-  return [...tracesDeLaPiece(traces, pieceId, points)].sort(ordre)
+  // Les finitions de murs (085) se relisent à part, pas avec les liaisons et cotes
+  return tracesDeLaPiece(traces, pieceId, points).filter((t) => t.sorte !== 'finition').sort(ordre)
 }
 
 /**

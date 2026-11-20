@@ -13,7 +13,7 @@
 
 import { CALQUES, CALQUES_DE_POINT, calqueEdl, typeEdl } from '../calquesEdl.js'
 import { CHAMPS_PORTE, CODES_STATUTS_ENREGISTRES, RUBRIQUES_STATUT, codeStatut, porteDe, rubriqueRenseignee } from '../statutsEdl.js'
-import { estInterrupteur, estLuminaire, liaisonPossible, liaisonExiste, longueurCote, texteValeur, valeurCote, avecTypeEffectif } from '../tracesEdl.js'
+import { estInterrupteur, estLuminaire, liaisonPossible, liaisonExiste, longueurCote, texteValeur, valeurCote, avecTypeEffectif, memeMur, finitionPropre } from '../tracesEdl.js'
 
 export const MODELE_ANALYSE = 'claude-opus-5-5'
 
@@ -201,9 +201,16 @@ function phrasesDuMorceau(enr) {
  * lues : `lignesTraces` et `contexteTraces` valent null, et la demande est
  * celle d'avant la 084.
  *
+ * Murs touchés et finitions de murs (migration 085, `finitions` vrai, avec
+ * les traces lues) : chaque mur touché de la pièce est désigné `M<n>`
+ * (ordre du premier toucher ; un même mur touché deux fois garde son nom),
+ * la frise dit « mur M2 touché (3,20 m) », `lignesTraces` liste les murs
+ * touchés et les finitions déjà relevées, et `contexteTraces.murs`
+ * ('M2' → le mur) sert à relire `finitionsMurs`. Sans elle, rien de cela.
+ *
  * @returns { lignes: string[], references: Map<string, string>, dejaReleves: string[], lignesTraces: string[] | null, contexteTraces: object | null }
  */
-export function friseDePiece({ piece, intervalles, evenements = [], points = [], enregistrements = [], elementsValides = [], traces = null }) {
+export function friseDePiece({ piece, intervalles, evenements = [], points = [], enregistrements = [], elementsValides = [], traces = null, finitions = false }) {
   const pieceId = piece?.id
   const duPoint = new Map()
   const references = new Map()
@@ -231,7 +238,7 @@ export function friseDePiece({ piece, intervalles, evenements = [], points = [],
   }
 
   const avecTraces = Array.isArray(traces)
-  const nomsTraces = nommerTraces({ traces: avecTraces ? traces : [], evenements, pieceId, avecTraces })
+  const nomsTraces = nommerTraces({ traces: avecTraces ? traces : [], evenements, pieceId, avecTraces, finitions: avecTraces && finitions === true })
   // Type pour les liaisons : celui du geste, sinon celui d'un élément validé
   // du point (un point posé sans type, dit « interrupteur » à voix haute)
   const effectifs = new Map(avecTypeEffectif((points ?? []).filter((p) => p?.id), elementsValides).map((p) => [p.id, p]))
@@ -293,7 +300,7 @@ const parCreation = (a, b) => String(a.created_at ?? '').localeCompare(String(b.
  * de création), et ce que le journal dit des traces disparues depuis (une
  * liaison supprimée se nomme encore par ses deux points).
  */
-function nommerTraces({ traces, evenements, pieceId, avecTraces }) {
+function nommerTraces({ traces, evenements, pieceId, avecTraces, finitions = false }) {
   const cotes = new Map()
   const nomCote = new Map()
   traces.filter((t) => t?.sorte === 'cote' && t.piece_id === pieceId).sort(parCreation).forEach((t, i) => {
@@ -305,8 +312,24 @@ function nommerTraces({ traces, evenements, pieceId, avecTraces }) {
     const d = e?.detail ?? {}
     if (e?.type === 'trace' && d.traceId && d.sorte && !connues.has(d.traceId)) connues.set(d.traceId, { id: d.traceId, ...d })
   }
-  return { cotes, nomCote, connues, avecTraces }
+  // Murs touchés de la pièce (085), dans l'ordre du premier toucher
+  const murs = new Map()
+  if (finitions) {
+    const touches = (evenements ?? [])
+      .filter((e) => e?.type === 'mur-touche' && e.piece_id === pieceId && temps(e.le) != null)
+      .sort((a, b) => temps(a.le) - temps(b.le))
+    for (const e of touches) {
+      const d = e.detail ?? {}
+      const mur = { xa: Number(d.xa), ya: Number(d.ya), xb: Number(d.xb), yb: Number(d.yb) }
+      if (![mur.xa, mur.ya, mur.xb, mur.yb].every(Number.isFinite)) continue
+      if (![...murs.values()].some((m) => memeMur(m, mur))) murs.set(`M${murs.size + 1}`, mur)
+    }
+  }
+  const nomMur = (detail) => [...murs.entries()].find(([, m]) => memeMur(m, detail))?.[0] ?? null
+  return { cotes, nomCote, connues, avecTraces, finitions, murs, nomMur }
 }
+
+const longueurMur = (m) => texteValeur(Math.hypot(Number(m.xb) - Number(m.xa), Number(m.yb) - Number(m.ya)))
 
 function objetTrace(traceId, nom, noms, sorteDuGeste = null) {
   const t = noms.connues.get(traceId)
@@ -374,7 +397,28 @@ function descriptionTraces({ traces, pieceId, effectifs, pointsDeLaPiece, nom, n
       : ['Aucune cote posée dans la pièce.']),
   ]
   const cotesSansValeur = new Map(cotes.filter(([, t]) => !valeurDonnee(t)).map(([c, t]) => [c, t.id]))
-  return { lignesTraces, contexteTraces: { points: effectifs, existantes, cotesSansValeur } }
+  if (!nomsTraces.finitions) return { lignesTraces, contexteTraces: { points: effectifs, existantes, cotesSansValeur } }
+
+  // Finitions de murs (085) : les propositions pas encore relues de la pièce
+  // seront remplacées, elles ne comptent pas comme déjà relevées
+  const murs = [...nomsTraces.murs.entries()]
+  const finitionsExistantes = traces.filter((t) => t?.sorte === 'finition' && t.piece_id === pieceId && !t.a_valider && nettoyer(t.valeur, 200))
+  lignesTraces.push(
+    murs.length
+      ? `Murs touchés dans la pièce : ${murs.map(([m, mur]) => `${m}${longueurMur(mur) ? ` (${longueurMur(mur)})` : ''}`).join(', ')}.`
+      : 'Aucun mur touché dans la pièce.',
+    ...(finitionsExistantes.length
+      ? [`Finitions de murs déjà relevées (${finitionsExistantes.length}) :`, ...finitionsExistantes.map((t) => {
+          const ou = nomsTraces.nomMur(t) ?? `mur de ${longueurMur(t) ?? '?'}`
+          const statut = codeStatut(t.statut)
+          return `- ${ou} : ${nettoyer(t.valeur, 200)}${statut ? ` (statut : ${statut})` : ''}`
+        })]
+      : []),
+  )
+  return {
+    lignesTraces,
+    contexteTraces: { points: effectifs, existantes, cotesSansValeur, murs: nomsTraces.murs, finitionsExistantes },
+  }
 }
 
 function texteGeste(e, nom, duPoint, nomsTraces, effectifs) {
@@ -415,6 +459,13 @@ function texteGeste(e, nom, duPoint, nomsTraces, effectifs) {
     case 'trace':
     case 'trace-supprimee':
       return texteTrace(e, nom, nomsTraces)
+    case 'mur-touche': {
+      if (!nomsTraces.finitions) return null
+      const m = nomsTraces.nomMur(d)
+      if (!m) return null
+      const l = longueurMur(d)
+      return `mur ${m} touché${l ? ` (${l})` : ''}`
+    }
     default:
       return null
   }
@@ -503,6 +554,28 @@ export const SCHEMA_ANALYSE_TRACES = {
   },
 }
 
+// Avec la 085 seulement (la demande porte alors `finitionsMurs`) : les
+// finitions dites des murs touchés. Sans elle, le schéma de la 084.
+const SCHEMA_FINITION_MUR = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['mur', 'finition', 'statut', 'extrait'],
+  properties: {
+    mur: chaine,
+    finition: chaine,
+    statut: ouNul({ type: 'string', enum: CODES_STATUTS_ENREGISTRES }),
+    extrait: chaine,
+  },
+}
+export const SCHEMA_ANALYSE_FINITIONS = {
+  ...SCHEMA_ANALYSE_TRACES,
+  required: [...SCHEMA_ANALYSE_TRACES.required, 'finitionsMurs'],
+  properties: {
+    ...SCHEMA_ANALYSE_TRACES.properties,
+    finitionsMurs: { type: 'array', items: SCHEMA_FINITION_MUR },
+  },
+}
+
 const catalogue = CALQUES_DE_POINT
   .map((c) => `- ${c.code} (${c.nom}) : ${c.types.map((t) => `${t.code} = ${t.libelle}`).join(', ')}`)
   .join('\n')
@@ -543,11 +616,26 @@ export const CONSIGNES_TRACES = `Liaisons et cotes (« liaisons », « cotes »)
 - Une cote est posée entre deux angles de la pièce : lignes « angle touché (cote C2) ». Sa valeur est dite juste avant ou juste après ses deux angles (« trois mètres quarante-cinq », « 3,45 »). Propose une valeur seulement pour une cote listée « sans valeur », d'après ce qui est dit, en chiffres avec l'unité (« 3,45 m ») ; jamais pour une cote dont la valeur est déjà donnée, et jamais d'après la longueur dessinée, qui sert seulement à reconnaître de quelle cote on parle.
 - « extrait » : les mots entendus, recopiés de la frise. Rien de tel dans la frise : listes vides.`
 
-/** Consignes de l'analyse : celles d'avant la 084, plus les liaisons et cotes quand la demande les porte. */
-export const consignesAnalyse = (avecTraces = false) => (avecTraces ? `${CONSIGNES_ANALYSE}\n\n${CONSIGNES_TRACES}` : CONSIGNES_ANALYSE)
+export const CONSIGNES_FINITIONS = `Finitions de murs (« finitionsMurs ») :
+- L'architecte peut toucher un mur de la pièce : ligne « mur M2 touché (3,20 m) ». Une finition de mur se propose quand ce qui est dit juste avant ou juste après un mur touché décrit sa finition (faïence, crédence, lambris, carrelage mural, peinture spécifique…), par exemple « faïence toute hauteur ». Jamais sans mur touché, ni pour un mur dont rien de tel n'est dit.
+- « mur » : la référence du mur touché (« M2 »), choisie parmi les murs touchés listés dans « Liaisons et cotes de la pièce ». « finition » : la finition en quelques mots, telle que dite (« Faïence toute hauteur »). « statut » : d'après ce qui est dit de son état, comme pour la fiche ("conserver", "rafraichir", "deposer"), null sinon. « extrait » : les mots entendus, recopiés de la frise.
+- Ne propose ni deux fois la même finition sur le même mur, ni une finition déjà relevée (listée). Une finition dite pour un seul mur ne va pas dans la rubrique « murs » de la fiche, qui décrit les murs de toute la pièce. Rien de tel dans la frise : liste vide.`
 
-/** Schéma de la réponse : celui d'avant la 084, ou avec liaisons et cotes. */
-export const schemaAnalyse = (avecTraces = false) => (avecTraces ? SCHEMA_ANALYSE_TRACES : SCHEMA_ANALYSE)
+/**
+ * Consignes de l'analyse : celles d'avant la 084, plus les liaisons et cotes
+ * quand la demande les porte, plus les finitions de murs avec la 085.
+ */
+export const consignesAnalyse = (avecTraces = false, avecFinitions = false) => {
+  if (!avecTraces) return CONSIGNES_ANALYSE
+  const traces = `${CONSIGNES_ANALYSE}\n\n${CONSIGNES_TRACES}`
+  return avecFinitions ? `${traces}\n\n${CONSIGNES_FINITIONS}` : traces
+}
+
+/** Schéma de la réponse : celui d'avant la 084, avec liaisons et cotes, puis avec les finitions de murs (085). */
+export const schemaAnalyse = (avecTraces = false, avecFinitions = false) => {
+  if (!avecTraces) return SCHEMA_ANALYSE
+  return avecFinitions ? SCHEMA_ANALYSE_FINITIONS : SCHEMA_ANALYSE_TRACES
+}
 
 function lignesFicheActuelle(fiche) {
   if (!fiche || typeof fiche !== 'object') return []
@@ -577,8 +665,10 @@ const surface = (v) => (Number(v) > 0 ? `${String(Math.round(Number(v) * 100) / 
  *   tout ce qui a été dit, mais ne doit pas défaire une correction faite au
  *   bureau (conception § 6, « ce que la pièce avait déjà »)
  */
-export function construireDemandeAnalyse({ piece = {}, lignes = [], dejaReleves = [], ficheActuelle = null, traces = null }) {
+export function construireDemandeAnalyse({ piece = {}, lignes = [], dejaReleves = [], ficheActuelle = null, traces = null, finitions = false }) {
   const avecTraces = Array.isArray(traces)
+  // Les murs touchés sont décrits avec les traces : pas de finitions sans elles
+  const avecFinitions = avecTraces && finitions === true
   const designation = [nettoyer(piece.nom, 200) || 'Pièce sans nom', piece.numero ? `n° ${nettoyer(piece.numero, 50)}` : null]
     .filter(Boolean).join(', ')
   const plan = [surface(piece.surface) && `surface ${surface(piece.surface)}`, Number(piece.hsp) > 0 && `hauteur sous plafond ${String(piece.hsp).replace('.', ',')} m`]
@@ -593,9 +683,9 @@ export function construireDemandeAnalyse({ piece = {}, lignes = [], dejaReleves 
     ...(lignes.length ? lignes : ['(rien n’a été dit ni fait dans la pièce)']),
   ].join('\n')
   return {
-    system: consignesAnalyse(avecTraces),
+    system: consignesAnalyse(avecTraces, avecFinitions),
     messages: [{ role: 'user', content: [{ type: 'text', text: texte }] }],
-    output_config: { effort: 'medium', format: { type: 'json_schema', schema: schemaAnalyse(avecTraces) } },
+    output_config: { effort: 'medium', format: { type: 'json_schema', schema: schemaAnalyse(avecTraces, avecFinitions) } },
   }
 }
 
@@ -628,6 +718,8 @@ export function erreurDemandeAnalyse(corps) {
   const traces = corps.tracesPiece ?? []
   if (!Array.isArray(traces) || traces.some((l) => typeof l !== 'string')) return 'traces'
   if (traces.length > TRACES_MAX) return 'trop-de-traces'
+  // Facultatif aussi : absent, la demande est celle de la 084
+  if (corps.finitionsMurs != null && typeof corps.finitionsMurs !== 'boolean') return 'finitions'
   const longueur = [...lignes, ...dejaReleves, ...traces].reduce((n, l) => n + l.length, 0)
   if (longueur > LONGUEUR_TOTALE_MAX) return 'trop-long'
   return null
@@ -655,8 +747,12 @@ const CALQUES_VALIDES = new Set(CALQUES.map((c) => c.code))
  * Valeurs de cotes : une cote encore sans valeur (`cotesSansValeur`), une
  * valeur lisible (`valeurCote`), réécrite « 3,45 m » ; une cote à la fois ;
  * sinon écartée.
+ * Finitions de murs (085, `contexteTraces.murs`) : un mur touché connu
+ * (« M2 »), une finition non vide (`finitionPropre`), statut lu par
+ * `codeStatut` (inconnu → null) ; ni en double sur le même mur, ni déjà
+ * relevée ; sinon écartée. Sans la 085, pas de clé `finitions`.
  *
- * @returns { fiche: { sol, murs, plafond, plinthes, hsp, remarques, porte, statuts }, elements: [{ point_id, calque, type, libelle, cotes, extrait, a_verifier }], traces: { liaisons: [{ point_a, point_b, extrait }], cotes: [{ id, valeur, extrait }] } | null }
+ * @returns { fiche: { sol, murs, plafond, plinthes, hsp, remarques, porte, statuts }, elements: [{ point_id, calque, type, libelle, cotes, extrait, a_verifier }], traces: { liaisons: [{ point_a, point_b, extrait }], cotes: [{ id, valeur, extrait }], finitions?: [{ xa, ya, xb, yb, valeur, statut, extrait }] } | null }
  */
 export function lireAnalyse(resultat, references = new Map(), contexteTraces = null) {
   const f = resultat?.fiche ?? {}
@@ -695,7 +791,7 @@ function cleReference(v, lettre) {
 // Type d'un point pour les liaisons : celui du geste ou d'un élément validé
 // (`contexteTraces.points`), à défaut celui que les éléments de cette même
 // réponse lui donnent
-function lireTraces(resultat, references, { points, existantes = [], cotesSansValeur }, elementsRecus = []) {
+function lireTraces(resultat, references, { points, existantes = [], cotesSansValeur, murs = null, finitionsExistantes = [] }, elementsRecus = []) {
   const typeRecu = new Map()
   for (const el of elementsRecus) if (el.point_id && el.type && !typeRecu.has(el.point_id)) typeRecu.set(el.point_id, el.type)
   const point = (id) => {
@@ -726,7 +822,20 @@ function lireTraces(resultat, references, { points, existantes = [], cotesSansVa
     lues.add(id)
     cotes.push({ id, valeur, extrait: nettoyer(c.extrait, 1000) })
   }
-  return { liaisons, cotes }
+  if (!murs) return { liaisons, cotes }
+
+  const finitions = []
+  const memeTexte = (a, b) => nettoyer(a, 200).toLowerCase() === nettoyer(b, 200).toLowerCase()
+  const dejaLa = (f) => [...finitionsExistantes, ...finitions].some((x) => memeMur(x, f) && memeTexte(x.valeur, f.valeur))
+  for (const f of Array.isArray(resultat?.finitionsMurs) ? resultat.finitionsMurs : []) {
+    if (!f || typeof f !== 'object') continue
+    const mur = murs.get(cleReference(f.mur, 'M'))
+    if (!mur) continue
+    const propre = finitionPropre({ ...mur, valeur: typeof f.finition === 'string' ? f.finition : null, statut: f.statut, extrait: f.extrait })
+    if (!propre || dejaLa(propre)) continue
+    finitions.push(propre)
+  }
+  return { liaisons, cotes, finitions }
 }
 
 // ─── Complétude et état de la pièce ─────────────────────────────────────────

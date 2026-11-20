@@ -139,7 +139,7 @@ export function PlansEdl({
         {traces.map((t) => (
           <TracePlan
             key={t.id} trace={t} points={points} enCalque={enCalque} zoom={zoom}
-            contour={t.sorte === 'cote' ? pieces.find((pc) => pc.id === t.piece_id)?.contour : null}
+            contour={t.sorte !== 'commande' ? pieces.find((pc) => pc.id === t.piece_id)?.contour : null}
             choisie={t.id === revue.traceChoisie} attenuee={!!choisieId && !traceDeLaPiece(t, choisieId, points)}
           />
         ))}

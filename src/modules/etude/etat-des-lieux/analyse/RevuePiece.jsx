@@ -79,15 +79,18 @@ export function ContenuRevue({ revue, lectureSeule }) {
           La pièce n’a pas encore été analysée : l’analyse part d’elle-même une fois la visite de la pièce envoyée et transcrite.
         </p>
       )}
+      {/* Clés distinctes entre ces frères : deux enfants de même clé, React
+          les mélange et recopie des blocs à chaque rendu (fiche répétée au
+          défilement, vu le 2026-11-20) */}
       <FicheRelecture
-        key={piece.id}
+        key={`fiche-${piece.id}`}
         piece={piece} lectureSeule={lectureSeule}
         onEnregistrer={(fiche) => revue.ecrire(() => modifierFiche(piece.id, fiche, { valider: true }))}
       />
       {/* Une clé par pièce : un « Nouvel élément » en cours de saisie ne
           passe pas dans la pièce touchée ensuite sur le plan */}
       <ElementsRelecture
-        key={piece.id}
+        key={`elements-${piece.id}`}
         piece={piece} elements={revue.elements} points={revue.points} lectureSeule={lectureSeule}
         elementChoisi={revue.elementChoisi} pointChoisi={revue.pointChoisi}
         onSurvol={revue.setSurvol}

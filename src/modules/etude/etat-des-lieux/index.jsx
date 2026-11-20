@@ -331,6 +331,7 @@ export default function EtatDesLieuxModule({ lectureSeule = false }) {
             key={niveau.id}
             niveau={niveau}
             pieces={piecesDe(niveau.id)}
+            points={(visite.donnees?.points ?? []).filter((p) => p.niveau_id === niveau.id)}
             obtenirLiens={obtenirLiens}
             lectureSeule={lectureSeule}
             onModifier={edl.modifierPiece}

@@ -43,7 +43,7 @@ const HISTORIQUE_MAX = 50
 
 const designation = (p) => [p.numero, p.nom].filter(Boolean).join(' · ') || 'une autre pièce'
 
-export function EditeurPieces({ niveau, pieces, obtenirLiens, lectureSeule, onModifier, onAjouter, onSupprimer, onAjouterPlusieurs, onRelecture }) {
+export function EditeurPieces({ niveau, pieces, points = [], obtenirLiens, lectureSeule, onModifier, onAjouter, onSupprimer, onAjouterPlusieurs, onRelecture }) {
   const [choisie, setChoisie] = useState(null)
   const [sommet, setSommet] = useState(null) // dernier sommet touché de la pièce choisie
   const [trace, setTrace] = useState(null) // contour en cours de dessin (mètres)
@@ -281,6 +281,21 @@ export function EditeurPieces({ niveau, pieces, obtenirLiens, lectureSeule, onMo
             }}
           />
         ))}
+        {/* Points relevés en visite, pour situer ce qui a été vu : en
+            consultation seulement (ils se déplacent dans la visite), sous les
+            poignées de la pièce choisie et sans capter le doigt */}
+        {points.filter((pt) => Number.isFinite(pt.x) && Number.isFinite(pt.y)).map((pt) => {
+          const [cx, cy] = enCalque([pt.x, pt.y])
+          const r = 8 / zoom
+          return (
+            <g key={`pt-${pt.id}`} style={visible} opacity={choisie && pt.piece_id !== choisie ? 0.45 : 0.9}>
+              <circle cx={cx} cy={cy} r={r} style={{ fill: pt.piece_id ? COULEUR : '#5E5854', stroke: 'white', strokeWidth: 1.5 / zoom }} />
+              {pt.numero != null && (
+                <text x={cx} y={cy} dy="0.35em" textAnchor="middle" style={{ fontSize: 8 / zoom, fontWeight: 700, fill: 'white', fontFamily: "'JetBrains Mono', monospace" }}>{pt.numero}</text>
+              )}
+            </g>
+          )
+        })}
         {piece && !lectureSeule && !trace && (() => {
           const contour = contourDe(piece)
           const pts = contour.map(enCalque)

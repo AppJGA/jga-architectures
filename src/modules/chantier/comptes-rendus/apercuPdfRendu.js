@@ -9,7 +9,10 @@ import workerUrl from 'pdfjs-dist/build/pdf.worker.min.js?url'
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl
 
 /**
- * Chaque page du PDF en image JPEG (URL d'objet), `largeur` pixels de large.
+ * Chaque page du PDF en image JPEG (URL d'objet), `largeur` pixels de large
+ * — ou `largeur(page)` d'après la page à l'échelle 1 (`{ width, height }` en
+ * points), quand un document mêle des formats (planches A3 de l'état des
+ * lieux et pages A4).
  * `abandonne()` vrai : arrêt entre deux pages (aperçu devenu périmé), rend
  * null. `surPage(image, i, total)` : chaque page dès qu'elle est prête, pour
  * un long document (export de l'état des lieux) — l'appelant possède alors
@@ -27,7 +30,8 @@ export async function pagesEnImages(blob, largeur, { abandonne = () => false, su
       }
       const page = await doc.getPage(i)
       const unite = page.getViewport({ scale: 1 })
-      const vue = page.getViewport({ scale: largeur / unite.width })
+      const cible = typeof largeur === 'function' ? largeur(unite) : largeur
+      const vue = page.getViewport({ scale: cible / unite.width })
       const canvas = document.createElement('canvas')
       canvas.width = Math.round(vue.width)
       canvas.height = Math.round(vue.height)

@@ -32,6 +32,12 @@ import { ApercuDxfEdl } from './ApercuDxfEdl'
 
 const ATTENTE_MS = 450
 const LARGEUR_PAGE = 760
+// Pixels de l'image d'une page de l'aperçu : deux fois la largeur affichée
+// (écrans Retina, iPad) ; une page paysage (planche A3) bien plus, pour que
+// ses symboles de 4,5 mm se lisent encore une fois agrandie — à 760 px une
+// planche de 420 mm donnait moins de 2 px par mm, d'où des symboles
+// pixelisés. 3 000 px : 7 px par mm, ~9 Mpx, sous le plafond de l'iPad.
+const largeurImagePage = (page) => (page.width > page.height ? 3000 : LARGEUR_PAGE * 2)
 const ACCENT = 'var(--affaire-accent, #E8602C)'
 const ENCRE = '#1F1B17'
 const GRIS = '#5E5854'
@@ -251,7 +257,7 @@ export function ExportEdl({ affaireId, obtenirLiens, enAttente = 0, onFermer }) 
         if (deja.cle === cle && deja.complet) return
         const { pagesEnImages } = await import('../../../chantier/comptes-rendus/apercuPdfRendu')
         let premiere = true
-        const fin = await pagesEnImages(blob, LARGEUR_PAGE, {
+        const fin = await pagesEnImages(blob, largeurImagePage, {
           abandonne: () => fini,
           surPage: (img, i, total) => {
             if (fini) { URL.revokeObjectURL(img.url); return }
@@ -474,7 +480,7 @@ export function ExportEdl({ affaireId, obtenirLiens, enAttente = 0, onFermer }) 
             }}>
               {apercuPdf.pages.map((p, i) => (
                 <img key={p.url} src={p.url} alt={`Page ${i + 1}`}
-                  style={{ display: 'block', width: '100%', maxWidth: agrandi ? 1000 : LARGEUR_PAGE, height: 'auto', background: 'white', boxShadow: '0 1px 4px rgba(0,0,0,0.08)' }} />
+                  style={{ display: 'block', width: '100%', maxWidth: agrandi ? (p.largeur > p.hauteur ? 'none' : 1000) : LARGEUR_PAGE, height: 'auto', background: 'white', boxShadow: '0 1px 4px rgba(0,0,0,0.08)' }} />
               ))}
             </div>
           </div>

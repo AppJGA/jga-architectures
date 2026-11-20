@@ -265,7 +265,6 @@ export function VisionneusePlan({ version, obtenirLiens, pastilles = [], idActiv
               style={{ width: bw, height: bh, display: 'block', background: 'white', boxShadow: '0 6px 24px -12px rgba(0,0,0,0.4)' }}
             />
           )}
-          {calque?.({ largeur: bw, hauteur: bh, zoom: vue.zoom })}
           {pastilles.map(p => {
             const active = p.id === idActive
             return (
@@ -289,6 +288,17 @@ export function VisionneusePlan({ version, obtenirLiens, pastilles = [], idActiv
               </button>
             )
           })}
+        </div>
+      )}
+      {calque && version && echelle > 0 && (
+        // Hors du bloc agrandi par `scale` : Safari (iPad) peint un calque
+        // transformé à sa taille d'origine puis agrandit l'image — points et
+        // contours devenaient flous au zoom. Ici le calque est dessiné à la
+        // taille de l'écran (largeur × zoom, épaisseurs à zoom 1), donc net à
+        // tout zoom ; placé par left / top (pas de transform : pas de couche
+        // géante à zoom 60). Les appuis se mesurent toujours sur sa boîte.
+        <div style={{ position: 'absolute', left: ox + vue.dx, top: oy + vue.dy, width: bw * vue.zoom, height: bh * vue.zoom, pointerEvents: 'none' }}>
+          {calque({ largeur: bw * vue.zoom, hauteur: bh * vue.zoom, zoom: 1 })}
         </div>
       )}
       {!urlApercu && !dessinFond && version && (

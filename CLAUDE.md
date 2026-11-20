@@ -1907,6 +1907,13 @@ ligne », plus haut).
   Visite réservent `env(safe-area-inset-top)` dans une bande sombre (l'heure
   s'écrit en blanc) ; tout nouvel écran plein ou panneau ancré en haut doit en
   faire autant.
+- **Safari (iPad) peint un bloc agrandi par `transform: scale` à sa taille
+  d'origine, puis agrandit l'image** : un SVG posé dedans devient flou au
+  zoom (contours et points de l'état des lieux, vu le 2026-11-20 ; Chrome
+  redessine, lui). Le `calque` de `VisionneusePlan` est donc rendu **hors du
+  bloc agrandi**, à la taille de l'écran (largeur × zoom, `zoom` passé à 1),
+  placé par `left` / `top`. Tout dessin qui doit rester net au zoom suit la
+  même règle (ou passe par le canevas `dessinFond`).
 - **Tablette : `index.css` impose 48 px de hauteur à tout champ** (`pointer:
   coarse`). Un champ logé dans une ligne de planning ou de tableau doit poser
   `minHeight: 0` en ligne, sinon il déborde de sa ligne.

@@ -11,6 +11,7 @@
 
 import { ESSAIS_MAX, estEnEchec, aEnvoyer } from '../../../chantier/comptes-rendus/horsLigne/fileLogique'
 import { numeroPourRestauration } from './visiteLogique'
+import { tracesIndisponibles, TYPES_JOURNAL_TRACES, MESSAGE_TRACES_INDISPONIBLES } from '../tracesEdl'
 
 export { ESSAIS_MAX, estEnEchec, aEnvoyer }
 
@@ -22,6 +23,10 @@ export const TYPES_EDL = {
   pointModifier: 'point.modifier',
   pointSupprimer: 'point.supprimer',
   photoAjouter: 'photo.ajouter',
+  // Liaisons et cotes (migration 084)
+  traceCreer: 'trace.creer',
+  traceModifier: 'trace.modifier',
+  traceSupprimer: 'trace.supprimer',
 }
 
 export function operationEdl(type, charge, { affaireId, id = null, creeLe = Date.now() } = {}) {
@@ -51,7 +56,13 @@ export function evenementEdl(type, { visiteId, affaireId, niveauId = null, piece
 
 const remplacer = (liste, ligne) => [...(liste ?? []).filter((x) => x.id !== ligne.id), ligne]
 
-/** Applique une opération à l'instantané { etat, niveaux, pieces, visites, points, photos, entrees }. */
+// Supprimer un point emporte ses liaisons (cascade de la 084) : l'écran fait
+// de même. La clé n'est ajoutée qu'à un instantané qui a déjà ses traces.
+const sansTracesDuPoint = (etat, pointId) => (etat.traces
+  ? { traces: etat.traces.filter((t) => t.point_a !== pointId && t.point_b !== pointId) }
+  : {})
+
+/** Applique une opération à l'instantané { etat, niveaux, pieces, visites, points, photos, entrees, traces }. */
 export function appliquerOperationEdl(etat, op) {
   const c = op.charge
   switch (op.type) {
@@ -68,6 +79,8 @@ export function appliquerOperationEdl(etat, op) {
         ...etat,
         points: remplacer(etat.points, c.point),
         photos: (c.photos ?? []).reduce(remplacer, etat.photos ?? []),
+        // Un point rendu par « Annuler » revient avec ses liaisons
+        ...(c.traces?.length ? { traces: c.traces.reduce(remplacer, etat.traces ?? []) } : {}),
       }
     case TYPES_EDL.pointModifier:
       return { ...etat, points: (etat.points ?? []).map((p) => (p.id === c.id ? { ...p, ...c.champs } : p)) }
@@ -76,9 +89,16 @@ export function appliquerOperationEdl(etat, op) {
         ...etat,
         points: (etat.points ?? []).filter((p) => p.id !== c.id),
         photos: (etat.photos ?? []).filter((p) => p.point_id !== c.id),
+        ...sansTracesDuPoint(etat, c.id),
       }
     case TYPES_EDL.photoAjouter:
       return { ...etat, photos: remplacer(etat.photos, c.photo) }
+    case TYPES_EDL.traceCreer:
+      return { ...etat, traces: remplacer(etat.traces, c.trace) }
+    case TYPES_EDL.traceModifier:
+      return { ...etat, traces: (etat.traces ?? []).map((t) => (t.id === c.id ? { ...t, ...c.champs } : t)) }
+    case TYPES_EDL.traceSupprimer:
+      return { ...etat, traces: (etat.traces ?? []).filter((t) => t.id !== c.id) }
     default:
       return etat
   }
@@ -88,7 +108,7 @@ export function appliquerOperationEdl(etat, op) {
 // la ligne (clé étrangère, 23503) et la refuserait à chaque essai. Le point
 // ou l'événement reste à l'étage, sans pièce — ce que la base ferait d'elle-même
 // si la pièce avait été supprimée après l'envoi (079 : on delete set null).
-const TABLES_A_PIECE = new Set(['edl_points', 'edl_evenements'])
+const TABLES_A_PIECE = new Set(['edl_points', 'edl_evenements', 'edl_traces'])
 export const pieceDisparue = (error) =>
   error?.code === '23503' && /piece_id/.test(`${error.message ?? ''} ${error.details ?? ''}`)
 
@@ -117,7 +137,14 @@ export function resumeFileEdl(operations) {
   return { total: ops.length, enAttente: ops.length - echecs.length, echecs: echecs.length, premierEchec: echecs[0] ?? null }
 }
 
-/** L'opération qui défait un geste (« Annuler »), et ce que le journal en note. */
+/**
+ * L'opération qui défait un geste (« Annuler »), et ce que le journal en note.
+ * Gestes des points : 'pose' { point }, 'suppression' { point, photos,
+ * traces? } (ses liaisons, parties avec lui), 'modification' { id, avant }.
+ * Gestes des traces (`traceId` désigne alors la trace, pas un point) :
+ * 'trace-creation' { trace }, 'trace-suppression' { trace },
+ * 'trace-modification' { id, avant }.
+ */
 export function operationInverse(geste, points) {
   switch (geste?.type) {
     case 'pose':
@@ -125,13 +152,83 @@ export function operationInverse(geste, points) {
     case 'suppression':
       return {
         type: TYPES_EDL.pointPoser,
-        charge: { point: { ...geste.point, numero: numeroPourRestauration(geste.point, points) }, photos: geste.photos ?? [] },
+        charge: {
+          point: { ...geste.point, numero: numeroPourRestauration(geste.point, points) },
+          photos: geste.photos ?? [],
+          ...(geste.traces?.length ? { traces: geste.traces } : {}),
+        },
         evenement: 'point',
       }
     case 'modification':
       return { type: TYPES_EDL.pointModifier, charge: { id: geste.id, champs: geste.avant }, evenement: 'point-modifie' }
+    case 'trace-creation':
+      return { type: TYPES_EDL.traceSupprimer, charge: { id: geste.trace.id }, evenement: 'trace-supprimee', traceId: geste.trace.id }
+    case 'trace-suppression':
+      return { type: TYPES_EDL.traceCreer, charge: { trace: geste.trace }, evenement: 'trace', traceId: geste.trace.id }
+    case 'trace-modification':
+      return { type: TYPES_EDL.traceModifier, charge: { id: geste.id, champs: geste.avant }, evenement: 'trace', traceId: geste.id }
     default:
       return null
+  }
+}
+
+// ─── Envoi des traces (logique, base injectée) ───────────────────────────────
+
+const DOUBLON = '23505'
+const CONTRAINTE = '23514'
+
+/**
+ * Refus qui ne passera pas tant que la 084 manque : l'opération est mise de
+ * côté d'emblée (`definitif`), sans retenir trois fois de suite les gestes
+ * suivants ; « Réessayer » la renvoie une fois la migration passée.
+ */
+export function erreurTracesIndisponibles() {
+  const err = new Error(MESSAGE_TRACES_INDISPONIBLES)
+  err.definitif = true
+  return err
+}
+
+/**
+ * Une ligne de journal propre à la 084 (un toucher, une trace) refusée par
+ * l'ancienne contrainte de type : elle ne sert qu'à l'analyse, on la laisse
+ * tomber plutôt que de bloquer la file.
+ */
+export const journalSansMigration = (evenement, error) =>
+  error?.code === CONTRAINTE && TYPES_JOURNAL_TRACES.includes(evenement?.type)
+
+/**
+ * Envoie une opération de trace par `base` :
+ *   inserer(ligne) → erreur | null
+ *   modifier(id, champs) → { error, nombre }   (lignes touchées)
+ *   supprimer(id) → { error, nombre }
+ *   existe(id) → booléen
+ * Un doublon (envoi rejoué) est un succès, une suppression qui ne trouve
+ * rien aussi ; une modification qui ne touche rien est un refus (droits, ou
+ * trace disparue). Table absente : erreur définitive.
+ */
+export async function envoyerTrace(op, base) {
+  const echec = (error) => (tracesIndisponibles(error) ? erreurTracesIndisponibles() : error)
+  const c = op.charge
+  switch (op.type) {
+    case TYPES_EDL.traceCreer: {
+      const error = await insererSansPieceDisparue('edl_traces', c.trace, base.inserer)
+      if (error && error.code !== DOUBLON) throw echec(error)
+      return
+    }
+    case TYPES_EDL.traceModifier: {
+      const { error, nombre } = await base.modifier(c.id, c.champs)
+      if (error) throw echec(error)
+      if (!nombre) throw new Error('La base n’a rien modifié (trace absente ou droits insuffisants).')
+      return
+    }
+    case TYPES_EDL.traceSupprimer: {
+      const { error, nombre } = await base.supprimer(c.id)
+      if (error) throw echec(error)
+      if (!nombre && await base.existe(c.id)) throw new Error('La base n’a pas supprimé la trace (droits insuffisants).')
+      return
+    }
+    default:
+      throw new Error(`Opération de trace inconnue : ${op.type}`)
   }
 }
 

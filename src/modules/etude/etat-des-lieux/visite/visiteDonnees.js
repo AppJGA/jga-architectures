@@ -2,7 +2,7 @@
 //
 // Tout ce que la visite affiche, lu d'un coup et gardé sur l'appareil
 // (`preparerVisite`) : étages, pièces, visites, points, photos, entrées dans
-// les pièces. Étages et pièces en colonnes nommées : ni les textes du plan
+// les pièces, liaisons et cotes (`traces`, 084). Étages et pièces en colonnes nommées : ni les textes du plan
 // ni la relecture (lourds, inutiles en visite) ; toutes existent depuis la
 // 077, sauf `chemin_vecteurs` (081, plan vectoriel), relu sans elle quand la
 // base ne l'a pas : la visite affiche alors l'image. Lectures
@@ -21,6 +21,7 @@ import { MAGASINS_EDL, ecrire } from './baseEdl'
 import { sousVerrouEdl } from './synchroEdl'
 import { bornerDelai, DELAI_LECTURE_MS } from './visiteLogique'
 import { analyseIndisponible } from '../analyse/analyseDonneesLogique'
+import { lectureTraces } from '../tracesEdl'
 
 const FRAIS = 'synchro_id:id, *'
 const COLONNES_ETAT = 'synchro_id:id, id, affaire_id'
@@ -84,12 +85,15 @@ export async function lireToutEdl(affaireId, { delaiMs = DELAI_LECTURE_MS } = {}
     delaiMs,
   )
   if (error) throw error
-  const [niveaux, pieces, points, photos, entrees] = await Promise.all([
+  // Traces (084) lues à part : sans la migration, aucune trace et
+  // `tracesDisponibles` faux (« Relier » et « Coter » masqués), le reste intact
+  const [niveaux, pieces, points, photos, entrees, { traces, tracesDisponibles }] = await Promise.all([
     lireNiveaux(deLAffaire, delaiMs),
     lirePieces(deLAffaire, delaiMs),
     toutes('edl_points', FRAIS, deLAffaire, delaiMs),
     toutes('edl_photos', FRAIS, deLAffaire, delaiMs),
     toutes('edl_evenements', 'synchro_id:id, id, visite_id, niveau_id, piece_id, type, le', (q) => deLAffaire(q).eq('type', 'entree'), delaiMs),
+    lectureTraces(() => toutes('edl_traces', FRAIS, deLAffaire, delaiMs)),
   ])
   return {
     indisponible: false,
@@ -101,6 +105,8 @@ export async function lireToutEdl(affaireId, { delaiMs = DELAI_LECTURE_MS } = {}
       points: points.sort((a, b) => a.numero - b.numero),
       photos,
       entrees,
+      traces,
+      tracesDisponibles,
     },
   }
 }

@@ -8,7 +8,7 @@
 
 import { supabase } from '../../../../core/supabase/client'
 import { BUCKET_EDL } from '../edlConstantes'
-import { TYPES_EDL, insererSansPieceDisparue } from './fileEdlLogique'
+import { TYPES_EDL, insererSansPieceDisparue, envoyerTrace, journalSansMigration } from './fileEdlLogique'
 import { MAGASINS_EDL, lire, effacer } from './baseEdl'
 
 const DOUBLON = '23505'
@@ -73,6 +73,21 @@ async function envoyerPhoto(photo, { restauration = false } = {}) {
   await effacer(MAGASINS_EDL.fichiers, photo.id).catch(() => {})
 }
 
+// Les traces (084) passent par la logique testée de fileEdlLogique.js ; ici,
+// seulement les appels à la base. Refus RLS silencieux : on compte les lignes.
+const baseTraces = {
+  inserer: async (ligne) => (await supabase.from('edl_traces').insert(ligne)).error,
+  modifier: async (id, champs) => {
+    const { data, error } = await supabase.from('edl_traces').update(champs).eq('id', id).select('id')
+    return { error, nombre: data?.length ?? 0 }
+  },
+  supprimer: async (id) => {
+    const { data, error } = await supabase.from('edl_traces').delete().eq('id', id).select('id')
+    return { error, nombre: data?.length ?? 0 }
+  },
+  existe: (id) => existe('edl_traces', id),
+}
+
 export async function envoyerOperationEdl(op) {
   const c = op.charge
   switch (op.type) {
@@ -82,13 +97,29 @@ export async function envoyerOperationEdl(op) {
     case TYPES_EDL.visiteTerminer:
       await modifier('edl_visites', c.id, { fin: c.fin })
       return
-    case TYPES_EDL.evenement:
-      await inserer('edl_evenements', c.evenement)
+    case TYPES_EDL.evenement: {
+      const error = await insererSansPieceDisparue('edl_evenements', c.evenement, async (l) => (await supabase.from('edl_evenements').insert(l)).error)
+      // Toucher ou trace noté sur une base sans la 084 : ligne perdue, file libre
+      if (journalSansMigration(c.evenement, error)) {
+        console.warn('Journal de l’état des lieux : type refusé sans la migration 084,', c.evenement.type)
+        return
+      }
+      verifier(error)
       return
+    }
     case TYPES_EDL.pointPoser:
       // Le point d'abord (un « Annuler » de suppression le rend), puis ses photos
       await inserer('edl_points', c.point)
       for (const photo of c.photos ?? []) await envoyerPhoto(photo, { restauration: true })
+      // Ses liaisons, parties en cascade avec lui, reviennent avec lui — sauf
+      // celle dont l'autre point a disparu depuis (23503) : le point passe seul
+      for (const trace of c.traces ?? []) {
+        try {
+          await envoyerTrace({ type: TYPES_EDL.traceCreer, charge: { trace } }, baseTraces)
+        } catch (err) {
+          if (err?.code !== '23503') throw err
+        }
+      }
       return
     case TYPES_EDL.pointModifier:
       await modifier('edl_points', c.id, c.champs)
@@ -105,6 +136,11 @@ export async function envoyerOperationEdl(op) {
     }
     case TYPES_EDL.photoAjouter:
       await envoyerPhoto(c.photo)
+      return
+    case TYPES_EDL.traceCreer:
+    case TYPES_EDL.traceModifier:
+    case TYPES_EDL.traceSupprimer:
+      await envoyerTrace(op, baseTraces)
       return
     default:
       throw new Error(`Opération inconnue : ${op.type}`)

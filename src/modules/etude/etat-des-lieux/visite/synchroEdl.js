@@ -54,7 +54,9 @@ export function envoyerFileEdl(affaireId) {
         if (fermePassage(op)) fermetures++
       } catch (err) {
         if (erreurReseau(err)) { coupure = true; break }
-        const essais = (op.essais ?? 0) + 1
+        // Refus définitif (base sans la 084) : mis de côté d'emblée, sans
+        // retenir les gestes suivants pendant trois passages
+        const essais = err?.definitif ? Math.max(ESSAIS_MAX, (op.essais ?? 0) + 1) : (op.essais ?? 0) + 1
         await ecrire(MAGASINS_EDL.operations, { ...op, essais, erreur: err?.message ?? String(err) })
         if (essais < ESSAIS_MAX) break // la suite dépend peut-être de celle-ci
       }

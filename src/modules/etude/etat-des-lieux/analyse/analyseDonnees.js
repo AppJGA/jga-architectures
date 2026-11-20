@@ -20,6 +20,7 @@ import {
   ligneElementMain, champsPieceAnalysee, messageErreurAnalyse,
 } from './analyseDonneesLogique'
 import { memeFiche } from './analyseEdlLogique'
+import { lectureTraces } from '../tracesEdl'
 
 export { analyseIndisponible, MESSAGE_ANALYSE_INDISPONIBLE } from './analyseDonneesLogique'
 
@@ -68,6 +69,17 @@ export async function lireAnalyse(affaireId, { delaiMs = DELAI_LECTURE_MS } = {}
     if (analyseIndisponible(err)) return { ...INDISPONIBLE, enregistrements: [], elements: [], pieces: [] }
     throw err
   }
+}
+
+/**
+ * Liaisons et cotes (migration 084) d'une affaire, ou d'une pièce
+ * (`pieceId`) : { traces, tracesDisponibles }. Lues à part des autres
+ * lectures : sans la 084, aucune trace et le drapeau faux, sans rendre
+ * l'analyse indisponible.
+ */
+export function lireTracesAffaire(affaireId, { pieceId = null, delaiMs = DELAI_LECTURE_MS } = {}) {
+  const filtrer = (q) => (pieceId ? q.eq('affaire_id', affaireId).eq('piece_id', pieceId) : q.eq('affaire_id', affaireId))
+  return lectureTraces(() => toutes('edl_traces', 'synchro_id:id, *', filtrer, delaiMs))
 }
 
 // Ce que la visite et le tableau des pièces affichent : fiche, état de

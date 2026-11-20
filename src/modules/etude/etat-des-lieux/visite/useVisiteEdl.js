@@ -15,6 +15,19 @@ import {
 } from './fileEdlLogique'
 import { numeroSuivant, delaiDepasse } from './visiteLogique'
 import { preparerPhoto } from './photosEdl'
+import { nouvelleTrace, traceValide, TYPES_JOURNAL_TRACES, MESSAGE_TRACES_INDISPONIBLES } from '../tracesEdl'
+
+// Ce que le journal garde d'une trace posée : de quoi la frise de l'analyse
+// la décrit sans relire la table
+function detailTrace(t) {
+  return t.sorte === 'commande'
+    ? { traceId: t.id, sorte: t.sorte, point_a: t.point_a, point_b: t.point_b }
+    : { traceId: t.id, sorte: t.sorte, xa: t.xa, ya: t.ya, xb: t.xb, yb: t.yb, valeur: t.valeur }
+}
+
+function exigerTraces(donnees) {
+  if (donnees?.tracesDisponibles !== true) throw new Error(MESSAGE_TRACES_INDISPONIBLES)
+}
 
 const enLigne = () => typeof navigator === 'undefined' || navigator.onLine !== false
 const VIDE = { charge: false, indisponible: false, erreur: null }
@@ -133,7 +146,13 @@ export function useVisiteEdl(affaireId) {
     }
   }, [affaireId, relire])
 
-  const donnees = useMemo(() => (garde?.donnees ? etatAvecFileEdl(garde.donnees, file) : null), [garde, file])
+  // `traces` toujours présent (un instantané d'avant la 084 n'en a pas) ;
+  // `tracesDisponibles` n'est vrai que lu en ligne sur une base qui a la 084
+  const donnees = useMemo(() => {
+    if (!garde?.donnees) return null
+    const etat = etatAvecFileEdl(garde.donnees, file)
+    return { ...etat, traces: etat.traces ?? [], tracesDisponibles: etat.tracesDisponibles === true }
+  }, [garde, file])
   useEffect(() => { donneesCourantes.current = donnees })
 
   const executer = useCallback(async (type, charge) => {
@@ -147,9 +166,12 @@ export function useVisiteEdl(affaireId) {
     return op
   }, [affaireId])
 
-  const noter = useCallback((type, ctx, detail = {}, le = new Date()) => executer(TYPES_EDL.evenement, {
-    evenement: evenementEdl(type, { ...ctx, affaireId, detail }, le),
-  }), [affaireId, executer])
+  // Sans la 084, la base refuse les types de journal des traces (touchers
+  // compris) : ils ne sont pas notés du tout. Rend null dans ce cas.
+  const noter = useCallback(async (type, ctx, detail = {}, le = new Date()) => {
+    if (TYPES_JOURNAL_TRACES.includes(type) && donneesCourantes.current?.tracesDisponibles !== true) return null
+    return executer(TYPES_EDL.evenement, { evenement: evenementEdl(type, { ...ctx, affaireId, detail }, le) })
+  }, [affaireId, executer])
 
   const prochainNumero = useCallback(() => {
     const dernier = numeros.current.affaireId === affaireId ? numeros.current.dernier : 0
@@ -200,12 +222,46 @@ export function useVisiteEdl(affaireId) {
     return photo
   }, [affaireId, executer, noter])
 
+  // ─── Liaisons et cotes (084) ───────────────────────────────────────────────
+  // Comme les points : par la file, identifiant décidé ici. Chaque fonction
+  // lève une erreur si la base n'a pas la 084 (les boutons sont alors masqués)
+  // ou si la trace est incomplète. Le journal note `trace` (posée, modifiée)
+  // et `trace-supprimee`, avec l'id de la trace dans `detail.traceId`.
+  /**
+   * `champs` : { sorte: 'commande', visiteId, niveauId, pieceId, interrupteur, luminaire }
+   * ou { sorte: 'cote', visiteId, niveauId, pieceId, a: [x, y], b: [x, y], valeur? }.
+   * Rend la trace créée (à garder pour « Annuler » : geste 'trace-creation').
+   */
+  const creerTrace = useCallback(async (champs, ctx = {}) => {
+    exigerTraces(donneesCourantes.current)
+    const trace = nouvelleTrace({ ...champs, affaireId })
+    if (!traceValide(trace)) throw new Error('Liaison ou cote incomplète : rien n’a été enregistré.')
+    await executer(TYPES_EDL.traceCreer, { trace })
+    await noter('trace', { ...ctx, visiteId: trace.visite_id ?? ctx.visiteId, niveauId: trace.niveau_id, pieceId: trace.piece_id, pointId: trace.point_a }, detailTrace(trace))
+    return trace
+  }, [affaireId, executer, noter])
+
+  /** `champs` : ce qui change (par exemple { valeur: '3,45 m', a_valider: false }). */
+  const modifierTrace = useCallback(async (trace, champs, ctx = {}) => {
+    exigerTraces(donneesCourantes.current)
+    await executer(TYPES_EDL.traceModifier, { id: trace.id, champs })
+    await noter('trace', { ...ctx, niveauId: trace.niveau_id, pieceId: trace.piece_id, pointId: trace.point_a ?? null }, { traceId: trace.id, sorte: trace.sorte, modification: champs })
+  }, [executer, noter])
+
+  const supprimerTrace = useCallback(async (trace, ctx = {}) => {
+    exigerTraces(donneesCourantes.current)
+    await executer(TYPES_EDL.traceSupprimer, { id: trace.id })
+    await noter('trace-supprimee', { ...ctx, niveauId: trace.niveau_id, pieceId: trace.piece_id, pointId: trace.point_a ?? null }, { traceId: trace.id, sorte: trace.sorte })
+  }, [executer, noter])
+
   const annuler = useCallback(async (geste, ctx) => {
     const inverse = operationInverse(geste, donneesCourantes.current?.points ?? [])
     if (!inverse) return
     await executer(inverse.type, inverse.charge)
-    const pointId = inverse.charge.id ?? inverse.charge.point?.id ?? null
-    await noter(inverse.evenement, { ...ctx, pointId }, { annulation: true })
+    // Pour une trace, `charge.id` est celui de la trace, pas d'un point
+    const pointId = inverse.traceId ? null : (inverse.charge.id ?? inverse.charge.point?.id ?? null)
+    const detail = inverse.traceId ? { annulation: true, traceId: inverse.traceId } : { annulation: true }
+    await noter(inverse.evenement, { ...ctx, pointId }, detail)
   }, [executer, noter])
 
   // L'opération se lit en base, sous le verrou de l'envoi : la copie de
@@ -233,6 +289,9 @@ export function useVisiteEdl(affaireId) {
   return useMemo(() => ({
     ...statut, sansMemoire, donnees, prepareLe: garde?.prepareLe ?? null, file, resume: resumeFileEdl(file),
     disponible: statut.charge && !statut.indisponible && !sansMemoire && !!donnees?.etat,
-    recharger, commencer, terminer, noter, poserPoint, modifierPoint, supprimerPoint, ajouterPhoto, annuler, rejouer, abandonner,
-  }), [statut, sansMemoire, donnees, garde, file, recharger, commencer, terminer, noter, poserPoint, modifierPoint, supprimerPoint, ajouterPhoto, annuler, rejouer, abandonner])
+    tracesDisponibles: donnees?.tracesDisponibles === true,
+    recharger, commencer, terminer, noter, poserPoint, modifierPoint, supprimerPoint, ajouterPhoto,
+    creerTrace, modifierTrace, supprimerTrace, annuler, rejouer, abandonner,
+  }), [statut, sansMemoire, donnees, garde, file, recharger, commencer, terminer, noter, poserPoint, modifierPoint, supprimerPoint, ajouterPhoto,
+    creerTrace, modifierTrace, supprimerTrace, annuler, rejouer, abandonner])
 }

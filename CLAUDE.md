@@ -973,6 +973,18 @@ lot 1 : `docs/superpowers/plans/2026-11-17-etat-des-lieux-lot1-preparer.md`.
     analyse, `suiteFicheRecue`), éléments par calque en bleu avec l'extrait
     entendu : Valider / Modifier / Écarter (confirmation), « Ajouter un
     élément », « Relancer l'analyse » (confirmée : elle se paie).
+    **Même revue depuis « Fond de plans »** (demande de l'agence,
+    2026-11-20) : la pièce choisie dans l'éditeur montre sous son nom la
+    section « État des lieux de la pièce » — fiche, éléments, points sans
+    élément, liaisons et cotes, « Relancer l'analyse ». Un seul bloc
+    (`analyse/RevuePiece.jsx`, état et écritures dans `useRevuePiece.js`),
+    rendu par `RelectureEdl` à côté du plan de la pièce et passé par le
+    module à `EditeurPieces` (`panneauPiece`, l'éditeur ne lit rien de
+    l'analyse) dès que l'onglet « État des lieux » existe ; panneau élargi
+    à 400 px. Une pièce sans rien à relire (`pieceSansRevue`, testé : ni
+    visitée, ni analysée, ni fiche, élément, point ou trace) n'y montre que
+    « Pas encore visitée ». Rien sur le plan de l'éditeur : on modifie dans
+    le panneau.
   - **Statuts et bloc porte** (2026-11-19, **aucune migration** : dans le
     jsonb `edl_pieces.fiche`) : `porte: { huisserie, vantail, quincaillerie }`
     et `statuts: { sol, murs, plafond, plinthes, porte }`, codes de

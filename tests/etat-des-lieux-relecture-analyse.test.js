@@ -11,7 +11,7 @@ import {
   pointsProposes, erreurSaisieElement, champsElementSaisis, saisieElement, titreElement, brouillonFiche,
   ficheDepuisBrouillon, ficheModifiee, rubriquesManquantes, messageLancement, suiteFicheRecue,
   tracesRelecture, lireSaisieCote, etatTrace, choixLiaisonRelecture, erreurLiaisonRelecture,
-  suppressionPoint, suiteEcartElement, pointsSansElement,
+  suppressionPoint, suiteEcartElement, pointsSansElement, pieceSansRevue,
 } from '../src/modules/etude/etat-des-lieux/analyse/relectureAnalyseLogique.js'
 import { champsValidation } from '../src/modules/etude/etat-des-lieux/analyse/analyseDonneesLogique.js'
 import { CALQUES_DE_POINT } from '../src/modules/etude/etat-des-lieux/calquesEdl.js'
@@ -388,5 +388,28 @@ describe('écarter le dernier élément d’un point : le point part aussi', () 
     const restants = elements.filter((e) => e.id !== 'e3')
     assert.deepEqual(pointsSansElement(points, restants, 'ch2').map((p) => p.id), ['p3'])
     assert.deepEqual(pointsSansElement(points, [], 'ch2').map((p) => p.id), ['p1', 'p2', 'p3'])
+  })
+})
+
+describe('pieceSansRevue (panneau de « Fond de plans »)', () => {
+  test('une pièce jamais touchée n’a rien à relire', () => {
+    assert.equal(pieceSansRevue(piece('a')), true)
+    assert.equal(pieceSansRevue(piece('a'), { elements: [{ id: 'e', piece_id: 'b' }], points: [{ id: 'p', piece_id: 'b' }] }), true)
+    assert.equal(pieceSansRevue(null), true)
+  })
+  test('visitée, analysée ou en échec : la revue s’affiche', () => {
+    assert.equal(pieceSansRevue(piece('a'), { visitee: true }), false)
+    assert.equal(pieceSansRevue(piece('a', { analyse_le: '2026-11-20T10:00:00Z' })), false)
+    assert.equal(pieceSansRevue(piece('a', { analyse_erreur: 'refus' })), false)
+  })
+  test('une fiche, un élément, un point ou une liaison suffisent', () => {
+    assert.equal(pieceSansRevue(piece('a', { fiche: { sol: 'parquet' } })), false)
+    assert.equal(pieceSansRevue(piece('a', { fiche: { statuts: { sol: 'conserver' } } })), false)
+    assert.equal(pieceSansRevue(piece('a'), { elements: [{ id: 'e', piece_id: 'a' }] }), false)
+    assert.equal(pieceSansRevue(piece('a'), { points: [{ id: 'p', piece_id: 'a' }] }), false)
+    // Liaison posée depuis le couloir vers un luminaire de la pièce
+    const points = [{ id: 'l', piece_id: 'a' }, { id: 'i', piece_id: 'couloir' }]
+    assert.equal(pieceSansRevue(piece('b'), { points, traces: [{ id: 't', piece_id: 'couloir', point_a: 'i', point_b: 'l' }] }), true)
+    assert.equal(pieceSansRevue(piece('a'), { points: points.slice(1), traces: [{ id: 't', piece_id: 'a', sorte: 'cote' }] }), false)
   })
 })

@@ -43,7 +43,10 @@ const HISTORIQUE_MAX = 50
 
 const designation = (p) => [p.numero, p.nom].filter(Boolean).join(' · ') || 'une autre pièce'
 
-export function EditeurPieces({ niveau, pieces, points = [], obtenirLiens, lectureSeule, onModifier, onAjouter, onSupprimer, onAjouterPlusieurs, onRelecture }) {
+// `panneauPiece(piece)` (facultatif) : ce que le panneau montre sous la
+// pièce choisie — la fiche et les éléments relevés de l'état des lieux,
+// fournis par le module (l'éditeur ne sait rien de l'analyse).
+export function EditeurPieces({ niveau, pieces, points = [], obtenirLiens, lectureSeule, onModifier, onAjouter, onSupprimer, onAjouterPlusieurs, onRelecture, panneauPiece = null }) {
   const [choisie, setChoisie] = useState(null)
   const [sommet, setSommet] = useState(null) // dernier sommet touché de la pièce choisie
   const [trace, setTrace] = useState(null) // contour en cours de dessin (mètres)
@@ -159,7 +162,7 @@ export function EditeurPieces({ niveau, pieces, points = [], obtenirLiens, lectu
     const touche = (e) => {
       if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.key.toLowerCase() !== 'z') return
       // Dans un champ, ⌘Z reste celui du texte
-      if (e.target.closest?.('input, textarea, [contenteditable="true"]')) return
+      if (e.target.closest?.('input, textarea, select, [contenteditable="true"]')) return
       e.preventDefault()
       // En dessin, ⌘Z retire le dernier angle touché
       if (trace) setTrace((t) => t.slice(0, -1))
@@ -359,7 +362,10 @@ export function EditeurPieces({ niveau, pieces, points = [], obtenirLiens, lectu
         )}
       </div>
 
-      <div style={{ flex: '0 1 300px', display: 'flex', flexDirection: 'column', gap: 10, minHeight: 0, maxHeight: '100%', overflow: 'auto' }}>
+      {/* Plus large avec la revue de la pièce (fiche, éléments) : largeur
+          fixe dès qu'elle est proposée, pour que le plan ne se recadre pas
+          à chaque pièce choisie */}
+      <div style={{ flex: panneauPiece ? '0 1 400px' : '0 1 300px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 10, minHeight: 0, maxHeight: '100%', overflowY: 'auto', overflowX: 'hidden' }}>
         {!lectureSeule && (
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button type="button" style={petitBouton} disabled={!!trace} onClick={() => { choisir(null); setTrace([]) }}><PenLine size={14} />Dessiner une pièce</button>
@@ -405,6 +411,9 @@ export function EditeurPieces({ niveau, pieces, points = [], obtenirLiens, lectu
               </div>
             )}
           </div>
+        )}
+        {piece && !trace && panneauPiece && (
+          <div style={{ flexShrink: 0, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>{panneauPiece(piece)}</div>
         )}
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, fontSize: 11, color: '#9C9591', paddingTop: 2 }}>

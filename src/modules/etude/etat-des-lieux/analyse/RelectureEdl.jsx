@@ -1,19 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, ChevronRight, RefreshCw, Sparkles, Spline, X } from 'lucide-react'
+import { ArrowLeft, ChevronRight, RefreshCw, Spline, X } from 'lucide-react'
 import { COULEUR_IA } from '../../../chantier/comptes-rendus/enregistrement/styleProposition'
 import { morceauxEtatsDesLieux, remettreEnFile } from '../../../chantier/comptes-rendus/enregistrement/audioLocal'
 import { ECHECS_MAX } from '../../../chantier/comptes-rendus/enregistrement/transcription'
 import { PlanVisite } from '../visite/PlanVisite'
 import { COULEURS_PIECE, designationPiece, etatPieceVisite, piecesVisitees } from '../visite/visiteLogique'
-import { validerElement, ecarterElement, ajouterElement, modifierFiche, validerTrace, ecarterTrace, ajouterLiaison, supprimerPoint, MESSAGE_ANALYSE_INDISPONIBLE } from './analyseDonnees'
-import { piecesARelire, messageLancement, tracesRelecture, choixLiaisonRelecture, suiteEcartElement, suppressionPoint, pointsSansElement, libellePointRelecture } from './relectureAnalyseLogique'
+import { MESSAGE_ANALYSE_INDISPONIBLE } from './analyseDonnees'
+import { piecesARelire, libellePointRelecture } from './relectureAnalyseLogique'
 import { dessinPointRelecture } from './symbolesRelectureLogique'
 import { debutRelier, toucherRelier, consigneMode, COULEUR_COMMANDE } from '../visite/tracesVisiteLogique'
-import { avecTypeEffectif } from '../tracesEdl'
-import { FicheRelecture } from './FicheRelecture'
-import { ElementsRelecture } from './ElementsRelecture'
-import { TracesRelecture } from './TracesRelecture'
-import { ConfirmationEdl } from './ConfirmationEdl'
+import { useRevuePiece } from './useRevuePiece'
+import { EtatAnalyseRevue, AvisRevue, ContenuRevue, ConfirmationRelance } from './RevuePiece'
 import { morceauxRefuses } from './transcriptionEdlLogique'
 import { EVENEMENT_TRANSCRIPTION_EDL } from './transcriptionEdl'
 import { transcrireEtAnalyser } from './analyseEdl'
@@ -23,16 +20,14 @@ import { transcrireEtAnalyser } from './analyseEdl'
 // Par étage, la liste des pièces : à valider d'abord, puis les incomplètes,
 // puis le reste. Une pièce ouverte : son plan agrandi à gauche (points
 // numérotés comme en visite, liaisons et cotes dessinées), sa fiche, ses
-// éléments puis ses liaisons et cotes (migration 084) à droite.
-// Chaque écriture est relue par le hook de l'analyse (`analyse.relire`) :
-// rien n'est calculé dans un setState(prev => …), l'écran montre la base.
-// Un refus (0 ligne) remonte « Lecture seule… » des fonctions de données.
+// éléments puis ses liaisons et cotes (migration 084) à droite — ce bloc de
+// droite est celui de `RevuePiece.jsx`, le même que dans le panneau de
+// « Fond de plans » (état et écritures dans `useRevuePiece.js`).
 
 const AMBRE = { fond: '#FFFBEB', trait: '#F59E0B', texte: '#92400E' }
 const ROUGE = '#B8412C'
 const bouton = { display: 'inline-flex', alignItems: 'center', gap: 6, minHeight: 44, padding: '0 14px', borderRadius: 3, fontSize: 13, cursor: 'pointer', border: '0.5px solid rgba(0,0,0,0.15)', background: 'white', color: '#1F1B17' }
 const noteAmbre = { margin: 0, maxWidth: 760, fontSize: 13, color: AMBRE.texte, background: AMBRE.fond, border: `0.5px solid ${AMBRE.trait}`, padding: '10px 14px' }
-const alerteRouge = { margin: 0, fontSize: 13, color: ROUGE, background: '#FDF2F0', border: '0.5px solid rgba(184,65,44,0.4)', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 12 }
 
 const colonne = { height: '100%', display: 'flex', flexDirection: 'column', gap: 10, minHeight: 0 }
 const enLigne = () => typeof navigator === 'undefined' || navigator.onLine !== false
@@ -183,35 +178,19 @@ export function RelectureEdl({ affaireId, niveau, pieces, visite, analyse, obten
 
 function VuePiece({ affaireId, niveau, pieces, piece, etats, visitees, visite, analyse, obtenirLiens, lectureSeule, suivante, onOuvrirPiece }) {
   const donnees = visite.donnees
-  const [survol, setSurvol] = useState(null) // point de l'élément sous la souris
-  const [elementChoisi, setElementChoisi] = useState(null)
-  const [pointChoisi, setPointChoisi] = useState(null) // touché sur le plan
-  const [traceChoisie, setTraceChoisie] = useState(null)
-  const [erreur, setErreur] = useState(null)
-  const [message, setMessage] = useState(null)
-  const [lancement, setLancement] = useState(false)
-  const [confirmerRelance, setConfirmerRelance] = useState(false)
+  // Fiche, éléments, liaisons et cotes : le même bloc que le panneau de
+  // « Fond de plans » (RevuePiece) ; le plan de la pièce est propre à cette vue
+  const revue = useRevuePiece({ affaireId, niveau, piece, visite, analyse })
+  const { points, tracesNiveau, pointChoisi, setPointChoisi } = revue
   // Mode « Relier » (tracesVisiteLogique, le même que la visite) : ouvert
   // depuis le panneau du point choisi, fermé par Annuler ou la liaison posée
   const [relier, setRelier] = useState(null)
 
-  const points = useMemo(() => (donnees?.points ?? []).filter((p) => p.niveau_id === niveau.id), [donnees?.points, niveau.id])
   const nbPhotos = useMemo(() => {
     const n = new Map()
     for (const ph of donnees?.photos ?? []) n.set(ph.point_id, (n.get(ph.point_id) ?? 0) + 1)
     return n
   }, [donnees?.photos])
-  const elements = useMemo(() => analyse.elements.filter((e) => e.piece_id === piece.id), [analyse.elements, piece.id])
-  // Liaisons et cotes lues avec l'analyse (la base, pas la copie de la visite)
-  const tracesNiveau = useMemo(() => (analyse.tracesDisponibles ? (analyse.traces ?? []).filter((t) => t.niveau_id === niveau.id) : []),
-    [analyse.tracesDisponibles, analyse.traces, niveau.id])
-  const traces = useMemo(() => tracesRelecture(tracesNiveau, piece.id, points), [tracesNiveau, piece.id, points])
-  // Un point posé sans type prend celui de son élément relevé : les liaisons
-  // le nomment ainsi et « Ajouter une liaison » le propose
-  const pointsTypes = useMemo(() => avecTypeEffectif(points, analyse.elements), [points, analyse.elements])
-  const choixLiaison = useMemo(() => choixLiaisonRelecture({ points, elements: analyse.elements, pieceId: piece.id }),
-    [points, analyse.elements, piece.id])
-  const pointElement = elements.find((e) => e.id === elementChoisi)?.point_id ?? null
   // Le symbole de chaque point typé à la place de sa pastille
   const symboles = useMemo(() => {
     const parId = new Map(pieces.map((pc) => [pc.id, pc]))
@@ -228,71 +207,16 @@ function VuePiece({ affaireId, niveau, pieces, piece, etats, visitees, visite, a
     if (r.action === 'refus') { setRelier(r.mode); return }
     setRelier(null)
     setPointChoisi(cible.id)
-    ecrire(() => ajouterLiaison({
-      affaireId, niveauId: piece.niveau_id ?? niveau.id, pieceId: piece.id, interrupteurId: r.interrupteur.id, luminaireId: r.luminaire.id,
-    }))
+    revue.relier(r.interrupteur.id, r.luminaire.id)
   }
   const choisirPoint = (id) => {
     if (relier) { relierA(points.find((p) => p.id === id) ?? null); return }
-    setElementChoisi(null)
-    setTraceChoisie(null)
+    revue.setElementChoisi(null)
+    revue.setTraceChoisie(null)
     setPointChoisi(id)
   }
-  // Écarter le dernier élément d'un point emporte le point (photos et
-  // liaisons comprises) ; les points déjà sans élément se suppriment à la main
-  const photos = donnees?.photos
-  const suiteEcart = useCallback(
-    (element) => suiteEcartElement(element, { elements: analyse.elements, points, photos, traces: tracesNiveau }),
-    [analyse.elements, points, photos, tracesNiveau],
-  )
-  const pointsSeuls = useMemo(() => pointsSansElement(points, analyse.elements, piece.id)
-    .map((p) => ({ point: p, suppression: suppressionPoint(p, { photos, traces: tracesNiveau }) })),
-  [points, analyse.elements, piece.id, photos, tracesNiveau])
-  const pointEnEvidence = survol ?? pointElement ?? pointChoisi
 
-  const enAnalyse = analyse.enCours === piece.id || lancement
   const etat = etats.get(piece.id)
-  const visitee = visitees.has(piece.id)
-
-  // Écrire puis relire : l'écran suit toujours la base. Rend vrai si
-  // l'écriture est passée ; sinon le motif s'affiche en rouge
-  const ecrire = async (travail) => {
-    setErreur(null)
-    try {
-      const r = await travail()
-      if (r?.indisponible) { setErreur(MESSAGE_ANALYSE_INDISPONIBLE); return false }
-      return true
-    } catch (err) {
-      setErreur(err?.message ?? String(err))
-      return false
-    } finally {
-      await analyse.relire()
-    }
-  }
-
-  // Le point part de la base ; la copie de la visite (relue en ligne,
-  // instantané remplacé) suit, sans quoi la pastille resterait sur le plan
-  const retirerPoint = async (pointId, options) => {
-    try {
-      return await supprimerPoint(pointId, options)
-    } finally {
-      if (pointChoisi === pointId) setPointChoisi(null)
-      await visite.recharger?.()
-    }
-  }
-
-  const lancer = async (action) => {
-    setMessage(null)
-    setLancement(true)
-    try {
-      setMessage(messageLancement(await action(piece.id)))
-    } catch (err) {
-      setMessage(err?.message ?? String(err))
-    } finally {
-      setLancement(false)
-      await analyse.relire()
-    }
-  }
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', gap: 10, minHeight: 0 }}>
@@ -301,42 +225,13 @@ function VuePiece({ affaireId, niveau, pieces, piece, etats, visitees, visite, a
         <Pastille etat={etat} />
         <h2 style={{ margin: 0, fontSize: 15, fontWeight: 600, color: '#1F1B17' }}>{designationPiece(piece)}</h2>
         <span style={{ flex: 1 }} />
-        {enAnalyse && (
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: COULEUR_IA }}>
-            <Sparkles size={14} /> Analyse en cours…
-          </span>
-        )}
-        {!lectureSeule && visitee && !enAnalyse && !piece.analyse_erreur && (
-          <button type="button" onClick={() => setConfirmerRelance(true)} style={bouton}><RefreshCw size={14} /> Relancer l’analyse</button>
-        )}
+        <EtatAnalyseRevue revue={revue} lectureSeule={lectureSeule} />
         {suivante && (
           <button type="button" onClick={() => onOuvrirPiece(suivante.id)} style={bouton}>Pièce suivante <ChevronRight size={15} /></button>
         )}
       </div>
 
-      {piece.analyse_erreur && (
-        <p role="alert" style={alerteRouge}>
-          <span style={{ flex: 1 }}>L’analyse de cette pièce a échoué : {piece.analyse_erreur}</span>
-          {!lectureSeule && (
-            <button type="button" disabled={enAnalyse} onClick={() => lancer(analyse.reessayer)}
-              style={{ ...bouton, border: 'none', background: 'none', color: ROUGE, fontWeight: 600 }}>
-              <RefreshCw size={14} /> Réessayer
-            </button>
-          )}
-        </p>
-      )}
-      {message && (
-        <p role="status" style={{ ...noteAmbre, maxWidth: 'none', display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span style={{ flex: 1 }}>{message}</span>
-          <button type="button" onClick={() => setMessage(null)} style={{ ...bouton, border: 'none', background: 'none', color: AMBRE.texte }}>Fermer</button>
-        </p>
-      )}
-      {erreur && (
-        <p role="alert" style={alerteRouge}>
-          <span style={{ flex: 1 }}>{erreur}</span>
-          <button type="button" onClick={() => setErreur(null)} style={{ ...bouton, border: 'none', background: 'none', color: ROUGE }}>Fermer</button>
-        </p>
-      )}
+      <AvisRevue revue={revue} lectureSeule={lectureSeule} />
 
       {/* Pas de flex-wrap autour du plan : une longue liste d'éléments
           étirerait la rangée et le plan sortirait de l'écran */}
@@ -345,11 +240,11 @@ function VuePiece({ affaireId, niveau, pieces, piece, etats, visitees, visite, a
           <PlanVisite
             key={niveau.id}
             niveau={niveau} pieces={pieces} points={points} nbPhotos={nbPhotos} visitees={visitees} etats={etats}
-            piece={piece} pointId={pointEnEvidence} obtenirLiens={obtenirLiens} consultation symboles={symboles}
-            traces={tracesNiveau} traceId={traceChoisie} mode={relier}
+            piece={piece} pointId={revue.pointEnEvidence} obtenirLiens={obtenirLiens} consultation symboles={symboles}
+            traces={tracesNiveau} traceId={revue.traceChoisie} mode={relier}
             onChoisirPoint={choisirPoint}
             onToucher={relier ? () => relierA(null) : undefined}
-            onChoisirTrace={(id) => { setElementChoisi(null); setPointChoisi(null); setTraceChoisie((c) => (c === id ? null : id)) }}
+            onChoisirTrace={revue.choisirTrace}
           />
           {(relier || pointPanneau) && (
             <div style={{
@@ -383,58 +278,11 @@ function VuePiece({ affaireId, niveau, pieces, piece, etats, visitees, visite, a
           )}
         </div>
         <div style={{ minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 16, paddingRight: 2 }}>
-          {!visitee && !piece.analyse_le && (
-            <p style={{ margin: 0, fontSize: 13, color: '#9C9591' }}>Cette pièce n’a pas encore été visitée.</p>
-          )}
-          {visitee && !piece.analyse_le && !piece.analyse_erreur && !enAnalyse && (
-            <p style={{ margin: 0, fontSize: 13, color: '#9C9591' }}>
-              La pièce n’a pas encore été analysée : l’analyse part d’elle-même une fois la visite de la pièce envoyée et transcrite.
-            </p>
-          )}
-          <FicheRelecture
-            key={piece.id}
-            piece={piece} lectureSeule={lectureSeule}
-            onEnregistrer={(fiche) => ecrire(() => modifierFiche(piece.id, fiche, { valider: true }))}
-          />
-          <ElementsRelecture
-            piece={piece} elements={elements} points={points} lectureSeule={lectureSeule}
-            elementChoisi={elementChoisi} pointChoisi={pointChoisi}
-            onSurvol={setSurvol}
-            onChoisir={(id) => { setPointChoisi(null); setTraceChoisie(null); setElementChoisi((c) => (c === id ? null : id)) }}
-            onValider={(id, champs) => ecrire(() => validerElement(id, champs))}
-            onEcarter={(id, suite) => ecrire(async () => {
-              const r = await ecarterElement(id)
-              if (!r?.indisponible && suite) await retirerPoint(suite.pointId, { siSansElement: true })
-              return r
-            })}
-            suiteEcart={suiteEcart} pointsSeuls={pointsSeuls}
-            onSupprimerPoint={(suppression) => ecrire(() => retirerPoint(suppression.pointId))}
-            onAjouter={(champs) => ecrire(() => ajouterElement({ ...champs, affaire_id: affaireId, niveau_id: piece.niveau_id ?? niveau.id, piece_id: piece.id }))}
-          />
-          {analyse.tracesDisponibles && (
-            <TracesRelecture
-              traces={traces} points={pointsTypes} lectureSeule={lectureSeule} traceChoisie={traceChoisie}
-              onChoisir={(id) => { setElementChoisi(null); setPointChoisi(null); setTraceChoisie((c) => (c === id ? null : id)) }}
-              onValider={(trace, champs) => ecrire(() => validerTrace(trace, champs))}
-              onEcarter={(trace) => ecrire(() => ecarterTrace(trace))}
-              choix={choixLiaison}
-              onRelier={(interrupteurId, luminaireId) => ecrire(() => ajouterLiaison({
-                affaireId, niveauId: piece.niveau_id ?? niveau.id, pieceId: piece.id, interrupteurId, luminaireId,
-              }))}
-            />
-          )}
+          <ContenuRevue revue={revue} lectureSeule={lectureSeule} />
         </div>
       </div>
 
-      {confirmerRelance && (
-        <ConfirmationEdl
-          titre="Relancer l’analyse de la pièce ?"
-          texte="Claude relit tout ce qui a été dit et fait dans la pièce, toutes visites confondues. Les éléments, liaisons et cotes déjà validés ou ajoutés à la main sont gardés, et Claude repart de la fiche telle que vous l’avez corrigée ; les propositions encore à valider sont remplacées par les nouvelles."
-          libelle="Relancer l’analyse" libelleEnCours="Analyse en cours…"
-          onAnnuler={() => setConfirmerRelance(false)}
-          onConfirmer={() => { setConfirmerRelance(false); return lancer(analyse.relancer) }}
-        />
-      )}
+      <ConfirmationRelance revue={revue} />
     </div>
   )
 }

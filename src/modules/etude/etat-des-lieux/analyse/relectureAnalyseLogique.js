@@ -382,3 +382,23 @@ export function messageLancement(r) {
   if (!r.raison) return null
   return MESSAGES_LANCEMENT[r.raison] ?? `L’analyse n’est pas partie (${r.raison}).`
 }
+
+// ─── Revue d'une pièce depuis « Fond de plans » ──────────────────────────────
+
+/**
+ * Vrai quand une pièce n'a encore rien à relire : ni visitée, ni analysée
+ * (ou en échec), sans fiche, sans élément, sans point ni liaison ou cote.
+ * Le panneau de « Fond de plans » se réduit alors à « Pas encore visitée »
+ * (la liste des pièces reste à portée) ; dès qu'il y a quelque chose, il
+ * montre la même revue que l'onglet « État des lieux ».
+ *
+ * @param points points de l'étage ; elements, traces : ceux de l'affaire
+ */
+export function pieceSansRevue(piece, { visitee = false, elements = [], points = [], traces = [] } = {}) {
+  if (!piece?.id) return true
+  if (visitee || piece.analyse_le || piece.analyse_erreur) return false
+  if (JSON.stringify(brouillonFiche(piece.fiche)) !== JSON.stringify(brouillonFiche({}))) return false
+  if ((elements ?? []).some((e) => e?.piece_id === piece.id)) return false
+  if ((points ?? []).some((p) => p?.piece_id === piece.id)) return false
+  return tracesDeLaPiece(traces ?? [], piece.id, points ?? []).length === 0
+}

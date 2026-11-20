@@ -80,7 +80,7 @@ function FormulaireElement({ element = null, pieceId, points, libelleEnregistrer
         </label>
       </div>
       {erreur && <p role="alert" style={{ margin: 0, fontSize: 12, color: '#B8412C' }}>{erreur}</p>}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
         <button type="button" onClick={onAnnuler} disabled={enCours} style={bouton}>Annuler</button>
         <button type="button" onClick={enregistrer} disabled={enCours}
           style={{ ...bouton, border: 'none', background: COULEUR_IA, color: 'white', fontWeight: 600, opacity: enCours ? 0.6 : 1 }}>
@@ -147,7 +147,7 @@ function CarteElement({ element: e, numeroPoint, pieceId, points, lectureSeule, 
           onEnregistrer={async (champs) => { if (await onValider(e.id, champs)) setEdition(false) }}
         />
       ) : !lectureSeule && (
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, marginTop: 8 }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
           {e.a_valider && (
             <button type="button" onClick={valider} disabled={enCours}
               style={{ ...bouton, border: 'none', background: COULEUR_IA, color: 'white', fontWeight: 600, opacity: enCours ? 0.6 : 1 }}>

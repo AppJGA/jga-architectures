@@ -133,8 +133,10 @@ export function FicheRelecture({ piece, lectureSeule, onEnregistrer }) {
   const blocPorte = (
     <fieldset key="porte" style={{ gridColumn: '1 / -1', margin: 0, padding: '10px 12px 12px', border: '0.5px solid rgba(0,0,0,0.12)', borderRadius: 2, minWidth: 0 }}>
       <legend style={{ padding: '0 4px', fontSize: 12, color: '#5E5854' }}>Bloc porte</legend>
-      <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
-        <div style={{ flex: 1, minWidth: 0, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 10 }}>
+      {/* Dans le panneau étroit de « Fond de plans », le statut passe sous
+          les champs plutôt que de les pousser hors de la carte */}
+      <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+        <div style={{ flex: '1 1 140px', minWidth: 0, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(140px, 100%), 1fr))', gap: 10 }}>
           {CHAMPS_PORTE.map((c) => {
             const id = `fiche-${piece.id}-porte-${c}`
             return (
@@ -172,13 +174,13 @@ export function FicheRelecture({ piece, lectureSeule, onEnregistrer }) {
           Pas dit pendant la visite : {[...manquantes].map((r) => LIBELLES_FICHE[r].toLowerCase()).join(', ')}.
         </p>
       )}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 10 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(240px, 100%), 1fr))', gap: 10 }}>
         {RUBRIQUES_FICHE.filter((r) => r !== 'remarques').map(rubrique)}
         {blocPorte}
         {rubrique('remarques')}
       </div>
       {!lectureSeule && (modifiee || aValider) && (
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
           {modifiee && (
             <button type="button" disabled={enCours} onClick={chargerNouvelle}
               style={{ ...bouton, border: '0.5px solid rgba(0,0,0,0.15)', background: 'white', color: '#1F1B17' }}>

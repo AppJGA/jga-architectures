@@ -14,6 +14,7 @@ import { visiteEnCours, perteRemplacement } from './visite/visiteLogique'
 import { oublierEdlLocal } from './visite/synchroEdl'
 import { useAnalyseEdl } from './analyse/useAnalyseEdl'
 import { RelectureEdl } from './analyse/RelectureEdl'
+import { RevuePiece } from './analyse/RevuePiece'
 import { resumePieceRelecture } from './analyse/relectureAnalyseLogique'
 import { COULEUR_IA } from '../../chantier/comptes-rendus/enregistrement/styleProposition'
 import { morceauxEtatsDesLieux } from '../../chantier/comptes-rendus/enregistrement/audioLocal'
@@ -38,7 +39,8 @@ const ExportEdl = lazy(() => import('./export/ExportEdl'))
 // Lot 3 : « Relecture », à côté de « Pièces » dès qu'une visite existe, pour
 // relire au bureau ce que Claude a tiré de chaque pièce. La vue et la pièce
 // ouverte sont dans l'adresse (?vue=relecture&piece=…) : un rechargement y
-// ramène.
+// ramène. Depuis « Fond de plans », la pièce choisie montre aussi sa fiche
+// et ses éléments (`RevuePiece`, le même bloc), sans changer d'onglet.
 // Lot 4 : « Exporter » (dès qu'il y a des étages, lecture seule comprise :
 // l'export ne modifie rien) ouvre la fenêtre d'export avec son aperçu.
 
@@ -346,6 +348,9 @@ export default function EtatDesLieuxModule({ lectureSeule = false }) {
             onSupprimer={edl.supprimerPiece}
             onAjouterPlusieurs={async (niveauIdCible, pieces) => { await enregistrerPieces(affaireId, niveauIdCible, pieces); edl.recharger() }}
             onRelecture={(relecture) => edl.enregistrerRelecture(niveau.id, relecture)}
+            panneauPiece={relecturePossible ? (p) => (
+              <RevuePiece key={p.id} affaireId={affaireId} niveau={niveau} piece={p} visite={visite} analyse={analyse} lectureSeule={lectureSeule} />
+            ) : null}
           />
         </div>
       )}

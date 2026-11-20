@@ -49,7 +49,7 @@ function SaisieCote({ trace, libelleEnregistrer, onEnregistrer, onAnnuler }) {
         />
       </label>
       {erreur && <p role="alert" style={{ margin: 0, fontSize: 12, color: ROUGE }}>{erreur}</p>}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
         <button type="button" onClick={onAnnuler} disabled={enCours} style={bouton}>Annuler</button>
         <button type="button" onClick={enregistrer} disabled={enCours}
           style={{ ...bouton, border: 'none', background: COULEUR_IA, color: 'white', fontWeight: 600, opacity: enCours ? 0.6 : 1 }}>

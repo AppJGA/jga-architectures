@@ -5,7 +5,7 @@ import { cadrePiece, COULEURS_PIECE, etatPiece, pointProche, ZOOM_MAX_VISITE } f
 import { useVecteursEdl } from '../useVecteursEdl'
 import { zoomMaxVectoriel } from '../vecteursEdlLogique'
 import { COULEUR_IA } from '../../../chantier/comptes-rendus/enregistrement/styleProposition'
-import { courbeCommande, traitsCote, traceProche, extremitesTrace, texteCote, COULEUR_COMMANDE, COULEUR_COTE } from './tracesVisiteLogique'
+import { courbeCommande, traitsCote, traceProche, extremitesTrace, texteCote, sensInterieurCote, COULEUR_COMMANDE, COULEUR_COTE, COULEUR_TRAIT_COTE } from './tracesVisiteLogique'
 
 // ─── Plan de la visite ───────────────────────────────────────────────────────
 //
@@ -29,6 +29,8 @@ const ACCENT = 'var(--affaire-accent, #E8602C)'
 // Zone sensible de 44 px au doigt, rond visible plus petit
 const RAYON_TOUCHER = 22
 const SEUIL_GLISSE = 6
+// Ligne de cote à 18 px de son mur, à tout zoom
+const ECART_COTE_PX = 18
 
 export function PlanVisite({
   niveau, pieces, points, nbPhotos, visitees, etats = null, piece, pointId, obtenirLiens, onToucher, onChoisirPoint, onDeplacerPoint, consultation = false,
@@ -79,7 +81,13 @@ export function PlanVisite({
     if (mode?.sorte === 'coter') { onToucherAngle?.(m, tolerance); return }
     const proche = pointProche(points.filter(touchable), m, tolerance)
     if (proche) { onChoisirPoint(proche.id); return }
-    const trace = !mode && onChoisirTrace ? traceProche(traces.filter(traceTouchable), points, m, tolerance) : null
+    // La ligne de cote est dessinée à 18 px de son mur (tolérance = 22 px)
+    const trace = !mode && onChoisirTrace
+      ? traceProche(traces.filter(traceTouchable), points, m, tolerance, {
+        ecartCote: (tolerance * ECART_COTE_PX) / RAYON_TOUCHER,
+        contourDe: (t) => pieces?.find((pc) => pc.id === t.piece_id)?.contour ?? null,
+      })
+      : null
     if (trace) onChoisirTrace(trace.id)
     else onToucher?.(m)
   }
@@ -163,6 +171,7 @@ export function PlanVisite({
         {traces.map((t) => (
           <Trace
             key={t.id} trace={t} points={positionsPoints} enCalque={enCalque} zoom={zoom}
+            contour={t.sorte === 'cote' ? pieces?.find((pc) => pc.id === t.piece_id)?.contour : null}
             choisie={t.id === traceId} attenuee={!!piece && !traceTouchable(t)}
           />
         ))}
@@ -221,11 +230,13 @@ export function PlanVisite({
   )
 }
 
-// Liaison (courbe fine, couleur électricité) ou cote (ligne, obliques,
-// valeur ou « ? »). Calculées en mètres puis portées au calque : la courbe
-// reste à gauche du sens interrupteur → luminaire tel que le plan le montre.
-// Épaisseurs divisées par le zoom : constantes à l'écran.
-function Trace({ trace, points, enCalque, zoom, choisie, attenuee }) {
+// Liaison (courbe fine, couleur électricité) ou cote (ligne d'encre décalée
+// de 18 px dans la pièce, lignes d'attache, obliques, valeur ou « ? ») —
+// même géométrie que le DXF et la planche. Calculées en mètres puis portées
+// au calque : la courbe reste à gauche du sens interrupteur → luminaire, la
+// cote du côté intérieur de sa pièce, tels que le plan les montre.
+// Épaisseurs et écarts divisés par le zoom : constants à l'écran.
+function Trace({ trace, points, enCalque, zoom, choisie, attenuee, contour = null }) {
   const bouts = extremitesTrace(trace, points)
   if (!bouts) return null
   const proposee = !!trace.a_valider
@@ -243,16 +254,20 @@ function Trace({ trace, points, enCalque, zoom, choisie, attenuee }) {
       </g>
     )
   }
+  const sens = sensInterieurCote(bouts[0], bouts[1], contour)
   const [a, b] = bouts.map(enCalque)
-  const t = traitsCote(a, b, { tic: 12 / zoom, decalage: 7 / zoom, yVersLeBas: true })
+  const t = traitsCote(a, b, { tic: 12 / zoom, decalage: 4 / zoom, yVersLeBas: true, sens, ecart: ECART_COTE_PX / zoom, jeu: 3 / zoom, hauteurTexte: 9 / zoom })
   if (!t) return null
-  const couleur = proposee ? COULEUR_IA : COULEUR_COTE
+  const couleur = proposee ? COULEUR_IA : COULEUR_TRAIT_COTE
   const trait = { stroke: couleur, strokeWidth: (choisie ? 2.5 : 1.5) / zoom }
+  const fin = { stroke: couleur, strokeWidth: 1 / zoom }
+  const [a2, b2] = t.ligne
   const [x, y] = t.texte.position
   return (
     <g style={style}>
-      {choisie && <line x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]} style={{ stroke: 'rgba(14,116,144,0.22)', strokeWidth: 10 / zoom, strokeLinecap: 'round' }} />}
-      <line x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]} style={{ ...trait, strokeDasharray: tirets }} />
+      {choisie && <line x1={a2[0]} y1={a2[1]} x2={b2[0]} y2={b2[1]} style={{ stroke: 'rgba(58,54,50,0.2)', strokeWidth: 10 / zoom, strokeLinecap: 'round' }} />}
+      {t.attaches.map(([p, q], i) => <line key={`at-${i}`} x1={p[0]} y1={p[1]} x2={q[0]} y2={q[1]} style={fin} />)}
+      <line x1={a2[0]} y1={a2[1]} x2={b2[0]} y2={b2[1]} style={{ ...trait, strokeDasharray: tirets }} />
       {t.obliques.map(([p, q], i) => <line key={i} x1={p[0]} y1={p[1]} x2={q[0]} y2={q[1]} style={trait} />)}
       <text
         x={x} y={y} textAnchor="middle" transform={`rotate(${t.texte.angle} ${x} ${y})`}

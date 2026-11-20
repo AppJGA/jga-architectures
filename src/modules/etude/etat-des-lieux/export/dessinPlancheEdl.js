@@ -34,6 +34,7 @@ export const TRAIT = {
   // Liaisons et cotes (084) : plus fines que les symboles, qu'elles ne doivent pas noyer
   commande: 0.25,
   cote: 0.18,
+  attache: 0.13,
 }
 // Tirets d'une liaison ou d'une cote proposée par l'analyse
 const TIRETS_TRACE_MM = [1.2, 0.8]
@@ -263,7 +264,7 @@ function dessinerCommande(ctx, t, p) {
   ctx.stroke()
 }
 
-/** Une cote de la mise : ligne, obliques et valeur (« ? » si personne ne l'a donnée). */
+/** Une cote de la mise : lignes d'attache, ligne de cote, obliques et valeur (« ? » si personne ne l'a donnée). */
 function dessinerCote(ctx, t, p) {
   ctx.strokeStyle = t.couleur
   ctx.lineWidth = TRAIT.cote * p
@@ -273,6 +274,16 @@ function dessinerCote(ctx, t, p) {
   ctx.lineTo(t.b[0] * p, t.b[1] * p)
   ctx.stroke()
   ctx.setLineDash?.([])
+  if (t.attaches?.length) {
+    ctx.lineWidth = TRAIT.attache * p
+    ctx.beginPath()
+    for (const [q, r] of t.attaches) {
+      ctx.moveTo(q[0] * p, q[1] * p)
+      ctx.lineTo(r[0] * p, r[1] * p)
+    }
+    ctx.stroke()
+    ctx.lineWidth = TRAIT.cote * p
+  }
   ctx.beginPath()
   for (const [q, r] of t.obliques) {
     ctx.moveTo(q[0] * p, q[1] * p)

@@ -31,12 +31,12 @@
 
 import { CALQUES, calqueEdl, typeEdl } from '../calquesEdl.js'
 import { aire, pointDansPolygone } from '../geometrieEdl.js'
-import { RAYON_SANS_SYMBOLE, SYMBOLES, emplacementsDuPoint, orientationPiece } from './symbolesEdl.js'
-import { placerEtiquettes, pointInterieur, repere } from './placementEtiquettes.js'
+import { RAYON_SANS_SYMBOLE, SYMBOLES, emplacementsDuPoint, largeurTexte, orientationPiece } from './symbolesEdl.js'
+import { placerEtiquettes, pointInterieur, polygoneBoite, repere } from './placementEtiquettes.js'
 import { dansCp1252, encoderCp1252 } from './encodageDxf.js'
 import { ficheExportee, hspExport, porteExport, statutExport } from './ficheExportEdl.js'
 import { STATUT_A_PRECISER, libelleStatut } from '../statutsEdl.js'
-import { courbeCommande, traitsCote } from '../visite/tracesVisiteLogique.js'
+import { courbeCommande, placerValeurCote, sensInterieurCote, traitsCote } from '../visite/tracesVisiteLogique.js'
 
 export const CALQUE_A_VALIDER = 'EDL-À valider'
 
@@ -65,10 +65,16 @@ const CARACTERES_NOM = Math.round((CARACTERES_CADRE * HAUTEUR_TEXTE) / HAUTEUR_N
 // Un TEXT R12 ne dépasse pas 255 caractères
 const LONGUEUR_TEXTE_MAX = 250
 
-// Cote entre deux angles (084) : trait oblique de 0,15 m à chaque bout, valeur
-// posée 5 cm au-dessus de la ligne, à la hauteur des autres textes
+// Cote entre deux angles (084), comme sur la planche au 1/100 : ligne de
+// cote à 0,60 m du mur dans la pièce, lignes d'attache à 0,10 m de l'angle,
+// trait oblique de 0,15 m à chaque bout, valeur posée 5 cm au-dessus de la
+// ligne à la hauteur des autres textes, glissée par pas de 0,50 m le long de
+// la ligne si elle couvre un symbole
 export const TIC_COTE = 0.15
 export const ECART_TEXTE_COTE = 0.05
+export const ECART_LIGNE_COTE = 0.6
+export const JEU_COTE = 0.1
+const PAS_VALEUR_COTE = 0.5
 
 const RUBRIQUES = [['sol', 'Sol'], ['murs', 'Murs'], ['plafond', 'Plafond'], ['plinthes', 'Plinthes']]
 
@@ -381,17 +387,20 @@ const libelleElement = (e) => texteDxf(e.libelle) || typeEdl(e.type)?.libelle ||
 /**
  * Ce qui s'écrit sur un étage, et où (`placerEtiquettes`) : le cadre de
  * chaque pièce et ses lignes, puis, point par point (pièce, puis numéro),
- * symboles, libellé et repère photo. Positions en mètres du plan. Exporté
- * pour les tests (aucun texte sur un autre).
+ * symboles, libellé et repère photo ; enfin les cotes (`traces` de
+ * `tracesAExporter`), dont la valeur évite les symboles et que cadres et
+ * libellés évitent à leur tour. Positions en mètres du plan. Exporté pour
+ * les tests (aucun texte sur un autre).
  *
  * @returns {
+ *   cotes: [{ trace, ligne, attaches, obliques, valeur, texte: { position, angle, coins } }],
  *   cadres: [{ piece, coins, lignes [{ texte, calque, hauteur, pos }], echelle, dedans, angle }],
  *   reperes: [{ cle, origine, angle, groupe, emplacements, symbole, calqueRappel,
  *     libelle: { lignes, coins, rappel } | null,
  *     photo: { centre, lignes, coins, rappel } | null }],
  * }
  */
-export function etiquettesEtage({ pieces = [], elementsExport = [], photos = [], points = [], inclurePropositions = false } = {}) {
+export function etiquettesEtage({ pieces = [], elementsExport = [], photos = [], points = [], traces = [], inclurePropositions = false } = {}) {
   const NOM_PIECES = calqueEdl('pieces').nom
   const NOM_FINITIONS = calqueEdl('finitions').nom
   const NOM_COTES = calqueEdl('cotes').nom
@@ -508,8 +517,29 @@ export function etiquettesEtage({ pieces = [], elementsExport = [], photos = [],
     || (a.numero ?? Infinity) - (b.numero ?? Infinity)
     || (a.cle < b.cle ? -1 : a.cle > b.cle ? 1 : 0))
 
-  const places = placerEtiquettes({ cadres, reperes: ordre })
+  // ── Cotes (084) : ligne décalée dans la pièce, valeur hors des symboles ;
+  // cette valeur devient un obstacle pour les cadres et les libellés ──
+  const boitesSymboles = ordre.filter((r) => r.symbole).map((r) => {
+    const poly = polygoneBoite(r.symbole, repere(r.origine, r.angle).versPlan)
+    return { xmin: Math.min(...poly.map((p) => p[0])), xmax: Math.max(...poly.map((p) => p[0])), ymin: Math.min(...poly.map((p) => p[1])), ymax: Math.max(...poly.map((p) => p[1])) }
+  })
+  const cotes = []
+  for (const t of traces ?? []) {
+    if (t.sorte !== 'cote') continue
+    const sens = sensInterieurCote(t.a, t.b, parId.get(t.pieceId)?.contour)
+    const c = traitsCote(t.a, t.b, {
+      tic: TIC_COTE, decalage: ECART_TEXTE_COTE, yVersLeBas: false, sens, ecart: ECART_LIGNE_COTE, jeu: JEU_COTE, hauteurTexte: HAUTEUR_TEXTE,
+    })
+    if (!c) continue
+    const valeur = texteDxf(t.valeur) || '?'
+    const place = placerValeurCote(c, { largeur: largeurTexte(valeur, HAUTEUR_TEXTE), hauteur: HAUTEUR_TEXTE, obstacles: boitesSymboles, pas: PAS_VALEUR_COTE })
+    boitesSymboles.push({ xmin: Math.min(...place.coins.map((p) => p[0])), xmax: Math.max(...place.coins.map((p) => p[0])), ymin: Math.min(...place.coins.map((p) => p[1])), ymax: Math.max(...place.coins.map((p) => p[1])) })
+    cotes.push({ trace: t, ...c, valeur, texte: { ...c.texte, position: place.position, coins: place.coins } })
+  }
+
+  const places = placerEtiquettes({ cadres, reperes: ordre, obstacles: cotes.map((c) => c.texte.coins) })
   return {
+    cotes,
     cadres: cadres.map((c, i) => ({ ...places.cadres[i], piece: c.piece })),
     reperes: ordre.map((r, i) => {
       const p = places.reperes[i]
@@ -604,7 +634,7 @@ export function genererDxfEdl({
   }
 
   // ── Pièces : contour, cadre et ses textes ──
-  const mise = etiquettesEtage({ pieces, elementsExport, photos, points, inclurePropositions })
+  const mise = etiquettesEtage({ pieces, elementsExport, photos, points, traces, inclurePropositions })
   const NOM_PIECES = calqueEdl('pieces').nom
   const NOM_PHOTOS = calqueEdl('photos').nom
   for (const c of mise.cadres) {
@@ -616,22 +646,22 @@ export function genererDxfEdl({
   // ── Liaisons et cotes (084), sous les symboles ──
   const NOM_ELECTRICITE = calqueEdl('electricite').nom
   const NOM_COTES = calqueEdl('cotes').nom
+  const calqueTrace = (t) => utiliser(t.aValider ? CALQUE_A_VALIDER : t.sorte === 'commande' ? NOM_ELECTRICITE : NOM_COTES)
   for (const t of traces ?? []) {
-    const calque = utiliser(t.aValider ? CALQUE_A_VALIDER : t.sorte === 'commande' ? NOM_ELECTRICITE : NOM_COTES)
-    if (t.sorte === 'commande') {
-      const arc = arcCommande(t.a, t.b)
-      if (!arc) continue
-      // L'étendue suit les deux bouts et le sommet de la courbe
-      for (const p of [t.a, t.b, arc.sommet]) enUnites(p)
-      w.arc(calque, enUnites(arc.centre), arc.rayon * u, arc.debut, arc.fin)
-      continue
-    }
-    const c = traitsCote(t.a, t.b, { tic: TIC_COTE, decalage: ECART_TEXTE_COTE, yVersLeBas: false })
-    if (!c) continue
+    if (t.sorte !== 'commande') continue
+    const arc = arcCommande(t.a, t.b)
+    if (!arc) continue
+    // L'étendue suit les deux bouts et le sommet de la courbe
+    for (const p of [t.a, t.b, arc.sommet]) enUnites(p)
+    w.arc(calqueTrace(t), enUnites(arc.centre), arc.rayon * u, arc.debut, arc.fin)
+  }
+  for (const c of mise.cotes) {
+    const calque = calqueTrace(c.trace)
+    for (const [p, q] of c.attaches) w.ligne(calque, enUnites(p), enUnites(q))
     w.ligne(calque, enUnites(c.ligne[0]), enUnites(c.ligne[1]))
     for (const [p, q] of c.obliques) w.ligne(calque, enUnites(p), enUnites(q))
-    // Centrée sur sa ligne de base, au-dessus de la ligne, jamais à l'envers
-    w.texte(calque, enUnites(c.texte.position), HAUTEUR_TEXTE * u, texteDxf(t.valeur) || '?', { rotation: c.texte.angle, h: 1 })
+    // Centrée sur sa ligne de base, du côté de la pièce, jamais à l'envers
+    w.texte(calque, enUnites(c.texte.position), HAUTEUR_TEXTE * u, c.valeur, { rotation: c.texte.angle, h: 1 })
   }
 
   // ── Éléments placés : symboles, libellés, cotes ──

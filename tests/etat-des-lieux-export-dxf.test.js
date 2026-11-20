@@ -14,7 +14,7 @@ import { numeroterPhotos } from '../src/modules/etude/etat-des-lieux/export/nume
 import { tracesAExporter } from '../src/modules/etude/etat-des-lieux/tracesEdl.js'
 import { courbeCommande } from '../src/modules/etude/etat-des-lieux/visite/tracesVisiteLogique.js'
 import {
-  CALQUE_A_VALIDER, ECART_TEXTE_COTE, TIC_COTE, arcCommande, couperLignes, echapperPourcent, elementsAExporter, encoderDxf, genererDxfEdl, nomBloc, nomCalqueValide,
+  CALQUE_A_VALIDER, ECART_LIGNE_COTE, ECART_TEXTE_COTE, HAUTEUR_TEXTE, JEU_COTE, TIC_COTE, arcCommande, couperLignes, etiquettesEtage, echapperPourcent, elementsAExporter, encoderDxf, genererDxfEdl, nomBloc, nomCalqueValide,
   pointInterieur, texteHsp, texteSurface, uniteDxf,
 } from '../src/modules/etude/etat-des-lieux/export/exportDxfEdl.js'
 
@@ -614,16 +614,26 @@ describe('liaisons et cotes', () => {
     assert.equal(arcCommande([1, 1], [1, 1]), null)
   })
 
-  test('cote : ligne, deux obliques et valeur au-dessus sur EDL-Cotes, dans l’unité du plan', () => {
+  test('cote : décalée dans la pièce, lignes d’attache, obliques et valeur sur EDL-Cotes, dans l’unité du plan', () => {
     const texte = dxf({ traces: [coteBas] })
     const lu = relire(texte)
     const traits = lu.traits.filter((t) => t.calque === 'EDL-Cotes')
-    assert.equal(traits.length, 3)
-    const ligne = traits.find((t) => Math.hypot(t.pts[1][0] - t.pts[0][0], t.pts[1][1] - t.pts[0][1]) > 100)
-    prochePoint(ligne.pts[0], [0, 0])
-    prochePoint(ligne.pts[1], [500, 0])
-    // Obliques à 45°, de TIC_COTE, centrées sur les bouts
-    for (const [bout, oblique] of [[[0, 0], traits[1]], [[500, 0], traits[2]]]) {
+    // Deux attaches, la ligne de cote, deux obliques
+    assert.equal(traits.length, 5)
+    const longueur = (t) => Math.hypot(t.pts[1][0] - t.pts[0][0], t.pts[1][1] - t.pts[0][1])
+    const ligne = traits.find((t) => longueur(t) > 100)
+    // Le séjour est au-dessus du mur coté (y > 0) : la ligne y est, à 0,60 m
+    prochePoint(ligne.pts[0], [0, ECART_LIGNE_COTE * 100])
+    prochePoint(ligne.pts[1], [500, ECART_LIGNE_COTE * 100])
+    const attaches = traits.filter((t) => Math.abs(t.pts[0][0] - t.pts[1][0]) < 1e-6)
+    assert.equal(attaches.length, 2)
+    for (const [x, at] of [[0, attaches[0]], [500, attaches[1]]]) {
+      prochePoint(at.pts[0], [x, JEU_COTE * 100])
+      prochePoint(at.pts[1], [x, (ECART_LIGNE_COTE + JEU_COTE) * 100])
+    }
+    // Obliques à 45°, de TIC_COTE, centrées sur les bouts de la ligne de cote
+    const obliques = traits.filter((t) => t !== ligne && !attaches.includes(t))
+    for (const [bout, oblique] of [[[0, 60], obliques[0]], [[500, 60], obliques[1]]]) {
       const [p, q] = oblique.pts
       proche(Math.hypot(q[0] - p[0], q[1] - p[1]), TIC_COTE * 100, 1e-6)
       prochePoint([(p[0] + q[0]) / 2, (p[1] + q[1]) / 2], bout)
@@ -631,18 +641,50 @@ describe('liaisons et cotes', () => {
     }
     const [t] = lu.textes.filter((x) => x.calque === 'EDL-Cotes')
     assert.equal(t.texte, '5,02 m')
-    prochePoint(t.pos, [250, ECART_TEXTE_COTE * 100])
+    prochePoint(t.pos, [250, (ECART_LIGNE_COTE + ECART_TEXTE_COTE) * 100])
     proche(t.rotation, 0)
     assert.equal(t.alignH, 1)
     proche(t.hauteur, 12)
   })
 
-  test('cote verticale tracée vers le bas : texte lisible de bas en haut, à gauche de la ligne', () => {
+  test('cote verticale tracée vers le bas : lisible de bas en haut, ligne et texte dans la pièce', () => {
     const lu = relire(dxf({ traces: [{ ...coteBas, xa: 0, ya: 4, xb: 0, yb: 0, valeur: null }] }))
     const [t] = lu.textes.filter((x) => x.calque === 'EDL-Cotes')
     assert.equal(t.texte, '?')
     proche(t.rotation, 90)
-    assert.ok(t.pos[0] < 0)
+    const ligne = lu.traits.filter((x) => x.calque === 'EDL-Cotes').find((x) => Math.abs(x.pts[0][1] - x.pts[1][1]) > 100)
+    proche(ligne.pts[0][0], 60)
+    // Le haut du texte regarde le mur : sa ligne de base s'écarte de la hauteur du texte
+    proche(t.pos[0], (ECART_LIGNE_COTE + ECART_TEXTE_COTE + HAUTEUR_TEXTE) * 100)
+  })
+
+  test('valeur glissée le long de la ligne quand elle couvre un symbole', () => {
+    // Un radiateur posé au milieu, juste au-dessus de la ligne de cote
+    const radiateur = { id: 'pt-r', niveau_id: 'n1', piece_id: 'pc-1', numero: 8, type: 'radiateur', x: 2.5, y: 0.75 }
+    const pts = [...lesPoints, radiateur]
+    const texte = genererDxfEdl({
+      pieces: [sejour], points: pts, unitesParMetre: 1,
+      elementsExport: elementsAExporter({ pieces: [sejour], points: pts, elements: [] }),
+      traces: tracesAExporter({ traces: [coteBas], points: pts }),
+    })
+    const [t] = relire(texte).textes.filter((x) => x.calque === 'EDL-Cotes')
+    assert.equal(t.texte, '5,02 m')
+    assert.ok(Math.abs(t.pos[0] - 2.5) >= 0.5 - 1e-9, `valeur restée au milieu (${t.pos[0]})`)
+    proche(t.pos[1], ECART_LIGNE_COTE + ECART_TEXTE_COTE)
+    // Les libellés des points ne viennent pas sur la valeur
+    const mise = etiquettesEtage({
+      pieces: [sejour], points: pts, elementsExport: elementsAExporter({ pieces: [sejour], points: pts, elements: [] }),
+      traces: tracesAExporter({ traces: [coteBas], points: pts }),
+    })
+    const [cote] = mise.cotes
+    const boite = (pts2) => ({ x0: Math.min(...pts2.map((p) => p[0])), x1: Math.max(...pts2.map((p) => p[0])), y0: Math.min(...pts2.map((p) => p[1])), y1: Math.max(...pts2.map((p) => p[1])) })
+    const v = boite(cote.texte.coins)
+    for (const r of mise.reperes) {
+      if (!r.libelle) continue
+      const b = boite(r.libelle.coins)
+      const recouvre = b.x0 < v.x1 - 1e-6 && v.x0 < b.x1 - 1e-6 && b.y0 < v.y1 - 1e-6 && v.y0 < b.y1 - 1e-6
+      assert.ok(!recouvre, `libellé ${r.cle} sur la valeur de la cote`)
+    }
   })
 
   test('propositions : écartées par défaut, sur EDL-À valider si demandées', () => {
@@ -654,7 +696,8 @@ describe('liaisons et cotes', () => {
     // La cote reste (posée à la main), sans la valeur proposée
     assert.deepEqual(textesDe(sans, 'EDL-Cotes'), ['?'])
     const avec = relire(dxf({ traces: [proposee, valeurProposee], inclurePropositions: true }))
-    assert.equal(avec.traits.filter((t) => t.calque === CALQUE_A_VALIDER).length, 4)
+    // L'arc, puis la cote : deux attaches, la ligne, deux obliques
+    assert.equal(avec.traits.filter((t) => t.calque === CALQUE_A_VALIDER).length, 6)
     assert.deepEqual(textesDe(avec, CALQUE_A_VALIDER), ['4,98 m'])
   })
 

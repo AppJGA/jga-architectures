@@ -14,7 +14,7 @@ import { boite } from '../geometrieEdl.js'
 import { MARGE_PLAN_M } from './planRapportEdl.js'
 import { COULEUR_PROPOSITION, couleurCalque, dateIso, elementsDeLEtage, texteLatin } from './rapportEdlLogique.js'
 import { RAYON_SANS_SYMBOLE, SYMBOLES, boitePrimitives, boiteSymbole, emplacementsDuPoint, largeurTexte, primitivesPlacees, quantiteElement } from './symbolesEdl.js'
-import { COULEUR_COTE, courbeCommande, traitsCote } from '../visite/tracesVisiteLogique.js'
+import { COULEUR_TRAIT_COTE, courbeCommande, placerValeurCote, sensInterieurCote, traitsCote } from '../visite/tracesVisiteLogique.js'
 
 export const FORMAT_A3 = { nom: 'A3', largeur: 420, hauteur: 297 }
 export const MARGE_PLANCHE = 8
@@ -34,9 +34,13 @@ export const LEGENDE = {
   lignesUneColonne: 6,
 }
 
-// Liaisons et cotes (084), sur le papier (mm) : obliques de 2 mm, valeur
-// de 2,2 mm posée 0,8 mm au-dessus de la ligne
-export const COTE_PLANCHE = { tic: 2, decalage: 0.8, police: 2.2 }
+// Liaisons et cotes (084), sur le papier (mm) : ligne de cote à 6 mm du mur
+// dans la pièce, lignes d'attache à 1 mm de l'angle, obliques de 2 mm,
+// valeur de 2,2 mm posée 0,8 mm au-dessus de la ligne, glissée par pas de
+// 5 mm le long de la ligne si elle couvre un symbole
+export const COTE_PLANCHE = { tic: 2, decalage: 0.8, police: 2.2, ecart: 6, jeu: 1, pas: 5 }
+// Hauteur des capitales de la valeur, à peu près
+const CAPITALES = 0.75
 
 const COINS = ['haut-droite', 'haut-gauche', 'bas-droite', 'bas-gauche']
 
@@ -169,11 +173,16 @@ function symbolesPlanche(elements, pieces, transform) {
  * Les traces de l'étage (`tracesAExporter`) en millimètres du papier. La
  * courbe d'une liaison est calculée en mètres (`courbeCommande` : même flèche
  * et même côté qu'à l'écran et dans le DXF) puis portée sur le papier — une
- * transformation affine garde la courbe de Bézier ; la cote est calculée sur
- * le papier (`traitsCote`, y vers le bas : texte jamais à l'envers).
+ * transformation affine garde la courbe de Bézier. La cote est calculée sur
+ * le papier (`traitsCote`, y vers le bas : texte jamais à l'envers), décalée
+ * du côté intérieur de sa pièce (`sensInterieurCote`, décidé en mètres) ; sa
+ * valeur évite les symboles (`obstacles`, boîtes papier) et les valeurs
+ * déjà posées (`placerValeurCote`).
  */
-function tracesPlanche(traces, transform) {
+function tracesPlanche(traces, transform, pieces = [], obstacles = []) {
   const mm = (p) => versMmPlanche(transform, p).map(arrondiMm)
+  const contours = new Map(pieces.map((p) => [p.id, p.contour]))
+  const gene = [...obstacles]
   const sortie = []
   for (const t of traces) {
     if (t.sorte === 'commande') {
@@ -185,22 +194,34 @@ function tracesPlanche(traces, transform) {
       })
       continue
     }
-    const a = mm(t.a)
-    const b = mm(t.b)
-    const c = traitsCote(a, b, { tic: COTE_PLANCHE.tic, decalage: COTE_PLANCHE.decalage, yVersLeBas: true })
+    const sens = sensInterieurCote(t.a, t.b, contours.get(t.pieceId))
+    const coins = [mm(t.a), mm(t.b)]
+    const { tic, decalage, police, ecart, jeu, pas } = COTE_PLANCHE
+    const c = traitsCote(coins[0], coins[1], { tic, decalage, yVersLeBas: true, sens, ecart, jeu, hauteurTexte: police * CAPITALES })
     if (!c) continue
+    const valeur = texteLatin(t.valeur ?? '').trim() || '?'
+    const place = placerValeurCote(c, { largeur: largeurTexte(valeur, police), hauteur: police, obstacles: gene, pas, yVersLeBas: true })
+    gene.push(boiteDePoints(place.coins))
+    const enMm = (p) => p.map(arrondiMm)
     sortie.push({
-      id: t.id, sorte: 'cote', aValider: !!t.aValider, couleur: t.aValider ? COULEUR_PROPOSITION : COULEUR_COTE,
-      a, b, obliques: c.obliques.map((o) => o.map((p) => p.map(arrondiMm))),
-      texte: { valeur: texteLatin(t.valeur ?? '').trim() || '?', position: c.texte.position.map(arrondiMm), angle: arrondiMm(c.texte.angle) },
+      id: t.id, sorte: 'cote', aValider: !!t.aValider, couleur: t.aValider ? COULEUR_PROPOSITION : COULEUR_TRAIT_COTE,
+      coins, a: enMm(c.ligne[0]), b: enMm(c.ligne[1]),
+      attaches: c.attaches.map((o) => o.map(enMm)),
+      obliques: c.obliques.map((o) => o.map(enMm)),
+      texte: { valeur, position: enMm(place.position), angle: arrondiMm(c.texte.angle), coins: place.coins.map(enMm) },
     })
   }
   return sortie
 }
 
+const boiteDePoints = (pts) => ({
+  xmin: Math.min(...pts.map((p) => p[0])), xmax: Math.max(...pts.map((p) => p[0])),
+  ymin: Math.min(...pts.map((p) => p[1])), ymax: Math.max(...pts.map((p) => p[1])),
+})
+
 // Boîte papier d'une trace : obstacle pour la légende
 function boiteTrace(t) {
-  const pts = t.sorte === 'commande' ? [t.a, t.b, t.sommet] : [t.a, t.b, t.texte.position]
+  const pts = t.sorte === 'commande' ? [t.a, t.b, t.sommet] : [...t.coins, t.a, t.b, ...t.texte.coins]
   const [x0, y0, x1, y1] = boite(pts)
   return { x: x0, y: y0, largeur: x1 - x0, hauteur: y1 - y0 }
 }
@@ -215,7 +236,7 @@ const ENTREES_TRACES = {
   electricite: { sorte: 'commande', entree: { code: null, libelle: 'Commande d’éclairage', trace: 'commande' } },
   cotes: { sorte: 'cote', entree: { code: null, libelle: 'Cote', trace: 'cote' } },
 }
-const COULEURS_GROUPE = { cotes: COULEUR_COTE }
+const COULEURS_GROUPE = { cotes: COULEUR_TRAIT_COTE }
 
 function groupesLegende(symboles, traces = []) {
   const groupes = []
@@ -388,7 +409,11 @@ export function misePlanche({
   const transform = { mmParMetre, origineM, origineMm: [zone.x + zone.largeur / 2, zone.y + zone.hauteur / 2] }
 
   const symboles = symbolesPlanche(elements, pieces, transform)
-  const tracesMm = tracesPlanche(sesTraces, transform)
+  const boitesSymboles = symboles.map((s) => ({
+    xmin: s.xMm - s.tailleMm.ancre[0], ymin: s.yMm - s.tailleMm.ancre[1],
+    xmax: s.xMm - s.tailleMm.ancre[0] + s.tailleMm.largeur, ymax: s.yMm - s.tailleMm.ancre[1] + s.tailleMm.hauteur,
+  }))
+  const tracesMm = tracesPlanche(sesTraces, transform, pieces, boitesSymboles)
 
   const etage = rempli(niveau?.nom) || 'Étage'
   const legende = {

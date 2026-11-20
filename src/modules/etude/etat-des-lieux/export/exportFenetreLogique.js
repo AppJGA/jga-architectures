@@ -407,7 +407,7 @@ export function avertissementsExport({ donnees, reglages, enLigne = true }) {
 const COULEURS_APERCU = {
   pieces: '#1F1B17',
   finitions: '#8A6A3B',
-  cotes: '#0E7490',
+  cotes: '#3A3632',
   photos: '#7C3AED',
 }
 export const COULEUR_PLAN_APERCU = '#C9C4BE'

@@ -240,7 +240,7 @@ export function indexObstacles(cellule = 1) {
 // Poids d'un recouvrement, quand aucune place n'est libre : entrer dans un
 // cadre est ce que l'agence ne veut pas voir (« aucun autre texte dans ce
 // cadre »), cacher un symbole vient ensuite, chevaucher un libellé en dernier
-const POIDS = { cadre: 100, symbole: 10, point: 10, photo: 10, libelle: 1 }
+const POIDS = { cadre: 100, symbole: 10, point: 10, photo: 10, cote: 10, libelle: 1 }
 
 // Aire (pondérée) couverte par le polygone sur les obstacles de l'index
 function gene(poly, index) {
@@ -418,10 +418,13 @@ const boitePoint = { xmin: -DEMI_POINT, ymin: -DEMI_POINT, xmax: DEMI_POINT, yma
  * @param reperes [{ cle, origine, angle, symbole (boîte locale) | null,
  *   lignes, photo: { ancre (boîte locale), lignes } | null }] — l'appelant
  *   les range (pièce, puis numéro du point) : l'ordre décide des places
+ * @param obstacles polygones (plan) déjà décidés que cadres et libellés
+ *   évitent comme un symbole : valeurs des cotes (084)
  * @returns { cadres: [{ id, …placerCadre }], reperes: [{ cle, libelle, photo }] }
  */
-export function placerEtiquettes({ cadres = [], reperes = [], reductionMin = REDUCTION_MIN, marge = MARGE_CADRE } = {}) {
+export function placerEtiquettes({ cadres = [], reperes = [], obstacles = [], reductionMin = REDUCTION_MIN, marge = MARGE_CADRE } = {}) {
   const index = indexObstacles()
+  for (const poly of obstacles) if (poly?.length >= 3) index.ajouter(poly, 'cote')
   for (const r of reperes) {
     const { versPlan } = repere(r.origine, r.angle)
     if (r.symbole) index.ajouter(polygoneBoite(r.symbole, versPlan), 'symbole')

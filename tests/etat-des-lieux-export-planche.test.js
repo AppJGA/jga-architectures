@@ -690,13 +690,43 @@ describe('planche : liaisons et cotes', () => {
     assert.ok(c.sommet[1] < c.a[1])
     assert.equal(c.couleur, couleurCalque('electricite'))
     assert.equal(k.sorte, 'cote')
-    mmProche(k.a, versMmPlanche(m.transform, [0, 0]))
-    mmProche(k.b, versMmPlanche(m.transform, [0, 20]))
+    mmProche(k.coins[0], versMmPlanche(m.transform, [0, 0]))
+    mmProche(k.coins[1], versMmPlanche(m.transform, [0, 20]))
+    // Mur de gauche de la salle : la ligne de cote est à 6 mm vers la droite (dans la pièce)
+    mmProche(k.a, [k.coins[0][0] + COTE_PLANCHE.ecart, k.coins[0][1]])
+    mmProche(k.b, [k.coins[1][0] + COTE_PLANCHE.ecart, k.coins[1][1]])
+    // Lignes d'attache de l'angle (à 1 mm) jusqu'à 1 mm au-delà de la ligne de cote
+    assert.equal(k.attaches.length, 2)
+    mmProche(k.attaches[0][0], [k.coins[0][0] + COTE_PLANCHE.jeu, k.coins[0][1]])
+    mmProche(k.attaches[0][1], [k.a[0] + COTE_PLANCHE.jeu, k.a[1]])
     assert.equal(k.texte.valeur, '20,05 m')
-    // Verticale : lue de bas en haut (−90° y vers le bas), texte à gauche de la ligne
+    assert.equal(k.couleur, '#3A3632')
+    // Verticale : lue de bas en haut (−90° y vers le bas), texte dans la pièce
     proche(k.texte.angle, -90)
-    assert.ok(k.texte.position[0] < k.a[0])
+    assert.ok(k.texte.position[0] > k.a[0])
     for (const [p, q] of k.obliques) proche(Math.hypot(q[0] - p[0], q[1] - p[1]), COTE_PLANCHE.tic, 1e-2)
+  })
+
+  test('valeur glissée par pas de 5 mm quand elle couvre un symbole, centrée sinon', () => {
+    // Une prise au milieu du mur coté, juste dans la pièce
+    const prise = point('pr', 'p1', 3, 15, 0.6, 'prise')
+    const bas = { ...cote, id: 't5', xa: 0, ya: 0, xb: 30, yb: 0, valeur: '30,00 m' }
+    const libre = miseTraces([bas])
+    const [k0] = libre.traces
+    proche(k0.texte.position[0], (k0.a[0] + k0.b[0]) / 2, 1e-3)
+    const m = miseTraces([bas], { points: [...pts, prise] })
+    const [k] = m.traces
+    const decale = k.texte.position[0] - (k.a[0] + k.b[0]) / 2
+    assert.ok(Math.abs(decale) >= COTE_PLANCHE.pas - 1e-6, `valeur restée sur la prise (${decale})`)
+    proche(Math.abs(decale) % COTE_PLANCHE.pas, 0, 1e-3)
+    proche(k.texte.position[1], k0.texte.position[1], 1e-6)
+    const s = m.symboles.find((x) => x.code === 'prise')
+    const xs = k.texte.coins.map((p) => p[0])
+    const ys = k.texte.coins.map((p) => p[1])
+    const sx0 = s.xMm - s.tailleMm.ancre[0]
+    const sy0 = s.yMm - s.tailleMm.ancre[1]
+    const recouvre = Math.min(...xs) < sx0 + s.tailleMm.largeur && sx0 < Math.max(...xs) && Math.min(...ys) < sy0 + s.tailleMm.hauteur && sy0 < Math.max(...ys)
+    assert.ok(!recouvre)
   })
 
   test('les traces entrent dans l’emprise ; celles d’un autre étage non', () => {

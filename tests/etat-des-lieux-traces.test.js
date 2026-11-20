@@ -14,6 +14,7 @@ import {
 import {
   debutRelier, debutCoter, consigneMode, toucherRelier, toucherCoter, courbeCommande, traitsCote, traceProche,
   extremitesTrace, texteCote, libelleTrace, tracesDeLaPiece, gesteSuppressionPoint, FLECHE_COMMANDE,
+  sensInterieurCote, placerValeurCote, COULEUR_TRAIT_COTE,
 } from '../src/modules/etude/etat-des-lieux/visite/tracesVisiteLogique.js'
 import { aideMemoire } from '../src/modules/etude/etat-des-lieux/visite/aideMemoireLogique.js'
 import { typeEdl } from '../src/modules/etude/etat-des-lieux/calquesEdl.js'
@@ -605,5 +606,90 @@ describe('tracesAExporter : ce qui part dans le DXF et les planches', () => {
     assert.deepEqual(tracesAExporter({ traces: [cote('t', { xb: 0 }), cote('u', { yb: null })], points }), [])
     assert.deepEqual(tracesAExporter({ traces: [{ id: 'x', sorte: 'autre' }, null], points }), [])
     assert.deepEqual(tracesAExporter(), [])
+  })
+})
+
+// ─── Cote décalée dans la pièce (retour du contrôleur, tâche 4) ─────────────
+
+describe('cote décalée dans la pièce', () => {
+  const pres = (p, q, e = 1e-9) => Math.abs(p[0] - q[0]) < e && Math.abs(p[1] - q[1]) < e
+  const rectangle = [[0, 0], [5, 0], [5, 4], [0, 4]]
+  // L : bras bas 10 × 4, bras gauche 4 × 10
+  const enL = [[0, 0], [10, 0], [10, 4], [4, 4], [4, 10], [0, 10]]
+
+  test('rectangle : chaque mur coté, dans les deux sens, du côté de la pièce', () => {
+    assert.equal(sensInterieurCote([0, 0], [5, 0], rectangle), 1)
+    assert.equal(sensInterieurCote([5, 0], [0, 0], rectangle), -1)
+    assert.equal(sensInterieurCote([0, 0], [0, 4], rectangle), -1)
+    assert.equal(sensInterieurCote([5, 4], [5, 0], rectangle), -1)
+    for (const [a, b] of [[[0, 0], [5, 0]], [[5, 0], [0, 0]], [[0, 0], [0, 4]], [[5, 4], [5, 0]], [[5, 4], [0, 4]]]) {
+      const t = traitsCote(a, b, { sens: sensInterieurCote(a, b, rectangle), ecart: 0.6, jeu: 0.1, decalage: 0.05, hauteurTexte: 0.12 })
+      const milieu = [(t.ligne[0][0] + t.ligne[1][0]) / 2, (t.ligne[0][1] + t.ligne[1][1]) / 2]
+      assert.ok(milieu[0] > 0 && milieu[0] < 5 && milieu[1] > 0 && milieu[1] < 4, `ligne hors de la pièce pour ${a} → ${b}`)
+      const [x, y] = t.texte.position
+      assert.ok(x > 0 && x < 5 && y > 0 && y < 4, `valeur hors de la pièce pour ${a} → ${b}`)
+    }
+  })
+
+  test('pièce en L : côtés rentrants et sortants', () => {
+    assert.equal(sensInterieurCote([0, 0], [0, 10], enL), -1)
+    assert.equal(sensInterieurCote([10, 4], [4, 4], enL), 1)
+    assert.equal(sensInterieurCote([4, 4], [4, 10], enL), 1)
+    assert.equal(sensInterieurCote([4, 10], [4, 4], enL), -1)
+    // Le côté rentrant du coude : la ligne de cote va dans le bras, pas dans le vide
+    const t = traitsCote([4, 4], [4, 10], { sens: sensInterieurCote([4, 4], [4, 10], enL), ecart: 0.6 })
+    assert.ok(pres(t.ligne[0], [3.4, 4]) && pres(t.ligne[1], [3.4, 10]))
+    // Diagonale à travers la pièce ou pièce inconnue : à gauche
+    assert.equal(sensInterieurCote([0, 0], [4, 10], enL), 1)
+    assert.equal(sensInterieurCote([0, 0], [5, 0], null), 1)
+  })
+
+  test('lignes d’attache et obliques, y vers le haut et y vers le bas', () => {
+    const t = traitsCote([0, 0], [4, 0], { sens: 1, ecart: 0.6, jeu: 0.1, tic: 0.2 })
+    assert.ok(pres(t.ligne[0], [0, 0.6]) && pres(t.ligne[1], [4, 0.6]))
+    assert.ok(pres(t.attaches[0][0], [0, 0.1]) && pres(t.attaches[0][1], [0, 0.7]))
+    assert.ok(pres(t.attaches[1][0], [4, 0.1]) && pres(t.attaches[1][1], [4, 0.7]))
+    const [o1] = t.obliques
+    assert.ok(pres([(o1[0][0] + o1[1][0]) / 2, (o1[0][1] + o1[1][1]) / 2], [0, 0.6]))
+    // Papier (y vers le bas) : le même côté « gauche » vu sur le plan, soit y négatif
+    const p = traitsCote([0, 0], [4, 0], { sens: 1, ecart: 6, jeu: 1, yVersLeBas: true })
+    assert.ok(pres(p.ligne[0], [0, -6]))
+    assert.ok(pres(p.attaches[0][0], [0, -1]) && pres(p.attaches[0][1], [0, -7]))
+    // Sans `sens` : le tracé d'avant, sans attache
+    assert.deepEqual(traitsCote([0, 0], [4, 0], { ecart: 6 }).attaches, [])
+    assert.ok(pres(traitsCote([0, 0], [4, 0], { ecart: 6 }).ligne[0], [0, 0]))
+  })
+
+  test('valeur du côté de la pièce, jamais collée à la ligne', () => {
+    // Mur du bas, pièce au-dessus : le haut du texte regarde la pièce
+    const bas = traitsCote([0, 0], [4, 0], { sens: 1, ecart: 0.6, decalage: 0.05, hauteurTexte: 0.12 })
+    assert.ok(pres(bas.texte.position, [2, 0.65]))
+    // Mur du haut, pièce en dessous : le texte se lit toujours à l'endroit, sa
+    // ligne de base s'écarte de sa hauteur
+    const haut = traitsCote([4, 4], [0, 4], { sens: 1, ecart: 0.6, decalage: 0.05, hauteurTexte: 0.12 })
+    assert.equal(haut.texte.angle, 0)
+    assert.ok(pres(haut.texte.position, [2, 4 - 0.6 - 0.05 - 0.12]))
+  })
+
+  test('placerValeurCote : centrée si libre, glissée par pas sinon, centrée si rien n’est libre', () => {
+    const c = traitsCote([0, 0], [10, 0], { sens: 1, ecart: 1, decalage: 0.1 })
+    const libre = placerValeurCote(c, { largeur: 2, hauteur: 0.3, obstacles: [], pas: 0.5 })
+    assert.equal(libre.glisse, 0)
+    assert.ok(pres(libre.position, [5, 1.1]))
+    const gene = placerValeurCote(c, { largeur: 2, hauteur: 0.3, obstacles: [{ xmin: 4.8, xmax: 5.2, ymin: 1, ymax: 1.6 }], pas: 0.5 })
+    assert.equal(gene.glisse, 1.5)
+    assert.ok(pres(gene.position, [6.5, 1.1]))
+    const plein = placerValeurCote(c, { largeur: 2, hauteur: 0.3, obstacles: [{ xmin: -1, xmax: 11, ymin: 0, ymax: 3 }], pas: 0.5 })
+    assert.equal(plein.glisse, 0)
+    assert.equal(plein.coins.length, 4)
+  })
+
+  test('toucher une cote sur sa ligne décalée ; trait d’encre', () => {
+    const cote = { id: 'c', sorte: 'cote', piece_id: 'p1', xa: 0, ya: 0, xb: 5, yb: 0 }
+    const contourDe = () => rectangle
+    assert.equal(traceProche([cote], [], [2.5, 0.6], 0.1), null)
+    assert.equal(traceProche([cote], [], [2.5, 0.6], 0.1, { ecartCote: 0.6, contourDe })?.id, 'c')
+    assert.equal(traceProche([cote], [], [2.5, 0.05], 0.1, { ecartCote: 0.6, contourDe })?.id, 'c')
+    assert.equal(COULEUR_TRAIT_COTE, '#3A3632')
   })
 })

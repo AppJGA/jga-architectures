@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 1829 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans, gestion de l'application, état des lieux)
+npm test         # 1837 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans, gestion de l'application, état des lieux)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -1012,8 +1012,16 @@ lot 1 : `docs/superpowers/plans/2026-11-17-etat-des-lieux-lot1-preparer.md`.
   `a_valider` à faux (`champsModificationTrace`). **Un seul dessin** écran /
   DXF / planche : `courbeCommande` (Bézier, flèche 20 %, à gauche du sens
   interrupteur → luminaire, calculée en mètres y vers le haut puis portée)
-  et `traitsCote` (obliques à 45°, texte jamais à l'envers, verticale lue de
-  bas en haut). **Journal** : `point-touche` (tout point existant touché),
+  et `traitsCote` : ligne de cote **décalée dans la pièce**
+  (`sensInterieurCote` vote d'après le contour, à défaut à gauche ; 18 px à
+  l'écran, 0,60 m au DXF, 6 mm sur la planche — un trait posé sur le mur s'y
+  confondait), lignes d'attache depuis chaque angle, obliques à 45°, valeur
+  du côté de la pièce, jamais à l'envers (verticale lue de bas en haut) ;
+  trait d'encre `#3A3632` (`COULEUR_TRAIT_COTE`), le bleu canard
+  `COULEUR_COTE` reste à l'interface. La valeur évite les symboles
+  (`placerValeurCote` : glissée le long de la ligne par pas de 5 mm sur la
+  planche, 0,50 m au DXF, centrée si rien n'est libre) ; une cote se touche
+  aussi sur sa ligne décalée (`traceProche`, `ecartCote`). **Journal** : `point-touche` (tout point existant touché),
   `angle-touche` (`detail.traceId` = la future cote, décidé à l'ouverture
   du mode), `trace`, `trace-supprimee`. **Analyse** : la frise montre ces
   touchers à leur heure (« point P3 (Interrupteur) touché », « angle touché
@@ -1032,15 +1040,16 @@ lot 1 : `docs/superpowers/plans/2026-11-17-etat-des-lieux-lot1-preparer.md`.
   liaison dont un point manque ou change d'étage omise, cote dont seule la
   valeur est proposée partie avec « ? » — la fenêtre le signale) ; DXF :
   `ARC` sur `EDL-Électricité` (`arcCommande` : cercle par les deux points et
-  le sommet de la courbe), cote = `LINE` + deux obliques + `TEXT` centré
-  au-dessus sur `EDL-Cotes`, propositions sur `EDL-À valider`, unité du plan
-  d'origine ; planche : en mm dans `misePlanche` (emprise, obstacles de la
+  le sommet de la courbe), cote = deux attaches + `LINE` + deux obliques +
+  `TEXT` centré sur `EDL-Cotes` (sa valeur est un obstacle pour cadres et
+  libellés, `obstacles` de `placerEtiquettes`), propositions sur `EDL-À
+  valider`, unité du plan d'origine ; planche : en mm dans `misePlanche` (emprise, obstacles de la
   légende), dessinées **sous les symboles** (courbe 0,25 mm couleur
-  électricité, cote 0,18 mm, valeur 2,2 mm sur liseré blanc) et toujours,
+  électricité, cote 0,18 mm et attaches 0,13 mm, valeur 2,2 mm sur liseré
+  blanc) et toujours,
   donc dans le **fond verrouillé** du Word (non déplaçables) ; légende
   « Commande d'éclairage », « Cote », « Liaison ou cote proposée »
-  seulement si présentes. Limite : la valeur d'une cote n'entre pas dans le
-  placement des étiquettes du DXF.
+  seulement si présentes.
 - **Export (lot 4)** (`export/`, plan
   `docs/superpowers/plans/2026-11-18-etat-des-lieux-lot4-exporter.md`, aucune
   migration, aucun appel payant) : bouton « Exporter » du module → **fenêtre

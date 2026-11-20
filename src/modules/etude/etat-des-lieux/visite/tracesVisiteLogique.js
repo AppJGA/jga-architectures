@@ -14,11 +14,16 @@
 
 import { estInterrupteur, estLuminaire, liaisonPossible, liaisonExiste, angleLePlusProche, texteValeur, valeurCote } from '../tracesEdl.js'
 import { typeEdl } from '../calquesEdl.js'
+import { pointDansPolygone } from '../geometrieEdl.js'
 
-// Couleurs du dessin : électricité pour les liaisons, bleu canard des cotes
-// (distinct du bleu des propositions de l'IA, qui les dessine en tirets)
+// Couleurs : électricité pour les liaisons ; bleu canard pour ce qui touche
+// aux cotes dans l'interface (mode « Coter », boutons, ronds d'angle) ; le
+// trait de cote lui-même à l'encre, convention du dessin d'architecture
+// (le bleu canard est aussi celui de la plomberie sur les planches). Les
+// propositions de l'IA se dessinent en tirets de leur bleu.
 export const COULEUR_COMMANDE = '#1565C0'
 export const COULEUR_COTE = '#0E7490'
+export const COULEUR_TRAIT_COTE = '#3A3632'
 
 // Flèche de la courbe d'une liaison : 20 % de la longueur
 export const FLECHE_COMMANDE = 0.2
@@ -141,22 +146,65 @@ export function courbeCommande(a, b, { segments = 16 } = {}) {
 }
 
 /**
- * Ligne de cote entre deux angles : la ligne, un trait oblique à 45° centré
- * sur chaque extrémité (de longueur `tic`), et le texte posé au milieu,
- * décalé de `decalage` du côté de son haut, tourné comme la ligne mais
- * jamais à l'envers. `yVersLeBas` : repère de l'écran ou du papier (SVG,
- * planche) ; sinon y vers le haut (mètres, DXF). L'angle du texte est en
- * degrés dans le sens du repère (celui de `rotate()` en SVG, de l'angle
- * d'un TEXT en DXF) ; une cote verticale se lit de la droite (de bas en haut).
- * Rend { ligne, obliques, texte: { position, angle }, longueur } ou null.
+ * Côté intérieur d'une cote prise entre deux angles de la pièce, en mètres
+ * du plan (y vers le haut) : +1 à gauche du sens a → b, −1 à droite. Trois
+ * essais le long de la corde, de part et d'autre, votent ; à égalité (cote
+ * en diagonale, pièce inconnue), la gauche. Le signe se reporte tel quel à
+ * `traitsCote` dans tout repère (écran, papier) : passer de y vers le haut à
+ * y vers le bas retourne aussi la normale « à gauche ».
  */
-export function traitsCote(a, b, { tic = 1, decalage = 1, yVersLeBas = false } = {}) {
+export function sensInterieurCote(a, b, contour) {
+  const dx = b[0] - a[0]
+  const dy = b[1] - a[1]
+  const longueur = Math.hypot(dx, dy)
+  if (!(longueur > 0) || !Array.isArray(contour) || contour.length < 3) return 1
+  const n = [-dy / longueur, dx / longueur]
+  const pas = Math.min(0.05, longueur * 0.05)
+  let vote = 0
+  for (const t of [0.25, 0.5, 0.75]) {
+    const m = [a[0] + dx * t, a[1] + dy * t]
+    const gauche = pointDansPolygone([m[0] + n[0] * pas, m[1] + n[1] * pas], contour)
+    const droite = pointDansPolygone([m[0] - n[0] * pas, m[1] - n[1] * pas], contour)
+    if (gauche && !droite) vote += 1
+    else if (droite && !gauche) vote -= 1
+  }
+  return vote < 0 ? -1 : 1
+}
+
+/**
+ * Ligne de cote entre deux angles, dans les unités du repère reçu.
+ *
+ * Sans `sens` (ancien tracé) : la ligne d'angle à angle. Avec `sens` (+1 /
+ * −1, de `sensInterieurCote`) : la ligne de cote est tracée parallèle, à
+ * `ecart` à l'intérieur de la pièce, pour ne pas se confondre avec le mur ;
+ * une ligne d'attache part de chaque angle (à `jeu` de l'angle) et dépasse
+ * la ligne de cote de `jeu`. Un trait oblique à 45° (longueur `tic`) marque
+ * chaque bout de la ligne de cote ; la valeur est posée au milieu, à
+ * `decalage` de la ligne du côté de l'intérieur, tournée comme la ligne mais
+ * jamais à l'envers : quand son haut regarde le mur, sa ligne de base
+ * s'écarte de `hauteurTexte` de plus pour que le texte ne touche pas la
+ * ligne. `yVersLeBas` : repère de l'écran ou du papier (SVG, planche) ;
+ * sinon y vers le haut (mètres, DXF). L'angle du texte est en degrés dans le
+ * sens du repère (celui de `rotate()` en SVG, de l'angle d'un TEXT en DXF) ;
+ * une cote verticale se lit de la droite (de bas en haut).
+ * Rend { ligne, attaches, obliques, texte: { position, angle }, longueur,
+ * normale } ou null.
+ */
+export function traitsCote(a, b, { tic = 1, decalage = 1, yVersLeBas = false, sens = null, ecart = 0, jeu = 0, hauteurTexte = 0 } = {}) {
   const dx = b[0] - a[0]
   const dy = b[1] - a[1]
   const longueur = Math.hypot(dx, dy)
   if (!(longueur > 0)) return null
   const ux = dx / longueur
   const uy = dy / longueur
+  const decale = sens === 1 || sens === -1
+  // Normale vers l'intérieur : « à gauche » vue sur le plan, quel que soit le repère
+  const normale = decale ? (yVersLeBas ? [uy * sens, -ux * sens] : [-uy * sens, ux * sens]) : [0, 0]
+  const pousser = (p, d) => [p[0] + normale[0] * d, p[1] + normale[1] * d]
+  const a2 = decale ? pousser(a, ecart) : [a[0], a[1]]
+  const b2 = decale ? pousser(b, ecart) : [b[0], b[1]]
+  const attaches = decale && ecart > jeu ? [[pousser(a, jeu), pousser(a, ecart + jeu)], [pousser(b, jeu), pousser(b, ecart + jeu)]] : []
+
   // Oblique : la direction de la ligne tournée de 45°, la même aux deux bouts,
   // dans le sens qui la montre en « / » sur une cote horizontale quel que soit
   // le repère (y vers le bas : le sens de rotation s'inverse)
@@ -177,14 +225,57 @@ export function traitsCote(a, b, { tic = 1, decalage = 1, yVersLeBas = false } =
   const r = (angle * Math.PI) / 180
   // Le haut du texte : sa ligne de base tournée d'un quart de tour vers le haut du repère
   const haut = yVersLeBas ? [Math.sin(r), -Math.cos(r)] : [-Math.sin(r), Math.cos(r)]
-  const milieu = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]
-  return {
-    ligne: [[a[0], a[1]], [b[0], b[1]]],
-    obliques: [oblique(a), oblique(b)],
-    // `+ 0` : pas de −0 dans les sorties
-    texte: { position: [milieu[0] + haut[0] * decalage, milieu[1] + haut[1] * decalage], angle: angle + 0 },
-    longueur,
+  const milieu = [(a2[0] + b2[0]) / 2, (a2[1] + b2[1]) / 2]
+  let position
+  if (!decale) position = [milieu[0] + haut[0] * decalage, milieu[1] + haut[1] * decalage]
+  else {
+    const versLInterieur = haut[0] * normale[0] + haut[1] * normale[1] >= 0
+    position = pousser(milieu, decalage + (versLInterieur ? 0 : hauteurTexte))
   }
+  return {
+    ligne: [a2, b2],
+    attaches,
+    obliques: [oblique(a2), oblique(b2)],
+    // `+ 0` : pas de −0 dans les sorties
+    texte: { position: position.map((v) => v + 0), angle: angle + 0 },
+    longueur,
+    normale,
+  }
+}
+
+/**
+ * La valeur d'une cote hors des symboles : centrée si sa boîte ne touche
+ * aucun obstacle, sinon glissée le long de la ligne de cote, par pas de `pas`
+ * (+pas, −pas, +2 pas…) tant qu'elle reste sur la ligne ; centrée si rien
+ * n'est libre. `cote` : sortie de `traitsCote` ; `largeur`, `hauteur` : la
+ * boîte du texte (ligne de base, vers son haut) ; `obstacles` : boîtes
+ * { xmin, ymin, xmax, ymax } du même repère.
+ * Rend { position, coins, glisse } (`coins` : les quatre coins de la boîte).
+ */
+export function placerValeurCote(cote, { largeur, hauteur, obstacles = [], pas, yVersLeBas = false }) {
+  const r = (cote.texte.angle * Math.PI) / 180
+  const u = [Math.cos(r), Math.sin(r)]
+  const haut = yVersLeBas ? [Math.sin(r), -Math.cos(r)] : [-Math.sin(r), Math.cos(r)]
+  const coinsA = (p) => {
+    const g = [p[0] - (u[0] * largeur) / 2, p[1] - (u[1] * largeur) / 2]
+    const d = [p[0] + (u[0] * largeur) / 2, p[1] + (u[1] * largeur) / 2]
+    return [g, d, [d[0] + haut[0] * hauteur, d[1] + haut[1] * hauteur], [g[0] + haut[0] * hauteur, g[1] + haut[1] * hauteur]]
+  }
+  const boite = (coins) => ({
+    xmin: Math.min(...coins.map((p) => p[0])), xmax: Math.max(...coins.map((p) => p[0])),
+    ymin: Math.min(...coins.map((p) => p[1])), ymax: Math.max(...coins.map((p) => p[1])),
+  })
+  const touche = (b) => obstacles.some((o) => b.xmin < o.xmax && o.xmin < b.xmax && b.ymin < o.ymax && o.ymin < b.ymax)
+  const [x0, y0] = cote.texte.position
+  const marge = Math.max(0, (cote.longueur - largeur) / 2)
+  const essais = [0]
+  if (pas > 0) for (let k = 1; k * pas <= marge + 1e-9; k++) essais.push(k * pas, -k * pas)
+  for (const glisse of essais) {
+    const position = [x0 + u[0] * glisse, y0 + u[1] * glisse]
+    const coins = coinsA(position)
+    if (!touche(boite(coins))) return { position, coins, glisse }
+  }
+  return { position: [x0, y0], coins: coinsA([x0, y0]), glisse: 0 }
 }
 
 // ─── Touchers et libellés ────────────────────────────────────────────────────
@@ -216,17 +307,28 @@ export function extremitesTrace(trace, points) {
 
 /**
  * La trace la plus proche de `position` (mètres) à `toleranceM` près, ou
- * null : une liaison se touche sur sa courbe, une cote sur sa ligne.
+ * null : une liaison se touche sur sa courbe, une cote sur sa ligne de cote
+ * (décalée de `ecartCote` mètres dans sa pièce, `contourDe(trace)`) comme
+ * sur le mur entre ses deux angles.
  */
-export function traceProche(traces, points, position, toleranceM) {
+export function traceProche(traces, points, position, toleranceM, { ecartCote = 0, contourDe = () => null } = {}) {
   let meilleure = null
   let distance = Infinity
   for (const t of traces ?? []) {
     const bouts = extremitesTrace(t, points)
     if (!bouts) continue
-    const traits = t.sorte === 'commande' ? courbeCommande(...bouts)?.points : bouts
-    if (!traits) continue
-    const d = distanceTrait(position, traits)
+    let d
+    if (t.sorte === 'commande') {
+      const traits = courbeCommande(...bouts)?.points
+      if (!traits) continue
+      d = distanceTrait(position, traits)
+    } else {
+      d = distanceTrait(position, bouts)
+      if (ecartCote > 0) {
+        const c = traitsCote(bouts[0], bouts[1], { sens: sensInterieurCote(bouts[0], bouts[1], contourDe(t)), ecart: ecartCote })
+        if (c) d = Math.min(d, distanceTrait(position, c.ligne))
+      }
+    }
     if (d <= toleranceM && d < distance) {
       distance = d
       meilleure = t

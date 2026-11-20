@@ -248,6 +248,33 @@ tableaux en vrais tableaux Word et l'annexe photos. Nouveaux types de
 l'exemple : prise RJ45, applique, dalle, réglette, goulotte, baie de
 brassage.
 
+**Avenant du 2026-11-20 — liaisons et cotes** (décisions de l'agence ; plan
+`docs/superpowers/plans/2026-11-20-etat-des-lieux-liaisons-cotes.md`,
+migration 084, table `edl_traces`). Il touche les § 5 à 7 :
+- **Visite (§ 5)** : un interrupteur se **relie** au luminaire qu'il commande,
+  par la voix (on touche l'interrupteur puis le luminaire en le disant ;
+  chaque point touché est noté au journal, `point-touche`) ou par le bouton
+  « Relier » du panneau du point (liaison immédiate). Une **cote** se prend
+  entre deux angles d'une pièce par le bouton « Coter » de la barre de la
+  pièce : les deux touchers suivants s'accrochent aux angles les plus proches
+  du contour (aucun point posé ; pas d'accroche automatique, un interrupteur
+  posé dans un angle deviendrait un angle de cote), puis la valeur est
+  **dite** ou **tapée** (« Cote (m) »). Liaison en trait courbe fin
+  (convention du dessin électrique), cote en ligne à obliques ; tout passe
+  par la file hors ligne et s'annule comme une pose.
+- **Analyse (§ 6)** : la frise montre les touchers à leur heure ; Claude
+  **propose** les liaisons dites et la **valeur** des cotes restées sans
+  valeur (`a_valider`, écrites avec la fiche dans `edl_ecrire_analyse`) ;
+  une valeur tapée ou validée n'est jamais remplacée. Relecture : Valider /
+  Modifier / Écarter, comme les éléments.
+- **Export (§ 7)** : DXF — liaison en `ARC` sur `EDL-Électricité` (même
+  flèche qu'à l'écran), cote en lignes et texte sur `EDL-Cotes` ; planches
+  PDF et fond du Word — dessinées sous les symboles, non déplaçables dans le
+  Word ; légende « Commande d'éclairage » et « Cote » quand il y en a. Par
+  défaut seules les traces validées partent ; une cote dont seule la valeur
+  est proposée part avec « ? ». Sans la migration 084, tout fonctionne comme
+  avant (boutons masqués, exports inchangés).
+
 ## 8. Données (migration 077)
 
 Toutes les tables reçoivent les droits d'API (`grant … to authenticated`,

@@ -11,7 +11,7 @@ les points d'entrée ; le détail se lit dans les fichiers cités.
 ```
 npm run dev      # serveur local, port 5173
 npm run build    # doit passer avant tout commit
-npm test         # 1736 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans, gestion de l'application, état des lieux)
+npm test         # 1829 tests node --test (plannings, to-do list, gestion d'agence, jalons accrochés, suivi financier d'étude, exports, comptes rendus, photos, plans, visite, rapport, diffusion, OPR, allègement PDF, analyseur réglementaire, import de planning, convertisseur, dossier pour Claude, échéances Notion, DPGF, module Plans, gestion de l'application, état des lieux)
 npx eslint src   # ~71 problèmes préexistants : comparer, ne pas viser zéro
 ```
 
@@ -191,7 +191,7 @@ plannings est gardée dans des fonctions pures (`geometrie.js`, `propagation.js`
   Toujours lire par `referencesCadastre` (repli sur les anciennes colonnes) ;
   l'enregistrement (`colonnesCadastre`) tient aussi à jour `cadastre_section`
   / `cadastre_parcelle` (première ligne) et `cadastre_superficie` (total).
-- **Base** : `supabase/migrations/`, numérotées, 83 fichiers, **passées à la
+- **Base** : `supabase/migrations/`, numérotées, 84 fichiers, **passées à la
   main** dans le SQL Editor de Supabase : un code qui dépend d'une nouvelle
   colonne doit tolérer son absence tant que la migration n'est pas faite.
   **Toute table créée depuis le 2026-10-30 doit recevoir ses droits d'API
@@ -987,6 +987,60 @@ lot 1 : `docs/superpowers/plans/2026-11-17-etat-des-lieux-lot1-preparer.md`.
     chaque rubrique et un bloc « Bloc porte » (`FicheRelecture.jsx`) —
     modifier un statut vaut validation, comme le reste. Le DXF écrit
     « Sol : Carrelage (Conserver) » et la ligne « Porte : … ».
+- **Liaisons et cotes** (2026-11-20, migration 084, plan
+  `docs/superpowers/plans/2026-11-20-etat-des-lieux-liaisons-cotes.md` ;
+  `tracesEdl.js` et `visite/tracesVisiteLogique.js`, purs, testés dans
+  `etat-des-lieux-traces.test.js`) : table `edl_traces` — `sorte =
+  'commande'` (interrupteur `point_a` → luminaire `point_b`, types de
+  `TYPES_INTERRUPTEUR` / `TYPES_LUMINAIRE`, `liaisonPossible`) ou `'cote'`
+  (deux angles `xa, ya, xb, yb` en mètres du plan, `valeur` texte
+  « 3,45 m », nulle tant que personne ne l'a donnée), `origine` main / ia,
+  `a_valider`, `extrait`. Id décidé sur l'appareil, gestes par la file
+  (`trace.creer|modifier|supprimer`, 23505 = succès), instantané `traces` ;
+  un point supprimé emporte ses liaisons (cascade) et « Annuler » les remet
+  (`gesteSuppressionPoint`). **Sans la 084** : lecture → `[]` et
+  `tracesDisponibles` faux, « Relier » / « Coter » masqués, ni dessin ni
+  rubrique de l'aide-mémoire, journal sans les nouveaux types, analyse et
+  exports comme avant (`p_traces` jamais envoyé). **Gestes** : « Relier »
+  (panneau d'un interrupteur ou d'un luminaire) puis toucher le point
+  compatible — un toucher ailleurs ne pose rien et dit pourquoi, jamais deux
+  fois la même liaison ; « Coter » (barre de la pièce) : deux touchers
+  accrochés aux angles du contour (44 px, aucun point posé), puis champ
+  « Cote (m) » en haut (Valider / Plus tard ; `valeurCote` lit « 3,45 »,
+  « 345 cm », « 3 m 45 ») ; toucher une trace l'ouvre (Modifier la valeur,
+  Supprimer), ⌘Z défait chaque geste ; une valeur tapée repasse
+  `a_valider` à faux (`champsModificationTrace`). **Un seul dessin** écran /
+  DXF / planche : `courbeCommande` (Bézier, flèche 20 %, à gauche du sens
+  interrupteur → luminaire, calculée en mètres y vers le haut puis portée)
+  et `traitsCote` (obliques à 45°, texte jamais à l'envers, verticale lue de
+  bas en haut). **Journal** : `point-touche` (tout point existant touché),
+  `angle-touche` (`detail.traceId` = la future cote, décidé à l'ouverture
+  du mode), `trace`, `trace-supprimee`. **Analyse** : la frise montre ces
+  touchers à leur heure (« point P3 (Interrupteur) touché », « angle touché
+  (cote C2) »), cotes de la pièce en `C<n>` ; Claude propose `liaisons`
+  (deux points de la pièce, ni existante ni en double) et la `valeur` des
+  cotes sans valeur (lue par `valeurCote`, sinon écartée) —
+  `SCHEMA_ANALYSE_TRACES`, et sans traces lues consignes et schéma d'avant.
+  Écrit par `edl_ecrire_analyse(…, p_traces)` (084, même transaction que la
+  fiche) : `p_traces` **absent** quand les traces n'ont pas été lues ;
+  présent, il remplace liaisons et valeurs proposées non relues de la pièce,
+  jamais une valeur tapée ou validée. **Relecture** : section « Liaisons et
+  cotes » (`TracesRelecture.jsx`), propositions en bleu avec l'extrait,
+  Valider / Modifier (cote) / Écarter (liaison supprimée, valeur retirée),
+  comptées dans « à valider ». **Exports** : `tracesAExporter`, seule
+  lecture (liaison proposée écartée sauf « Inclure les propositions »,
+  liaison dont un point manque ou change d'étage omise, cote dont seule la
+  valeur est proposée partie avec « ? » — la fenêtre le signale) ; DXF :
+  `ARC` sur `EDL-Électricité` (`arcCommande` : cercle par les deux points et
+  le sommet de la courbe), cote = `LINE` + deux obliques + `TEXT` centré
+  au-dessus sur `EDL-Cotes`, propositions sur `EDL-À valider`, unité du plan
+  d'origine ; planche : en mm dans `misePlanche` (emprise, obstacles de la
+  légende), dessinées **sous les symboles** (courbe 0,25 mm couleur
+  électricité, cote 0,18 mm, valeur 2,2 mm sur liseré blanc) et toujours,
+  donc dans le **fond verrouillé** du Word (non déplaçables) ; légende
+  « Commande d'éclairage », « Cote », « Liaison ou cote proposée »
+  seulement si présentes. Limite : la valeur d'une cote n'entre pas dans le
+  placement des étiquettes du DXF.
 - **Export (lot 4)** (`export/`, plan
   `docs/superpowers/plans/2026-11-18-etat-des-lieux-lot4-exporter.md`, aucune
   migration, aucun appel payant) : bouton « Exporter » du module → **fenêtre

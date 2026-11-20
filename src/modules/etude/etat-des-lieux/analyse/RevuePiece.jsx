@@ -1,6 +1,6 @@
-import { RefreshCw, Sparkles } from 'lucide-react'
+import { Plus, RefreshCw, Sparkles } from 'lucide-react'
 import { COULEUR_IA } from '../../../chantier/comptes-rendus/enregistrement/styleProposition'
-import { validerElement, ecarterElement, ajouterElement, modifierFiche, validerTrace, ecarterTrace, MESSAGE_ANALYSE_INDISPONIBLE } from './analyseDonnees'
+import { validerElement, ecarterElement, modifierFiche, validerTrace, ecarterTrace, MESSAGE_ANALYSE_INDISPONIBLE } from './analyseDonnees'
 import { FicheRelecture } from './FicheRelecture'
 import { ElementsRelecture } from './ElementsRelecture'
 import { TracesRelecture } from './TracesRelecture'
@@ -100,7 +100,9 @@ export function ContenuRevue({ revue, lectureSeule }) {
         })}
         suiteEcart={revue.suiteEcart} pointsSeuls={revue.pointsSeuls}
         onSupprimerPoint={(suppression) => revue.ecrire(() => revue.retirerPoint(suppression.pointId))}
-        onAjouter={(champs) => revue.ecrire(() => ajouterElement({ ...champs, affaire_id: revue.affaireId, niveau_id: revue.niveauId, piece_id: piece.id }))}
+        onAjouter={revue.enregistrerAjout}
+        placement={revue.placement} placementPossible={revue.placementPossible}
+        onCommencerAjout={revue.commencerAjout} onAnnulerAjout={revue.annulerAjout}
       />
       {analyse.tracesDisponibles && (
         <TracesRelecture
@@ -138,11 +140,27 @@ export function ConfirmationRelance({ revue }) {
  */
 export function RevuePiece({ revue, lectureSeule }) {
   const { analyse } = revue
+  // Un ajout en cours dans une pièce pas encore visitée : le panneau complet
+  // (le formulaire est dans la liste des éléments)
+  const enAjout = !!revue.placement && revue.placement.pieceId === revue.piece?.id
+  const sansRevue = revue.sansRevue && !enAjout
 
   let contenu
   if (analyse.indisponible) contenu = <p style={noteAmbre}>{MESSAGE_ANALYSE_INDISPONIBLE}</p>
   else if (!analyse.charge) contenu = <p style={discret}>{enLigne() ? 'Lecture de l’analyse…' : 'Sans réseau, l’analyse n’a pas pu être lue.'}</p>
-  else if (revue.sansRevue && !revue.enAnalyse) contenu = <p style={discret}>Pas encore visitée.</p>
+  else if (sansRevue && !revue.enAnalyse) {
+    contenu = (
+      <>
+        <p style={discret}>Pas encore visitée.</p>
+        <AvisRevue revue={revue} lectureSeule={lectureSeule} />
+        {!lectureSeule && revue.placementPossible && (
+          <button type="button" onClick={revue.commencerAjout} style={{ ...bouton, alignSelf: 'flex-start', borderStyle: 'dashed' }}>
+            <Plus size={15} /> Ajouter un élément
+          </button>
+        )}
+      </>
+    )
+  }
   else {
     contenu = (
       <>
@@ -152,7 +170,7 @@ export function RevuePiece({ revue, lectureSeule }) {
       </>
     )
   }
-  const pret = analyse.charge && !analyse.indisponible && (!revue.sansRevue || revue.enAnalyse)
+  const pret = analyse.charge && !analyse.indisponible && (!sansRevue || revue.enAnalyse)
 
   return (
     <section aria-label="État des lieux de la pièce" style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>

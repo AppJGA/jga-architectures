@@ -452,6 +452,27 @@ export async function supprimerPoint(pointId, { siSansElement = false } = {}) {
 }
 
 /**
+ * Un point posé au bureau (« Ajouter un élément », `nouveauPointBureau`) :
+ * écrit directement, en ligne, comme le reste de la relecture — aucun
+ * journal, il demande une visite. Un refus RLS rend une erreur à
+ * l'insertion ; les lignes sont comptées quand même.
+ */
+export async function poserPointBureau(point) {
+  const { data, error } = await supabase.from('edl_points').insert(point).select('id')
+  if (error) throw error
+  if (!data?.length) throw new Error(LECTURE_SEULE)
+  return { point }
+}
+
+/** Le point posé au bureau prend le calque et le type de son élément (`typeDuPoint`). */
+export async function typerPoint(pointId, champs) {
+  const { data, error } = await supabase.from('edl_points').update(champs).eq('id', pointId).select('id')
+  if (error) throw error
+  if (!data?.length) throw new Error(LECTURE_SEULE)
+  return { indisponible: false }
+}
+
+/**
  * Élément ajouté à la main, déjà validé. Un envoi rejoué avec le même
  * identifiant ne crée pas de doublon (et un refus RLS d'insertion, lui,
  * rend bien une erreur).

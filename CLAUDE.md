@@ -990,7 +990,18 @@ lot 1 : `docs/superpowers/plans/2026-11-17-etat-des-lieux-lot1-preparer.md`.
     (confirmation), « Ajouter un élément », points sans élément, liaisons
     et cotes, « Relancer l'analyse » (confirmée : elle se paie) ; une pièce
     sans rien à relire (`pieceSansRevue`) n'y montre que « Pas encore
-    visitée ». Le nom en cours de saisie porte sa pièce et s'enregistre
+    visitée » (et « Ajouter un élément »). **« Ajouter un élément » fait
+    toucher le plan** (demande de l'agence, 2026-11-20 ; `placement` de
+    `useRevuePiece`, logique `toucherPlacement` / `nouveauPointBureau` de
+    `plansEdlLogique.js`, testée) : bandeau « Touchez la pièce à l'endroit
+    de l'élément » + Annuler, poignées masquées ; le toucher suivant dans la
+    pièce choisie (ou sur son mur, à portée du doigt) écrit un point
+    `edl_points` — rattaché à la **dernière visite** (`visite_id`
+    obligatoire), numéro le plus grand de l'affaire + 1, aucun journal —
+    puis le formulaire s'ouvre sur ce point ; l'élément est validé
+    (`origine 'main'`) et le point prend son type (`typerPoint`). Annuler,
+    ou changer de pièce, retire le point ; hors de la pièce : motif, rien
+    créé. Sans visite lue : l'ancien formulaire sans point. Le nom en cours de saisie porte sa pièce et s'enregistre
     quand la pièce choisie change par le plan ou qu'on quitte l'onglet.
     **« État des lieux »** (`analyse/RelectureEdl.jsx`, mis en valeur,
     seulement quand il y a des relevés) n'est plus que la **liste des

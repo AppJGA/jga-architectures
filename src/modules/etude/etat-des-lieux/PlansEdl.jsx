@@ -11,6 +11,7 @@ import { debutRelier, toucherRelier, consigneMode, COULEUR_COMMANDE } from './vi
 import { piecesVisitees } from './visite/visiteLogique'
 import {
   resoudreToucher, choixPiece, ouvrirPiece, voirEtage, cadreAffiche, opacitePoint, traceDeLaPiece, pieceSuivante, pieceDeLiaison,
+  CONSIGNE_PLACEMENT,
 } from './plansEdlLogique'
 
 // ─── Onglet « Plans » : un seul plan par étage ───────────────────────────────
@@ -27,6 +28,9 @@ import {
 // liaison »). Pièce choisie : nom et numéro, puis sa revue (`RevuePiece`).
 // La pièce choisie et la pièce agrandie sont dans l'adresse (`adresse`,
 // `onAdresse`, plansEdlLogique.js) : un rechargement y ramène.
+// « Ajouter un élément » (panneau de la pièce) : le toucher suivant dans la
+// pièce pose le point de l'élément (`revue.placer`), bandeau et Annuler en
+// haut du plan ; changer de pièce annule l'ajout (le point posé est retiré).
 
 const ROUGE = '#B8412C'
 const petitBouton = { minHeight: 40, padding: '0 14px', borderRadius: 3, border: '0.5px solid rgba(0,0,0,0.15)', background: 'white', color: '#1F1B17', cursor: 'pointer', fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 6 }
@@ -46,7 +50,13 @@ export function PlansEdl({
   // depuis le panneau du point choisi, fermé par Annuler ou la liaison posée
   const [relier, setRelier] = useState(null)
 
-  const points = useMemo(() => (releve ? revue.points.filter(position) : []), [releve, revue.points])
+  // Le point posé pour un ajout se dessine avant que la copie de la visite ne soit relue
+  const pointPose = revue.placement?.point ?? null
+  const points = useMemo(() => {
+    const liste = releve ? revue.points.filter(position) : []
+    return pointPose && !liste.some((p) => p.id === pointPose.id) ? [...liste, pointPose] : liste
+  }, [releve, revue.points, pointPose])
+  const enPlacement = !!revue.placement && revue.placement.pieceId === adresse.pieceId
   const traces = releve ? revue.tracesNiveau : []
   const nbPhotos = useMemo(() => {
     const n = new Map()
@@ -72,6 +82,7 @@ export function PlansEdl({
   // Un geste sur la pièce (liste, plan, « Dessiner une pièce ») : plus de
   // point, de trace ni de « Relier » en cours
   const oublierSelection = () => {
+    if (revue.placement) revue.annulerAjout()
     setRelier(null)
     revue.setPointChoisi(null)
     revue.setTraceChoisie(null)
@@ -96,6 +107,8 @@ export function PlansEdl({
   }
 
   const toucher = (m, tolerance) => {
+    // Ajout en cours : le toucher pose le point (une fois), rien d'autre
+    if (revue.placement) { revue.placer(m, tolerance, pieces); return }
     const r = resoudreToucher({
       position: m, tolerance, points, traces, pieces, relier: !!relier,
       ecartCote: (tolerance * ECART_COTE_PX) / RAYON_TOUCHER_PX,
@@ -142,7 +155,21 @@ export function PlansEdl({
     )
   }
 
-  const bandeau = (relier || pointPanneau) && (
+  const bandeauPlacement = enPlacement && (
+    <div style={{
+      position: 'absolute', top: 8, left: 8, right: 8, display: 'flex', alignItems: 'center', gap: 8, padding: '0 0 0 12px',
+      background: 'white', border: '0.5px solid var(--affaire-accent, #E8602C)', borderRadius: 3, boxShadow: '0 4px 14px -6px rgba(31,27,23,0.35)',
+    }}>
+      <span role="status" style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 600, color: revue.placement.raison ? ROUGE : 'var(--affaire-accent, #E8602C)' }}>
+        {revue.placement.etape === 'formulaire'
+          ? `Point P${revue.placement.point.numero} posé · complétez l’élément dans le panneau`
+          : revue.placement.etape === 'pose' ? 'Point en cours d’enregistrement…' : (revue.placement.raison ?? CONSIGNE_PLACEMENT)}
+      </span>
+      <button type="button" onClick={() => revue.annulerAjout()} style={{ ...petitBouton, minHeight: 44, border: 'none' }}>Annuler</button>
+    </div>
+  )
+
+  const bandeau = bandeauPlacement || ((relier || pointPanneau) && (
     <div style={{
       position: 'absolute', top: 8, left: 8, right: 8, display: 'flex', alignItems: 'center', gap: 8, padding: '0 0 0 12px',
       background: 'white', border: `0.5px solid ${relier ? COULEUR_COMMANDE : 'rgba(0,0,0,0.15)'}`, borderRadius: 3, boxShadow: '0 4px 14px -6px rgba(31,27,23,0.35)',
@@ -171,7 +198,7 @@ export function PlansEdl({
         </>
       )}
     </div>
-  )
+  ))
 
   const actions = (adresse.cadreId || suivante) ? (
     <>
@@ -195,7 +222,7 @@ export function PlansEdl({
           onModifier={onModifier} onAjouter={onAjouter} onSupprimer={onSupprimer}
           onAjouterPlusieurs={onAjouterPlusieurs} onRelecture={onRelecture}
           choisie={adresse.pieceId} onChoisir={choisirPiece} cadre={cadre} actions={actions}
-          superposition={releve ? { dessin, toucher, bandeau, masquerPoignees: !!relier } : null}
+          superposition={releve ? { dessin, toucher, bandeau, masquerPoignees: !!relier || !!revue.placement } : null}
           // Proposé dès qu'il y a des relevés, même sans pièce choisie : le
           // panneau garde sa largeur et le plan ne se recadre pas
           panneauPiece={releve ? () => (pieceChoisie ? <RevuePiece revue={revue} lectureSeule={lectureSeule} /> : null) : null}

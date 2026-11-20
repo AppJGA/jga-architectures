@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Check, Pencil, Trash2, Plus, AlertTriangle } from 'lucide-react'
+import { Check, Pencil, Trash2, Plus, AlertTriangle, MousePointerClick } from 'lucide-react'
 import { styleProposition, COULEUR_IA } from '../../../chantier/comptes-rendus/enregistrement/styleProposition'
 import { typeEdl } from '../calquesEdl'
 import {
@@ -16,6 +16,10 @@ import { ConfirmationEdl } from './ConfirmationEdl'
 // point du plan met ses éléments en évidence ici. Écarter le dernier élément
 // d'un point retire aussi le point (`suiteEcart`, la confirmation le dit) ;
 // un point resté sans élément est listé à part, avec « Supprimer le point ».
+// « Ajouter un élément » fait toucher la pièce sur le plan (`placement`,
+// tenu par useRevuePiece) : le formulaire s'ouvre ensuite, rattaché au
+// point posé. Sans visite (la base exige un point rattaché à une visite),
+// l'ancien formulaire sans point.
 
 const AMBRE = { fond: '#FFFBEB', trait: '#F59E0B', texte: '#92400E' }
 const bouton = { display: 'inline-flex', alignItems: 'center', gap: 6, minHeight: 44, padding: '0 12px', borderRadius: 3, fontSize: 13, cursor: 'pointer', border: '0.5px solid rgba(0,0,0,0.15)', background: 'white', color: '#1F1B17' }
@@ -25,8 +29,8 @@ const champ = {
 }
 const etiquette = { display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: '#5E5854' }
 
-function FormulaireElement({ element = null, pieceId, points, libelleEnregistrer, onEnregistrer, onAnnuler }) {
-  const [saisie, setSaisie] = useState(() => saisieElement(element))
+function FormulaireElement({ element = null, pieceId, points, pointFixe = null, libelleEnregistrer, onEnregistrer, onAnnuler }) {
+  const [saisie, setSaisie] = useState(() => (pointFixe ? { ...saisieElement(element), pointId: pointFixe.id } : saisieElement(element)))
   const [erreur, setErreur] = useState(null)
   const [enCours, setEnCours] = useState(false)
   const groupes = useMemo(() => optionsType(element?.calque ?? null), [element?.calque])
@@ -67,17 +71,24 @@ function FormulaireElement({ element = null, pieceId, points, libelleEnregistrer
           Cotes
           <input type="text" value={saisie.cotes} onChange={changer('cotes')} style={champ} placeholder="allège 90, largeur 120" />
         </label>
-        <label style={etiquette}>
-          Point
-          <select value={saisie.pointId} onChange={changer('pointId')} style={champ}>
-            <option value="">Aucun</option>
-            {proposes.map((p) => (
-              <option key={p.id} value={p.id}>
-                P{p.numero}{typeEdl(p.type) ? ` · ${typeEdl(p.type).libelle}` : ''}{p.piece_id !== pieceId ? ' (autre pièce)' : ''}
-              </option>
-            ))}
-          </select>
-        </label>
+        {pointFixe ? (
+          <div style={etiquette}>
+            Point
+            <span style={{ ...champ, display: 'flex', alignItems: 'center', background: '#FAF8F5' }}>P{pointFixe.numero} · posé sur le plan</span>
+          </div>
+        ) : (
+          <label style={etiquette}>
+            Point
+            <select value={saisie.pointId} onChange={changer('pointId')} style={champ}>
+              <option value="">Aucun</option>
+              {proposes.map((p) => (
+                <option key={p.id} value={p.id}>
+                  P{p.numero}{typeEdl(p.type) ? ` · ${typeEdl(p.type).libelle}` : ''}{p.piece_id !== pieceId ? ' (autre pièce)' : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
       </div>
       {erreur && <p role="alert" style={{ margin: 0, fontSize: 12, color: '#B8412C' }}>{erreur}</p>}
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
@@ -167,6 +178,7 @@ function CarteElement({ element: e, numeroPoint, pieceId, points, lectureSeule, 
 export function ElementsRelecture({
   piece, elements, points, lectureSeule, elementChoisi, pointChoisi, onSurvol, onChoisir, onValider, onEcarter, onAjouter,
   suiteEcart = () => null, pointsSeuls = [], onSupprimerPoint = null,
+  placement = null, placementPossible = false, onCommencerAjout = null, onAnnulerAjout = null,
 }) {
   const [ajout, setAjout] = useState(false)
   const [aEcarter, setAEcarter] = useState(null)
@@ -175,6 +187,8 @@ export function ElementsRelecture({
   const groupes = useMemo(() => elementsParCalque(elements), [elements])
   const numeros = useMemo(() => new Map((points ?? []).map((p) => [p.id, p.numero])), [points])
   const aValider = elements.filter((e) => e.a_valider).length
+  const enPlacement = placement?.pieceId === piece.id ? placement : null
+  const commencer = () => (placementPossible && onCommencerAjout ? onCommencerAjout() : setAjout(true))
 
   return (
     <section aria-label="Éléments relevés" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -185,7 +199,7 @@ export function ElementsRelecture({
         {aValider > 0 && <span style={{ fontSize: 12, fontWeight: 600, color: COULEUR_IA }}>{aValider} à valider</span>}
       </div>
 
-      {!elements.length && !ajout && (
+      {!elements.length && !ajout && !enPlacement && (
         <p style={{ margin: 0, fontSize: 13, color: '#9C9591' }}>Aucun élément relevé dans cette pièce.</p>
       )}
 
@@ -241,7 +255,28 @@ export function ElementsRelecture({
         </div>
       )}
 
-      {!lectureSeule && (ajout ? (
+      {!lectureSeule && (enPlacement ? (
+        <div style={{ padding: 12, background: 'white', border: '0.5px solid var(--affaire-accent, #E8602C)', borderRadius: 3 }}>
+          {enPlacement.etape === 'formulaire' ? (
+            <>
+              <h4 style={{ margin: '0 0 10px', fontSize: 13, fontWeight: 600, color: '#1F1B17' }}>Nouvel élément · P{enPlacement.point.numero}</h4>
+              <FormulaireElement
+                key={enPlacement.point.id}
+                pieceId={piece.id} points={points} pointFixe={enPlacement.point} libelleEnregistrer="Ajouter"
+                onAnnuler={onAnnulerAjout} onEnregistrer={onAjouter}
+              />
+            </>
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <span style={{ flex: '1 1 180px', display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#1F1B17' }}>
+                <MousePointerClick size={16} color="var(--affaire-accent, #E8602C)" />
+                {enPlacement.etape === 'pose' ? 'Point en cours d’enregistrement…' : 'Touchez la pièce sur le plan, à l’endroit de l’élément.'}
+              </span>
+              <button type="button" onClick={onAnnulerAjout} style={bouton}>Annuler</button>
+            </div>
+          )}
+        </div>
+      ) : ajout ? (
         <div style={{ padding: 12, background: 'white', border: '0.5px solid rgba(0,0,0,0.1)', borderRadius: 3 }}>
           <h4 style={{ margin: '0 0 10px', fontSize: 13, fontWeight: 600, color: '#1F1B17' }}>Nouvel élément</h4>
           <FormulaireElement
@@ -251,7 +286,7 @@ export function ElementsRelecture({
           />
         </div>
       ) : (
-        <button type="button" onClick={() => setAjout(true)} style={{ ...bouton, alignSelf: 'flex-start', borderStyle: 'dashed' }}>
+        <button type="button" onClick={commencer} style={{ ...bouton, alignSelf: 'flex-start', borderStyle: 'dashed' }}>
           <Plus size={15} /> Ajouter un élément
         </button>
       ))}

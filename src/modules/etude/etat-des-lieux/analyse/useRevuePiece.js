@@ -1,8 +1,9 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { piecesVisitees } from '../visite/visiteLogique'
-import { ajouterLiaison, supprimerPoint, MESSAGE_ANALYSE_INDISPONIBLE } from './analyseDonnees'
+import { ajouterLiaison, supprimerPoint, ajouterElement, poserPointBureau, typerPoint, MESSAGE_ANALYSE_INDISPONIBLE } from './analyseDonnees'
 import { messageLancement, tracesRelecture, choixLiaisonRelecture, suiteEcartElement, suppressionPoint, pointsSansElement, pieceSansRevue } from './relectureAnalyseLogique'
 import { avecTypeEffectif } from '../tracesEdl'
+import { debutPlacement, toucherPlacement, nouveauPointBureau, derniereVisite, pointAAnnuler, typeDuPoint } from '../plansEdlLogique'
 
 // ─── État et écritures de la revue d'une pièce (RevuePiece.jsx) ──────────────
 //
@@ -15,6 +16,8 @@ import { avecTypeEffectif } from '../tracesEdl'
 // Chaque écriture est relue par le hook de l'analyse (`analyse.relire`) :
 // rien n'est calculé dans un setState(prev => …), l'écran montre la base.
 // Un refus (0 ligne) remonte « Lecture seule… » des fonctions de données.
+// « Ajouter un élément » passe le plan en mode placement (`placement`,
+// plansEdlLogique.js) : le plan appelle `placer` au toucher suivant.
 
 /**
  * État et écritures de la revue d'une pièce. `piece` (ou null) porte déjà
@@ -30,6 +33,10 @@ export function useRevuePiece({ affaireId, niveau, piece, visite, analyse }) {
   const [message, setMessage] = useState(null)
   const [lancement, setLancement] = useState(null) // pièce dont l'analyse part de ce bouton
   const [confirmerRelance, setConfirmerRelance] = useState(false)
+  const [placement, setPlacement] = useState(null)
+  // Chaque début ou annulation d'un ajout change le jeton : un point dont
+  // l'écriture finit après l'annulation est retiré, pas proposé
+  const jetonAjout = useRef(0)
   const pieceId = piece?.id ?? null
   const [pieceVue, setPieceVue] = useState(pieceId)
   if (pieceVue !== pieceId) {
@@ -39,6 +46,9 @@ export function useRevuePiece({ affaireId, niveau, piece, visite, analyse }) {
     setConfirmerRelance(false)
     setElementChoisi(null)
     setSurvol(null)
+    // Le point déjà posé reste, sans élément : listé à part, supprimable.
+    // PlansEdl annule l'ajout avant de changer de pièce, ce cas est un repli
+    setPlacement(null)
   }
 
   const niveauId = piece?.niveau_id ?? niveau.id
@@ -113,6 +123,78 @@ export function useRevuePiece({ affaireId, niveau, piece, visite, analyse }) {
     affaireId, niveauId, pieceId: pieceLiaison, interrupteurId, luminaireId,
   }))
 
+  // ─── « Ajouter un élément » : toucher la pièce, puis saisir l'élément ─────
+  const placementPossible = !!derniereVisite(donnees?.visites)
+  const commencerAjout = () => {
+    jetonAjout.current++
+    setErreur(null)
+    setElementChoisi(null)
+    setTraceChoisie(null)
+    setPointChoisi(null)
+    setPlacement(debutPlacement(pieceId))
+  }
+
+  // Toucher du plan en mode placement (`position` en mètres). Le point est
+  // écrit, puis la copie de la visite relue : il se dessine sur le plan
+  const placer = async (position, tolerance, pieces) => {
+    const r = toucherPlacement(placement, { position, tolerance, pieces })
+    if (r.action !== 'poser') { if (r.action === 'refus') setPlacement(r.mode); return }
+    const point = nouveauPointBureau({
+      affaireId, niveauId, pieceId, position: r.position, visites: donnees?.visites, points: donnees?.points,
+    })
+    if (!point) { setPlacement({ ...placement, raison: 'Aucune visite n’a encore eu lieu : impossible de placer un élément.' }); return }
+    const jeton = jetonAjout.current
+    setErreur(null)
+    setPlacement(r.mode)
+    try {
+      await poserPointBureau(point)
+    } catch (err) {
+      if (jeton === jetonAjout.current) {
+        setErreur(err?.message ?? String(err))
+        setPlacement(null)
+      }
+      return
+    }
+    if (jeton !== jetonAjout.current) {
+      await supprimerPoint(point.id).catch(() => {})
+      return
+    }
+    setPlacement({ etape: 'formulaire', pieceId, point })
+    setPointChoisi(point.id)
+    await visite.recharger?.()
+  }
+
+  // Annuler l'ajout : le point posé pour lui est retiré
+  const annulerAjout = async () => {
+    jetonAjout.current++
+    const pointId = pointAAnnuler(placement)
+    setPlacement(null)
+    if (pointId) await ecrire(() => retirerPoint(pointId))
+  }
+
+  // L'élément saisi : rattaché au point posé (et validé, `ligneElementMain`),
+  // et le point prend son type. Sans placement : le point choisi au formulaire
+  const enregistrerAjout = async (champs) => {
+    const point = placement?.etape === 'formulaire' && placement.pieceId === pieceId ? placement.point : null
+    const ok = await ecrire(async () => {
+      const r = await ajouterElement({
+        ...champs, point_id: point?.id ?? champs.point_id ?? null, affaire_id: affaireId, niveau_id: niveauId, piece_id: pieceId,
+      })
+      // L'élément est en base : un échec ici ne doit pas le faire saisir
+      // deux fois. Le symbole se lit aussi d'après l'élément (avecTypeEffectif)
+      if (!r?.indisponible && point) {
+        await typerPoint(point.id, typeDuPoint(r.element)).catch((err) => console.warn('État des lieux, type du point posé :', err))
+      }
+      return r
+    })
+    if (ok && point) {
+      jetonAjout.current++
+      setPlacement(null)
+      await visite.recharger?.()
+    }
+    return ok
+  }
+
   // Un seul objet en évidence à la fois : élément, point ou trace
   const choisirElement = (id) => { setPointChoisi(null); setTraceChoisie(null); setElementChoisi((c) => (c === id ? null : id)) }
   const choisirTrace = (id) => { setElementChoisi(null); setPointChoisi(null); setTraceChoisie((c) => (c === id ? null : id)) }
@@ -126,6 +208,7 @@ export function useRevuePiece({ affaireId, niveau, piece, visite, analyse }) {
     erreur, setErreur, message, setMessage, confirmerRelance, setConfirmerRelance,
     enAnalyse: !!pieceId && (analyse.enCours === pieceId || lancement === pieceId),
     ecrire, retirerPoint, lancer, relier, analyse,
+    placement, placementPossible, commencerAjout, placer, annulerAjout, enregistrerAjout,
   }
 }
 
